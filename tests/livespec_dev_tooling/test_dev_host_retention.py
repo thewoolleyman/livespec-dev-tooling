@@ -58,7 +58,7 @@ import pytest
 import yaml
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
-from tests.hang_guard import HANG_GUARD_SECONDS
+from tests.hang_guard import HANG_GUARD_SECONDS, run_under_hang_guard
 
 __all__: list[str] = []
 
@@ -91,7 +91,6 @@ _ARM_TASK = "Enable and start the dev host retention timer"
 _OTHER_DEV_HOST_TAG = "otel_collector"
 
 _RETENTION_DAYS = 7
-_TIMEOUT_SECONDS = 600
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 # Long enough to outlive one retention run by any margin, short enough that a leaked
 # child on a developer's machine is gone before the next test module finishes.
@@ -270,11 +269,10 @@ def _retain(*, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     a run that correctly left everything in place.
     """
     _ = _read(path=_SCRIPT)
-    return subprocess.run(
+    return run_under_hang_guard(
         ["bash", str(_SCRIPT)],
         capture_output=True,
         text=True,
-        timeout=_TIMEOUT_SECONDS,
         check=False,
         env=env,
     )
@@ -635,9 +633,7 @@ def test_a_running_uv_process_can_still_exec_its_archive_after_a_retention_run(
     assert (
         interpreter.exists()
     ), f"the prune removed the running process's interpreter {interpreter}:\n{done.stdout}"
-    reexec = subprocess.run(
-        [str(interpreter)], capture_output=True, text=True, check=False, timeout=30
-    )
+    reexec = run_under_hang_guard([str(interpreter)], capture_output=True, text=True, check=False)
     assert (
         reexec.returncode == 0 and reexec.stdout.strip() == "alive"
     ), f"the running process lost its interpreter to the prune:\n{done.stdout}"
@@ -891,12 +887,11 @@ def _list_tasks(*, tags: list[str] | None) -> str:
     argv = ["-i", str(_LEGACY_INVENTORY), "--list-tasks", str(_PLAYBOOK)]
     if tags is not None:
         argv += ["--tags", ",".join(tags)]
-    done = subprocess.run(
+    done = run_under_hang_guard(
         ["uvx", "--from", _ansible_core_pin(), "ansible-playbook", *argv],
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
-        timeout=_TIMEOUT_SECONDS,
         check=False,
         env=os.environ | {"ANSIBLE_ROLES_PATH": str(_ANSIBLE / "roles"), "ANSIBLE_NOCOWS": "1"},
     )
@@ -917,7 +912,7 @@ def _check_uv_bin(*, tmp_path: Path, uv_bin: Path, installs: Path) -> tuple[int,
         "        tasks_from: uv_bin\n",
         encoding="utf-8",
     )
-    done = subprocess.run(
+    done = run_under_hang_guard(
         [
             "uvx",
             "--from",
@@ -934,7 +929,6 @@ def _check_uv_bin(*, tmp_path: Path, uv_bin: Path, installs: Path) -> tuple[int,
         cwd=tmp_path,
         capture_output=True,
         text=True,
-        timeout=_TIMEOUT_SECONDS,
         check=False,
         env=os.environ | {"ANSIBLE_ROLES_PATH": str(_ANSIBLE / "roles"), "ANSIBLE_NOCOWS": "1"},
     )
@@ -1062,7 +1056,7 @@ def _remove_retired_crons(*, tmp_path: Path, crons: list[Path]) -> tuple[int, st
         encoding="utf-8",
     )
     retired = json.dumps({"dev_host_retention_retired_hourly_crons": [str(c) for c in crons]})
-    done = subprocess.run(
+    done = run_under_hang_guard(
         [
             "uvx",
             "--from",
@@ -1079,7 +1073,6 @@ def _remove_retired_crons(*, tmp_path: Path, crons: list[Path]) -> tuple[int, st
         cwd=tmp_path,
         capture_output=True,
         text=True,
-        timeout=_TIMEOUT_SECONDS,
         check=False,
         env=os.environ | {"ANSIBLE_ROLES_PATH": str(_ANSIBLE / "roles"), "ANSIBLE_NOCOWS": "1"},
     )

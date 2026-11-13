@@ -56,7 +56,8 @@ _CONCURRENCY_WAIT_TESTS = (
 )
 _SPEC_MINIMUM_SECONDS = 120
 _OWN_CONCURRENCY_TIMEOUT = re.compile(
-    r"\.(?:acquire|join|wait)\(\s*(?:timeout\s*=\s*)?[0-9][0-9.]*\s*\)"
+    r"(?:\.(?:acquire|join|wait)\(\s*(?:timeout\s*=\s*)?[0-9][0-9.]*\s*\)"
+    r"|timeout\s*=\s*(?:[0-9][0-9.]*|_TIMEOUT_SECONDS)\b)"
 )
 
 

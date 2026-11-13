@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import re
 import socket
-import subprocess
 import threading
 from collections.abc import Iterator
 from itertools import pairwise
@@ -20,7 +19,7 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 
 import pytest
 
-from tests.hang_guard import HANG_GUARD_SECONDS
+from tests.hang_guard import HANG_GUARD_SECONDS, run_under_hang_guard
 
 pytestmark = pytest.mark.integration
 
@@ -28,7 +27,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _TASKS = _REPO_ROOT / "ansible" / "roles" / "fabro_server" / "tasks" / "main.yml"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
-_TIMEOUT_SECONDS = 600
 _DEV_TOKEN = "fixture-dev-token"
 _INVALID_DEV_TOKEN = f"not-{_DEV_TOKEN}"
 _LIFTED = (
@@ -161,7 +159,7 @@ def _run(
     )
     body = "".join(f"    {line}\n" if line else "\n" for line in _lifted_tasks().splitlines())
     _ = playbook.write_text(f"{header}\n{body}", encoding="utf-8")
-    completed = subprocess.run(
+    completed = run_under_hang_guard(
         [
             "uvx",
             "--from",
@@ -175,7 +173,6 @@ def _run(
         cwd=tmp_path,
         capture_output=True,
         text=True,
-        timeout=_TIMEOUT_SECONDS,
         check=False,
     )
     return completed.returncode, completed.stdout + completed.stderr

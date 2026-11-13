@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import os
-import subprocess
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -22,7 +21,7 @@ from livespec_dev_tooling._incident_observer_store import repository_lock, save_
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
 from livespec_dev_tooling.incident_observer import reconcile_action_receipt
 from livespec_dev_tooling.incident_recovery_journal import RecoveryJournal
-from tests.hang_guard import HANG_GUARD_SECONDS
+from tests.hang_guard import HANG_GUARD_SECONDS, run_under_hang_guard
 from tests.livespec_dev_tooling.test_incident_recovery_journal import (
     _conflict,
     _context,
@@ -352,11 +351,10 @@ def test_cli_imports_without_site_packages_or_undeclared_runtime_dependencies():
         "from livespec_dev_tooling.incident_recovery_journal_service import JournalService; "
         "print(JournalService.__name__)"
     )
-    result = subprocess.run(
+    result = run_under_hang_guard(
         [sys.executable, "-I", "-S", "-c", script],
         capture_output=True,
         check=False,
-        timeout=10,
         env=_uninstrumented_env(),
     )
     assert result.returncode == 0, result.stderr.decode()
