@@ -149,7 +149,7 @@ def _run_converge_scale_set_step(
         [
             "#!/bin/bash",
             'release="$3"; values="$8"',
-            f'echo "$release $(cat "$values")" >> {calls}',
+            f'echo "$release $(<"$values")" >> {calls}',
             "",
         ]
     )

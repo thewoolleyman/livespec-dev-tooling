@@ -64,7 +64,7 @@ printf 'limactl %s\\n' "$*" >> "$STUB_LOG"
 state="$STUB_STATE"
 case "${1:-}" in
   --version) cat "$state/lima-version"; exit 0 ;;
-  sudoers) exit "$(cat "$state/sudoers-exit" 2>/dev/null || echo 0)" ;;
+  sudoers) exit "$(if [ -f "$state/sudoers-exit" ]; then echo "$(<"$state/sudoers-exit")"; else echo 0; fi)" ;;
   list)
     shift
     fmt=""
@@ -116,7 +116,7 @@ case "${1:-}" in
         for a in "$@"; do src="$dst"; dst="$a"; done
         mv "$state/vm$src" "$state/vm$dst"
         exit 0 ;;
-      *" apparmor_parser "*) exit "$(cat "$state/apparmor-exit" 2>/dev/null || echo 0)" ;;
+      *" apparmor_parser "*) exit "$(if [ -f "$state/apparmor-exit" ]; then echo "$(<"$state/apparmor-exit")"; else echo 0; fi)" ;;
       *" mkdir "*) exit 0 ;;
       *" install -m 0600 /dev/stdin "*)
         for dest in "$@"; do :; done
@@ -126,7 +126,7 @@ case "${1:-}" in
     cat > "$state/shell-stdin"
     if grep -q '^# converge-lan-address' "$state/shell-stdin"; then
       mv "$state/shell-stdin" "$state/lan-stdin"
-      exit "$(cat "$state/lan-exit" 2>/dev/null || echo 0)"
+      exit "$(if [ -f "$state/lan-exit" ]; then echo "$(<"$state/lan-exit")"; else echo 0; fi)"
     fi
     if grep -q '^# converge-worker-container' "$state/shell-stdin"; then
       mv "$state/shell-stdin" "$state/converge-stdin"
@@ -135,7 +135,7 @@ case "${1:-}" in
     fi
     mv "$state/shell-stdin" "$state/probe-stdin"
     cat "$state/probe-output"
-    exit "$(cat "$state/probe-exit")" ;;
+    exit "$(<"$state/probe-exit")" ;;
 esac
 exit 0
 """

@@ -37,7 +37,7 @@ case "$*" in
   "link show dev "*) [ -f "$s/link" ] ;;
   "-4 -o addr show dev "*)
     [ -f "$s/applied" ] || exit 0
-    n=$(cat "$s/settle" 2>/dev/null || echo 0)
+    n=$(if [ -f "$s/settle" ]; then echo "$(<"$s/settle")"; else echo 0; fi)
     if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$s/settle"; exit 0; fi
     printf '3: %s    inet %s brd 10.99.0.255 scope global %s\\n' "$6" "$STUB_CIDR" "$6" ;;
 esac

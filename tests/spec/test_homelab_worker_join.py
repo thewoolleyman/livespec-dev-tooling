@@ -65,7 +65,7 @@ shift 5
 case "$1 $2" in
   "bash -s")
     cat > "$s/converge-stdin"
-    n=$(($(cat "$s/converges" 2>/dev/null || echo 0) + 1))
+    n=$(($(if [ -f "$s/converges" ]; then echo "$(<"$s/converges")"; else echo 0; fi) + 1))
     echo "$n" > "$s/converges"
     if [ "$n" -ge 2 ]; then touch "$s/node-registered"; fi ;;
   "install -m") cat > "$s/delivered-${5##*/}" ;;

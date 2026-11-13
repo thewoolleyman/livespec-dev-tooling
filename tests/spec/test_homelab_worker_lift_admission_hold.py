@@ -49,7 +49,7 @@ case "$1 $2" in
         cat "$s/taints" ;;
       *)
         [ "$KUBECTL_FAILS" != node ] || { echo "Connection closed" >&2; exit 255; }
-        [ ! -f "$s/node" ] || printf '%s|%s' "$3" "$(cat "$s/node")" ;;
+        [ ! -f "$s/node" ] || printf '%s|%s' "$3" "$(<"$s/node")" ;;
     esac ;;
   "taint node")
     [ -n "$TAINT_STICKS" ] || { grep -vxF "${4%-}" "$s/taints" > "$s/taints.new"; mv "$s/taints.new" "$s/taints"; }
