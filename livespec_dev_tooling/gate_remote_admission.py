@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling._gate_wait_progress import reporting_sleeper
-from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
     GateStepFailed,
@@ -24,6 +24,11 @@ from livespec_dev_tooling.gate_remote_invocation import (
 )
 from livespec_dev_tooling.gate_remote_job_status import Terminal, terminal_condition, unreadable
 from livespec_dev_tooling.gate_remote_request import GateRunRequest
+from livespec_dev_tooling.gate_remote_wait_commands import (
+    WATCH_NO_TERMINAL_DETAIL,
+    admission_read_argv,
+    terminal_watch_argv,
+)
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -38,22 +43,19 @@ __all__: list[str] = ["await_terminal_state"]
 _AWAIT_STEP = "await-gate-terminal"
 _ADMITTED_CONDITIONS = frozenset({"Admitted", "Started"})
 _ASSERTED = "True"
+Clock = Callable[[], float]
 
 
 def await_terminal_state(
-    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
+    *,
+    request: GateRunRequest,
+    runner: GateCommandRunner,
+    sleeper: Sleeper,
+    job_name: str,
+    clock: Clock = time.monotonic,
 ) -> Result[Terminal, GateStepFailed]:
-    """Wait through admission, then poll the Job's independent terminal budget."""
-    argv = [
-        *with_gates_kubeconfig(argv=["kubectl"]),
-        "--namespace",
-        request.namespace,
-        "get",
-        "job",
-        job_name,
-        "--output",
-        "json",
-    ]
+    """Wait through admission, then watch the Job within its independent budget."""
+    argv = admission_read_argv(namespace=request.namespace, job_name=job_name)
     nap = reporting_sleeper(sleeper=sleeper, job_name=job_name)
     admitted = _await_admission(
         argv=argv,
@@ -73,6 +75,7 @@ def await_terminal_state(
         runner=runner,
         sleeper=nap,
         job_name=job_name,
+        clock=clock,
     )
 
 
@@ -132,23 +135,33 @@ def _await_terminal(
     runner: GateCommandRunner,
     sleeper: Sleeper,
     job_name: str,
+    clock: Clock,
 ) -> Result[Terminal, GateStepFailed]:
-    """Poll an admitted Job until it reports a terminal condition, or give up."""
+    """Watch an admitted Job, re-arming windows and transient failures to its deadline."""
     last_refusal: GateStepFailed | None = None
-    polls = request.poll_budget()
-    for poll in range(polls):
-        if poll:
-            sleeper(seconds=request.poll_interval_seconds)
+    deadline = clock() + request.poll_timeout_seconds
+    attempts = request.poll_budget()
+    for attempt in range(attempts):
+        remaining = deadline - clock()
+        if remaining <= 0:
+            break
+        watch_argv = terminal_watch_argv(
+            namespace=request.namespace,
+            job_name=job_name,
+            remaining_seconds=remaining,
+        )
         read = require_success(
             step=_AWAIT_STEP,
-            argv=argv,
-            outcome=runner(argv=argv, cwd=request.repo_root),
+            argv=watch_argv,
+            outcome=runner(argv=watch_argv, cwd=request.repo_root),
         )
         if isinstance(read, Failure):
-            last_refusal = read.failure()
+            refusal = read.failure()
+            if refusal.detail.strip() != WATCH_NO_TERMINAL_DETAIL:
+                last_refusal = refusal
         else:
             terminal = terminal_condition(
-                argv=argv,
+                argv=watch_argv,
                 payload=read.unwrap().stdout,
                 step=_AWAIT_STEP,
             )
@@ -157,6 +170,8 @@ def _await_terminal(
             ended = terminal.unwrap()
             if ended is not None:
                 return Success(ended)
+        if attempt + 1 < attempts and deadline > clock():
+            sleeper(seconds=min(request.poll_interval_seconds, deadline - clock()))
     if last_refusal is not None:
         return Failure(last_refusal)
     gave_up = (
