@@ -36,6 +36,22 @@ _KUBECTL = r"""#!/bin/sh
 printf 'kubectl %s\n' "$*" >> "$DRILL_LOG"
 pod='{"metadata":{"name":"'"$_POD"'","uid":"uid-before","labels":{"petri.run":"'"$_RUN"'","sandbox-driver-kubernetes/sandbox":"true"}}}'
 case "$*" in
+  'proxy --unix-socket='*)
+    exec python3 -c 'import socket, sys, time
+sock = socket.socket(socket.AF_UNIX)
+sock.bind(sys.argv[1])
+time.sleep(60)' "${2#--unix-socket=}" ;;
+  *'get pods '*'--field-selector metadata.name='*)
+    if test -f "$DRILL_STATE/deleted"; then
+      test "$DRILL_MODE" != list_error || { printf 'Unable to connect to the server\n' >&2; exit 1; }
+      case "$DRILL_MODE" in
+        stuck) printf '{"items":[%s]}' "$pod" ;;
+        replacement) printf '{"items":[{"metadata":{"name":"%s","uid":"uid-after","labels":{"petri.run":"%s","sandbox-driver-kubernetes/sandbox":"true"}}}]}' "$_POD" "$_RUN" ;;
+        *) printf '{"items":[]}' ;;
+      esac
+    else
+      printf '{"items":[%s]}' "$pod"
+    fi ;;
   *'get pods '*'--selector petri.run='*)
     case "$DRILL_MODE" in
       empty) printf '{"items":[]}' ;;
@@ -43,18 +59,26 @@ case "$*" in
       unlabelled) printf '{"items":[{"metadata":{"name":"%s","uid":"uid-before","labels":{"petri.run":"%s"}}}]}' "$_POD" "$_RUN" ;;
       *) printf '{"items":[%s]}' "$pod" ;;
     esac ;;
-  *'delete pod '*)
-    test "$DRILL_MODE" != delete_refused || { printf 'current UID uid-current\n' >&2; exit 1; }
-    touch "$DRILL_STATE/deleted" ;;
-  *'get pod '*)
-    test -f "$DRILL_STATE/deleted" || { printf '%s' "$pod"; exit 0; }
-    case "$DRILL_MODE" in
-      stuck) printf '%s' "$pod" ;;
-      replacement) printf '{"metadata":{"name":"%s","uid":"uid-after","labels":{"petri.run":"%s","sandbox-driver-kubernetes/sandbox":"true"}}}' "$_POD" "$_RUN" ;;
-      *) printf 'NotFound\n' >&2; exit 1 ;;
-    esac ;;
   *) printf 'unexpected kubectl invocation: %s\n' "$*" >&2; exit 1 ;;
 esac
+"""
+
+# `kubectl delete` cannot carry a UID precondition, so the drill sends its one DELETE
+# through `kubectl proxy`; this curl stand-in is the API server behind that proxy.
+_CURL = r"""#!/bin/sh
+printf 'curl %s\n' "$*" >> "$DRILL_LOG"
+while test $# -gt 0; do
+  case "$1" in --output) output=$2 ;; esac
+  shift
+done
+if test "$DRILL_MODE" = delete_refused; then
+  printf '{"kind":"Status","reason":"Conflict","message":"Precondition failed: UID in precondition: uid-before, UID in object meta: uid-current","code":409}' > "$output"
+  printf 409
+else
+  touch "$DRILL_STATE/deleted"
+  printf '{"kind":"Status","status":"Success"}' > "$output"
+  printf 200
+fi
 """
 
 
@@ -69,6 +93,10 @@ class _Scratch:
     @property
     def commands(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
+
+    @property
+    def deletes(self) -> list[str]:
+        return [line for line in self.commands if "--request DELETE" in line]
 
 
 def _git(*, cwd: Path, args: str) -> None:
@@ -97,9 +125,10 @@ def _origin(*, root: Path) -> Path:
 def scratch(*, tmp_path: Path) -> _Scratch:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    kubectl = bin_dir / "kubectl"
-    _ = kubectl.write_text(_KUBECTL, encoding="utf-8")
-    kubectl.chmod(0o755)
+    for name, body in (("kubectl", _KUBECTL), ("curl", _CURL)):
+        stand_in = bin_dir / name
+        _ = stand_in.write_text(body, encoding="utf-8")
+        stand_in.chmod(0o755)
     state = tmp_path / "state"
     state.mkdir()
     return _Scratch(
@@ -198,14 +227,14 @@ def test_invalid_target_is_refused_before_kubectl(
 def test_ambiguous_or_non_sandbox_selection_never_writes(*, scratch: _Scratch, mode: str) -> None:
     code, output = _run(scratch=scratch, mode=mode)
     assert code != 0, output
-    assert [line for line in scratch.commands if " delete " in line] == [], output
+    assert scratch.deletes == [], output
 
 
 def test_preservation_refusals_happen_before_a_cluster_write(*, scratch: _Scratch) -> None:
     for ref in (None, "refs/heads/missing", "refs/heads/main"):
         code, output = _run(scratch=scratch, preserved_ref=ref)
         assert code != 0, output
-        assert [line for line in scratch.commands if " delete " in line] == [], output
+        assert scratch.deletes == [], output
 
 
 def test_deletes_exactly_one_uid_and_reports_the_api_observed_times(*, scratch: _Scratch) -> None:
@@ -214,21 +243,31 @@ def test_deletes_exactly_one_uid_and_reports_the_api_observed_times(*, scratch: 
     report = _REPORT.search(output)
     assert report is not None, output
     assert report["run"] == _RUN and report["pod"] == _POD and report["uid"] == _UID
-    deletes = [line for line in scratch.commands if "delete pod" in line]
-    assert len(deletes) == 1 and "--precondition=uid=uid-before" in deletes[0], scratch.commands
+    assert len(scratch.deletes) == 1, scratch.commands
+    assert f"/api/v1/namespaces/factory/pods/{_POD}" in scratch.deletes[0], scratch.deletes
+    assert '"preconditions":{"uid":"uid-before"}' in scratch.deletes[0], scratch.deletes
+    assert not [line for line in scratch.commands if line.startswith("kubectl delete")]
 
 
 def test_replacement_ends_the_wait_without_deleting_the_new_uid(*, scratch: _Scratch) -> None:
     code, output = _run(scratch=scratch, mode="replacement")
     assert code == 0, output
     assert "uid-after" in output
-    assert len([line for line in scratch.commands if "delete pod" in line]) == 1
+    assert len(scratch.deletes) == 1
 
 
 def test_still_listed_uid_times_out_without_a_second_delete(*, scratch: _Scratch) -> None:
     code, output = _run(scratch=scratch, mode="stuck")
     assert code != 0, output
-    assert len([line for line in scratch.commands if "delete pod" in line]) == 1
+    assert len(scratch.deletes) == 1
+
+
+def test_a_failed_read_while_waiting_is_not_reported_as_a_deletion(*, scratch: _Scratch) -> None:
+    code, output = _run(scratch=scratch, mode="list_error")
+    assert code != 0, output
+    assert "Unable to connect to the server" in output
+    assert _REPORT.search(output) is None, output
+    assert len(scratch.deletes) == 1
 
 
 def test_uid_precondition_refusal_names_resolved_and_api_reported_uids(
@@ -238,4 +277,4 @@ def test_uid_precondition_refusal_names_resolved_and_api_reported_uids(
     assert code != 0, output
     assert "resolved UID uid-before" in output
     assert "API reports UID uid-current" in output
-    assert len([line for line in scratch.commands if "delete pod" in line]) == 1
+    assert len(scratch.deletes) == 1
