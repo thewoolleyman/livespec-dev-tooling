@@ -1,0 +1,51 @@
+{
+  "name": "host memory — kernel-available RAM below 8 GiB on any host (critical floor)",
+  "description": "Fires per host.name when MIN(system.linux.memory.available) is below 8 GiB in two consecutive 15-min evaluations: the late, critical alarm. The committed successor of the hand-made agent-activity trigger bEVsU9BQw22 (same query and floor since its 2026-11-04 re-pointing; livespec-orchestrator-beads-fabro plan address-honeycomb-alerts, notes 002 and 011), moved into the livespec env so apply-triggers.sh --drift sees it. Covers every host whose collector sends system.linux.memory.available to the livespec metrics dataset. The early warning is dev-host-memory-available-share. Runbook: free -g; df -h /tmp /dev/shm; ps aux --sort=-rss | head; on vmi3006760 also /var/tmp/vps-load-guard.sh. Owner: legacy-coordinator-agent routing, kubernetes-observability seat.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MIN",
+        "column": "system.linux.memory.available"
+      }
+    ],
+    "filters": [
+      {
+        "column": "system.linux.memory.available",
+        "op": "exists"
+      }
+    ],
+    "breakdowns": [
+      "host.name"
+    ],
+    "time_range": 900
+  },
+  "threshold": {
+    "op": "<",
+    "value": 8589934592,
+    "exceeded_limit": 2
+  },
+  "frequency": 900,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "fleet-hosts"
+    },
+    {
+      "key": "component",
+      "value": "memory"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
