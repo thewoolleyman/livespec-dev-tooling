@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.205.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.204.0...v1.205.0) (2026-11-13)
+
+
+### Features
+
+* **incident:** a deliberately-normal fleet row classifies from the ruling it cites, not a serving read (livespec-dev-tooling-kddu2b) ([356eff4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/356eff4a380e242e6438dffe4bea2be2229f93fb))
+* **incident:** the fleet audit counts the forge-read Action's files in the incident label workflow's surface (livespec-dev-tooling-pwabtl) ([057ae69](https://github.com/thewoolleyman/livespec-dev-tooling/commit/057ae69a83604c2b93a3ed4bb11596853544c1b3))
+
+
+### Bug Fixes
+
+* **ci-runner:** keep 25% of gamingpc-xubuntu free for local sessions (livespec-dev-tooling-wsjl7j) ([fb61657](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb61657a7dedc77cf9211f98238afbd46a8d2f7f))
+* **ci:** the incident label workflow makes every forge call through the released retrying livespec-forge-read (livespec-dev-tooling-pwabtl) ([838a4e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/838a4e5453d71bdbe8748086678decab27505d27))
+* **incident:** exdkra's enablement test patches the inventory loader the entrance now calls (livespec-dev-tooling-3hilpy) ([785e0b9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/785e0b96397445c83c5948a5bd4adb2ed3195d34))
+* reuse test-only suite probe ([517f396](https://github.com/thewoolleyman/livespec-dev-tooling/commit/517f396ffef7e46f013e86a794bdc0185f1cd03a))
+* the incident hook reads every inventory member and refuses one it cannot run (livespec-dev-tooling-dixgta) ([e21764b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e21764b21f68e0c58e8eff93e879b2be87abb828))
+
 ## [1.204.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.203.0...v1.204.0) (2026-11-13)
 
 

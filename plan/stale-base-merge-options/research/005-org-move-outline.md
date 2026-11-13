@@ -315,6 +315,34 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
    owes is that an expedited incident's incident-ci job is admitted ahead of ordinary PR traffic in the dev-tooling
    runner pool. That is a runner-pool scheduling question, and it stays its own item whichever way this call goes.
 
+   **The mechanism, and the non-queue option: "require branches to be up to date" (`strict`).** This finding came from the
+   expedited-incident-response-flag plan's composed-red note on livespec-dev-tooling-3hilpy, and legacy-coordinator-agent
+   relayed it on 2026-11-13. livespec-dev-tooling's master ruleset (26758787, `master-incident-recovery-bypass`) requires
+   only `ci-green`, with `strict_required_status_checks_policy: false` (read by the seat on 2026-11-13). So a PR that is
+   green on an old base merges without the composed tree being tested. That is exactly how #4442 and #4449 turned master
+   red 87 s apart. Turning `strict` on is the direct alternative to a queue. Note 003 option (a) measured it over 28 days,
+   and this week's numbers make it worse.
+   - **Cadence, 2026-11-06T07:51Z to 2026-11-13T07:51Z (gh API).** livespec-dev-tooling merged 726 PRs, 103.7 a day,
+     with a peak of 132 in one day. The median gap between merges was 6.5 min, and 43% of gaps were 5 min or less. Note
+     003's 28-day window had 54.2 a day and a 10.1 min median gap, so the rate has roughly doubled.
+   - **What one re-test costs (the latest 1,000 successful PR `ci.yml` runs; the listing hit its 1,000 cap, so this is
+     a sample, not the whole week).** Wall-clock p50 was 22.5 min and p90 67.0 min.
+   - **`strict` with a lazy, one-at-a-time updater** (note 003's row 2; Kodiak's model). Every merge has to wait for a
+     full re-test on the current master, so merges are serialized at one per CI run. That is at most 64 merges a day at
+     p50 and 21 at p90, against demand of 103.7 a day. The line can never drain, and latency grows without bound.
+   - **`strict` with an eager updater** (note 003's row 1). Each merge sends every open armed PR behind master to update
+     and re-run in full. There were 15 armed non-draft PRs open at the time of reading, so the estimate is about 15 extra
+     full runs per merge, or about 1,560 a day against today's roughly 104. That is around 15 times today's CI. Note 003
+     measured 30 times over its 28-day window. It is the N² treadmill the maintainer rejected on 2026-10-14.
+   - GitHub's own update-branch MERGES master into the branch, so `strict` also needs a rebase updater bot. That is why
+     v126 turned `strict` off and `allow_update_branch` is false fleet-wide (note 003).
+
+   **The seat's recommendation: do not turn `strict` on, in either shape.** At this week's rate the serialized line
+   cannot keep up, and the eager shape multiplies CI roughly fifteenfold. A batching merge queue, the direction the
+   maintainer chose (§3 Phase 4), tests the composed tree at one full run per batch. It is the only option measured here
+   that stops stale-base reds at an affordable cost, and only under conditions (a) and (b) above. Nothing on the ruleset
+   was changed; `strict` is the maintainer's call.
+
    For this call, condition (a) means each queued batch runs the full suite. On GitHub-hosted runners, that competes for
    the free organization's 20 concurrent jobs. On the guarded self-hosted lane, it runs at today's measured capacity
    (note 003).
