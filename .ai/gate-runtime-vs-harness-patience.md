@@ -27,7 +27,7 @@ Those two states demand **opposite** responses:
 
 | what happened | what it means | what to do |
 |---|---|---|
-| the gate **refused** | a real verdict — a check failed | fix the cause; never retry blind |
+| the gate **refused** | a real verdict — a check failed | fix the cause, or relaunch a flake you have read (coordinator-duties §2); never retry blind |
 | the gate **did not finish** | no verdict exists | re-run it; conclude nothing |
 
 Reading a kill as a refusal sends you hunting a defect that does not
@@ -140,9 +140,15 @@ finishes the commit or the push.
 
 Measured 2026-11-11 (plan `ci-runtime-and-cost`, epic
 `livespec-dev-tooling-ib3oe3`): a docs push gate was relaunched past a test
-flake, which coordinator-duties §2 forbids. SIGINT was sent to its
+flake, which coordinator-duties §2 then forbade. SIGINT was sent to its
 `__child` group to take the relaunch back. The gate ran on, PASSED and
 pushed the branch, and the breach was self-reported to the coordinator.
+
+Since the maintainer's 2026-11-13 ruling a flake MAY be retried, so a
+relaunch after a flake is allowed (coordinator-duties §2, within its
+bounds). Relaunch only after the previous run has ended, with its
+`gate-wait` verdict or exit 75, never while it still runs: two live gates
+on one tree can both commit or both push.
 
 Decide BEFORE `gate-start`. Treat a launched push gate as one that will
 push if it passes, and a launched commit gate as one that will commit. If
