@@ -1309,6 +1309,7 @@ the files themselves:
 | `livespec-console-beads-k3s` | `arc/values-livespec-console-beads-fabro.yaml` |
 | `livespec-orchestrator-git-k3s` | `arc/values-livespec-orchestrator-git-jsonl.yaml` |
 | `livespec-orchestrator-k3s` | `arc/values-livespec-orchestrator-beads-fabro.yaml` |
+| `livespec-orchestrator-master-k3s` | `arc/values-livespec-orchestrator-master.yaml` |
 | `livespec-dev-tooling-k3s` | `arc/values-livespec-dev-tooling.yaml` |
 | `livespec-dev-master-k3s` | `arc/values-livespec-dev-tooling-master.yaml` |
 | `livespec-driver-claude-k3s` | `arc/values-livespec-driver-claude.yaml` |

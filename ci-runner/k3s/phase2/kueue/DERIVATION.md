@@ -1487,6 +1487,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | Repository | `nominalQuota` | Rule value | `maxRunners` | Recorded |
 |---|---|---|---|---|
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
+| `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -1502,6 +1503,17 @@ small (well under about 40 GiB per job), the disk reason no longer holds: drop
 this row and take the rule value 6. If a fork push regularly waits on its own
 ceiling while poweredge has free slots and free tier space, raise it here with
 that measurement.
+
+**`livespec-orchestrator-master`, 6 to 4 (2026-11-12).** Four is the measured
+number of concurrent check-per-file-coverage shards in the orchestrator's
+master-push burst. The lane's one non-lendable reserved slot separates that
+burst from its pull-request backlog while still allowing it to borrow above its
+guarantee. After the `ci_converge_unit` apply, confirm its listener is Running
+and GitHub lists `livespec-orchestrator-master-k3s` before the orchestrator
+repository sets `CI_RUNNER_LABELS_MASTER` to that label. Confirm also that the
+existing three-slot non-lendable `livespec-dev-tooling-master-cq` remains
+admitted: the new lane receives its quota from the ordinary orchestrator queue
+(9 -> 8), not from the dev-tooling master reservation.
 
 ## The gates quota on gmktec-xubuntu and hp-xubuntu (2026-11-03)
 
@@ -2161,3 +2173,28 @@ Every other queue is unchanged.
 **Order.** Raise the node capacity first, then the quota. The node's churn-slot capacity is stamped at join by the `node_extended_resource` role, and only then is `ci_converge_unit` applied with this quota. A quota applied before the node exists would promise a slot no node has.
 
 **A first value.** It is revised from measured runs per hour, green rate and CI p95 on this node, as every node's numbers have been. Kill switch: restore livespec-dev-tooling-cq 9 with maxRunners 18, and remove the profile's capacity, by applying ci_converge_unit.
+
+## The master-push slice for livespec-orchestrator-beads-fabro (2026-11-12)
+
+Work-item `livespec-dev-tooling-7sqr36`, plan `ci-runtime-and-cost` (epic
+`livespec-dev-tooling-ib3oe3`). The orchestrator's four coverage shards waited
+28--55 minutes behind pull-request jobs on 2026-11-12. Generic ARC runners are
+assigned by GitHub before Kueue can schedule their pods, so a pod priority
+cannot distinguish the events; a separate `runs-on` label is the required seam.
+
+| object | value |
+|---|---|
+| scale set | `livespec-orchestrator-master-k3s`, for `thewoolleyman/livespec-orchestrator-beads-fabro`, queued through `livespec-orchestrator-master-lq` |
+| `maxRunners` | **4**, exactly the coverage-shard count |
+| ClusterQueue / LocalQueue | `livespec-orchestrator-master-cq` / `livespec-orchestrator-master-lq` |
+| nominal quota | **1** churn slot, moved from the ordinary orchestrator queue (9 -> 8) |
+| lending / preemption | `lendingLimit: 0`; all preemption policies `Never` |
+
+The dedicated reservation leaves `livespec-dev-tooling-master-cq` unchanged at
+three non-lendable slots. Therefore cohort borrowing into this new lane cannot
+delay a dev-tooling master-push admission. `reconstruct/converge-ci-stack.sh`
+applies both queue pairs and every mapped scale set. After that converge, first
+read back a Running listener and the GitHub runner scale set, then set the
+orchestrator repository's `CI_RUNNER_LABELS_MASTER` to
+`["livespec-orchestrator-master-k3s"]`. Setting that variable first would route
+master pushes to a listener that does not yet exist.
