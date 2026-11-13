@@ -24,7 +24,7 @@ follows. Each cap keeps its own owner:
 |---|---|---|
 | Churn slots | ci-runtime-and-cost | `livespec-dev-tooling-6e5pyj` |
 | Gate lanes | this plan | `livespec-dev-tooling-wirn53` |
-| Factory pod budgets | this plan | `livespec-dev-tooling-wirn53` |
+| Factory pod budgets | each node's host_vars owner (gmktec-factory-placement; homelab-k8s-worker-nodes for gamingpc) | — |
 
 ## The rule
 
@@ -74,6 +74,21 @@ read high.
 
 The arithmetic: cores = SUM / 180, and pods = COUNT_DATAPOINTS / 720, which is
 exact because there is one sample per pod per 30 s.
+
+**Correction (kubernetes-observability, 2026-11-13).** Sums of the usage gauge
+over-weight short-lived pods. Each series gives ONE late value per bucket, so a
+pod alive for only part of a bucket is credited for all of it. Against the
+cumulative counter `k8s.pod.cpu.time` (query `aYYXAQE8FcA`, 24 h), the gauge
+reads:
+
+- runner pods about 2.7x high;
+- workflow pods about 10% high;
+- gates about 3% high;
+- factory about 0% high.
+
+So the gate and factory cores below stand to within about 3%, the CI runner
+cores read high, and budget figures should use the counter. Per-pod values
+(p50 / p95 / max, per-repository means) are unaffected.
 
 ### Average concurrent cores per class (W1 / W2 / W3 / W4; mean)
 
@@ -142,8 +157,8 @@ apart in query `FLoxCmwxT76` (W1, 120-second buckets):
 | gmktec | 1.69 | 0.07 |
 | hp | 1.78 | 0.10 |
 
-The pod-weighted fleet value is 1.54 cores per CI job, which confirms the 1.7
-cores per job the slot cut is sized on. The runner pod is an idle agent. Do not read per-pod CPU from a 24-hour query: its 15-minute
+The pod-weighted fleet value is 1.54 cores per CI job. The counter reads
+workflow pods about 10% lower, so about 1.4. The runner pod is an idle agent. Do not read per-pod CPU from a 24-hour query: its 15-minute
 buckets keep one late sample per pod and read the workflow pod at 0.77-1.00
 (query `4X3sgRmarYY`).
 
@@ -160,26 +175,33 @@ buckets keep one late sample per pod and read the workflow pod at 0.77-1.00
 ## The budget (cores)
 
 Decided by plan gate-job-resources, 2026-11-13, under the maintainer's
-throughput ruling. Slots are the `6e5pyj` values.
+throughput ruling.
 
-| Node | Allocatable | System | Slots | Gate lane (was) | Factory pods |
-|---|---|---|---|---|---|
-| gmktec-xubuntu | 32 | 1.6 | 6 | **9** (15) | 7 |
-| poweredge-xubuntu | 72 | 5.7 | 17 | **21** (30) | 9 |
-| hp-xubuntu | 14.5 | 1.2 | 4 | **3** (5) | 2 |
-| gamingpc-xubuntu | 12 | in reserves | 3 | **3** (5) | 1 |
-| macbook-m4-max-homelab-worker | 12 | in reserves | 1 | 3 (5) | - |
+| Node | Allocatable | System | Gate lane (was) |
+|---|---|---|---|
+| gmktec-xubuntu | 32 | 1.6 | **9** (15) |
+| poweredge-xubuntu | 72 | 5.7 | **21** (30) |
+| hp-xubuntu | 14.5 | 1.2 | **3** (5) |
+| gamingpc-xubuntu | 12 | in reserves | **3** (5) |
+| macbook-m4-max-homelab-worker | 12 | in reserves | 3 (5) |
 
-How each row follows:
+Churn slots and factory pod budgets are NOT restated here. Each number lives in
+its one owning file:
 
-- **Slots.** The `6e5pyj` cut (gmktec 8 to 6, hp 5 to 4, gamingpc 1 to 3) is
-  sized on USE.
-  - At 8 slots the gmktec runner peak is 8 x 1.7 = 13.6 cores. W1 and W2
-    already sum 27.9-28.4 class cores plus 1.6 system, against 32.
-  - At 6 slots the peak is 10.2 cores, about 3.4 cores off every peak hour.
-  - hp's classes averaged 12.7 cores against 13.3 usable.
-  - The cohort goes from 31 slots to 30 on `churn-slot-flavor`. The arm64 flavor
-    is separate.
+- **Churn slots.** `ADMISSION_CAPACITY_C` in
+  `../phase0-bare-metal/profiles/<node>.env`. ci-runtime-and-cost owns them
+  under `livespec-dev-tooling-6e5pyj`. On master they are gmktec 8, hp 5,
+  gamingpc 1 and poweredge 17. livespec-dev-tooling#4568 (open) moves them to
+  6, 4, 3 and 17, and re-sums the cohort to 30 in `kueue/DERIVATION.md`. The
+  basis for that change is the work item's own, and this budget does not
+  restate it.
+- **Factory pod budgets.** `factory_pod_budget` in
+  `ansible/inventory/host_vars/<node>.yml`. The maintainer's throughput ruling
+  keeps them at their committed values. gamingpc went 1 -> 2 in
+  livespec-dev-tooling#4492, applied and read back at 21:50:37Z.
+
+How the lanes follow:
+
 - **Gate lanes.** The default request drops to 3, and each lane drops to the
   node's gate share of measured gate use:
   - gmktec runs 7.4 average gate cores: 3 gates;
@@ -188,7 +210,6 @@ How each row follows:
 
   Every lane is a multiple of the 3-CPU gate unit. Without the lane cut, a
   3-CPU default would let gmktec admit 5 gates instead of 3.
-- **Factory pods.** Today's values, per the maintainer's throughput ruling.
 
 **What the decisions cost, measured on the last 24 hours:**
 
