@@ -750,6 +750,39 @@ def test_gate_start_refreshes_the_worktree_pack_before_selecting_a_venue() -> No
     assert "worktree pack present — refreshing from installed package" in CANONICAL_GATE_RUN_BODY
 
 
+def test_gate_start_refuses_when_neither_selector_interpreter_can_import(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Scenario: a gate-start whose venue selector cannot be imported refuses by name."""
+    primary, _, env = fixture_repo
+    shims = tmp_path / "selector-import-failure"
+    shims.mkdir()
+    for interpreter in ("uv", "python3"):
+        shim = shims / interpreter
+        _ = shim.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' '{interpreter} could not import livespec_dev_tooling' >&2\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+
+    refused = _gate(
+        cwd=primary,
+        env={**env, "PATH": f"{shims}{os.pathsep}{env['PATH']}"},
+        args=["start", "--", "true"],
+    )
+
+    assert refused.returncode == 69
+    assert "gate venue selector could not be imported" in refused.stderr
+    assert "uv run --no-sync python" in refused.stderr
+    assert "python3" in refused.stderr
+    assert "uv sync" in refused.stderr
+    assert "just bootstrap" in refused.stderr
+    assert "just install-worktree-pack" in refused.stderr
+    assert not (primary / _STORE).exists()
+
+
 def _shim_dir(*, root: Path, names: tuple[str, ...] = _SHIMMED_COMMANDS) -> Path:
     """A PATH directory whose entries log their exec to `$GATE_SHIM_LOG`, then run the real one.
 
