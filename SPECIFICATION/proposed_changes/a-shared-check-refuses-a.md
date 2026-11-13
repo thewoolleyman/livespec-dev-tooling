@@ -44,7 +44,7 @@ A numbered heading whose number the ratified `scenarios.md` already carries stay
 
 ### Proposed Changes
 
-Three edits, plus the revise's co-edit of `tests/heading-coverage.json`.
+Six edits (1, 2, 3, 5, 6 and 7), plus the revise's co-edit of `tests/heading-coverage.json` (4).
 
 **1. `SPECIFICATION/contracts.md` §"Shared check inventory".** In the **Shared** bullet's list of style gates, insert `no_unratified_scenario_numbers` after `heading_coverage`, so the list reads `(`claude_md_coverage`, `comment_line_anchors`, `file_lloc`, `heading_coverage`, `no_unratified_scenario_numbers`, `vendor_manifest`, `no_direct_tool_invocation`, `commit_pairs_source_and_test`)`.
 
@@ -62,11 +62,13 @@ Then add this H3 section after `### `no_ambient_environment_loops` check` and be
 >
 > The check MUST fail, exiting `4`, on every numbered scenario heading in an inspected file whose number is not the number of a numbered scenario heading in the ratified `scenarios.md`. It MUST name, for each finding, the file, the line number and the heading text. It MUST NOT fail on a numbered scenario heading whose number the ratified `scenarios.md` already carries: a proposal that edits a ratified scenario quotes that scenario's heading. It MUST NOT fail on a scenario number that appears outside a heading, such as a prose reference to `Scenario 239`. It MUST NOT inspect `history/`, so an archived proposal is never re-judged. It MUST exit `0` when no finding remains.
 >
-> **Arming follows adoption.** The check is armed for a consumer only once that consumer declares `proposed_changes_dirs`. While the key is undeclared, the check MUST inspect no proposal, MUST exit `0`, and MUST print `no_unratified_scenario_numbers UNARMED: <repo> declares no proposed_changes_dirs` on every run, where `<repo>` names the consumer's repository. That line is how an unarmed consumer stays visible instead of silently passing. A consumer whose pending proposals still carry pre-assigned scenario numbers MUST NOT declare the key before those headings are rewritten. Its adoption pull request MUST, in one change, rewrite each pending proposal's unratified numbered scenario heading to the unnumbered form and declare the key. A proposal whose own revise lands first is renumbered by that revise, which leaves the adoption pull request less to rewrite. A consumer whose pending proposals carry no unratified numbered scenario heading declares the key in the pull request that adopts the release carrying this check.
+> **Arming follows adoption.** The check is armed for a consumer only once that consumer declares `proposed_changes_dirs`. While the key is undeclared, the check MUST inspect no proposal, MUST exit `0`, and MUST print exactly one line, on standard error, `no_unratified_scenario_numbers UNARMED: <repo> declares no proposed_changes_dirs`, on every run. `<repo>` is the `<owner>/<name>` parsed from the consumer's `origin` remote URL, or the repository root directory's name when there is no `origin` or its URL does not parse. That line is how an unarmed consumer stays visible instead of silently passing.
+>
+> **A declared key that inspects nothing is a configuration error.** A declared empty array MUST make the check exit `3`, naming the key. A declared path whose spec root, the path's parent directory, does not exist MUST make the check exit `3`, naming that path, so a mistyped path cannot silently disarm the check. A declared directory that exists and holds no `.md` file has no pending proposal, and the check passes it. A consumer whose pending proposals still carry pre-assigned scenario numbers MUST NOT declare the key before those headings are rewritten. Its adoption pull request MUST, in one change, rewrite each pending proposal's unratified numbered scenario heading to the unnumbered form and declare the key. A proposal whose own revise lands first is renumbered by that revise, which leaves the adoption pull request less to rewrite. A consumer whose pending proposals carry no unratified numbered scenario heading declares the key in the pull request that adopts the release carrying this check.
 
 **2. `SPECIFICATION/contracts.md` §"Role keys".** Add this bullet to the role-key inventory after the `target_dirs` bullet:
 
-> - **`proposed_changes_dirs`** — array of strings. Repo-root-relative paths of the consumer's pending proposed-change directories, one per spec tree, such as `SPECIFICATION/proposed_changes/`. **Consumers:** `no_unratified_scenario_numbers`. OPTIONAL. An undeclared key leaves that check unarmed, and the check prints its UNARMED line, per that check's §"Arming follows adoption". A declared key MUST be a non-empty array, because an armed check inspecting nothing is a configuration defect: a declared empty array MUST make the check exit non-zero, naming the key. It is not a UNION key, and it takes no declared-absent spelling.
+> - **`proposed_changes_dirs`** — array of strings. Repo-root-relative paths of the consumer's pending proposed-change directories, one per spec tree, such as `SPECIFICATION/proposed_changes/`. **Consumers:** `no_unratified_scenario_numbers`. OPTIONAL. An undeclared key leaves that check unarmed, and the check prints its UNARMED line, per that check's §"Arming follows adoption". A declared key MUST be a non-empty array of paths whose spec roots exist, per that check's "A declared key that inspects nothing is a configuration error" (exit `3`). It is not a member of `UNION_ROLE_KEYS` or `REQUIRED_ROLE_KEYS`, and it takes no declared-absent spelling; see Proposed Change 5.
 
 **3. `SPECIFICATION/scenarios.md`.** Append these scenarios:
 
@@ -111,5 +113,33 @@ Then add this H3 section after `### `no_ambient_environment_loops` check` and be
 > When the consumer's adoption pull request rewrites that heading to `## Scenario: <title>` and declares `proposed_changes_dirs` with its `SPECIFICATION/proposed_changes/` directory
 >
 > Then the check exits `0`, inspects every pending proposal, and prints no UNARMED line
+>
+> ## Scenario: a consumer that declares proposed_changes_dirs empty or names a missing spec root fails as a configuration error
+>
+> Given a consumer that declares `proposed_changes_dirs = []`
+>
+> When the consumer runs `python -m livespec_dev_tooling.checks.no_unratified_scenario_numbers`
+>
+> Then the check exits `3` and names `proposed_changes_dirs`
+>
+> When the consumer instead declares `proposed_changes_dirs = ["SPECIFICATON/proposed_changes/"]` and no `SPECIFICATON/` directory exists
+>
+> Then the check exits `3` and names that path
 
-**4. `tests/heading-coverage.json` (the revise's co-edit).** Add one entry per new scenario heading, with `test` set to `TODO` and a reason stating that a real test is owed, citing `livespec-dev-tooling-kw5tox` as its `work_item`. Example reason: "Spec-first: a real test is owed that runs the shared check against a fixture consumer tree in this state. livespec-dev-tooling-kw5tox owns it."
+**4. `tests/heading-coverage.json` (the revise's co-edit).** Add one entry per new scenario heading, with `test` set to `TODO`, `work_item` set to `livespec-dev-tooling-kw5tox`, and a reason that names the owed test's tier. Example reason: "Spec-first: a real test at the integration tier or above is owed that runs the shared check as a subprocess against a fixture consumer tree in this state. livespec-dev-tooling-kw5tox owns it."
+
+**5. `SPECIFICATION/contracts.md` §"Role keys" and §"Clean role keys retain `[]`" (the exception this key needs).** At the end of §"Role keys"' paragraph that begins "**UNDECLARED** — the key is absent from the block — is a hard ERROR", add:
+
+> Exception: `proposed_changes_dirs` is an OPTIONAL gating key under the adoption-first ordering rule. Its UNDECLARED state is UNARMED (exit `0` plus that check's one UNARMED line), not an ERROR, and it is not a member of `UNION_ROLE_KEYS` or `REQUIRED_ROLE_KEYS`.
+
+At the end of §"Clean role keys retain `[]`"'s paragraph that begins "**The partition criterion is explicit", add:
+
+> The one exception is `proposed_changes_dirs`: its declared value is its check's scan universe, but it is OPTIONAL, so it is neither a UNION nor a CLEAN key. An empty declaration of it is a configuration error (exit `3`), and an undeclared one is UNARMED, per §"Role keys".
+
+**6. `SPECIFICATION/contracts.md` §"Fleet surface — central conformance and reconcile" (closing the de-arming hole).** An undeclared key is indistinguishable from a deleted one, so add this paragraph after the paragraph that begins "**Vendored-tree pin fidelity":
+
+> **Scenario-number arming (the `proposed-changes-dirs-armed` obligation row).** Until `proposed_changes_dirs` becomes a required key, the assert-mode row MUST list every manifest member whose `pyproject.toml` does not declare `proposed_changes_dirs` as `unarmed`, at warning severity, naming the member. This repository MUST keep a committed adoption list of the members that have declared the key. A member gets onto it in the same change that records its adoption. A member that is on the adoption list and no longer declares the key MUST be an ERROR finding naming the member, because removing the declaration de-arms the check. When this proposal is ratified, the follow-up that makes `proposed_changes_dirs` required, once every member has declared it, MUST be filed as a named work item and cited in the revision record.
+
+**7. `SPECIFICATION/contracts.md` §"`no_unratified_scenario_numbers` check" (rollout), appended to the H3 section of Proposed Change 1:**
+
+> **Rollout.** livespec-dev-tooling declares `proposed_changes_dirs` in the same pull request that ships the check, so this repository is armed from the release that carries it. Every consumer's bump to that release wires `check-no-unratified-scenario-numbers` into its aggregate and CI matrix. Wired with the key undeclared, the check is UNARMED and green, so the bump never reddens a consumer that has not adopted it. livespec core consumes this package like any other consumer. Its `scenarios.md` carries no scenario heading, so its bump pull request wires the check and declares the key in the same change. Each consumer whose ratified scenarios carry no numbers declares the key in its bump pull request. Each consumer whose ratified scenarios carry numbers declares it in its own adoption pull request, after rewriting its pending numbered headings.
