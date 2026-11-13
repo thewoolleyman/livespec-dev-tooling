@@ -460,6 +460,64 @@ def test_process_cleanup_tolerates_unavailable_process_records_and_disappearing_
     assert mod.end_stalled_suite(proc=FinishedProcess(), mark="mark") == ((2, "escaped"),)
 
 
+def test_stalled_suite_cleanup_reattributes_three_bounded_passes_and_names_a_survivor(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each bounded pass reattributes escapees before its TERM and KILL signals."""
+    mod = _load()
+
+    class FinishedProcess:
+        pid = 1
+
+        def poll(self) -> int:
+            return 0
+
+    snapshots = iter(
+        (
+            ((2, "first escapee"),),
+            ((2, "first escapee"),),
+            ((3, "TERM-respawned escapee"),),
+            ((3, "TERM-respawned escapee"),),
+            ((4, "SIGKILL survivor"),),
+            ((4, "SIGKILL survivor"),),
+            ((4, "SIGKILL survivor"),),
+        )
+    )
+    monkeypatch.setattr(
+        mod,
+        "out_of_group_descendants",
+        lambda **_kwargs: next(snapshots),
+    )
+    monkeypatch.setattr(mod, "_KILL_GRACE_SECONDS", 0)
+    calls: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(mod.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(mod.os, "killpg", lambda _pid, _sig: None)
+    reported: list[str] = []
+
+    found = mod.end_stalled_suite(proc=FinishedProcess(), mark="mark", report=reported.append)
+
+    assert found == (
+        (2, "first escapee"),
+        (3, "TERM-respawned escapee"),
+        (4, "SIGKILL survivor"),
+    )
+    assert calls == [
+        (2, signal.SIGTERM),
+        (2, signal.SIGKILL),
+        (3, signal.SIGTERM),
+        (3, signal.SIGKILL),
+        (4, signal.SIGTERM),
+        (4, signal.SIGKILL),
+    ]
+    assert reported == [
+        "suite-green: ending out-of-group descendant pid=2 cmdline=first escapee\n",
+        "suite-green: ending out-of-group descendant pid=3 cmdline=TERM-respawned escapee\n",
+        "suite-green: ending out-of-group descendant pid=4 cmdline=SIGKILL survivor\n",
+        "suite-green: unended out-of-group descendant pid=4 cmdline=SIGKILL survivor "
+        "after 3 signalling passes\n",
+    ]
+
+
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
     """The caller's progress stamp is scrubbed like every gate-shaping variable.
 
