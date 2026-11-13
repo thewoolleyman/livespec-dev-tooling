@@ -14,7 +14,7 @@ created_at: 2026-11-13T06:34:42Z
 
 ### Summary
 
-Amend contracts.md §"Expedited incident execution" so that an expedited-incident pull request's `incident-ci` job runs on a dedicated self-hosted incident runner set. That set's admission capacity is reserved for it, and the job starts within 5 minutes of being queued even while the pull-request runner label is saturated. It starts ahead of earlier-queued ordinary pull-request jobs, and those jobs are unaffected. Ratify the existing `CI_INCIDENT_RUNNER_LABELS` tailnet carve-out, which no clause states today. Add a separate lane variable, read only when the run is an expedited-incident pull request, as the route job reports from the pull request's current labels. Amend constraints.md §"CI matrix shape" so the routing contract names both variables and the route job's incident output. Add three scenarios.
+Amend contracts.md §"Expedited incident execution" so that an expedited-incident pull request's `incident-ci` job runs on a dedicated self-hosted incident runner set. That set's admission capacity is reserved for it, and the job starts within 5 minutes of being queued even while the pull-request runner label is saturated. It starts ahead of earlier-queued ordinary pull-request jobs, and those jobs are unaffected. Ratify the existing `CI_INCIDENT_RUNNER_LABELS` tailnet carve-out, which no clause states today. Add a separate lane variable, read only when the run is an expedited-incident pull request, as the route job reports from the pull request's current labels. Amend constraints.md §"CI matrix shape" so the routing contract names both variables and the route job's incident output. State why the two incident variables exist and forbid consolidating them. Make a failed label read a loud, degraded fallback. Add four scenarios.
 
 ### Motivation
 
@@ -36,9 +36,15 @@ Insert the following paragraphs after the paragraph that begins "Repair output M
 
 This repository's `incident-ci` job, and every other job of its gating workflow that reads the incident observer (`LIVESPEC_INCIDENT_OBSERVER_URL`), MUST run on self-hosted capacity that reaches the incident observer, and MUST NOT run on GitHub-hosted capacity, which cannot reach it. Such a job MUST route through the `CI_INCIDENT_RUNNER_LABELS` repository variable, read at its `runs-on` after the push-event `CI_RUNNER_LABELS_MASTER` term and ahead of `CI_RUNNER_LABELS`. `CI_INCIDENT_RUNNER_LABELS` MUST name a target that reaches the incident observer. It serves every pull request, incident or not, and it is not the incident lane.
 
+There are deliberately TWO incident variables, because they route different jobs for different reasons:
+- `CI_INCIDENT_RUNNER_LABELS` routes `incident-ci` and `check-metadata` (and any other job that reads the incident observer) on EVERY pull request, incident or not. Its purpose is TAILNET REACH: those jobs read the incident observer, which GitHub-hosted runners cannot reach.
+- `CI_INCIDENT_LANE_RUNNER_LABELS` routes `incident-ci` only, and only for an expedited-incident pull request. Its purpose is ADMISSION PRIORITY: it puts that one job on reserved capacity ahead of pull-request traffic.
+
+The two MUST NOT be consolidated into one variable, and a duplication or consolidation check MUST NOT merge them. Pointing the reach variable at the reserved lane would move every pull request's `incident-ci` and `check-metadata` legs onto it, which consumes the reservation. Reading only the lane variable would leave an ordinary pull request's observer-reading jobs with no reach-guaranteed target.
+
 An expedited-incident pull request's `incident-ci` job MUST run on a dedicated self-hosted incident runner set, named through the `CI_INCIDENT_LANE_RUNNER_LABELS` repository variable. An expedited-incident pull request is a pull request that carries the trusted incident label `expedited-incident-response` and has a same-repository head. The variable MUST be read at the job's `runs-on` ahead of `CI_INCIDENT_RUNNER_LABELS`, and only when the route job (constraints.md §"CI matrix shape") reports the run as an expedited-incident pull request.
 
-The route job MUST decide that from the pull request's labels read through the forge when the job runs, never from the event payload. A re-run keeps its original event payload, and the incident label workflow starts the run in which the label first takes effect as a re-run. When the route job cannot read the labels after the forge-read retries this section requires, it MUST report the run as not an expedited-incident pull request, so that the job keeps its ordinary routing.
+The route job MUST decide that from the pull request's labels read through the forge when the job runs, never from the event payload. A re-run keeps its original event payload, and the incident label workflow starts the run in which the label first takes effect as a re-run. When the route job cannot read the labels after the forge-read retries this section requires, it MUST report the run as not an expedited-incident pull request, so that the job keeps its ordinary routing. That fallback is DEGRADED SERVICE, not a pass: an expedited incident whose label read failed waits in ordinary pull-request traffic, which is the queue this lane exists to remove. So it MUST NOT be silent. On every such fallback the route job MUST emit a GitHub Actions warning annotation and write one line to the run's step summary. Each MUST name the failed read (the pull request number and the forge call), the attempts made, and the last HTTP status or `none`, and MUST state that the run was routed as an ordinary pull request.
 
 The incident runner set MUST meet all of the following:
 - Its runners MUST reach the incident observer.
@@ -93,6 +99,20 @@ And the re-run's `incident-ci` job MUST run on the incident runner set that `CI_
 
 And a route job that cannot read the labels MUST report the run as ordinary, so the job keeps its ordinary routing
 
+## Scenario: an incident route job whose label read fails warns and routes the run as ordinary
+
+Given the route job's read of a pull request's labels fails after the forge-read retries
+
+When the route job decides the run's routing
+
+Then it MUST report the run as not an expedited-incident pull request, so the run's `incident-ci` job routes as an ordinary pull request's does
+
+And it MUST emit a GitHub Actions warning annotation naming the failed read, the attempts made and the last HTTP status
+
+And it MUST write one step-summary line naming the same failed read and stating that the run was routed as an ordinary pull request
+
+And that run MUST NOT be reported as having taken the incident lane
+
 ## Scenario: an ordinary pull request's jobs never run on the incident lane
 
 Given `CI_INCIDENT_LANE_RUNNER_LABELS` names the dedicated incident runner set
@@ -105,7 +125,7 @@ And its `incident-ci` and `check-metadata` jobs MUST still run on the target `CI
 
 And no job of a `push` or `merge_group` run MUST run on the incident runner set
 
-At revise time, each new scenario heading MUST be added to tests/heading-coverage.json in the same commit, as a spec-first TODO row owned by livespec-dev-tooling-ehnjlt and naming the integration tier, registered in the heading-coverage debt register.
+At revise time, each of the four new scenario headings MUST be added to tests/heading-coverage.json in the same commit, as a spec-first TODO row owned by livespec-dev-tooling-ehnjlt and naming the integration tier, registered in the heading-coverage debt register.
 
 ## Proposal: No repository's incident lane is enabled while its incident-ci routes to GitHub-hosted capacity
 
