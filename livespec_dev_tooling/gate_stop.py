@@ -22,6 +22,8 @@ _SIGNAL_EXIT_FLOOR = 128
 _EXTRA_ATTRIBUTED_PIDS: ContextVar[set[int] | None] = ContextVar(
     "extra_attributed_pids", default=None
 )
+_RUN_DIR: ContextVar[Path] = ContextVar("gate_stop_run_dir")
+_RESCAN_ROUNDS = 5
 
 
 def _args() -> argparse.Namespace:
@@ -126,18 +128,32 @@ def _settle(*, pids: set[int]) -> set[int]:
     return alive
 
 
+def _rescan(*, root: int) -> set[int]:
+    """Find every live process now attributed to the run, including late forks and sessions."""
+    found = _tree(root=root)
+    for pid in _marked_processes(run_dir=_RUN_DIR.get()):
+        found |= _tree(root=pid)
+    return found
+
+
 def _stop(*, root: int) -> set[int]:
     pids = _tree(root=root) | (_EXTRA_ATTRIBUTED_PIDS.get() or set())
+    seen = set(pids)
     _signal(pids=pids, signal_number=signal.SIGTERM)
     alive = _settle(pids=pids)
+    late = _rescan(root=root) - seen
+    seen |= late
+    alive |= late
     _signal(pids=alive, signal_number=signal.SIGKILL)
-    return _settle(pids=alive)
-
-
-def _stop_marked(*, run_dir: Path) -> set[int]:
-    """Keep the marked-process seam after `_stop` takes one ordered process set."""
-    _ = run_dir
-    return set()
+    alive = _settle(pids=alive)
+    for _ in range(_RESCAN_ROUNDS):
+        late = _rescan(root=root) - seen
+        if not late:
+            return alive
+        seen |= late
+        _signal(pids=late, signal_number=signal.SIGKILL)
+        alive |= _settle(pids=late)
+    return alive | (_rescan(root=root) - seen)
 
 
 def _job_gone(*, run_dir: Path) -> bool:
@@ -172,11 +188,12 @@ def main() -> int:
         return 1
     marked = _marked_processes(run_dir=run_dir) - {int(pid)}
     token = _EXTRA_ATTRIBUTED_PIDS.set(marked)
+    run_token = _RUN_DIR.set(run_dir)
     try:
         survivors = _stop(root=int(pid))
     finally:
+        _RUN_DIR.reset(run_token)
         _EXTRA_ATTRIBUTED_PIDS.reset(token)
-    survivors |= _stop_marked(run_dir=run_dir)
     job_gone = _job_gone(run_dir=run_dir)
     if not survivors and job_gone:
         _ = sys.stdout.write(f"gate-stop: stopped {run_dir.name}\n")

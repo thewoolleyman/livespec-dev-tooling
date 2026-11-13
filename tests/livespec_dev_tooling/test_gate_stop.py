@@ -7,6 +7,7 @@ import importlib
 import os
 import signal
 import subprocess
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from types import ModuleType
@@ -371,11 +372,76 @@ def test_gate_stop_names_surviving_processes(
     monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
     monkeypatch.setattr(gate_stop, "_stop", lambda *, root: {root})
 
-    def no_marked_processes(*, run_dir: Path) -> set[int]:
-        _ = run_dir
-        return set()
-
-    monkeypatch.setattr(gate_stop, "_stop_marked", no_marked_processes)
-
     assert gate_stop.main() == 1
     assert "surviving processes: [123]" in capsys.readouterr().out
+
+
+def _stop_with_marked_scans(
+    *,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    scans: Callable[[int], set[int]],
+    survivors: Callable[[set[int]], set[int]],
+) -> tuple[ModuleType, list[tuple[int, set[int]]]]:
+    """Run `main` with a scripted marked-process scan and record every signal sent."""
+    gate_stop = _gate_stop()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _ = (run_dir / "pid").write_text("123\n", encoding="utf-8")
+    monkeypatch.setattr(gate_stop, "_args", lambda: argparse.Namespace(run_dir=run_dir))
+    monkeypatch.setattr(gate_stop, "_tree", lambda *, root: {root})
+    monkeypatch.setattr(gate_stop, "_job_gone", lambda *, run_dir: run_dir.is_dir())
+    calls: list[int] = []
+
+    def marked(*, run_dir: Path) -> set[int]:
+        _ = run_dir
+        calls.append(len(calls))
+        return scans(len(calls))
+
+    monkeypatch.setattr(gate_stop, "_marked_processes", marked)
+    signals: list[tuple[int, set[int]]] = []
+    monkeypatch.setattr(
+        gate_stop,
+        "_signal",
+        lambda *, pids, signal_number: signals.append((signal_number, set(pids))),
+    )
+    monkeypatch.setattr(gate_stop, "_settle", lambda *, pids: survivors(set(pids)))
+    return gate_stop, signals
+
+
+def test_gate_stop_kills_a_process_that_appears_during_the_grace_period(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """A process attributed to the run only after SIGTERM is killed and named when it survives."""
+    gate_stop, signals = _stop_with_marked_scans(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        scans=lambda call: set() if call == 1 else {456},
+        survivors=lambda pids: pids,
+    )
+
+    assert gate_stop.main() == 1
+    assert signals == [
+        (signal.SIGTERM, {123}),
+        (signal.SIGKILL, {123, 456}),
+    ]
+    assert "surviving processes: [123, 456]" in capsys.readouterr().out
+
+
+def test_gate_stop_keeps_rescanning_after_the_kill_and_names_the_last_stragglers(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    """A process that keeps spawning attributed processes is bounded and its leftovers are named."""
+    gate_stop, signals = _stop_with_marked_scans(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        scans=lambda call: set() if call == 1 else {1000 + call},
+        survivors=lambda _pids: set(),
+    )
+
+    assert gate_stop.main() == 1
+    killed = {pid for number, pids in signals if number == signal.SIGKILL for pid in pids}
+    assert 1002 in killed
+    named = capsys.readouterr().out
+    assert "surviving processes: [" in named
+    assert str(max(killed) + 1) in named
