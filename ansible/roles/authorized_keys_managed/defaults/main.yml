@@ -1,0 +1,8 @@
+---
+# Entries are host-specific because both the account and each tunnel's public
+# key are properties of the host that accepts it.  An empty role is inert.
+authorized_keys_managed_user: ""
+authorized_keys_managed_group: ""
+authorized_keys_managed_path: ""
+authorized_keys_managed_entries: []
+authorized_keys_managed_retired_keys: []

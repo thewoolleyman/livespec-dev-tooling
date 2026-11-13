@@ -43,6 +43,8 @@
       tags: [fpart]
     - role: ssh_hardening
       tags: [ssh_hardening]
+    - role: authorized_keys_managed
+      tags: [authorized_keys_managed]
     - role: keyring_quota
       tags: [keyring_quota]
     - role: tmux_config

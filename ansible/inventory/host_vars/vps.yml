@@ -185,6 +185,18 @@ ssh_hardening_negative_control_addresses:
   - 127.0.0.1
   - 100.89.189.118
 
+# --- authorized_keys_managed ---
+authorized_keys_managed_user: ubuntu
+authorized_keys_managed_group: ubuntu
+authorized_keys_managed_path: /home/ubuntu/.ssh/authorized_keys
+authorized_keys_managed_entries:
+  - name: hetzner-xubuntu-dolt-tunnel
+    public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 hetzner-xubuntu dolt-tunnel
+    permitopen: 127.0.0.1:3307
+# The debug tunnel's exact existing public-key blob is deliberately required
+# here before apply: retirement matches it rather than its mutable options.
+authorized_keys_managed_retired_keys: []
+
 # --- storage_reclaim ---
 storage_reclaim_canonical_host: vps.perch-rudd.ts.net
 # NOT the tailnet label. Tailscale serves vps.perch-rudd.ts.net, but
