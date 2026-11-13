@@ -3,6 +3,13 @@
 # repository's homelab-worker shape at a pinned commit, and the sha256 the
 # start task verifies the delivered copy against in the worker VM. Bump all
 # three together when the shape changes (thewoolleyman/otel-collector#21).
-commit=9ee521307a4618206e140ad03b1d0adba38551cf
+#
+# pod_file / pod_sha256: the separate keyless pod-span configuration, run as
+# otel-collector-pods.service so a cni0 bind failure on a pod-less node cannot
+# stop hostmetrics (livespec-dev-tooling-rz23sl, thewoolleyman/otel-collector#23).
+# Declare both or neither; bump them with the three above.
+commit=a613d656a4266ce5065cccae06e801ba77f7de57
 file=config.homelab-worker.yaml
-sha256=9e306071da92559fdabb408d028ec8b66a6c0daf270ed5f7d80d9383c9013170
+sha256=a81ae13ea65e7bae74edada923f5029e4c1a31dde3ea91e6595feaac55e57b0c
+pod_file=config.homelab-worker-pods.yaml
+pod_sha256=155cf144aeb7714f2be1ef5699b0a8e9d128c0bbd95d5c8228625169e3c86d0c
