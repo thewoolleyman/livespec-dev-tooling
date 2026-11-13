@@ -14,6 +14,8 @@ Accepted with one modification on the maintainer's ruling of 2026-11-13 (scope e
 
 In the new bullet "**Stable networking agents under load.**" of non-functional-requirements.md, the words "over a live-load window of at least 24 hours during which the Node stays Ready, each count MUST NOT rise." become "over a live-load window during which the Node stays Ready, each count MUST NOT rise. A live-load window is a stated window with a recorded start and end during which the worker completes at least one job of each workload class it is enrolled in." In the new scenario of scenarios.md, the Given line "And the restart count of each of its networking agent pods is read at the start of a live-load window of at least 24 hours" becomes "And the restart count of each of its networking agent pods is read at the start of a stated live-load window with a recorded start and end, during which the worker completes at least one job of each workload class it is enrolled in". Nothing else in the proposal is changed.
 
+A second wording change, from the doctor's LLM-driven objective pass, run on this cut on legacy-coordinator-agent's grade of livespec-dev-tooling#4562 (2026-11-13): in the same bullet, "fixed at that cause before the window is counted as proof" becomes "fixed at that cause before a later window is counted as proof", because a window in which a restart was measured is never itself counted.
+
 ## Resulting Changes
 
 - non-functional-requirements.md
