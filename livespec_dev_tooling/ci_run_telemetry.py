@@ -38,6 +38,8 @@ _HONEYCOMB_PATH: Final = "/v1/traces"
 _SCOPE_NAME: Final = "livespec.github-ci-export"
 _SCOPE_VERSION: Final = "1.0.0"
 _HTTP_OK: Final = 200
+# A consumer job that skipped or was cancelled never ran the script, so it has no log record.
+_RAN_CONCLUSIONS: Final = frozenset({"success", "failure"})
 _POST_TIMEOUT_SECONDS: Final = 30.0
 
 
@@ -232,6 +234,8 @@ def _github_documents(
     jobs = [job for page in pages for job in cast(list[dict[str, object]], page.get("jobs", []))]
     for job in cast(list[dict[str, object]], run.get("jobs", [])):
         if job.get("name") != COVERAGE_CONSUMER_JOB_ID:
+            continue
+        if job.get("conclusion") not in _RAN_CONCLUSIONS:
             continue
         job_id = int(cast(int | str, job["databaseId"]))
         log_response = gh_read(args=["api", f"repos/{repo}/actions/jobs/{job_id}/logs"])
