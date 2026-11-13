@@ -1,0 +1,61 @@
+{
+  "name": "dev host tmpfs — /tmp or /dev/shm above 80% of its size, per host and mount",
+  "description": "Fires per host.name and mountpoint when MAX(system.filesystem.utilization) over 10 min for /tmp or /dev/shm on a dev host exceeds 0.80. Both are tmpfs (each 50% of RAM), so a filling /tmp IS memory being consumed: on 2026-11-13 /tmp reached 35-38G on vmi3006760 before Dolt was OOM-killed (15:32:41Z), unseen. Emitter: the hostmetrics/tmpfs receiver of the dev-host collector shape (thewoolleyman/otel-collector config.yaml, include_virtual_filesystems), selected by livespec.host.role = dev-host, so a dev host joins by running that shape, not by a copy. Runbook: df -h /tmp /dev/shm; sudo du -xd1 /tmp | sort -h | tail -20; the leak owners are in livespec-dev-tooling plan dev-host-disk-retention (epic livespec-dev-tooling-qgwxo4). Owner: legacy-coordinator-agent routing, kubernetes-observability seat.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "system.filesystem.utilization"
+      }
+    ],
+    "filters": [
+      {
+        "column": "livespec.host.role",
+        "op": "=",
+        "value": "dev-host"
+      },
+      {
+        "column": "mountpoint",
+        "op": "in",
+        "value": [
+          "/tmp",
+          "/dev/shm"
+        ]
+      }
+    ],
+    "breakdowns": [
+      "host.name",
+      "mountpoint"
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0.8,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "dev-host"
+    },
+    {
+      "key": "component",
+      "value": "tmpfs"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

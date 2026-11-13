@@ -125,6 +125,51 @@ A gating CI run of a fleet repository that adopts the CI infrastructure re-run r
 
 **Workflow files must parse.** A commit that stages a `.github/workflows/*.yml` file actionlint reports as unparseable MUST be refused by the pre-commit gate, which MUST name the file, the line and actionlint's syntax-check message. A push whose range carries such a file MUST be refused by the pre-push gate, and a pull request whose tree carries one MUST fail a gating CI job; each MUST name the file and the line. The check MUST be exposed as a shared check consumers run through their pinned livespec-dev-tooling, with no copy of its logic in the consumer.
 
+**Workflow edits are admitted only by a per-change exemption.** The worktree-discipline pack this repository ships carries one workflow-edit guard, `check-no-workflow-edits.sh`. It is an authorship control at the agent boundary: it runs in a consumer's local check aggregate and in the Dispatcher's janitor gate, and it judges nothing when `GITHUB_ACTIONS` is set. A change touches workflows when any path under `.github/workflows/` differs between the change and its base, counting committed, staged, unstaged and untracked paths.
+
+The guard MUST admit such a change only under an exemption that this change authored, and one exemption covers every workflow path the change touches. Exemptions live one file per change in the directory `.livespec-workflow-edit-exemptions/`, under any file name, so two changes that add differently named files never conflict on them. Merged exemption files accumulate in the directory and are not pruned: each stays the record of the change it admitted and never admits a later one. During the transition the guard MUST also accept the legacy single root file `.livespec-workflow-edit-exemption` under the same rule.
+
+A change authors an exemption file when that file is tracked and present in the change's tree, and EITHER the base has no file at that path OR the file's content differs from the base's content at that path, counting committed, staged and unstaged content. None of the following authors an exemption:
+
+- a change to the file's mode alone;
+- a rename or a copy whose resulting content matches an exemption file present in the base;
+- a deletion.
+
+These rules apply to both the root file and the directory. An exemption present in the base that this change did not author MUST NOT admit, in either form. That includes a file an in-progress merge brings in from the base.
+
+When the guard refuses a change whose only change to an exemption file is a mode change, or a rename or copy, its output MUST report that exemption as inherited from the base, not authored by this change.
+
+An exemption this change authored, whether its path is absent on the base or its content differs from the base's content at that path, MUST be evaluated under the work_item, reason, tier and label rules below. Authorship admits nothing by itself.
+
+An exemption MUST carry exactly one `work_item=` line whose value is one ledger id token, and exactly one non-empty `reason=` line. It MAY carry at most one `change=` line, whose only valid value is `additive`, and at most one `ci_runtime=` line. A change is in the ADDITIVE tier only when its exemption carries both `change=additive` and `ci_runtime=no-significant-increase`. An exemption carrying `change=additive` with any other `ci_runtime=` value, or none, is in the MAINTAINER tier, as is every other change.
+
+A `change=additive` claim is checked against the change's committed, staged and unstaged workflow diff. Any deleted line (a modification is a deletion plus an addition), any deleted file or any mode change makes the claim false, whatever label the work item carries. When the repository has a ledger, the named work item MUST carry a label that admits the tier:
+
+- The additive tier accepts `approval:workflow-edit-additive` or `approval:workflow-edit`.
+- The maintainer tier accepts `approval:workflow-edit` only.
+
+A repository with no ledger accepts a valid exemption alone.
+
+The guard MUST exit `1`, naming each workflow path the change touches, in three cases:
+
+- no admitting exemption was authored in the change;
+- the exemption's `change=additive` claim is false, in which case it also names each offending line;
+- a valid exemption names a work item that carries no label admitting its tier, in which case it also names the work item and the label it needs.
+
+The guard MUST exit `2`, naming the cause, when the change cannot be evaluated:
+
+- more than one exemption is authored in the change, across both forms;
+- a `work_item=` or `reason=` line is missing or repeated;
+- the `work_item=` value is not one ledger id token;
+- the `reason=` value is empty;
+- a `change=` or `ci_runtime=` line is repeated;
+- the `change=` value is anything other than `additive`;
+- the ledger cannot be read.
+
+The guard MUST exit `0` otherwise. Apart from the GITHUB_ACTIONS venue rule above, no environment variable changes the verdict.
+
+The transition ends only by a later revision that retires the legacy root file. The ci-runtime-and-cost plan seat, which owns livespec-dev-tooling-oim422, owns that revision. That revision MUST name livespec-dev-tooling-hnbn7z, the filed work item that lists each fleet repository that tracks the root file together with the livespec-dev-tooling release it pins, and checks that each pins a release whose guard reads the directory. hnbn7z's green run on a fleet host triggers the retiring revision, and the revision MUST NOT land before that check passes for every listed repository.
+
 **The coverage handoff is tested, and workflow commits run the tests that read ci.yml.** A test MUST fail, naming the missing step, when the check-per-file-coverage job does not upload `.livespec-coverage-reuse-token` together with `.coverage`, with hidden files included and a missing file an error, or when the check-coverage job does not download both before it runs `just check-coverage`. A test MUST run the real per-file coverage report over a fixture that measures a source file deleted before report time, and MUST assert that the stamped receipt equals `scripts/just/coverage-reuse-id.sh` over the final rewritten `.coverage`. When a commit stages a change under `.github/workflows/` or `scripts/just/` and no `.py` file, the pre-commit gate MUST run the test files that read `.github/workflows/ci.yml` and MUST refuse the commit when one fails.
 
 **Reuse outcomes are recorded and fallbacks reach the maintainer.** A mandatory coverage consumer job is a gating CI job of a fleet repository that runs `scripts/just/check-coverage.sh` to judge the data a per-file coverage producer job uploaded. Each GitHub Actions run of that script MUST write one structured reuse outcome, one of `reused`, `missing_receipt`, `data_digest_mismatch`, `tree_mismatch` or `producer_failed`, with the repository, run id, job id and duration, to the job's step summary and to the run's telemetry export. A scheduled detector MUST raise a maintainer notification, naming the repository, run, job and outcome, within 30 minutes of a mandatory coverage consumer job completing with any outcome other than `reused`. It MUST raise one naming the repository and job when a master CI run of the last 24 hours includes a mandatory coverage consumer job with no recorded outcome. It MUST raise one naming the job and both figures when a fleet CI job's 90th-percentile duration over the last 24 hours exceeds its 90th-percentile duration over the preceding 7 days, for the same job name and runner label, by more than a factor of 2 and by more than 5 minutes. A maintainer notification MUST name the detector when its own last successful run is older than twice its schedule interval. The detector MUST publish every maintainer notification it raises to the dev host's ntfy topic, the host's `claude_ntfy_topic` inventory value, and MUST log, for each one, the message id the ntfy server returned for it as the notification's delivery receipt. A publish the ntfy server does not accept MUST be logged as undelivered and MUST be retried on the detector's next run until a receipt is logged.
