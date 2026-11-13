@@ -48,7 +48,7 @@ The 5-minute bound: unsaturated k3s queue time measures p50 0.3 min and p95 4.4 
 
 Insert the following paragraphs after the paragraph that begins "Repair output MUST contain a legal adjacent code/test comment":
 
-This repository's `incident-ci` job, and every other job of its gating workflow that reads the incident observer (`LIVESPEC_INCIDENT_OBSERVER_URL`), MUST run on self-hosted capacity that reaches the incident observer. It MUST NOT be routed to GitHub-hosted capacity while incident mode is enabled for this repository, and `CI_INCIDENT_RUNNER_LABELS` MUST then be set to a target that reaches the incident observer. Such a job MUST route through the `CI_INCIDENT_RUNNER_LABELS` repository variable, read at its `runs-on` ahead of `CI_RUNNER_LABELS`. `CI_INCIDENT_RUNNER_LABELS` serves every pull request, incident or not, and it is not the expedited lane.
+While incident mode is enabled for this repository, this repository's `incident-ci` job, and every other job of its gating workflow that reads the incident observer (`LIVESPEC_INCIDENT_OBSERVER_URL`), MUST run on self-hosted capacity that reaches the incident observer. It MUST NOT be routed to GitHub-hosted capacity while incident mode is enabled for this repository, and `CI_INCIDENT_RUNNER_LABELS` MUST then be set to a target that reaches the incident observer. Such a job MUST route through the `CI_INCIDENT_RUNNER_LABELS` repository variable, read at its `runs-on` ahead of `CI_RUNNER_LABELS`. `CI_INCIDENT_RUNNER_LABELS` serves every pull request, incident or not, and it is not the expedited lane.
 
 There are deliberately TWO routing variables here, because they route different jobs for different reasons. An expedited incident IS a stop-the-line event, so the admission lane is named for stop-the-line and serves both kinds of designated run:
 - `CI_INCIDENT_RUNNER_LABELS` routes `incident-ci` and `check-metadata` (and any other job that reads the incident observer) on EVERY pull request, incident or not. Its purpose is TAILNET REACH: those jobs read the incident observer, which GitHub-hosted runners cannot reach.
@@ -79,6 +79,7 @@ When the route job cannot read the issue labels after the forge-read retries thi
 - On every such fallback the route job MUST emit a GitHub Actions warning annotation and write one line to the run's step summary. Each MUST name the failed read (the pull request number and the forge call), the attempts made, and the last HTTP status or `none`, and MUST state that the run was routed as an ordinary pull request.
 - The route job MUST then conclude `failure`.
 - It MUST write its outputs before the step that fails. A downstream job still reads the outputs a failed job wrote before its failing step, so every gating job sees the not-designated output and keeps its ordinary routing.
+- Every gating job that needs the route job MUST carry `if: ${{ !cancelled() }}` (or a stricter condition that still includes it), so a `failure` of the route job never skips it.
 - The route job MUST NOT be among the needs of the aggregate gate job, so its `failure` signals the degraded fallback without blocking the merge.
 
 The expedited lane MUST meet all of the following:
@@ -99,7 +100,7 @@ While the expedited lane's reserved quota has room, every job a designated run r
 
 A `push` or `merge_group` event MUST NOT read `CI_RUNNER_LABELS_STOP_THE_LINE`. If stale-base-merge-options adopts a merge queue, a designated pull request's `merge_group` run would go back into ordinary traffic. That is revisited when a merge queue is adopted.
 
-While `CI_RUNNER_LABELS_STOP_THE_LINE` is unset or empty, a designated run's jobs MUST route exactly as an ordinary pull request's do. Deleting the variable is the manual revert.
+While `CI_RUNNER_LABELS_STOP_THE_LINE` is unset or empty, a designated run's jobs MUST route exactly as an ordinary pull request's do. Deleting the variable is the manual revert. On such a run the route job MUST emit a warning annotation and a step-summary line stating that the run is designated but `CI_RUNNER_LABELS_STOP_THE_LINE` is unset, so it routed as ordinary.
 
 In the paragraph that begins "Every forge call that the `incident-ci` job, the `ci-green` job and the incident label workflow", add the route job's read of the pull request's issue labels to the calls the rule covers. In the trust-boundary paragraph that begins "This repository's `incident-ci` and `ci-green` jobs already check the tree out", add: "The route job runs on GitHub-hosted capacity and checks nothing out, so it MUST reference the `forge-read` Action at a release tag of this library, as the incident label workflow does."
 
@@ -198,7 +199,7 @@ And every job of a `push` or `merge_group` run MUST NOT run on the expedited lan
 
 ### Revise-time co-edits
 
-At revise time, each of the five new scenario headings MUST be added to tests/heading-coverage.json in the same commit. Each is a spec-first TODO row owned by livespec-dev-tooling-ehnjlt, naming the integration tier, and registered in the heading-coverage debt register.
+At revise time, each of the five new scenario headings MUST be added to tests/heading-coverage.json in the same commit. Each is a spec-first TODO row owned by livespec-dev-tooling-ehnjlt, carrying `"work_item": "livespec-dev-tooling-ehnjlt"`, naming the integration tier, and registered in the heading-coverage debt register with `just generate-heading-coverage-debt-register`.
 
 ## Proposal: No repository's incident lane is enabled while its incident-ci routes to GitHub-hosted capacity
 
@@ -250,4 +251,4 @@ And once the repository routes `incident-ci` to a target that reaches the incide
 
 ### Revise-time co-edits
 
-At revise time this scenario heading MUST be added to tests/heading-coverage.json as a spec-first TODO row owned by livespec-dev-tooling-ehnjlt, naming the integration tier, and registered in the heading-coverage debt register.
+At revise time this scenario heading MUST be added to tests/heading-coverage.json as a spec-first TODO row owned by livespec-dev-tooling-ehnjlt, carrying `"work_item": "livespec-dev-tooling-ehnjlt"`, naming the integration tier, and registered in the heading-coverage debt register with `just generate-heading-coverage-debt-register`.
