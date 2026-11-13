@@ -338,20 +338,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
     "work_item": "livespec-dev-tooling-ie7fas",
     "first_seen": "2026-11-12"
@@ -548,13 +534,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a held service converges installed and disabled",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no configured cgroup emits only host pressure",
     "work_item": "livespec-dev-tooling-62zla3",
     "first_seen": "2026-11-09"
@@ -579,13 +558,6 @@
     "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
     "work_item": "livespec-dev-tooling-h6jsgv",
     "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-07"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -730,13 +702,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
     "work_item": "livespec-dev-tooling-22wpdk",
     "first_seen": "2026-11-02"
@@ -747,13 +712,6 @@
     "heading": "## Scenario: a radar that lists the same target twice fails just check",
     "work_item": "livespec-dev-tooling-fgy4au",
     "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-08"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1122,13 +1080,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
     "work_item": "livespec-dev-tooling-f3q7r7",
     "first_seen": "2026-11-08"
@@ -1290,13 +1241,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories",
     "work_item": "livespec-dev-tooling-wbvbj6",
     "first_seen": "2026-11-03"
@@ -1419,13 +1363,6 @@
     "heading": "## Scenario: deleting a base exemption file does not author it",
     "work_item": "livespec-dev-tooling-oim422",
     "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-01"
   },
   {
     "spec_root": "SPECIFICATION",

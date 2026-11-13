@@ -7,6 +7,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -232,6 +234,7 @@ def test_all_covered_private_siblings_keep_the_existing_scoped_mint(*, tmp_path:
     }
 
 
+@pytest.mark.integration
 def test_a_transient_mint_server_error_is_retried_until_the_token_is_minted(
     *, tmp_path: Path
 ) -> None:
