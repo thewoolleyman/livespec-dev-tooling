@@ -650,3 +650,32 @@ def test_a_replace_ref_cannot_hide_a_changed_product_file_from_the_reference_clo
         "src/widget.py" in reason,
     ]
     assert all(facts), (facts, status, result)
+
+
+def test_an_in_tree_symlinked_module_uses_its_target_modules_disposition(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.head])
+    (clone.repo / "src" / "link.py").symlink_to("doc_only.py")
+    _ = _git(repo=clone.repo, args=["add", "src/link.py"])
+    _ = _git(repo=clone.repo, args=["commit", "-qm", "link module"])
+    head = _git(repo=clone.repo, args=["rev-parse", "HEAD"])
+    _ = _git(repo=clone.repo, args=["update-ref", "refs/remotes/origin/master", clone.base])
+    _ = _git(repo=clone.repo, args=["checkout", "-q", clone.base])
+    linked = _Clone(
+        repo=clone.repo,
+        base=clone.base,
+        head=head,
+        tree=_git(repo=clone.repo, args=["rev-parse", head + "^{tree}"]),
+    )
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=linked)
+    authority.add(
+        record=_record(
+            clone=linked,
+            paths={**_HONEST, "src/link.py": "non-executable"},
+            covered=_EXECUTABLE,
+        )
+    )
+    status, result = _arm(application=application, clone=linked)
+    assert (status, result.get("status")) == ("202 Accepted", "armed")
