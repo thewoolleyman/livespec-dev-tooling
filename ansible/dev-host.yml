@@ -96,6 +96,12 @@
     # reader that stops completing visible rather than silently stale.
     - role: flake_retry_filer
       tags: [flake_retry_filer]
+    # The livespec reconcile-runs timer, one sweep over every tenant this host
+    # dispatches for (livespec-dev-tooling-oxwre7). The unit text is
+    # livespec-orchestrator-beads-fabro's, read from this host's checkout; see
+    # roles/reconcile_runs/HOST_VARS.md.
+    - role: reconcile_runs
+      tags: [reconcile_runs]
     # The independent released incident observer (livespec-dev-tooling-w7n3ad):
     # loopback listener first, then the tailnet front that publishes it from
     # this host's tailscale_serve_mappings. Both run under the credential

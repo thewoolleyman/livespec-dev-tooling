@@ -178,6 +178,75 @@ incident_observer_candidate_user: ubuntu
 otel_collector_env_from_controller:
   - HONEYCOMB_INGEST_KEY_LIVESPEC
 
+# --- reconcile_runs ---
+# Every tenant this host's dispatcher seat tickets, in sweep order (by the seat's
+# 7-day launch volume, 2026-11-13). Each wrapper is the tenant's committed
+# .livespec.jsonc credential_wrapper. This host stamps the claims it dispatches
+# and reconciles only those; it stays enabled until no claim it stamped remains.
+reconcile_runs_enabled: true
+reconcile_runs_tenants:
+  - name: livespec-orchestrator-beads-fabro
+    unit: reconcile-runs
+    repo: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-dev-tooling
+    repo: /home/ubuntu/workspace/livespec-dev-tooling
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-overseer
+    repo: /home/ubuntu/workspace/livespec-overseer
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-driver-codex
+    repo: /home/ubuntu/workspace/livespec-driver-codex
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec
+    repo: /home/ubuntu/workspace/livespec
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-runtime
+    repo: /home/ubuntu/workspace/livespec-runtime
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-driver-claude
+    repo: /home/ubuntu/workspace/livespec-driver-claude
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: hetzner-xubuntu-info
+    repo: /home/ubuntu/workspace/hetzner-xubuntu-info
+    credential_wrapper: [./with-hetzner-xubuntu-credentials.sh, "--"]
+  - name: livespec-console-beads-fabro
+    repo: /home/ubuntu/workspace/livespec-console-beads-fabro
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: homelab
+    repo: /home/ubuntu/workspace/homelab
+    credential_wrapper:
+      - /usr/local/bin/with-homelab-aws.sh
+      - --role
+      - homelab-workload
+      - /home/ubuntu/.nix-profile/bin/hl
+      - param
+      - run
+      - --bind
+      - BEADS_DOLT_PASSWORD=/homelab/v1/services/dolt/production/beads-password
+      - --bind
+      - GITHUB_APP_ID=/homelab/v1/providers/github/mi-homelab-factory-bot/app-id
+      - --bind
+      - GITHUB_PRIVATE_KEY=/homelab/v1/providers/github/mi-homelab-factory-bot/private-key
+      - --bind
+      - CLAUDE_CODE_OAUTH_TOKEN=/homelab/v1/providers/anthropic/claude-code/oauth-token
+      - "--"
+  - name: livespec-orchestrator-git-jsonl
+    repo: /home/ubuntu/workspace/livespec-orchestrator-git-jsonl
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: dolt-server
+    repo: /home/ubuntu/workspace/dolt-server
+    credential_wrapper: [/usr/local/bin/with-dolt-server-env.sh, "--"]
+  - name: livespec-driver-pi
+    repo: /home/ubuntu/workspace/livespec-driver-pi
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: openbrain
+    repo: /home/ubuntu/workspace/openbrain
+    credential_wrapper: [/data/projects/1password-env-wrapper/with-openbrain-env.sh, "--"]
+# Fourteen passes back to back: a sweep of median passes is about 70 min, so the
+# bound allows that, the interval, and one timed-out pass.
+reconcile_runs_stale_after_seconds: 14400
+
 # --- ssh_hardening ---
 ssh_hardening_public_address: 66.94.121.15
 ssh_hardening_password_user: ubuntu

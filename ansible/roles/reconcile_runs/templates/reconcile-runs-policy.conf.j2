@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+# Host policy for {{ item.unit }}.service over livespec-orchestrator-beads-fabro's
+# committed unit text (role reconcile_runs).
+[Unit]
+# A failed pass is retried, but only up to the start limit, so a tenant that
+# keeps failing releases the sweep to the next tenant instead of holding it.
+StartLimitIntervalSec={{ reconcile_runs_start_limit_interval }}
+StartLimitBurst={{ reconcile_runs_start_limit_burst }}
+{% if item.after %}
+# One pass at a time: this tenant's pass waits for the one before it in the sweep.
+After={{ item.after }}.service
+{% endif %}
+
+[Service]
+TimeoutStartSec={{ reconcile_runs_timeout_seconds }}
+Restart={{ reconcile_runs_restart }}
+RestartSec={{ reconcile_runs_restart_sec }}
+# The dead-man marker. ExecStartPost runs only after ExecStart exits 0, so the
+# marker's age is the age of this tenant's last successful pass.
+ExecStartPost=/usr/bin/touch {{ item.marker }}
