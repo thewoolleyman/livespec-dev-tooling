@@ -161,6 +161,26 @@
 - name: Fabro client logins on the dispatch-only hosts
   hosts: fabro_dispatch_clients
   gather_facts: false
+  # ONE WRITER PER FILE PER HOST, enforced here rather than trusted to a value.
+  # A dispatch-only host's registry is rendered by its own provisioning, so this
+  # play refuses to run the role with the render switch on, however it was
+  # switched on: an inventory edit, a play variable or `-e`. It runs on the
+  # controller before the role, reaches no host, and carries the role's tag so
+  # a run narrowed to `--tags fabro_factory_registry` is still guarded.
+  pre_tasks:
+    - name: Refuse to render the factory registry on a dispatch-only host
+      ansible.builtin.assert:
+        that:
+          - not (fabro_factory_registry_render | bool)
+        fail_msg: >-
+          {{ inventory_hostname }} is a fabro_dispatch_clients host, whose own
+          provisioning renders /etc/livespec/fabro-factories.json and the fleet
+          limits. Rendering them from this tree too would give each file two
+          writers, so fabro_factory_registry_render must stay false for this
+          group (livespec-dev-tooling-yyadq6).
+        success_msg: >-
+          {{ inventory_hostname }} gets the client logins only
+      tags: [fabro_factory_registry, fabro_dispatch_client_guard]
   roles:
     - role: fabro_factory_registry
       tags: [fabro_factory_registry]

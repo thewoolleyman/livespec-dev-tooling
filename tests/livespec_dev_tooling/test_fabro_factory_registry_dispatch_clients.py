@@ -8,10 +8,13 @@ only this tree's control node holds. So this tree reaches such a host through th
 switch off: the client logins run, and the registry file and fleet-limit files are not
 written. The registry itself stays declared once, in `group_vars/dev_hosts.yml`.
 
-The first two tests run the committed inventory and play under the pinned `ansible-core`, and
-reach no host: an ad-hoc `debug` resolves variables on the controller, and `--list-hosts` /
-`--list-tasks` only select. The third reads the committed tasks, because which tasks a switch
-gates is a property of the file.
+No test here pins a committed configuration VALUE (maintainer ruling: no test is tied to a
+config value's actual value). Each asserts structure or behaviour instead: that a dispatch
+client resolves the SAME registry the dev hosts declare, that the play guards the one-writer
+rule before the role runs, that the guard refuses a render switched on by any means, and that
+the switch gates exactly the file writes. The ansible runs use the pinned `ansible-core` and
+reach no host: an ad-hoc `debug` and an `assert` run on the controller, and `--list-tasks` only
+selects.
 """
 
 from __future__ import annotations
@@ -34,8 +37,9 @@ _PLAYBOOK = _ANSIBLE / "fabro-hosts.yml"
 _DEV_HOSTS_VARS = _ANSIBLE / "inventory" / "group_vars" / "dev_hosts.yml"
 _ROLE = _ANSIBLE / "roles" / "fabro_factory_registry"
 _TASKS = _ROLE / "tasks" / "main.yml"
-_DEFAULTS = _ROLE / "defaults" / "main.yml"
 _GROUP = "fabro_dispatch_clients"
+_GUARD_TASK = "Refuse to render the factory registry on a dispatch-only host"
+_GUARD_TAG = "fabro_dispatch_client_guard"
 _RENDER_SWITCH = "fabro_factory_registry_render | bool"
 _RENDER_TASKS = (
     "Create the directory this host's Fabro factory registry lives in",
@@ -71,13 +75,8 @@ def _run(*argv: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _resolved_per_client() -> dict[str, Any]:
-    """Each dispatch client's resolved entries and switches, as the controller renders them."""
-    expression = (
-        "{{ {'entries': fabro_factory_registry_entries | items2dict,"
-        " 'render': fabro_factory_registry_render,"
-        " 'login': fabro_factory_registry_client_login} }}"
-    )
+def _resolved_entries_per_client() -> dict[str, Any]:
+    """Each dispatch client's resolved registry entries, as the controller renders them."""
     run = _run(
         "ansible",
         "-i",
@@ -86,7 +85,7 @@ def _resolved_per_client() -> dict[str, Any]:
         "-m",
         "ansible.builtin.debug",
         "-a",
-        f"msg={expression}",
+        "msg={{ fabro_factory_registry_entries | items2dict }}",
     )
     # The default ad-hoc output prints one `<host> | SUCCESS => {...}` JSON block per host.
     return {
@@ -95,22 +94,36 @@ def _resolved_per_client() -> dict[str, Any]:
     }
 
 
+def _guard_run(*, render: bool) -> subprocess.CompletedProcess[str]:
+    """Run only the dispatch-client play's guard, with the render switch forced from outside."""
+    return _run(
+        "ansible-playbook",
+        "-i",
+        str(_INVENTORY),
+        str(_PLAYBOOK),
+        "--limit",
+        _GROUP,
+        "--tags",
+        _GUARD_TAG,
+        "-e",
+        json.dumps({"fabro_factory_registry_render": render}),
+    )
+
+
 def _task(name: str) -> dict[str, Any]:
     [task] = [t for t in yaml.safe_load(_TASKS.read_text()) if t.get("name") == name]
     return task
 
 
-def test_every_dispatch_client_logs_in_to_the_one_declared_registry_and_renders_nothing() -> None:
+def test_every_dispatch_client_resolves_the_registry_the_dev_hosts_declare() -> None:
     declared = yaml.safe_load(_DEV_HOSTS_VARS.read_text())["fabro_factory_registry"]
-    resolved = _resolved_per_client()
+    resolved = _resolved_entries_per_client()
     assert resolved, f"the inventory's {_GROUP} group resolves no host"
-    for host, values in resolved.items():
-        assert values["entries"] == declared, host
-        assert values["login"] is True, host
-        assert values["render"] is False, host
+    for host, entries in resolved.items():
+        assert entries == declared, host
 
 
-def test_a_committed_play_reaches_the_dispatch_clients_with_the_registry_role_alone() -> None:
+def test_the_dispatch_client_play_guards_the_one_writer_rule_before_the_role_runs() -> None:
     run = _run(
         "ansible-playbook",
         "-i",
@@ -124,11 +137,20 @@ def test_a_committed_play_reaches_the_dispatch_clients_with_the_registry_role_al
     assert len(plays) == 1, run.stdout + run.stderr
     tasks = [line.strip() for line in plays[0].splitlines() if "\tTAGS:" in line][1:]
     assert tasks, plays[0]
-    assert all(task.startswith("fabro_factory_registry : ") for task in tasks), tasks
+    assert tasks[0].startswith(_GUARD_TASK), tasks
+    assert all(task.startswith("fabro_factory_registry : ") for task in tasks[1:]), tasks
+
+
+def test_the_guard_refuses_a_render_switched_on_for_a_dispatch_client() -> None:
+    refused = _guard_run(render=True)
+    allowed = _guard_run(render=False)
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    assert "two writers" in refused.stdout, refused.stdout
+    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+    assert "failed=0" in allowed.stdout, allowed.stdout
 
 
 def test_the_render_switch_gates_every_file_write_and_no_login() -> None:
-    assert yaml.safe_load(_DEFAULTS.read_text()).get("fabro_factory_registry_render") is True
     for name in _RENDER_TASKS:
         assert _RENDER_SWITCH in str(_task(name).get("when", "")), name
     for name in _LOGIN_TASKS:
