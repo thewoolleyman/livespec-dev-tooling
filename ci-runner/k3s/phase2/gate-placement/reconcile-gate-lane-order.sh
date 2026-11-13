@@ -204,6 +204,14 @@ summary += "".join(f" {lane_node[l]}(ineligible-architecture)" for l in ineligib
 for host, name, why in unread:
     print(f"UNREAD node={host} reading={name} why={why}")
 if unread:
+    unread_by_host = {}
+    for host, name, _ in unread:
+        unread_by_host.setdefault(host, []).append(name)
+    unread_summary = " ".join(
+        f"{host}:{','.join(names)}" for host, names in unread_by_host.items()
+    )
+    print("ALARM gate-lane-steer-disabled unread=" + unread_summary
+          + " (gate admission is on the static lane order until the readings return)")
     desired_lanes, reason = static_lanes, "reading-unread:static-order"
 else:
     free = [l for l in static_lanes if l in readings and not saturated(l)]
@@ -224,9 +232,18 @@ PY
 
 grep -E '^(UNREAD|DECISION|CHANGE|FATAL)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /" || true
 [ "$status" = 0 ] || exit "$status"
-[ "$DRY_RUN" = 0 ] || exit 0
+alarm=0
+# Like factory-pressure placement, an unread in-scope lane is fail-closed but
+# loud: leave gate admission on the safe static order and make the unit failed.
+if grep -q '^ALARM' "$work/decision"; then
+  sed -n "s/^ALARM /<3>${SCRIPT_NAME}: ALARM /p" "$work/decision" >&2
+  alarm=1
+fi
+[ "$DRY_RUN" = 0 ] || { [ "$alarm" = 0 ] || exit 3; exit 0; }
 patch="$(sed -n 's/^PATCH //p' "$work/decision")"
-[ -n "$patch" ] || exit 0
-kubectl patch clusterqueue gates-cq --type=json -p "$patch" >/dev/null \
-  || { echo "${SCRIPT_NAME}: patching gates-cq failed; the next pass re-applies" >&2; exit 1; }
-echo "${SCRIPT_NAME}: patched gates-cq flavor order"
+[ -z "$patch" ] || {
+  kubectl patch clusterqueue gates-cq --type=json -p "$patch" >/dev/null \
+    || { echo "${SCRIPT_NAME}: patching gates-cq failed; the next pass re-applies" >&2; exit 1; }
+  echo "${SCRIPT_NAME}: patched gates-cq flavor order"
+}
+[ "$alarm" = 0 ] || exit 3
