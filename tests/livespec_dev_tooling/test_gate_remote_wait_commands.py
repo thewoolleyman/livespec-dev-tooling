@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 
+import pytest
 from returns.result import Failure, Success
 
 from livespec_dev_tooling.gate_remote_admission import await_terminal_state
-from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
+from livespec_dev_tooling.gate_remote_invocation import (
+    GateCommandOutcome,
+    GateCommandResult,
+    default_gate_command_runner,
+)
 from livespec_dev_tooling.gate_remote_request import GateRunRequest
 from livespec_dev_tooling.gate_remote_wait_commands import (
     admission_read_argv,
@@ -63,6 +70,51 @@ def test_terminal_watches_round_a_short_remaining_wait_up_to_one_second() -> Non
     )
 
     assert argv[-1] == "1s"
+
+
+@pytest.mark.parametrize(
+    ("argv", "kubectl_output"),
+    [
+        (
+            admission_read_argv(namespace="gates", job_name="gate-widget-7f2qd"),
+            '{"spec":{"suspend":false},"status":{}}',
+        ),
+        (
+            terminal_watch_argv(
+                namespace="gates", job_name="gate-widget-7f2qd", remaining_seconds=999.0
+            ),
+            '{"status":{"conditions":[{"type":"Complete","status":"True"}]}}',
+        ),
+    ],
+)
+def test_completed_wait_commands_release_the_captured_runner_promptly(
+    *,
+    argv: list[str],
+    kubectl_output: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The heartbeat must not retain the runner's pipes after a Job response."""
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    wrapper = stub_dir / "with-gates-kubeconfig"
+    _ = wrapper.write_text('#!/bin/sh\nexec "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    kubectl = stub_dir / "kubectl"
+    _ = kubectl.write_text(
+        f"#!/bin/sh\nprintf '%s\\n' '{kubectl_output}'\n",
+        encoding="utf-8",
+    )
+    kubectl.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{stub_dir}{os.pathsep}{os.environ['PATH']}")
+
+    started = time.monotonic()
+    outcome = default_gate_command_runner(argv=argv, cwd=tmp_path)
+    elapsed = time.monotonic() - started
+
+    assert isinstance(outcome, Success)
+    assert outcome.unwrap().returncode == 0
+    assert elapsed < 10.0
 
 
 def test_terminal_wait_stops_when_its_deadline_elapses_between_watch_windows() -> None:
