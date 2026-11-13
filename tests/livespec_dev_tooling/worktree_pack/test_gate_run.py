@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -258,6 +259,27 @@ def _start(*, cwd: Path, env: dict[str, str], command: list[str]) -> str:
     return started.stdout.strip()
 
 
+def _wait_until(
+    *,
+    ready: Callable[[], bool],
+    timeout_s: float,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    """True as soon as `ready()` holds; False once `timeout_s` has elapsed.
+
+    `timeout_s` is a liveness ceiling against a hang, never a margin a
+    verdict rests on. The clock and sleep are injectable so a test fixes
+    which lines run.
+    """
+    deadline = clock() + timeout_s
+    while not ready():
+        if clock() >= deadline:
+            return False
+        sleep(_POLL_INTERVAL_S)
+    return True
+
+
 def _wait_for_file(
     *,
     path: Path,
@@ -265,16 +287,8 @@ def _wait_for_file(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> bool:
-    """True as soon as `path` appears; False once `timeout_s` has elapsed.
-
-    The clock and sleep are injectable so a test fixes which lines run.
-    """
-    deadline = clock() + timeout_s
-    while not path.is_file():
-        if clock() >= deadline:
-            return False
-        sleep(_POLL_INTERVAL_S)
-    return True
+    """True as soon as `path` appears; False once `timeout_s` has elapsed."""
+    return _wait_until(ready=path.is_file, timeout_s=timeout_s, clock=clock, sleep=sleep)
 
 
 def _await_verdict(*, primary: Path, run_id: str) -> Path:
@@ -712,15 +726,22 @@ _SHIMMED_COMMANDS: tuple[str, ...] = (
     "stat",
     "tr",
 )
-_IDLE_GATE_S = 4
-_IDLE_SETTLE_S = 0.7
-_IDLE_WINDOW_S = 1.5
+# The waiter's log also shims the idle descriptor's two execs: `mkfifo` and
+# then `rm`, the waiter's last exec before its poll loop.
+_WAITER_SHIMMED: tuple[str, ...] = (*_SHIMMED_COMMANDS, "mkfifo", "rm")
+# A liveness ceiling only: the test releases the idle gate itself.
+_IDLE_GATE_CEILING_S = 120
+# The idle window lasts this many counted waiter polls, not a wall-clock span.
+_IDLE_WINDOW_POLLS = 15
+_WAITER_POLL_INTERVAL_S = 0.1
 _WAIT_RETURN_BUDGET_S = 5.0
+_MAX_WAITER_POLLS_AFTER_EXIT = int(_WAIT_RETURN_BUDGET_S / _WAITER_POLL_INTERVAL_S)
+_VERDICT_SEEN = "-- the test saw exit_code --"
 
 
 def test_gate_wait_polls_well_inside_its_five_second_return_budget() -> None:
     """The built-in-only wait cadence leaves scheduling margin on a loaded host."""
-    assert "readonly POLL_INTERVAL_S=0.1" in CANONICAL_GATE_RUN_BODY
+    assert f"readonly POLL_INTERVAL_S={_WAITER_POLL_INTERVAL_S}" in CANONICAL_GATE_RUN_BODY
 
 
 def test_gate_start_refreshes_the_worktree_pack_before_selecting_a_venue() -> None:
@@ -728,11 +749,11 @@ def test_gate_start_refreshes_the_worktree_pack_before_selecting_a_venue() -> No
     assert "worktree pack present — refreshing from installed package" in CANONICAL_GATE_RUN_BODY
 
 
-def _shim_dir(*, root: Path) -> Path:
+def _shim_dir(*, root: Path, names: tuple[str, ...] = _SHIMMED_COMMANDS) -> Path:
     """A PATH directory whose entries log their own exec to `$GATE_SHIM_LOG`, then run the real one."""
     shims = root / "shims"
-    shims.mkdir()
-    for name in _SHIMMED_COMMANDS:
+    shims.mkdir(parents=True)
+    for name in names:
         real = shutil.which(name)
         assert real is not None, name
         shim = shims / name
@@ -751,58 +772,151 @@ def _shimmed_env(*, env: dict[str, str], shims: Path, log: Path) -> dict[str, st
     return shimmed
 
 
+def _shim_lines(*, log: Path) -> list[str]:
+    return log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+
+
 def _spawn_count(*, log: Path) -> int:
-    return len(log.read_text(encoding="utf-8").splitlines()) if log.is_file() else 0
+    return len(_shim_lines(log=log))
+
+
+def _poll_count(*, log: Path) -> int:
+    """Polls of a waiter whose idle descriptor could not open: one `sleep` exec each."""
+    return _shim_lines(log=log).count("sleep")
+
+
+def _waiter(*, primary: Path, env: dict[str, str], run_id: str) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
+        cwd=str(primary),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _release_gate(*, fifo: Path) -> None:
+    """Write one line to the idle gate's FIFO; refuses at once if no gate holds it."""
+    fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+    try:
+        _ = os.write(fd, b"release\n")
+    finally:
+        os.close(fd)
+
+
+@dataclass(frozen=True, kw_only=True)
+class _IdleRun:
+    """An idle gate held by a FIFO, its shimmed waiter, and a poll-counting waiter."""
+
+    run_id: str
+    release: Path
+    runner_log: Path
+    waiter_log: Path
+    counter_log: Path
+    waiter: subprocess.Popen[str]
+    counter: subprocess.Popen[str]
+
+
+def _start_idle_run(*, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]) -> _IdleRun:
+    """Start a gate that idles until released, and two waiters, all in their idle loops."""
+    primary, worktree, env = fixture_repo
+    logs = [tmp_path / f"{name}-spawns.log" for name in ("runner", "waiter", "counter")]
+    ready = tmp_path / "gate-is-idle"
+    release = tmp_path / "release-gate"
+    os.mkfifo(release)
+    # A FIFO opened read-write holds both ends, so the read waits until the
+    # test writes a line; `<(:)` on macOS dups the pipe's read end and can
+    # hit EOF at once, ending the "idle" gate inside the measured window.
+    idle_gate = (
+        f'exec 3<>"{release}"; touch "{ready}"; '
+        f"read -t {_IDLE_GATE_CEILING_S} -u 3; exit {_GATE_EXIT_CODE}"
+    )
+    run_id = _start(
+        cwd=worktree,
+        env=_shimmed_env(env=env, shims=_shim_dir(root=tmp_path / "runner"), log=logs[0]),
+        command=["bash", "-c", idle_gate],
+    )
+    waiter_shims = _shim_dir(root=tmp_path / "waiter", names=_WAITER_SHIMMED)
+    # The counter's TMPDIR does not exist, so it cannot open its idle
+    # descriptor and falls back to one `sleep` exec per poll: its log is a
+    # count of the polls its wait loop, shared with the waiter's, makes.
+    counter_env = {**env, "TMPDIR": str(tmp_path / "no-such-tmpdir")}
+    idle = _IdleRun(
+        run_id=run_id,
+        release=release,
+        runner_log=logs[0],
+        waiter_log=logs[1],
+        counter_log=logs[2],
+        waiter=_waiter(
+            primary=primary,
+            env=_shimmed_env(env=env, shims=waiter_shims, log=logs[1]),
+            run_id=run_id,
+        ),
+        counter=_waiter(
+            primary=primary,
+            env=_shimmed_env(env=counter_env, shims=waiter_shims, log=logs[2]),
+            run_id=run_id,
+        ),
+    )
+    # The runner's last exec precedes the gate, and the gate touches `ready`;
+    # the idle descriptor's `rm` is the waiter's last exec before its loop.
+    assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
+    assert _wait_until(
+        ready=lambda: "rm" in _shim_lines(log=idle.waiter_log), timeout_s=_VERDICT_TIMEOUT_S
+    )
+    assert _wait_until(
+        ready=lambda: _poll_count(log=idle.counter_log) > 0, timeout_s=_VERDICT_TIMEOUT_S
+    )
+    return idle
+
+
+def _polls_after_the_verdict(*, primary: Path, idle: _IdleRun) -> int:
+    """Release the gate; count the counter's polls after the test saw exit_code."""
+    _release_gate(fifo=idle.release)
+    _ = _await_verdict(primary=primary, run_id=idle.run_id)
+    # The test sees exit_code no earlier than it appeared, so the polls after
+    # this line can only undercount the polls made after the verdict.
+    with idle.counter_log.open("a", encoding="utf-8") as log:
+        _ = log.write(f"{_VERDICT_SEEN}\n")
+    _ = idle.counter.communicate(timeout=_VERDICT_TIMEOUT_S)
+    lines = _shim_lines(log=idle.counter_log)
+    return lines[lines.index(_VERDICT_SEEN) :].count("sleep")
 
 
 @pytest.mark.integration
 def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """The cost of doing nothing: no exec per watch tick, none per wait poll."""
-    primary, worktree, env = fixture_repo
-    shims = _shim_dir(root=tmp_path)
-    runner_log = tmp_path / "runner-spawns.log"
-    waiter_log = tmp_path / "waiter-spawns.log"
-    ready = tmp_path / "gate-is-idle"
-    # A FIFO opened read-write holds both ends, so the read waits its whole
-    # timeout on every host; `<(:)` on macOS dups the pipe's read end and can
-    # hit EOF at once, ending the "idle" gate inside the measured window.
-    idle_gate = (
-        f'tick="$(mktemp -u)"; mkfifo "$tick"; exec 3<>"$tick"; rm -f "$tick"; touch {ready}; '
-        f"read -t {_IDLE_GATE_S} -u 3; exit {_GATE_EXIT_CODE}"
-    )
-    run_id = _start(
-        cwd=worktree,
-        env=_shimmed_env(env=env, shims=shims, log=runner_log),
-        command=["bash", "-c", idle_gate],
-    )
-    waiter = subprocess.Popen(
-        [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
-        cwd=str(primary),
-        env=_shimmed_env(env=env, shims=shims, log=waiter_log),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
-    time.sleep(_IDLE_SETTLE_S)
+    """The cost of doing nothing: no exec per watch tick, none per wait poll.
+
+    Every phase ends on an ordering the test controls, never on a wall-clock
+    margin a loaded host can move. The gate stays idle until the test
+    releases it. Each waiter is measured only once its log shows it has
+    entered its poll loop. The idle window lasts a counted number of waiter
+    polls. The return is judged by the polls made after the verdict
+    appeared. Every remaining timeout is a liveness ceiling against a hang.
+    """
+    idle = _start_idle_run(tmp_path=tmp_path, fixture_repo=fixture_repo)
     # Control arm: the shims are live, so a silent log means silence, not blindness.
-    assert _spawn_count(log=runner_log) > 0
-    assert _spawn_count(log=waiter_log) > 0
-    runner_before = _spawn_count(log=runner_log)
-    waiter_before = _spawn_count(log=waiter_log)
+    assert _spawn_count(log=idle.runner_log) > 0
+    runner_before = _spawn_count(log=idle.runner_log)
+    waiter_before = _spawn_count(log=idle.waiter_log)
+    window_ends_at = _poll_count(log=idle.counter_log) + _IDLE_WINDOW_POLLS
 
-    time.sleep(_IDLE_WINDOW_S)
+    assert _wait_until(
+        ready=lambda: _poll_count(log=idle.counter_log) >= window_ends_at,
+        timeout_s=_VERDICT_TIMEOUT_S,
+    )
 
-    assert _spawn_count(log=runner_log) == runner_before
-    assert _spawn_count(log=waiter_log) == waiter_before
+    assert _spawn_count(log=idle.runner_log) == runner_before
+    assert _spawn_count(log=idle.waiter_log) == waiter_before
 
-    _ = _await_verdict(primary=primary, run_id=run_id)
-    verdict_at = time.monotonic()
-    stdout, _stderr = waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
-    assert time.monotonic() - verdict_at < _WAIT_RETURN_BUDGET_S
-    assert waiter.returncode == _GATE_EXIT_CODE
+    polls_after = _polls_after_the_verdict(primary=fixture_repo[0], idle=idle)
+    stdout, _stderr = idle.waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
+    assert polls_after <= _MAX_WAITER_POLLS_AFTER_EXIT
+    assert idle.waiter.returncode == _GATE_EXIT_CODE
+    assert idle.counter.returncode == _GATE_EXIT_CODE
     assert "FAILED" in stdout
 
 
@@ -934,42 +1048,81 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
     assert ended.read_text(encoding="utf-8").strip() == "TERM"
 
 
+# A window the renewal tests never come near: a liveness ceiling only. Their
+# verdict rests on the runner's renewals, observed in order, not on a gap
+# between writes measured against the window.
+_RENEWAL_WINDOW_S = "30"
+_RENEWAL_ROUNDS = 3
+# The runner touches this file in the run directory each time it takes new
+# output or a refreshed stamp as progress, and nowhere else.
+_OBSERVED = "progress.observed"
+_NO_STAMP_EXIT = 3
+
+
+def _renewing_gate(*, marker: Path, progress: str) -> str:
+    """A gate making `_RENEWAL_ROUNDS` rounds of `progress`, each after the last was renewed.
+
+    Each round takes a marker strictly newer than the runner's observation
+    file, makes its progress, and waits until the runner has touched that
+    file again at or after the marker. "Not newer" also admits a renewal
+    inside the same timestamp tick. The gate exits 0 only once every round
+    was renewed, so a 0 verdict is the ordered proof; it exits 3 when the
+    runner gave it no stamp.
+    """
+    return (
+        'stamp="${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}"; '
+        f'[ -n "$stamp" ] || exit {_NO_STAMP_EXIT}; '
+        f'observed="${{stamp%/*}}/{_OBSERVED}"; marker="{marker}"; i=0; '
+        f"while [ $i -lt {_RENEWAL_ROUNDS} ]; do i=$((i+1)); "
+        'touch "$marker"; '
+        'while ! [ "$marker" -nt "$observed" ]; do sleep 0.01; touch "$marker"; done; '
+        f"{progress}; "
+        'while [ "$marker" -nt "$observed" ]; do sleep 0.05; done; '
+        "done; exit 0"
+    )
+
+
 @pytest.mark.integration
 def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
-    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """Output resets the stall window, so a slow but live gate keeps its verdict."""
+    """Output resets the stall window, so a slow but live gate keeps its verdict.
+
+    Each line of output is written only after the runner renewed the window
+    for the line before it, so the verdict rests on that order.
+    """
     primary, worktree, env = fixture_repo
-    steady = "for i in 1 2 3 4 5; do echo tick $i; sleep 1; done; exit 0"
+    steady = _renewing_gate(marker=tmp_path / "round.marker", progress='echo "tick $i"')
     run_id = _start(
         cwd=worktree,
-        env={**env, _STALL_ENV: "3", _STALL_GRACE_ENV: "1"},
+        env={**env, _STALL_ENV: _RENEWAL_WINDOW_S, _STALL_GRACE_ENV: "1"},
         command=["bash", "-c", steady],
     )
 
     run_dir = _await_verdict(primary=primary, run_id=run_id)
 
     assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
-    assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
+    output = (run_dir / "output.log").read_text(encoding="utf-8")
+    assert "stall window" not in output
+    assert f"tick {_RENEWAL_ROUNDS}" in output
 
 
 @pytest.mark.integration
 def test_a_silent_delegate_that_refreshes_the_progress_stamp_keeps_its_verdict(
-    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """A delegated client may be live even while lefthook buffers its output."""
+    """A delegated client may be live even while lefthook buffers its output.
+
+    The gate prints nothing; each stamp refresh is made only after the
+    runner renewed the window for the one before it.
+    """
     primary, worktree, env = fixture_repo
-    delegated_wait = (
-        "for _ in 1 2 3 4 5; do "
-        'if [ -n "${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}" ]; then '
-        'touch "$LIVESPEC_GATE_RUN_PROGRESS_STAMP"; '
-        "fi; sleep 1; done"
-    )
+    delegated_wait = _renewing_gate(marker=tmp_path / "round.marker", progress='touch "$stamp"')
     run_id = _start(
         cwd=worktree,
         env={
             **env,
-            _STALL_ENV: "3",
+            _STALL_ENV: _RENEWAL_WINDOW_S,
             _STALL_GRACE_ENV: "1",
             "LIVESPEC_GATE_RUN_PROGRESS_STAMP": "",
         },
@@ -994,19 +1147,19 @@ _AGGREGATE = (
     ")\n"
     "raise SystemExit(outcomes[0].returncode)\n"
 )
-_WRITING_MEMBER = "i=0; while [ $i -lt 7 ]; do echo working; i=$((i+1)); sleep 1; done"
-_SILENT_MEMBER = "sleep 7"
+# A liveness ceiling only, in 0.1 s polls: the test releases the silent member.
+_SILENT_MEMBER_CEILING_POLLS = 1200
 
 
 def _start_aggregate(
-    *, fixture_repo: tuple[Path, Path, dict[str, str]], member: str
+    *, fixture_repo: tuple[Path, Path, dict[str, str]], member: str, stall_s: str
 ) -> tuple[Path, Path, str]:
     primary, worktree, env = fixture_repo
     run_id = _start(
         cwd=worktree,
         env={
             **env,
-            _STALL_ENV: "3",
+            _STALL_ENV: stall_s,
             _STALL_GRACE_ENV: "1",
             "PYTHONPATH": str(_REPO_ROOT),
         },
@@ -1017,16 +1170,21 @@ def _start_aggregate(
 
 @pytest.mark.integration
 def test_an_aggregate_whose_only_running_member_writes_its_spool_keeps_its_own_verdict(
-    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """A member writing into its spool past the stall window is progressing, not stalled.
+    """A member writing into its spool is progressing, not stalled.
 
     The aggregate runner spools every member's output until the member ends, so
     the run's output.log stays silent. The runner renews the progress stamp
     while the member's spool grows, and the run ends with the member's own
-    verdict rather than the stall window's exit 124.
+    verdict rather than the stall window's exit 124. The member writes each
+    line only after the gate runner renewed the window for the line before
+    it, so the verdict rests on that order.
     """
-    _, run_dir, _ = _start_aggregate(fixture_repo=fixture_repo, member=_WRITING_MEMBER)
+    writing = _renewing_gate(marker=tmp_path / "round.marker", progress="echo working")
+    _, run_dir, _ = _start_aggregate(
+        fixture_repo=fixture_repo, member=writing, stall_s=_RENEWAL_WINDOW_S
+    )
 
     assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "0"
     assert "stall window" not in (run_dir / "output.log").read_text(encoding="utf-8")
@@ -1034,11 +1192,25 @@ def test_an_aggregate_whose_only_running_member_writes_its_spool_keeps_its_own_v
 
 @pytest.mark.integration
 def test_an_aggregate_whose_only_running_member_is_alive_but_silent_is_ended_by_the_stall_window(
-    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """A member that lives but writes nothing is not progress: a hung member must not hang the gate."""
-    primary, run_dir, run_id = _start_aggregate(fixture_repo=fixture_repo, member=_SILENT_MEMBER)
-    waited = _gate(cwd=primary, env=fixture_repo[2], args=["wait", run_id])
+    """A member that lives but writes nothing is not progress: a hung member must not hang the gate.
+
+    The member stays alive until the test has read the verdict, so only the
+    stall window can end the run, however late it fires.
+    """
+    release = tmp_path / "release-member"
+    silent = (
+        f'i=0; while [ ! -e "{release}" ] && [ $i -lt {_SILENT_MEMBER_CEILING_POLLS} ]; '
+        "do i=$((i+1)); sleep 0.1; done"
+    )
+    try:
+        primary, run_dir, run_id = _start_aggregate(
+            fixture_repo=fixture_repo, member=silent, stall_s="3"
+        )
+        waited = _gate(cwd=primary, env=fixture_repo[2], args=["wait", run_id])
+    finally:
+        release.touch()
 
     assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "124"
     assert "FAILED" in waited.stdout
