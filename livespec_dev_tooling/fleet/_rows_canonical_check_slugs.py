@@ -12,9 +12,10 @@ row reads a waiver from). The shared reader and judge live in
 `checks/_canonical_waivers`, which `check-aggregate-completeness` uses too. A waived
 omission is satisfied and handed back on the outcome so the lane logs it with the
 member, the slug and the reason; a stale or malformed waiver is an error. A
-`pyproject.toml` the tree lists but this run cannot read or parse SKIPS the member:
+`pyproject.toml` the tree lists but this run cannot read SKIPS the member:
 taking an unreadable file for an absent key would read an undeclared waiver as none
-and convict the member of omissions it may have been excused from. A file the tree
+and convict the member of omissions it may have been excused from. A committed
+file that cannot parse is instead a context-scoped finding. A file the tree
 definitively does not list declares no waiver.
 """
 
@@ -50,6 +51,7 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
     RowSkip,
     TreeState,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding  # noqa: E402
 from livespec_dev_tooling.fleet._rows_aggregate_gate import (  # noqa: E402
     ResolvedCheckAggregate,
     resolve_check_aggregate_targets,
@@ -90,10 +92,7 @@ def _canonical_slugs() -> tuple[str, ...] | RowFinding:
 
 def _pinned_tag(*, pyproject_text: str) -> str | None:
     """The member's committed dev-tooling release tag, or no resolvable tag."""
-    try:
-        source: dict[str, object] = tomli.loads(pyproject_text)
-    except tomli.TOMLDecodeError:
-        return None
+    source: dict[str, object] = tomli.loads(pyproject_text)
     for key in ("tool", "uv", "sources", _DEV_TOOLING_REPO):
         child = source.get(key)
         if not isinstance(child, dict):
@@ -103,12 +102,20 @@ def _pinned_tag(*, pyproject_text: str) -> str | None:
     return tag if isinstance(tag, str) else None
 
 
-def _pinned_canonical_slugs(*, ctx: FleetContext, member: FleetMember) -> tuple[str, ...] | RowSkip:
+def _pinned_canonical_slugs(
+    *, ctx: FleetContext, member: FleetMember
+) -> tuple[str, ...] | RowFinding | RowSkip:
     """The canonical inventory at a preflight member's committed package pin."""
     pyproject = ctx.file_text(repo=member.repo, path=PYPROJECT_PATH)
     if pyproject is None:
         return RowSkip(reason=f"{member.repo}: pin inventory unknown; {PYPROJECT_PATH} unreadable")
-    tag = _pinned_tag(pyproject_text=pyproject)
+    try:
+        tag = _pinned_tag(pyproject_text=pyproject)
+    except tomli.TOMLDecodeError:
+        return cant_parse_finding(
+            message=f"{member.repo}: committed {PYPROJECT_PATH} is not parseable TOML",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     if tag is None:
         return RowSkip(reason=f"{member.repo}: dev-tooling tag pin missing")
     payload = ctx.api_object(
@@ -129,7 +136,13 @@ def _pinned_canonical_slugs(*, ctx: FleetContext, member: FleetMember) -> tuple[
         )
     )
     if not slugs:
-        return RowSkip(reason=f"{member.repo}: canonical check inventory at {tag} is empty")
+        return cant_parse_finding(
+            message=(
+                f"{member.repo}: canonical check inventory at {tag} from committed "
+                f"{PYPROJECT_PATH} is empty"
+            ),
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     return slugs
 
 
@@ -144,7 +157,7 @@ def _required_canonical_slugs(
 
 def _member_waivers(
     *, ctx: FleetContext, member: FleetMember, tree: TreeState
-) -> DeclaredWaivers | RowSkip:
+) -> DeclaredWaivers | RowFinding | RowSkip:
     """The waivers the member's master-tree `pyproject.toml` declares, or the skip."""
     if PYPROJECT_PATH not in tree.paths:
         if tree.truncated:
@@ -158,11 +171,12 @@ def _member_waivers(
         return RowSkip(reason=f"{member.repo}: {PYPROJECT_PATH} unreadable — {unevaluable}")
     parsed = declared_waivers(pyproject_text=text)
     if isinstance(parsed, Failure):
-        return RowSkip(
-            reason=(
+        return cant_parse_finding(
+            message=(
                 f"{member.repo}: {PYPROJECT_PATH} unparseable "
                 f"({parsed.failure().detail}) — canonical-check waivers not evaluable"
-            )
+            ),
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
         )
     return parsed.unwrap()
 
@@ -179,7 +193,7 @@ def assert_canonical_check_slugs_wired(*, ctx: FleetContext, member: FleetMember
     if isinstance(canonical, RowFinding | RowSkip):
         return canonical
     declared = _member_waivers(ctx=ctx, member=member, tree=tree)
-    if isinstance(declared, RowSkip):
+    if isinstance(declared, RowFinding | RowSkip):
         return declared
     verdict = judge_waivers(declared=declared.value, canonical=canonical, selected=resolved.targets)
     waived = {waiver.slug for waiver in verdict.honoured}

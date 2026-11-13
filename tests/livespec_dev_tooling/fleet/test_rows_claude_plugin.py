@@ -147,7 +147,7 @@ def test_claude_plugin_currency_edge_outcomes() -> None:
         detail = outcome.reason if isinstance(outcome, RowSkip) else outcome.message
         assert text in detail
         if isinstance(outcome, RowFinding):
-            assert outcome.severity == "error"
+            assert outcome.severity == ("warning" if text == "parseable" else "error")
 
 
 def test_claude_plugin_currency_passes_standard_wrapper_with_comments() -> None:

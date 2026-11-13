@@ -46,6 +46,7 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
     TreeState,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -128,11 +129,16 @@ def _pyproject_text(*, ctx: FleetContext, member: FleetMember, tree: TreeState) 
     return text
 
 
-def _spelling_outcome(*, pyproject_text: str, member: FleetMember) -> RowOutcome:
+def _spelling_outcome(
+    *, pyproject_text: str, member: FleetMember, filter_consuming_preflight: bool
+) -> RowOutcome:
     """Classify one member's declared union role keys into a row outcome."""
     table = _tool_table(pyproject_text=pyproject_text)
     if table is None:
-        return RowFinding(message=f"{member.repo}: malformed {_PYPROJECT}")
+        return cant_parse_finding(
+            message=f"{member.repo}: malformed {_PYPROJECT}",
+            filter_consuming_preflight=filter_consuming_preflight,
+        )
     if not table:
         return RowPass(
             note=(
@@ -157,5 +163,9 @@ def assert_role_key_spellings_conformant(*, ctx: FleetContext, member: FleetMemb
         return RowSkip(reason=f"{member.repo}: master tree unreadable")
     text = _pyproject_text(ctx=ctx, member=member, tree=tree)
     if isinstance(text, str):
-        return _spelling_outcome(pyproject_text=text, member=member)
+        return _spelling_outcome(
+            pyproject_text=text,
+            member=member,
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     return text

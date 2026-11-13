@@ -251,7 +251,7 @@ def test_a_malformed_waiver_fails_both_gates_naming_the_slug_or_the_position(
     assert "entry at position 1" in detail
 
 
-def test_an_unreadable_member_pyproject_skips_the_fleet_row_and_an_unparseable_one_applies_no_waiver(
+def test_an_unparseable_member_pyproject_warns_in_the_fleet_row_and_applies_no_waiver(
     *,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -260,15 +260,14 @@ def test_an_unreadable_member_pyproject_skips_the_fleet_row_and_an_unparseable_o
     justfile = _justfile(omit=_WAIVED)
     broken = '[tool.livespec_dev_tooling\ncanonical_check_waivers = [{ slug = "'
 
-    # The fleet row: the tree lists a pyproject.toml the run cannot parse -> skip, no finding.
+    # The fleet row: the tree lists a committed pyproject.toml that cannot
+    # parse, so it is a warning finding outside the filter-consuming preflight.
     fleet, log = _run_fleet_row(monkeypatch=monkeypatch, justfile=justfile, pyproject=broken)
     assert fleet.error_findings == 0
-    assert fleet.blind_rows == 1
-    assert [
-        fields["member"]
-        for fields in log.events(event="fleet obligation not evaluable (can't-read is not absent)")
-    ] == [_MEMBER.repo]
-    assert log.events(event="fleet obligation violated") == []
+    assert fleet.blind_rows == 0
+    warnings = log.events(event="fleet obligation warning")
+    assert [fields["member"] for fields in warnings] == [_MEMBER.repo]
+    assert "pyproject.toml unparseable" in str(warnings[0]["detail"])
 
     # The in-repo check: the same bytes apply no waiver, so the omitted slug is still reported.
     code, findings = _run_in_repo_check(

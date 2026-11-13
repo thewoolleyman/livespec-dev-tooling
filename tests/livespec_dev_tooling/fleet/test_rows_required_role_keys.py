@@ -193,6 +193,7 @@ def test_required_role_keys_row_flags_malformed_pyproject() -> None:
     ctx = make_context(table=_role_key_table(justfile=_LAYOUT_JUSTFILE, pyproject="not [toml"))
     outcome = assert_required_role_keys_declared(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
     assert "malformed pyproject" in outcome.message
 
 

@@ -25,6 +25,7 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding
 
 __all__: list[str] = [
     "CLAUDE_SETTINGS",
@@ -133,7 +134,10 @@ def _settings_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> Row
         return RowSkip(reason=f"{member.repo}: {CLAUDE_SETTINGS} unreadable")
     settings = _settings_payload(settings_text=settings_text)
     if settings is None:
-        return RowFinding(message=f"{member.repo}: {CLAUDE_SETTINGS} is not parseable JSON object")
+        return cant_parse_finding(
+            message=f"{member.repo}: {CLAUDE_SETTINGS} is not parseable JSON object",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     if _has_documented_currency_successor(settings=settings):
         return RowPass()
     if _has_ensure_plugins_session_start(settings=settings):
