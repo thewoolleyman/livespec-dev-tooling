@@ -181,7 +181,7 @@ def test_the_join_applies_the_cluster_objects_and_converges_around_the_delivery(
     image = (_HW / "image" / "ref").read_text(encoding="utf-8").splitlines()[-1]
     converges = [c for c in _calls(env=env) if " bash -s -- " in c]
     expected = f"limactl shell --workdir / {_WORKER} sudo bash -s -- "
-    assert converges == [f"{expected}{_WORKER} {_HOST} {image} /srv/w net1"] * 2
+    assert converges == [f"{expected}{_WORKER} {_HOST} {image} /srv/w net1"] * 3
     assert (env.state / "converge-stdin").read_text(encoding="utf-8") == (
         _HW / "vm" / "converge-worker-container.sh"
     ).read_text(encoding="utf-8")
