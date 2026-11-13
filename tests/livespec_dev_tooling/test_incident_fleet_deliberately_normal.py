@@ -160,9 +160,11 @@ from pathlib import Path
 from livespec_dev_tooling.incident_fleet_cli import CliEnvironment, main
 config = json.loads(sys.argv[1])
 served = set(config["served"])
+def write(repository, manifest_sha256):
+    raise SystemExit("the audit must never write an enablement record")
 environment = CliEnvironment(
     claims_path=Path(config["claims"]),
-    state_dir=Path(config["state"]),
+    write_enablement=write,
     read_manifest=lambda: config["manifest"],
     read_serving=lambda *, repository, capability: "v9.9.9" if capability in served else None,
 )
@@ -181,7 +183,6 @@ def _child_audit(*, tmp_path: Path, served: set[str]) -> subprocess.CompletedPro
         "manifest": _MANIFEST,
         "served": sorted(served),
         "claims": str(claims),
-        "state": str(tmp_path / "state"),
     }
     scrubbed = {
         name: value
@@ -204,6 +205,7 @@ def test_run_as_a_child_process_a_ruled_normal_member_and_adopter_classify_with_
 ) -> None:
     audit = _child_audit(tmp_path=tmp_path, served=set())
     lines = audit.stdout.splitlines()
+    assert any(line.startswith("row\t") for line in lines), audit.stderr
     member = [line for line in lines if line.startswith("row\texample/tooling\t")]
     notes = [line for line in lines if line.startswith("row\texample/notes\t")]
     assert len(member) == len(SURFACES)
@@ -220,6 +222,7 @@ def test_run_as_a_child_process_a_read_of_the_members_own_controller_contradicts
 ) -> None:
     audit = _child_audit(tmp_path=tmp_path, served={"independent-controller"})
     lines = audit.stdout.splitlines()
+    assert any(line.startswith("row\t") for line in lines), audit.stderr
     controller = [s for s in SURFACES if SURFACE_CAPABILITY.get(s) == "independent-controller"]
     for surface in controller:
         assert f"row\texample/tooling\t{surface}\tunclassified\tv9.9.9" in lines
