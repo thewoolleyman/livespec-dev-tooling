@@ -33,11 +33,8 @@ vendor-path-aware import below.
 
 from __future__ import annotations
 
-import re
-import shlex
 import sys
-from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -45,6 +42,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._ci_single_container_image_shell import (  # noqa: E402
+    runs_aggregate_target,
+)
+from livespec_dev_tooling.checks._ci_single_container_image_workflow import (  # noqa: E402
+    aggregate_targets,
+    container_images,
+)
 from livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite import (  # noqa: E402
     tag_version_component,
 )
@@ -55,128 +59,10 @@ CHECK_PURITY = "tree-pure"
 
 
 _CI_WORKFLOW_PATH = Path(".github") / "workflows" / "ci.yml"
-_CONTAINER_KEY = re.compile(r"^(?P<indent>[ \t]*)container:[ \t]*(?P<value>.*)$")
-_IMAGE_KEY = re.compile(r"^[ \t]*image:[ \t]*(?P<value>.*)$")
-_QUOTED = re.compile(r"""^(?P<quote>["'])(?P<body>.*?)(?P=quote)""")
-_TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
-_JOB_KEY = re.compile(r"^[ \t]{2}(?P<name>[^ \t:#][^:]*):[ \t]*(?:#.*)?$")
-_RUN_KEY = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?)run:[ \t]*(?P<value>.*)$")
-_BLOCK_SCALAR = re.compile(r"^(?P<style>[|>])[-+0-9]*[ \t]*(?:#.*)?$")
-_SHELL_OPERATOR = re.compile(r"^[();<>|&]+$")
-_UNPARSEABLE_SHELL = re.compile(r"""["'\\]|(?:^|\s)#.*$""")
-_CHECK_RECIPE = re.compile(r"^check(?:[ \t]+[^:]*)?:[ \t]*(?P<dependencies>.*)$")
-_RECIPE_HEADER = re.compile(r"^[^ \t#:][^:]*:[ \t]*(?:#.*)?$")
 _HINT = (
     "Every job must name one image repository and release version. Layered flavors are "
     "allowed only off the gate path, beneath a dash-separated gate-flavor prefix."
 )
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Image:
-    """A job container image plus the job's source span."""
-
-    image: str
-    line: int
-    job_start: int
-    job_end: int
-
-
-def _reference(*, raw: str) -> str:
-    """The image reference a YAML scalar names, without quotes or a trailing comment."""
-    quoted = _QUOTED.match(raw)
-    if quoted is not None:
-        return quoted.group("body")
-    return _TRAILING_COMMENT.sub("", raw).strip()
-
-
-def _indent_of(*, line: str) -> int:
-    return len(line) - len(line.lstrip(" \t"))
-
-
-def _block_image(*, lines: list[str], start: int, parent_indent: int) -> tuple[int, str] | None:
-    """The `image:` that is a direct child of the `container:` block opened above `start`."""
-    child_indent: int | None = None
-    for offset, line in enumerate(lines[start:], start=start):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = _indent_of(line=line)
-        if indent <= parent_indent:
-            return None
-        if child_indent is None:
-            child_indent = indent
-        match = _IMAGE_KEY.match(line)
-        if indent == child_indent and match is not None:
-            return offset + 1, _reference(raw=match.group("value"))
-    return None
-
-
-def _job_span(*, lines: list[str], index: int) -> tuple[int, int] | None:
-    """The half-open span of the job that contains line ``index``."""
-    job_start: int | None = None
-    for candidate in range(index, -1, -1):
-        if _JOB_KEY.match(lines[candidate]) is not None:
-            job_start = candidate
-            break
-    if job_start is None:
-        return None
-    for job_end in range(job_start + 1, len(lines)):
-        if _JOB_KEY.match(lines[job_end]) is not None:
-            return job_start, job_end
-    return job_start, len(lines)
-
-
-def _container_images(*, source: str) -> list[_Image]:
-    """Every job `container:` image in the workflow, with its job's source span."""
-    lines = source.splitlines()
-    declared: list[_Image] = []
-    for index, line in enumerate(lines):
-        match = _CONTAINER_KEY.match(line)
-        if match is None:
-            continue
-        scalar = _reference(raw=match.group("value"))
-        job = _job_span(lines=lines, index=index)
-        if job is None:
-            continue
-        if scalar:
-            declared.append(_Image(image=scalar, line=index + 1, job_start=job[0], job_end=job[1]))
-            continue
-        block = _block_image(lines=lines, start=index + 1, parent_indent=len(match.group("indent")))
-        if block is not None:
-            lineno, image = block
-            declared.append(_Image(image=image, line=lineno, job_start=job[0], job_end=job[1]))
-    return declared
-
-
-def _aggregate_targets(*, repo_root: Path) -> set[str]:
-    """The ``check`` aggregate itself plus its enumerable member targets."""
-    inventory = repo_root / "check-targets.txt"
-    try:
-        entries = inventory.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        try:
-            justfile = (repo_root / "justfile").read_text(encoding="utf-8")
-            entries = _check_recipe_targets(source=justfile)
-        except OSError:
-            return set()
-    targets = {entry.split("#", maxsplit=1)[0].strip() for entry in entries}
-    return {"check"} | {target for target in targets if target}
-
-
-def _check_recipe_targets(*, source: str) -> list[str]:
-    """The direct dependencies and body-listed targets of the ``check`` recipe."""
-    entries: list[str] = []
-    in_check_recipe = False
-    for line in source.splitlines():
-        if match := _CHECK_RECIPE.match(line):
-            in_check_recipe = True
-            entries.extend(match.group("dependencies").split())
-            continue
-        if _RECIPE_HEADER.match(line):
-            in_check_recipe = False
-        if in_check_recipe:
-            entries.append(line.strip())
-    return entries
 
 
 def _image_parts(*, image: str) -> tuple[str, str, str] | None:
@@ -202,75 +88,6 @@ def _has_gate_flavor(*, flavors: set[str]) -> str | None:
     return None
 
 
-def _run_commands(*, lines: list[str]) -> list[str]:
-    """The shell command lines of every step `run:` value in a job's source lines."""
-    commands: list[str] = []
-    index = 0
-    while index < len(lines):
-        match = _RUN_KEY.match(lines[index])
-        index += 1
-        if match is None:
-            continue
-        key_indent = len(match.group("lead"))
-        body: list[str] = []
-        while index < len(lines) and (
-            not lines[index].strip() or _indent_of(line=lines[index]) > key_indent
-        ):
-            body.append(lines[index].strip())
-            index += 1
-        block = _BLOCK_SCALAR.match(match.group("value"))
-        if block is None:
-            commands.append(_reference(raw=" ".join([match.group("value"), *body])))
-        elif block.group("style") == ">":
-            commands.append(" ".join(part for part in body if part))
-        else:
-            commands.extend(re.sub(r"\\\n", " ", "\n".join(body)).splitlines())
-    return commands
-
-
-def _shell_words(*, command: str) -> list[str]:
-    """The command's shell words, comments removed and quoting resolved."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = "#"
-    try:
-        return list(lexer)
-    except ValueError:
-        return _UNPARSEABLE_SHELL.sub(" ", command).split()
-
-
-def _command_runs_aggregate(*, command: str, aggregate: set[str]) -> bool:
-    """Whether the shell command invokes `just` with any aggregate target."""
-    segment: list[str] = []
-    for word in [*_shell_words(command=command), ";"]:
-        if not _SHELL_OPERATOR.match(word):
-            segment.append(word)
-            continue
-        if _segment_runs_aggregate(words=segment, aggregate=aggregate):
-            return True
-        segment = []
-    return False
-
-
-def _segment_runs_aggregate(*, words: list[str], aggregate: set[str]) -> bool:
-    for position, word in enumerate(words):
-        rest = words[position + 1 :]
-        if PurePosixPath(word).name == "just" and any(recipe in aggregate for recipe in rest):
-            return True
-        shell_script = word == "eval" or (word.startswith("-") and word.endswith("c"))
-        if shell_script and _command_runs_aggregate(command=" ".join(rest), aggregate=aggregate):
-            return True
-    return False
-
-
-def _runs_aggregate_target(*, lines: list[str], image: _Image, aggregate: set[str]) -> bool:
-    """Whether this image's job runs any declared aggregate target in a step `run:`."""
-    return any(
-        _command_runs_aggregate(command=command, aggregate=aggregate)
-        for command in _run_commands(lines=lines[image.job_start : image.job_end])
-    )
-
-
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -294,7 +111,7 @@ def main() -> int:
         )
         return 0
     source = workflow.read_text(encoding="utf-8")
-    images = _container_images(source=source)
+    images = container_images(source=source)
     if not images:
         return 0
     lines_by_image: dict[str, list[int]] = {}
@@ -306,9 +123,14 @@ def main() -> int:
     versions = {part[2] for part in valid_parts}
     flavors = {part[1] for part in valid_parts}
     gate_flavor = _has_gate_flavor(flavors=flavors)
-    aggregate = _aggregate_targets(repo_root=Path.cwd())
+    aggregate = aggregate_targets(repo_root=Path.cwd())
     non_gate_runs_aggregate = gate_flavor is not None and any(
-        _runs_aggregate_target(lines=source.splitlines(), image=image, aggregate=aggregate)
+        runs_aggregate_target(
+            lines=source.splitlines(),
+            job_start=image.job_start,
+            job_end=image.job_end,
+            aggregate=aggregate,
+        )
         for image in images
         if (part := parts[image.image]) is not None and part[1] != gate_flavor
     )
