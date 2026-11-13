@@ -91,3 +91,36 @@ def test_gate_only_classifier_handles_options_directories_and_missing_node_ids(
         encoding="utf-8",
     )
     assert not _is_gate_job_only_pytest(pytest_argv=("pytest", "tests/test_declared.py"), cwd=root)
+
+
+def _suffix_form_tree(*, root: Path, declaration: str) -> Path:
+    """Create a repository whose only Ansible-driving module is spelled `*_test.py`."""
+    _ = (root / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n" + declaration,
+        encoding="utf-8",
+    )
+    tests = root / "tests"
+    tests.mkdir()
+    marker = "ansible" + "-playbook"
+    _ = (tests / "declared_test.py").write_text(f'COMMAND = "{marker}"\n', encoding="utf-8")
+    return root
+
+
+def test_gate_only_classifier_enumerates_suffix_form_test_modules_in_a_directory(
+    *, tmp_path: Path
+) -> None:
+    """Pytest also collects `*_test.py`, so a selected directory holding one is refused."""
+    root = _suffix_form_tree(
+        root=tmp_path, declaration='gate_job_only_tests = ["tests/*_test.py"]\n'
+    )
+
+    assert _is_gate_job_only_pytest(pytest_argv=("pytest", "tests"), cwd=root)
+
+
+def test_the_check_names_an_unmatched_suffix_form_ansible_driving_test_module(
+    *, tmp_path: Path
+) -> None:
+    """The declaration-coverage check sees `*_test.py` modules as pytest does."""
+    root = _suffix_form_tree(root=tmp_path, declaration="gate_job_only_tests = []\n")
+
+    assert _module().undeclared_gate_job_only_modules(repo_root=root) == ("tests/declared_test.py",)
