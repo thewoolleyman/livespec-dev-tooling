@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
@@ -482,3 +483,81 @@ def test_reclaim_ignores_a_matching_file_and_logs_a_creator_record_write_failure
     assert matching_file.read_text(encoding="utf-8") == "keep"
     assert not (directories["full-tree"] / ".livespec-coverage-creator.json").exists()
     assert "could not record coverage creator" in caplog.text
+
+
+_VALID_STAT_TAIL = "R " + " ".join(["1"] * 18) + " 4242 " + " ".join(["0"] * 30)
+
+
+def _stat_reader(*, stat: str) -> Callable[..., str]:
+    original_read_text = namespaces.Path.read_text
+
+    def read_text(path: Path, *, encoding: str) -> str:
+        if str(path).startswith("/proc/"):
+            return stat
+        return original_read_text(path, encoding=encoding)
+
+    return read_text
+
+
+@pytest.mark.parametrize(
+    "stat",
+    [
+        "no framing at all",
+        "7 (comm " + _VALID_STAT_TAIL,
+        "(comm) " + _VALID_STAT_TAIL,
+        "7 (comm) " + _VALID_STAT_TAIL.replace("4242", "not-a-number"),
+        "7 (comm) " + _VALID_STAT_TAIL.replace("R ", "RR ", 1),
+        "7 (comm) " + _VALID_STAT_TAIL.replace("R 1", "R x", 1),
+        "7 (comm) " + " ".join(["a"] * 25),
+        "7 (comm) R 1 2",
+    ],
+)
+def test_process_start_time_rejects_malformed_proc_stat_data(
+    *, monkeypatch: pytest.MonkeyPatch, stat: str
+) -> None:
+    """Only well-framed procfs data with a numeric start time yields an identity."""
+    monkeypatch.setattr(namespaces.Path, "read_text", _stat_reader(stat=stat))
+
+    assert namespaces.process_start_time(pid=os.getpid()) is None
+
+
+def test_process_start_time_reads_the_start_time_after_a_comm_containing_parentheses(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process name with parentheses and spaces does not shift the field index."""
+    stat = f"7 (a) b (c) {_VALID_STAT_TAIL}\n"
+    monkeypatch.setattr(namespaces.Path, "read_text", _stat_reader(stat=stat))
+
+    assert namespaces.process_start_time(pid=os.getpid()) == "4242"
+
+
+def test_reclaim_keeps_a_namespace_whose_creator_stat_data_is_malformed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Malformed stat data is never read as a changed start time that deletes a live namespace."""
+    namespace_dir = tmp_path / "covns-live-malformed-stat"
+    namespace_dir.mkdir()
+    _write_creator_record(
+        namespace_dir=namespace_dir, creator={"pid": os.getpid(), "start_time": "4242"}
+    )
+    garbled = "7 (comm) " + " ".join(["garbled"] * 25)
+    monkeypatch.setattr(namespaces.Path, "read_text", _stat_reader(stat=garbled))
+    namespaces.reclaim_abandoned_namespace_dirs(root=tmp_path)
+
+    assert namespace_dir.is_dir()
+    assert "could not observe coverage creator" in caplog.text
+
+
+def test_a_runner_with_malformed_own_stat_data_records_no_creator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Malformed own stat data is never recorded as this runner's identity."""
+    garbled = "7 (comm) " + " ".join(["garbled"] * 25)
+    monkeypatch.setattr(namespaces.Path, "read_text", _stat_reader(stat=garbled))
+
+    directories = namespaces.build_namespace_dirs(
+        targets=["check-coverage"], skip_set=frozenset(), root=tmp_path
+    )
+
+    assert not (directories["full-tree"] / ".livespec-coverage-creator.json").exists()
+    assert "could not observe this runner's start time" in caplog.text

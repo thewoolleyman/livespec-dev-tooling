@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -39,7 +40,10 @@ __all__: list[str] = [
 
 _CREATOR_RECORD_NAME = ".livespec-coverage-creator.json"
 _UNRECORDED_NAMESPACE_MAX_AGE_SECONDS = 24 * 60 * 60
-_PROC_STAT_START_TIME_INDEX = 19
+# /proc/<pid>/stat is `pid (comm) state` followed by integer fields up to the
+# start time, which is the 20th field after the state.
+_STAT_HEAD = re.compile(r"\d+ \(")
+_STAT_TAIL = re.compile(r" [A-Za-z](?: -?\d+){18} (\d+)(?=\s|\Z)")
 _LOGGER = logging.getLogger(__name__)
 
 COVERAGE_NAMESPACES: dict[str, str] = {
@@ -68,10 +72,10 @@ COVERAGE_CONSUMERS: dict[str, str] = {
 
 def _parse_start_time(*, stat: str) -> str | None:
     closing_parenthesis = stat.rfind(")")
-    fields = stat[closing_parenthesis + 1 :].split()
-    if closing_parenthesis < 0 or len(fields) <= _PROC_STAT_START_TIME_INDEX:
+    if closing_parenthesis < 0 or _STAT_HEAD.match(stat[:closing_parenthesis]) is None:
         return None
-    return fields[_PROC_STAT_START_TIME_INDEX]
+    tail = _STAT_TAIL.match(stat, closing_parenthesis + 1)
+    return None if tail is None else tail.group(1)
 
 
 def process_start_time(*, pid: int) -> str | None:
