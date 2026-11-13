@@ -18,6 +18,7 @@ from livespec_dev_tooling import _incident_observer_dispatch as dispatch_module
 from livespec_dev_tooling import incident_observer_control as control
 from livespec_dev_tooling import incident_observer_service as service
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 
@@ -115,7 +116,8 @@ def _request(*, application, path, payload, **changes):
 
 def _recovery_completed(*, effects):
     recoveries = [t for t in threading.enumerate() if t.name.startswith("incident-recovery-")]
-    _ = [t.join(timeout=5) for t in recoveries]
+    _ = [t.join(timeout=HANG_GUARD_SECONDS) for t in recoveries]
+    assert not any(t.is_alive() for t in recoveries), "HANG: waiting for incident recovery threads"
     return bool(effects)
 
 

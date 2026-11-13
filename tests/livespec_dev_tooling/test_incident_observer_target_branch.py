@@ -31,6 +31,7 @@ from livespec_dev_tooling._incident_observer_store import (
     repository_lock,
 )
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling.test_incident_recovery_principal import REPOSITORY, build_world
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-thhgeg
@@ -218,8 +219,10 @@ class _World:
         """
         name = f"incident-recovery-{action_id}"
         workers = [t for t in threading.enumerate() if t.name == name]
-        _ = [worker.join(timeout=30) for worker in workers]
-        assert not any(worker.is_alive() for worker in workers), name
+        _ = [worker.join(timeout=HANG_GUARD_SECONDS) for worker in workers]
+        assert not any(
+            worker.is_alive() for worker in workers
+        ), f"HANG: waiting for recovery thread {name}"
         with repository_lock(
             directory=self.installation.state, repository=self.installation.repository
         ) as path:

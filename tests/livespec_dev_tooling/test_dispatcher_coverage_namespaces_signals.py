@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 pytestmark = pytest.mark.integration
 
@@ -117,7 +119,7 @@ def _signal_runner(*, tmp_path: Path, runner: str, signum: int) -> tuple[int, li
         while not marker.exists() and time.monotonic() - started < 60:
             time.sleep(0.05)
         process.send_signal(signum)
-        status = process.wait(timeout=30)
+        status = process.wait(HANG_GUARD_SECONDS)
     finally:
         # The held target sleeps in the runner's own session; reap the session.
         with suppress(ProcessLookupError):

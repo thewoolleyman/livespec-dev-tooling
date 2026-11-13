@@ -28,17 +28,23 @@ from __future__ import annotations
 import shlex
 import subprocess
 from collections.abc import Sequence
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from os import PathLike
-from typing import Any
+from threading import Barrier, BrokenBarrierError
+from typing import Any, TypeVar
 
 import pytest
 
 __all__: list[str] = [
     "HANG_GUARD_SECONDS",
+    "future_result_under_hang_guard",
     "run_under_hang_guard",
+    "wait_for_barrier",
 ]
 
 HANG_GUARD_SECONDS = 900
+T = TypeVar("T")
 
 
 def run_under_hang_guard(
@@ -63,3 +69,19 @@ def run_under_hang_guard(
             "(tests/hang_guard.py). This is a run that never ended, not a slow one.",
             pytrace=False,
         )
+
+
+def future_result_under_hang_guard(*, future: Future[T], waiting_for: str) -> T:
+    """Return a future's result or fail with the named shared hang guard."""
+    try:
+        return future.result(timeout=HANG_GUARD_SECONDS)
+    except FutureTimeoutError:
+        pytest.fail(f"HANG: waiting for {waiting_for}", pytrace=False)
+
+
+def wait_for_barrier(*, barrier: Barrier, waiting_for: str) -> int:
+    """Wait at a barrier or fail with the named shared hang guard."""
+    try:
+        return barrier.wait(timeout=HANG_GUARD_SECONDS)
+    except BrokenBarrierError:
+        pytest.fail(f"HANG: waiting for {waiting_for}", pytrace=False)

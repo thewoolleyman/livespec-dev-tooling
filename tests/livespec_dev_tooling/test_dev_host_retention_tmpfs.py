@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 _ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _ROOT / "ansible" / "roles" / "dev_host_retention"
 _RETENTION = _ROLE / "files" / "dev-host-retention.sh"
@@ -369,7 +371,7 @@ def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(
         )
     finally:
         child.terminate()
-        _ = child.wait(timeout=30)
+        _ = child.wait(HANG_GUARD_SECONDS)
         bulk_left = {path.name for path in bulk.iterdir()}
         shutil.rmtree(bulk)
 

@@ -52,6 +52,7 @@ from livespec_dev_tooling.incident_conflict_publication import (
 from livespec_dev_tooling.incident_inverse import recover_incident_inverse
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
 from livespec_dev_tooling.incident_observer_service import ControllerService
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_observer_control as control_tests
 from tests.livespec_dev_tooling import test_incident_recovery_principal as principal_tests
 from tests.livespec_dev_tooling.fixtures.incident_authority_refusals import (
@@ -1317,15 +1318,16 @@ def test_a_callback_gets_the_fence_while_the_principals_lookup_is_slow(failing, 
     monkeypatch.setattr(reconcile_module, "ProcessInverseForge", SlowForge)
     thread = Thread(target=lambda: _settle(world, automatic=True), daemon=True)
     thread.start()
-    assert looking.wait(30)
+    assert looking.wait(HANG_GUARD_SECONDS), "HANG: waiting for the slow principal lookup"
     started = time.monotonic()
     with repository_lock(
         directory=world.installation.state, repository=REPOSITORY, wait_seconds=5.0
     ):
         waited = time.monotonic() - started
     assert waited < 5.0 and thread.is_alive()
-    thread.join(timeout=60)
-    assert not thread.is_alive() and chain.status() == "blocked"
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert not thread.is_alive(), "HANG: waiting for automatic settlement to finish"
+    assert chain.status() == "blocked"
 
 
 def test_a_moved_head_with_no_overlap_recomputes_and_never_reaches_the_chain(failing, monkeypatch):

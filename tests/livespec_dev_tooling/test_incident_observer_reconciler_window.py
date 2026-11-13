@@ -27,6 +27,7 @@ from livespec_dev_tooling.incident_observer import (
     route_ordinary_action,
     route_reconciler_window,
 )
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
 _REPOSITORY = "owner/repo"
@@ -156,11 +157,11 @@ def test_a_fence_held_past_the_bound_is_the_observer_acting(tmp_path):
     def hold():
         with repository_lock(directory=tmp_path, repository=_REPOSITORY):
             held.set()
-            _ = release.wait(timeout=30)
+            assert release.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release the fence"
 
     holder = Thread(target=hold)
     holder.start()
-    _ = held.wait(timeout=30)
+    assert held.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for the fence holder"
     perform = Mock(return_value="ordinary-action")
     answer = route_reconciler_window(
         directory=tmp_path,
@@ -170,7 +171,8 @@ def test_a_fence_held_past_the_bound_is_the_observer_acting(tmp_path):
         wait_seconds=0.2,
     )
     release.set()
-    holder.join(timeout=30)
+    holder.join(timeout=HANG_GUARD_SECONDS)
+    assert not holder.is_alive(), "HANG: waiting for the fence holder to stop"
 
     assert (answer.status, answer.reason) == (
         "incident-owned",

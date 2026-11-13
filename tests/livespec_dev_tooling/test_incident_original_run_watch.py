@@ -24,6 +24,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling.incident_original_run_flows import EntryPorts
 from livespec_dev_tooling.incident_original_run_watch import WatchTick, watch_once
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_original_run_flows as flows
 from tests.livespec_dev_tooling.test_incident_original_run_flows import (
     REPOSITORY,
@@ -254,8 +255,9 @@ def test_the_started_watcher_collects_in_the_background_and_survives_a_failed_ti
     while time.monotonic() < deadline and not world.comments:
         time.sleep(0.01)
     running.stop.set()
-    thread.join(timeout=30)
-    assert (thread.daemon, thread.is_alive()) == (True, False)
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert thread.daemon
+    assert not thread.is_alive(), "HANG: waiting for the original-run watcher to stop"
     assert len(world.comments) == 1
     assert len(calls) >= 2
     assert (exits, running.failed.is_set()) == ([], False)
@@ -313,9 +315,10 @@ def test_an_unexpected_failure_ends_the_watcher_and_tells_the_service(
     ended = threading.Event()
     running = watcher(world, ports=Mock(side_effect=KeyError("getpwuid")))
     thread = running.start(on_exit=ended.set)
-    assert ended.wait(timeout=30)
-    thread.join(timeout=30)
-    assert (running.failed.is_set(), thread.is_alive()) == (True, False)
+    assert ended.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for the watcher exit callback"
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert running.failed.is_set()
+    assert not thread.is_alive(), "HANG: waiting for the failed watcher to stop"
     assert [getattr(item, "exc_type", None) for item in raised] == [KeyError]
 
 

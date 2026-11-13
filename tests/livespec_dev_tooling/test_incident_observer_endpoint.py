@@ -16,6 +16,7 @@ from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_observer import admit_observer
 from livespec_dev_tooling.incident_observer_endpoint import observer_endpoint
 from livespec_dev_tooling.incident_repository_fence import current_repository_fence
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 
@@ -114,7 +115,7 @@ def _deliver_pending_callback(*, directory, raw, effects, held):
             repository=intent.registration.repository, directory=directory
         )
         held.append(fence is not None)
-        assert allow_recovery.wait(timeout=2)
+        assert allow_recovery.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release recovery"
         effects.append(intent.action_id)
         recovery_done.set()
         return "revert-sha"
@@ -226,15 +227,22 @@ def test_registered_leaf_is_acknowledged_before_its_recovery_principal_completes
         held=held,
     )
     try:
-        assert recovery_started.wait(timeout=2)
-        assert response_started.wait(timeout=0.2)
-        assert request_done.wait(timeout=0.2)
+        assert recovery_started.wait(
+            timeout=HANG_GUARD_SECONDS
+        ), "HANG: waiting for recovery to start"
+        assert response_started.wait(
+            timeout=HANG_GUARD_SECONDS
+        ), "HANG: waiting for the HTTP response"
+        assert request_done.wait(
+            timeout=HANG_GUARD_SECONDS
+        ), "HANG: waiting for the request to finish"
         assert responses == ["202 Accepted"]
         assert effects == []
     finally:
         allow_recovery.set()
-        request.join(timeout=2)
-    assert recovery_done.wait(timeout=2)
+        request.join(timeout=HANG_GUARD_SECONDS)
+        assert not request.is_alive(), "HANG: waiting for the recovery request thread"
+    assert recovery_done.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for recovery to finish"
     assert effects
     assert held == [True]
 
@@ -249,7 +257,9 @@ def test_a_redelivery_is_acknowledged_within_the_bound_while_the_principal_holds
         directory=tmp_path, raw=raw, effects=effects, held=held
     )
     try:
-        assert recovery_started.wait(timeout=2)
+        assert recovery_started.wait(
+            timeout=HANG_GUARD_SECONDS
+        ), "HANG: waiting for recovery to start"
         statuses: list[str] = []
         redelivery = observer_endpoint(
             directory=tmp_path,
@@ -269,8 +279,9 @@ def test_a_redelivery_is_acknowledged_within_the_bound_while_the_principal_holds
         assert json.loads(body)["reason"] == "existing immutable action; no duplicate effect"
     finally:
         allow_recovery.set()
-        request.join(timeout=2)
-    assert recovery_done.wait(timeout=2)
+        request.join(timeout=HANG_GUARD_SECONDS)
+        assert not request.is_alive(), "HANG: waiting for the recovery request thread"
+    assert recovery_done.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for recovery to finish"
     assert len(effects) == 1
 
 
@@ -282,12 +293,12 @@ def test_a_new_failure_that_cannot_reach_the_busy_fence_is_answered_unavailable(
     def hold():
         with repository_lock(directory=tmp_path, repository="owner/repo"):
             holding.set()
-            assert release.wait(timeout=5)
+            assert release.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release the fence"
 
     holder = Thread(target=hold)
     holder.start()
     try:
-        assert holding.wait(timeout=2)
+        assert holding.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for the fence holder"
         statuses: list[str] = []
         application = observer_endpoint(
             directory=tmp_path,
@@ -300,7 +311,8 @@ def test_a_new_failure_that_cannot_reach_the_busy_fence_is_answered_unavailable(
         )
     finally:
         release.set()
-        holder.join(timeout=5)
+        holder.join(timeout=HANG_GUARD_SECONDS)
+        assert not holder.is_alive(), "HANG: waiting for the fence holder to stop"
     assert effects == []
     assert statuses == ["503 Service Unavailable"]
     assert json.loads(body)["status"] == "unavailable"

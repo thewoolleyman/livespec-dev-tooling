@@ -26,6 +26,7 @@ from livespec_dev_tooling.incident_observer import (
     route_ordinary_action,
 )
 from livespec_dev_tooling.incident_repository_fence import current_repository_fence
+from tests.hang_guard import HANG_GUARD_SECONDS, future_result_under_hang_guard
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 _SECRET = b"observer-controller-fixture"
@@ -358,18 +359,24 @@ def test_concurrent_deliveries_issue_only_one_effect(tmp_path, registration):
 
     def recover(intent):
         entered.set()
-        assert release.wait(timeout=2)
+        assert release.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release recovery"
         effects.append(intent.action_id)
         return "one-revert"
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         one = pool.submit(_handle, directory=tmp_path, registration=registration, recover=recover)
-        assert entered.wait(timeout=2)
+        assert entered.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for recovery to start"
         two = pool.submit(
             _handle, directory=tmp_path, registration=registration, recover=recover, id=93
         )
         release.set()
-        assert one.result(timeout=2).action_id == two.result(timeout=2).action_id
+        first = future_result_under_hang_guard(
+            future=one, waiting_for="the first concurrent recovery delivery"
+        )
+        second = future_result_under_hang_guard(
+            future=two, waiting_for="the second concurrent recovery delivery"
+        )
+        assert first.action_id == second.action_id
     assert len(effects) == 1
 
 
@@ -566,16 +573,17 @@ def _hold_fence_while(*, directory, repository, work):
     def hold():
         with repository_lock(directory=directory, repository=repository):
             holding.set()
-            assert release.wait(timeout=10)
+            assert release.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release the fence"
 
     holder = Thread(target=hold)
     holder.start()
     try:
-        assert holding.wait(timeout=5)
+        assert holding.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting for the fence holder"
         return work()
     finally:
         release.set()
-        holder.join(timeout=10)
+        holder.join(timeout=HANG_GUARD_SECONDS)
+        assert not holder.is_alive(), "HANG: waiting for the fence holder to stop"
 
 
 def test_a_redelivery_while_a_principal_holds_the_fence_is_answered_within_the_bound(
@@ -588,7 +596,7 @@ def test_a_redelivery_while_a_principal_holds_the_fence_is_answered_within_the_b
 
     def principal(recorded):
         started.set()
-        assert release.wait(timeout=10)
+        assert release.wait(timeout=HANG_GUARD_SECONDS), "HANG: waiting to release the principal"
         return fenced(recorded)
 
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -599,7 +607,9 @@ def test_a_redelivery_while_a_principal_holds_the_fence_is_answered_within_the_b
             recover=principal,
         )
         try:
-            assert started.wait(timeout=5)
+            assert started.wait(
+                timeout=HANG_GUARD_SECONDS
+            ), "HANG: waiting for the principal to start"
             begun = time.monotonic()
             again, no_intent = record_job_callback(
                 directory=tmp_path,
@@ -610,7 +620,9 @@ def test_a_redelivery_while_a_principal_holds_the_fence_is_answered_within_the_b
             elapsed = time.monotonic() - begun
         finally:
             release.set()
-        settled = running.result(timeout=10)
+        settled = future_result_under_hang_guard(
+            future=running, waiting_for="the recovery principal"
+        )
     assert elapsed < 2
     assert (again.status, again.reason) == (
         "pending",

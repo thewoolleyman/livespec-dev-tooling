@@ -22,6 +22,7 @@ from livespec_dev_tooling._incident_observer_store import repository_lock, save_
 from livespec_dev_tooling._incident_recovery_journal_identity import JournalCodec
 from livespec_dev_tooling.incident_observer import reconcile_action_receipt
 from livespec_dev_tooling.incident_recovery_journal import RecoveryJournal
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling.test_incident_recovery_journal import (
     _conflict,
     _context,
@@ -482,7 +483,7 @@ def test_journal_persistence_serializes_with_real_observer_reconciliation(protec
 
     def persist(*, path, record):
         entered.set()
-        assert release.wait(3)
+        assert release.wait(HANG_GUARD_SECONDS), "HANG: waiting to release journal persistence"
         original(path=path, record=record)
         order.append("journal-persisted")
 
@@ -505,15 +506,16 @@ def test_journal_persistence_serializes_with_real_observer_reconciliation(protec
         )
     )
     writer.start()
-    assert entered.wait(3)
+    assert entered.wait(HANG_GUARD_SECONDS), "HANG: waiting for journal persistence to start"
     try:
         blocked = _observer_lock_blocked(lock_path)
         reconciler.start()
     finally:
         release.set()
-        writer.join(3)
-        reconciler.join(3)
-    assert not writer.is_alive() and not reconciler.is_alive()
+        for worker in (writer, reconciler):
+            worker.join(HANG_GUARD_SECONDS)
+    assert not writer.is_alive(), "HANG: waiting for the journal writer to finish"
+    assert not reconciler.is_alive(), "HANG: waiting for the observer reconciler to finish"
     assert blocked, "journal must retain the observer fence until its durable result exists"
     assert order == ["journal-persisted", "observer-reconciled"]
     assert results[0].status == "recorded"

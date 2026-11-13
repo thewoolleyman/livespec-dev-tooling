@@ -14,6 +14,7 @@ from livespec_dev_tooling.incident_ci_job_collection import CiJobCollection
 from livespec_dev_tooling.incident_ci_payload import decode_authority
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_service import ControllerService
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_ci_attachment_edges as edge_tests
 from tests.livespec_dev_tooling import test_incident_ci_job_history as history_tests
 
@@ -195,7 +196,9 @@ def blocked(attached, monkeypatch):
     def slow(path):
         if path == history_tests.CHECK:
             entered.release()
-            assert gate.wait(timeout=30)
+            assert gate.wait(
+                timeout=HANG_GUARD_SECONDS
+            ), "HANG: waiting for collection I/O to resume"
         return original(path)
 
     monkeypatch.setattr(ForgeReads, "installed", classmethod(lambda _cls, **_: slow))
@@ -207,7 +210,7 @@ def test_recovery_and_existing_routes_progress_while_collection_io_blocks(blocke
     results = []
     worker = threading.Thread(target=lambda: results.append(collect(attached, "slow")))
     worker.start()
-    assert entered.acquire(timeout=30)
+    assert entered.acquire(timeout=HANG_GUARD_SECONDS), "HANG: waiting for collection I/O to start"
     settings = attached.application.installation
     admitted = post(attached.application, "/admitted", vars(attached.query), settings.query_secret)
     assert admitted[1]["status"] == "admitted"
@@ -217,7 +220,8 @@ def test_recovery_and_existing_routes_progress_while_collection_io_blocks(blocke
     edge_tests.rearm(attached.application)
     rearmed = stored(attached.application)["observer_arm_id"]
     gate.set()
-    worker.join(timeout=30)
+    worker.join(timeout=HANG_GUARD_SECONDS)
+    assert not worker.is_alive(), "HANG: waiting for collection worker to finish"
     assert results[0][1]["observation"]["status"] == "successful"
     assert stored(attached.application)["observer_arm_id"] == rearmed
 
@@ -230,9 +234,11 @@ def test_concurrent_identical_collections_commit_once(blocked):
     ]
     for worker in workers:
         worker.start()
-    assert entered.acquire(timeout=30) and entered.acquire(timeout=30)
+    assert entered.acquire(timeout=HANG_GUARD_SECONDS), "HANG: waiting for first collection I/O"
+    assert entered.acquire(timeout=HANG_GUARD_SECONDS), "HANG: waiting for second collection I/O"
     gate.set()
     for worker in workers:
-        worker.join(timeout=30)
+        worker.join(timeout=HANG_GUARD_SECONDS)
+        assert not worker.is_alive(), "HANG: waiting for collection worker to finish"
     assert len(results) == 2 and results[0] == results[1]
     assert inspect(attached)[1]["observation_count"] == 1

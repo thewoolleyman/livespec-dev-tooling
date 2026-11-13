@@ -24,6 +24,7 @@ import livespec_dev_tooling.incident_conflict_sweep as sweep_module
 import livespec_dev_tooling.incident_observer_service as service
 from livespec_dev_tooling._incident_observer_store import repository_lock
 from livespec_dev_tooling.incident_conflict_sweep import ConflictSweep
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_conflict_chain as chain_tests
 from tests.livespec_dev_tooling import test_incident_observer_control as control_tests
 from tests.livespec_dev_tooling.test_incident_conflict_chain import (
@@ -168,13 +169,15 @@ def test_a_wake_runs_a_pass_at_once_and_stop_ends_the_loop(failing, monkeypatch)
     monkeypatch.setattr(ConflictSweep, "sweep", counted)
     on_crash = Mock()
     thread = sweep.start(stop=stop, on_crash=on_crash)
-    assert first.wait(10) and thread.daemon
+    assert first.wait(HANG_GUARD_SECONDS), "HANG: waiting for the sweep's first pass"
+    assert thread.daemon
     sweep.wake.set()
-    assert second.wait(10) and len(passes) == 2
+    assert second.wait(HANG_GUARD_SECONDS), "HANG: waiting for the woken sweep pass"
+    assert len(passes) == 2
     stop.set()
     sweep.wake.set()
-    thread.join(timeout=10)
-    assert not thread.is_alive()
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert not thread.is_alive(), "HANG: waiting for the sweep loop to stop"
     assert on_crash.call_count == 0 and not sweep.crashed.is_set()
 
 
@@ -193,8 +196,9 @@ def test_an_unexpected_exception_crashes_the_sweep_loudly_and_brings_the_service
     sweep = _sweep(world, interval_seconds=3600)
     on_crash = Mock()
     thread = sweep.start(stop=Event(), on_crash=on_crash)
-    thread.join(timeout=10)
-    assert not thread.is_alive() and seen == [RuntimeError]
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert not thread.is_alive(), "HANG: waiting for the crashed sweep thread to stop"
+    assert seen == [RuntimeError]
     assert on_crash.call_count == 1 and sweep.crashed.is_set()
 
 
@@ -218,8 +222,9 @@ def test_a_callback_arriving_mid_sweep_gets_the_fence_within_its_wait(failing, m
     ):
         waited = time.monotonic() - started
     assert waited < _CALLBACK_FENCE_WAIT and thread.is_alive()
-    thread.join(timeout=60)
-    assert not thread.is_alive() and chain.status() == "blocked"
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert not thread.is_alive(), "HANG: waiting for the conflict sweep to settle"
+    assert chain.status() == "blocked"
 
 
 def _serve(controller, monkeypatch, *, crash: bool):
@@ -328,10 +333,11 @@ def test_a_malformed_action_entry_is_quarantined_and_never_crashes_the_sweep(
     sweep = _sweep(world, interval_seconds=3600)
     on_crash = Mock(side_effect=stop.set)
     thread = sweep.start(stop=stop, on_crash=on_crash)
-    finished = second.wait(30)
+    finished = second.wait(HANG_GUARD_SECONDS)
     stop.set()
     sweep.wake.set()
-    thread.join(timeout=10)
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert not thread.is_alive(), "HANG: waiting for the quarantining sweep to stop"
     quarantine = json.loads(world.record.read_text()).get("sweep_quarantine", {})
     named = capsys.readouterr().err.count(" quarantined: ")
     facts = (
@@ -364,7 +370,8 @@ def test_a_state_whose_actions_are_not_an_object_is_named_and_never_crashes(
 
     monkeypatch.setattr(ConflictSweep, "pending", once)
     thread = _sweep(world, interval_seconds=0.01).start(stop=stop, on_crash=Mock())
-    thread.join(timeout=10)
+    thread.join(timeout=HANG_GUARD_SECONDS)
+    assert not thread.is_alive(), "HANG: waiting for the sweep thread to stop"
     facts = (crashes == [], "actions is not an object" in capsys.readouterr().err)
     assert all(facts), facts
 
