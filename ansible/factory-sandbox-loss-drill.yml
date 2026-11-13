@@ -248,12 +248,6 @@
           when: >-
             not (factory_sandbox_loss_drill_has_sandbox_label | bool)
 
-        - name: Read UTC time immediately before the one UID-preconditioned delete
-          ansible.builtin.command:
-            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
-          register: factory_sandbox_loss_drill_delete_time
-          changed_when: false
-
         # `kubectl delete` has no UID-precondition flag, so the one delete is a
         # DELETE through `kubectl proxy` carrying DeleteOptions.preconditions.uid.
         - name: Delete only the selected sandbox pod with its resolved UID precondition
@@ -279,6 +273,7 @@
                   sleep 0.2
                 done
                 body=$(printf '{"kind":"DeleteOptions","apiVersion":"v1","preconditions":{"uid":"%s"}}' "$uid")
+                printf 'DELETE_ISSUED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                 status=$(curl --silent --show-error --max-time 60 \
                   --unix-socket "$work/proxy.sock" --request DELETE \
                   --header 'Content-Type: application/json' --data "$body" \
@@ -315,36 +310,51 @@
         # Listing by name with a field selector makes "the UID is gone" a
         # successful read: only an error-free list without the UID ends the wait,
         # so a transport or authorization error can never pass for a deletion.
+        # The UID-gone time is stamped here, in the loop, at the first such read.
+        # Exit 0: UID absent (stdout: GONE_AT line, then the listing); exit 1: the
+        # read failed; exit 2: the UID was still listed after the last attempt.
         - name: Wait until the API server lists no pod with the selected UID
           ansible.builtin.command:
             argv:
-              - kubectl
-              - get
-              - pods
-              - --namespace
+              - sh
+              - -c
+              - |
+                namespace=$1; name=$2; uid=$3; retries=$4; interval=$5
+                attempt=0
+                while test "$attempt" -lt "$retries"; do
+                  attempt=$((attempt + 1))
+                  listing=$(kubectl get pods --namespace "$namespace" \
+                    --field-selector "metadata.name=$name" --output json 2>"${TMPDIR:-/tmp}/drill-wait.$$") || {
+                    cat "${TMPDIR:-/tmp}/drill-wait.$$" >&2
+                    rm -f "${TMPDIR:-/tmp}/drill-wait.$$"
+                    exit 1
+                  }
+                  observed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  rm -f "${TMPDIR:-/tmp}/drill-wait.$$"
+                  if ! printf '%s' "$listing" | grep -Eq "\"uid\": ?\"$uid\""; then
+                    printf 'GONE_AT=%s\n%s\n' "$observed" "$listing"
+                    exit 0
+                  fi
+                  if test "$attempt" -lt "$retries"; then sleep "$interval"; fi
+                done
+                exit 2
+              - sh
               - "{{ factory_sandbox_loss_drill_namespace }}"
-              - --field-selector
-              - "metadata.name={{ factory_sandbox_loss_drill_pod_name }}"
-              - --output
-              - json
-          register: factory_sandbox_loss_drill_wait_read
+              - "{{ factory_sandbox_loss_drill_pod_name }}"
+              - "{{ factory_sandbox_loss_drill_pod_uid }}"
+              - "{{ factory_sandbox_loss_drill_wait_retries }}"
+              - "{{ factory_sandbox_loss_drill_wait_interval }}"
+          register: factory_sandbox_loss_drill_wait
           changed_when: false
           failed_when: false
-          retries: "{{ factory_sandbox_loss_drill_wait_retries }}"
-          delay: "{{ factory_sandbox_loss_drill_wait_interval }}"
-          until: >-
-            factory_sandbox_loss_drill_wait_read.rc != 0
-            or (factory_sandbox_loss_drill_pod_uid
-                not in ((factory_sandbox_loss_drill_wait_read.stdout | from_json)['items']
-                        | map(attribute='metadata.uid') | list))
 
         - name: Refuse a failed read of the pod list while waiting
           ansible.builtin.fail:
             msg: >-
               Factory sandbox loss drill could not read the pod list while waiting
               for UID {{ factory_sandbox_loss_drill_pod_uid }} to disappear, so it
-              cannot say the UID is gone: {{ factory_sandbox_loss_drill_wait_read.stderr | trim }}
-          when: factory_sandbox_loss_drill_wait_read.rc != 0
+              cannot say the UID is gone: {{ factory_sandbox_loss_drill_wait.stderr | trim }}
+          when: factory_sandbox_loss_drill_wait.rc == 1
 
         - name: Refuse a UID that remains listed after the wait timeout
           ansible.builtin.fail:
@@ -352,10 +362,16 @@
               Factory sandbox loss drill timed out: UID
               {{ factory_sandbox_loss_drill_pod_uid }} remains listed;
               no second delete was issued.
-          when: >-
-            factory_sandbox_loss_drill_pod_uid
-            in ((factory_sandbox_loss_drill_wait_read.stdout | from_json)['items']
-                | map(attribute='metadata.uid') | list)
+          when: factory_sandbox_loss_drill_wait.rc != 0
+
+        - name: Record the first-absent time and the observed listing
+          ansible.builtin.set_fact:
+            factory_sandbox_loss_drill_gone_time: >-
+              {{ factory_sandbox_loss_drill_wait.stdout_lines[0] | regex_replace('^GONE_AT=', '') }}
+            factory_sandbox_loss_drill_gone_items: >-
+              {{ (factory_sandbox_loss_drill_wait.stdout_lines[1:] | join('\n') | from_json)['items'] }}
+            factory_sandbox_loss_drill_delete_time: >-
+              {{ factory_sandbox_loss_drill_delete.stdout | regex_search('DELETE_ISSUED_AT=[0-9TZ:-]+') | replace('DELETE_ISSUED_AT=', '') }}
 
         - name: Report that a same-named replacement has a different UID
           ansible.builtin.debug:
@@ -363,15 +379,9 @@
               Factory sandbox loss drill run {{ factory_sandbox_loss_drill_run_id }}
               observed same-named replacement pod
               {{ factory_sandbox_loss_drill_pod_name }} with new UID
-              {{ ((factory_sandbox_loss_drill_wait_read.stdout | from_json)['items'])[0].metadata.uid }};
+              {{ factory_sandbox_loss_drill_gone_items[0].metadata.uid }};
               no delete was issued for it.
-          when: (factory_sandbox_loss_drill_wait_read.stdout | from_json)['items'] | length > 0
-
-        - name: Read UTC time when the selected UID was first absent
-          ansible.builtin.command:
-            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
-          register: factory_sandbox_loss_drill_gone_time
-          changed_when: false
+          when: factory_sandbox_loss_drill_gone_items | length > 0
 
         - name: Report the deletion and the API-observed UID disappearance
           ansible.builtin.debug:
@@ -379,8 +389,8 @@
               Factory sandbox loss drill run {{ factory_sandbox_loss_drill_run_id }}
               pod {{ factory_sandbox_loss_drill_pod_name }} UID
               {{ factory_sandbox_loss_drill_pod_uid }} delete issued
-              {{ factory_sandbox_loss_drill_delete_time.stdout }} UID gone
-              {{ factory_sandbox_loss_drill_gone_time.stdout }}
+              {{ factory_sandbox_loss_drill_delete_time }} UID gone
+              {{ factory_sandbox_loss_drill_gone_time }}
       always:
         - name: Remove the local preserved-ref comparison checkout
           ansible.builtin.file:
