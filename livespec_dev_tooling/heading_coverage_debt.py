@@ -563,8 +563,15 @@ def generate_register(
 
 
 def render_register(*, rows: list[dict[str, object]]) -> str:
-    """The register's on-disk bytes for `rows` — stable, diffable, newline-terminated."""
-    return json.dumps(rows, indent=2, ensure_ascii=False) + "\n"
+    """The register's bytes: one sorted row per line, blank-line separated.
+
+    A generated row is an independent unit of debt. Keeping it to one line and
+    separating adjacent rows gives Git's default text merge distinct context
+    when parallel branches regenerate neighboring rows; no custom merge driver
+    is available to GitHub's mergeability or rebase-merge paths.
+    """
+    rendered_rows = [json.dumps(row, ensure_ascii=False, sort_keys=True) for row in rows]
+    return "[\n" + ",\n\n".join(rendered_rows) + "\n]\n"
 
 
 def main() -> int:

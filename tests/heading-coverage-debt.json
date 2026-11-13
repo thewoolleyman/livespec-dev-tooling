@@ -1,1605 +1,459 @@
 [
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## CI priority record",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Config-value fast path at pre-commit",
-    "work_item": "livespec-dev-tooling-hmztez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Delegated commit-time replay test runs",
-    "work_item": "livespec-dev-tooling-sewnfp",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Expedited incident execution",
-    "work_item": "livespec-dev-tooling-iukhlf",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Master-health reconciler",
-    "work_item": "livespec-dev-tooling-zcp5vb",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Tests never pin committed configuration values",
-    "work_item": "livespec-dev-tooling-symfx2",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## CI lane priority from the maintainer radar",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Factory sandbox environment naming",
-    "work_item": "livespec-dev-tooling-s6go5s",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Host provisioning tree",
-    "work_item": "livespec-dev-tooling-k5q54n",
-    "first_seen": "2026-10-19"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## LLM-spend account attribution",
-    "work_item": "livespec-dev-tooling-n277mo",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Radar admission function",
-    "work_item": "livespec-dev-tooling-hvfc6c",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI coverage consumer with a matching receipt judges the producer's data",
-    "work_item": "livespec-dev-tooling-s2esff",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI coverage consumer with no usable receipt fails by name and starts no test run",
-    "work_item": "livespec-dev-tooling-s2esff",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI job that re-ran no test publishes no flake-retry artifact",
-    "work_item": "livespec-dev-tooling-ljea46",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff",
-    "work_item": "livespec-dev-tooling-ybnep5",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Codex plugin hook entrypoint missing from the plugin payload fails the producing repository's gate",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during an intended package's unpack re-unpacks it from its audited archive",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-17"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-17"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test",
-    "work_item": "livespec-dev-tooling-k3dpo2",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a blocked radar target names each open blocker by tenant and id",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a canary clone adopts a release tag ahead of the release branch and the release branch does not move",
-    "work_item": "livespec-dev-tooling-zpqvnr",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a check runner reclaims the coverage directory a killed runner left behind",
-    "work_item": "livespec-dev-tooling-64ik6g",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a closed radar entry is reported as done and does not stall its consumers",
-    "work_item": "livespec-dev-tooling-22wpdk",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a commit from a host without the gates credential runs its replay tests locally and says so",
-    "work_item": "livespec-dev-tooling-sewnfp",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a commit that changes only a workflow runs the tests that read ci.yml",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite",
-    "work_item": "livespec-dev-tooling-6cgj2e",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried",
-    "work_item": "livespec-dev-tooling-n3dr3z",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a configured cgroup with no pressure file makes the emitter fail rather than report zero",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a configured cgroup's CPU pressure is queryable in livespec by cgroup and host",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
-    "work_item": "livespec-dev-tooling-vobfwi",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare",
-    "work_item": "livespec-dev-tooling-vobfwi",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module",
-    "work_item": "livespec-dev-tooling-vobfwi",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict",
-    "work_item": "livespec-dev-tooling-yud7rc",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check",
-    "work_item": "livespec-dev-tooling-vobfwi",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas",
-    "work_item": "livespec-dev-tooling-jgabjo",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
-    "work_item": "livespec-dev-tooling-lzkzwb",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
-    "work_item": "livespec-dev-tooling-ie7fas",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate Job's tree fetch reads its volume's git object seed copy as an alternate, and refetches cold on any seed fault",
-    "work_item": "livespec-dev-tooling-zbu7jf",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate run its own client interrupts emits a client-interrupted no-verdict outcome event",
-    "work_item": "livespec-dev-tooling-donph5",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated pre-commit aggregate gates the staged tree on the cluster",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated replay leg with no verdict falls back to a local run",
-    "work_item": "livespec-dev-tooling-sewnfp",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated replay leg's trailers name the gate Job and the staged tree",
-    "work_item": "livespec-dev-tooling-sewnfp",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a factory response sent on a credential the rotator did not select is attributed to the credential's own account",
-    "work_item": "livespec-dev-tooling-n277mo",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
-    "work_item": "livespec-dev-tooling-5wybjq",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failed read of the runner scheduler changes nothing",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failed revert-path drill raises needs-attention",
-    "work_item": "livespec-dev-tooling-yilv6p",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failed route job or an unusable record leaves gating jobs on their existing routing",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test that copies a repository directory into a temporary root is still touched",
-    "work_item": "livespec-dev-tooling-jfy23q",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test the run touched is named in a withheld-retry block",
-    "work_item": "livespec-dev-tooling-ln77b6",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test whose closure names a changed file only under a temporary root is retried",
-    "work_item": "livespec-dev-tooling-jfy23q",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a fix-forward claim from outside the claimant set is ignored",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased",
-    "work_item": "livespec-dev-tooling-7upzav",
-    "first_seen": "2026-11-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a fleet member whose master-health shim is missing or drifted fails conformance",
-    "work_item": "livespec-dev-tooling-reslr6",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships",
-    "work_item": "livespec-dev-tooling-5ua57h",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a gate placement pass that cannot read a gate-lane node's readings raises an alarm and fails its unit",
-    "work_item": "livespec-dev-tooling-ln7q3b",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a gate-start whose venue selector cannot be imported refuses by name",
-    "work_item": "livespec-dev-tooling-p3mhfh",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a genuine regression opens a held revert of the earliest red commit with a green parent",
-    "work_item": "livespec-dev-tooling-zcp5vb",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a held service converges installed and disabled",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a host with no configured cgroup emits only host pressure",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends",
-    "work_item": "livespec-dev-tooling-ie7fas",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a local coverage run with no reusable data still measures",
-    "work_item": "livespec-dev-tooling-s2esff",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a long suite-green run that keeps printing output is not ended",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use",
-    "work_item": "livespec-dev-tooling-hvfc6c",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a master push concurrency group is refused in a repository that calls the master-health reconciler",
-    "work_item": "livespec-dev-tooling-xtofr3",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention",
-    "work_item": "livespec-dev-tooling-4xrhck",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a move from none to runner-only is rehearsed by its provisioning apply",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a move to or from full still needs an empty-storage rehearsal",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a new execution target is admissible from one inventory entry",
-    "work_item": "livespec-dev-tooling-hvfc6c",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a new runner release opens one bump across every scale set",
-    "work_item": "livespec-dev-tooling-jkwzwv",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job",
-    "work_item": "livespec-dev-tooling-fjpqqq",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host",
-    "work_item": "livespec-dev-tooling-fjpqqq",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a prepared incident recovery publication completes after the controller restarts",
-    "work_item": "livespec-dev-tooling-52die6",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a push of only seed or preserve refs runs only the authorization members",
-    "work_item": "livespec-dev-tooling-2zb3gk",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
-    "work_item": "livespec-dev-tooling-22wpdk",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a radar that lists the same target twice fails just check",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact",
-    "work_item": "livespec-dev-tooling-ljea46",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused",
-    "work_item": "livespec-dev-tooling-io6hyk",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
-    "work_item": "livespec-dev-tooling-zcp5vb",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a refused suite-green run names why each test failed",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a related edge does not block a radar target",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file",
-    "work_item": "livespec-dev-tooling-jgabjo",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a routed job's checkout fetches only the objects its git object seed lacks, and falls back to a full fetch when the seed is missing",
-    "work_item": "livespec-dev-tooling-dciyg5",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a run naming no high-band item keeps the lane's existing routing",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner pod is never placed on a node with no free churn slot",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU and memory requests",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner pod still gated by Kueue is left alone during a scheduler outage",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner pod stranded by a down runner scheduler is handed to the default scheduler",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner pod that requests no churn slot is placed by the default scheduler",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner-only node receives the runner container hook and still takes factory sandboxes",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner-only profile opens a node to CI without planning a storage change",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner-only profile that keeps its CI-closing taint is refused",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner-only profile with no work-volume directory is refused",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a runner-only profile with zero admission capacity is refused",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a scratch-branch incident drill runs beside production on the full master CI graph",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-10"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it",
-    "work_item": "livespec-dev-tooling-wnwwsl",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a staged capacity value change commits on schema validation alone",
-    "work_item": "livespec-dev-tooling-hmztez",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a stale detector reaches the maintainer",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a stale installed commit-refuse hook names both bodies at the tail of the check output",
-    "work_item": "livespec-dev-tooling-oonqhx",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a stalled suite-green run names the tests that were still running",
-    "work_item": "livespec-dev-tooling-h2i4u2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state",
-    "work_item": "livespec-dev-tooling-6cgj2e",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED",
-    "work_item": "livespec-dev-tooling-kjwanx",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file",
-    "work_item": "livespec-dev-tooling-n3dr3z",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a suite-green leg run emits one outcome event naming whether it reused evidence",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a suite-green run ended before any test completed says that no test had completed",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a suite-green run that stalls after its last test is reported as a post-last-test stall",
-    "work_item": "livespec-dev-tooling-h2i4u2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes",
-    "work_item": "livespec-dev-tooling-dpkz32",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test-only commit runs only its staged tests unless shared test support changed",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test-only commit that changes shared test support runs the full suite",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test-only commit whose staged tests fail is refused",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a thrashing fix-forward releases the held revert",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a valid fix-forward claim holds the revert while the fix makes progress",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a version-only release change still touches a test that names the changed file",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a wall time that rounds up into the next unit is shown in that unit",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
-    "work_item": "livespec-dev-tooling-f3q7r7",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
-    "work_item": "livespec-dev-tooling-fsle5g",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor",
-    "work_item": "livespec-dev-tooling-fsle5g",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an aged runner pin raises a trigger",
-    "work_item": "livespec-dev-tooling-jkwzwv",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count",
-    "work_item": "livespec-dev-tooling-cvef23",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-05"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary",
-    "work_item": "livespec-dev-tooling-rnsfgg",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound",
-    "work_item": "livespec-dev-tooling-2xxnku",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an armed enablement fence refuses incident mode without a current enablement record",
-    "work_item": "livespec-dev-tooling-2xxnku",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an execution target stays closed until its reading falls back past the exit threshold",
-    "work_item": "livespec-dev-tooling-hvfc6c",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally",
-    "work_item": "livespec-dev-tooling-k1iz4",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an expedited local gate skips slow work and preserves fast failures",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item",
-    "work_item": "livespec-dev-tooling-bqnzcm.4",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike",
-    "work_item": "livespec-dev-tooling-op67ed",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident label event's forge writes repeat only what did not take effect",
-    "work_item": "livespec-dev-tooling-levu6j",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories",
-    "work_item": "livespec-dev-tooling-wbvbj6",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
-    "work_item": "livespec-dev-tooling-levu6j",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an opted-in commit from a credentialed host runs its replay tests against the staged tree",
-    "work_item": "livespec-dev-tooling-sewnfp",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an orchestrator build adopted outside ensure-plugins is reported and never downgraded",
-    "work_item": "livespec-dev-tooling-7upzav",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
-    "work_item": "livespec-dev-tooling-zcp5vb",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unknown CI-facilities posture is refused",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unparseable Codex plugin hooks file fails the producing repository's gate",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip",
-    "work_item": "livespec-dev-tooling-kvvfo3",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions",
-    "work_item": "livespec-dev-tooling-3xeqvg",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unready API server or a failing datastore fires its trigger",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an untouched test that fails every attempt still fails the session",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: at the hard cap a revert whose CI is not green is not merged",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: changing a committed capacity value to another valid value leaves every test passing",
-    "work_item": "livespec-dev-tooling-symfx2",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces",
-    "work_item": "livespec-dev-tooling-aaveom",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch",
-    "work_item": "livespec-dev-tooling-s6go5s",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: focused incident verification cannot satisfy normal validation",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: incident commit provenance remains verifiable on normal master",
-    "work_item": "livespec-dev-tooling-j2rdde",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
-    "work_item": "livespec-dev-tooling-vobfwi",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
-    "work_item": "livespec-dev-tooling-lugvnr",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
-    "work_item": "livespec-dev-tooling-7upzav",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
-    "work_item": "livespec-dev-tooling-zfgtin",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile",
-    "work_item": "livespec-dev-tooling-mtvxde",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: stopping a delegated gate ends its gate Job",
-    "work_item": "livespec-dev-tooling-kjwanx",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the CI priority producer is idempotent and its dry-run writes nothing",
-    "work_item": "livespec-dev-tooling-5wewi2",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities",
-    "work_item": "livespec-dev-tooling-62zla3",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the coverage receipt is stamped over the final rewritten data",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
-    "work_item": "livespec-dev-tooling-r5o5zh",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the dev host's available memory is queryable in livespec",
-    "work_item": "livespec-dev-tooling-z6yf2a",
-    "first_seen": "2026-11-02"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the enablement fence is armed for a repository only after that repository is enabled",
-    "work_item": "livespec-dev-tooling-2xxnku",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the first required master leaf failure fences incident recovery",
-    "work_item": "livespec-dev-tooling-mdqkkz",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes",
-    "work_item": "livespec-dev-tooling-zbu7jf",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost",
-    "work_item": "livespec-dev-tooling-hvfc6c",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it",
-    "work_item": "livespec-dev-tooling-2xxnku",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the observer role renders one production installation per declared repository beside livespec-dev-tooling's",
-    "work_item": "livespec-dev-tooling-lqp2qx",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the radar admission function decides every ready target identically on identical inputs",
-    "work_item": "livespec-dev-tooling-hvfc6c",
-    "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent",
-    "work_item": "livespec-dev-tooling-5uobsl",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure",
-    "work_item": "livespec-dev-tooling-h6jsgv",
-    "first_seen": "2026-11-03"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the shared entry point refuses a push naming a member that fails after it accepted a delegated pre-commit verdict",
-    "work_item": "livespec-dev-tooling-yud7rc",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the shared entry point tells its caller to continue with its own gate when no delegated pre-commit verdict qualifies",
-    "work_item": "livespec-dev-tooling-yud7rc",
-    "first_seen": "2026-11-11"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
-    "work_item": "livespec-dev-tooling-fgy4au",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
-    "work_item": "livespec-dev-tooling-jkwzwv",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
-    "work_item": "livespec-dev-tooling-vobfwi",
-    "first_seen": "2026-11-12"
-  }
+{"first_seen": "2026-11-08", "heading": "## CI priority record", "spec_file": "contracts.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-11-04", "heading": "## Config-value fast path at pre-commit", "spec_file": "contracts.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hmztez"},
+
+{"first_seen": "2026-11-01", "heading": "## Delegated commit-time replay test runs", "spec_file": "contracts.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-sewnfp"},
+
+{"first_seen": "2026-11-03", "heading": "## Expedited incident execution", "spec_file": "contracts.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-iukhlf"},
+
+{"first_seen": "2026-10-22", "heading": "## Master-health reconciler", "spec_file": "contracts.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zcp5vb"},
+
+{"first_seen": "2026-11-04", "heading": "## Tests never pin committed configuration values", "spec_file": "contracts.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-symfx2"},
+
+{"first_seen": "2026-11-08", "heading": "## CI lane priority from the maintainer radar", "spec_file": "non-functional-requirements.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-10-24", "heading": "## Factory sandbox environment naming", "spec_file": "non-functional-requirements.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-s6go5s"},
+
+{"first_seen": "2026-10-19", "heading": "## Host provisioning tree", "spec_file": "non-functional-requirements.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-k5q54n"},
+
+{"first_seen": "2026-11-10", "heading": "## LLM-spend account attribution", "spec_file": "non-functional-requirements.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-n277mo"},
+
+{"first_seen": "2026-11-04", "heading": "## Radar admission function", "spec_file": "non-functional-requirements.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hvfc6c"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a CI coverage consumer with a matching receipt judges the producer's data", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-s2esff"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a CI coverage consumer with no usable receipt fails by name and starts no test run", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-s2esff"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a CI job that re-ran no test publishes no flake-retry artifact", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ljea46"},
+
+{"first_seen": "2026-11-10", "heading": "## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ybnep5"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a Codex plugin hook command that mentions CLAUDE_PLUGIN_ROOT without a braced plugin-root path fails the producing repository's gate", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a Codex plugin hook entrypoint missing from the plugin payload fails the producing repository's gate", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-10-18", "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-10-17", "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during an intended package's unpack re-unpacks it from its audited archive", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-10-17", "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-k3dpo2"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a blocked radar target names each open blocker by tenant and id", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-10", "heading": "## Scenario: a canary clone adopts a release tag ahead of the release branch and the release branch does not move", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zpqvnr"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a change set that touches the build or the plugin disables every retry", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a check runner reclaims the coverage directory a killed runner left behind", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-64ik6g"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a closed profile with admission capacity or without its CI-closing taint is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a closed radar entry is reported as done and does not stall its consumers", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-22wpdk"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a commit from a host without the gates credential runs its replay tests locally and says so", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-sewnfp"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a commit that changes only a workflow runs the tests that read ci.yml", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-6cgj2e"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-n3dr3z"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a configured cgroup with no pressure file makes the emitter fail rather than report zero", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a configured cgroup's CPU pressure is queryable in livespec by cgroup and host", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-vobfwi"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-vobfwi"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-vobfwi"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a consumer's local pre-commit aggregate run through the shared entry point is reused by its suite-green leg", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-yud7rc"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a coverage target that fails on failing tests is reported as failing tests in the tail digest", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-07", "heading": "## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-vobfwi"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jgabjo"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lzkzwb"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ie7fas"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a delegated gate Job's tree fetch reads its volume's git object seed copy as an alternate, and refetches cold on any seed fault", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zbu7jf"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a delegated gate run its own client interrupts emits a client-interrupted no-verdict outcome event", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-donph5"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a delegated pre-commit aggregate gates the staged tree on the cluster", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a delegated replay leg with no verdict falls back to a local run", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-sewnfp"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a delegated replay leg's trailers name the gate Job and the staged tree", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-sewnfp"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-10-16", "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-10", "heading": "## Scenario: a factory response sent on a credential the rotator did not select is attributed to the credential's own account", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-n277mo"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wybjq"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a failed read of the runner scheduler changes nothing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a failed revert-path drill raises needs-attention", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-yilv6p"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a failed route job or an unusable record leaves gating jobs on their existing routing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a failing test that copies a repository directory into a temporary root is still touched", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jfy23q"},
+
+{"first_seen": "2026-11-05", "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a failing test the run touched is named in a withheld-retry block", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ln77b6"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a failing test whose closure names a changed file only under a temporary root is retried", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jfy23q"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a fix-forward claim from outside the claimant set is ignored", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-06", "heading": "## Scenario: a fleet clone's ensure-plugins keeps its orchestrator build while an orchestrator roll hold is unreleased", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-7upzav"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a fleet member whose master-health shim is missing or drifted fails conformance", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-reslr6"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5ua57h"},
+
+{"first_seen": "2026-11-05", "heading": "## Scenario: a gate client that stops waiting on an admitted gate Job deletes it", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a gate placement pass that cannot read a gate-lane node's readings raises an alarm and fails its unit", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ln7q3b"},
+
+{"first_seen": "2026-11-05", "heading": "## Scenario: a gate-start whose venue selector cannot be imported refuses by name", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-p3mhfh"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a genuine regression opens a held revert of the earliest red commit with a green parent", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zcp5vb"},
+
+{"first_seen": "2026-11-05", "heading": "## Scenario: a held service converges installed and disabled", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a host with no configured cgroup emits only host pressure", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ie7fas"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-07", "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a later master commit touching a culprit path blocks the revert", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a local coverage run with no reusable data still measures", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-s2esff"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a long suite-green run that keeps printing output is not ended", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hvfc6c"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a master push carrying a high-band work item's commit runs on the master lane's priority set", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-11-10", "heading": "## Scenario: a master push concurrency group is refused in a repository that calls the master-health reconciler", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-xtofr3"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-4xrhck"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a move from none to runner-only is rehearsed by its provisioning apply", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a move to or from full still needs an empty-storage rehearsal", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: a new execution target is admissible from one inventory entry", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hvfc6c"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a new runner release opens one bump across every scale set", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jkwzwv"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fjpqqq"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fjpqqq"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a pipefail script reports a match in a large input as a match", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a prepared incident recovery publication completes after the controller restarts", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-52die6"},
+
+{"first_seen": "2026-11-10", "heading": "## Scenario: a push of only seed or preserve refs runs only the authorization members", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-2zb3gk"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-22wpdk"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a radar that lists the same target twice fails just check", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-ljea46"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-io6hyk"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zcp5vb"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a refused suite-green run names why each test failed", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a related edge does not block a radar target", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jgabjo"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a repository that ships no Codex plugin passes the Codex hook check and reports that it examined nothing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a reverted incident retains its original CI evidence before another attempt", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a routed job's checkout fetches only the objects its git object seed lacks, and falls back to a full fetch when the seed is missing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-dciyg5"},
+
+{"first_seen": "2026-11-06", "heading": "## Scenario: a rule-26 kill-matrix run reports survivors and redundancy candidates", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a run naming no high-band item keeps the lane's existing routing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a run of a high-band work item on an opted-in lane is admitted ahead of earlier pending normal runs", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: a runner pod is never placed on a node with no free churn slot", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: a runner pod is placed on the node with the lowest churn-slot use, whatever its CPU and memory requests", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a runner pod still gated by Kueue is left alone during a scheduler outage", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a runner pod stranded by a down runner scheduler is handed to the default scheduler", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a runner pod that requests no churn slot is placed by the default scheduler", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a runner work volume on a runner-only node is provisioned under the profile's directory and starts unseeded", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a runner-only node receives the runner container hook and still takes factory sandboxes", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a runner-only profile opens a node to CI without planning a storage change", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a runner-only profile that keeps its CI-closing taint is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a runner-only profile with no work-volume directory is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: a runner-only profile with zero admission capacity is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-10", "heading": "## Scenario: a scratch-branch incident drill runs beside production on the full master CI graph", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-wnwwsl"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: a silent cluster-state emitter fires its dead-man", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: a staged capacity value change commits on schema validation alone", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hmztez"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a stale detector reaches the maintainer", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-05", "heading": "## Scenario: a stale installed commit-refuse hook names both bodies at the tail of the check output", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-oonqhx"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a stalled or contested fix-forward releases the held revert", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a stalled suite-green run names the tests that were still running", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h2i4u2"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-6cgj2e"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a stopped push gate ends without pushing and reads STOPPED", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-kjwanx"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a structural or unlisted change of .livespec.jsonc still touches every test that names the file", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-n3dr3z"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a suite-green leg reuses a passing full pre-commit aggregate on the same tree", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a suite-green leg run emits one outcome event naming whether it reused evidence", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a suite-green leg runs the full suite when the pre-commit aggregate judged a different tree or ran partially", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a suite-green run ended before any test completed says that no test had completed", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a suite-green run that stalls after its last test is reported as a post-last-test stall", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h2i4u2"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: a suite-green run that stops printing output for the stall window is ended", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-dpkz32"},
+
+{"first_seen": "2026-10-30", "heading": "## Scenario: a test-only commit runs only its staged tests unless shared test support changed", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-10-30", "heading": "## Scenario: a test-only commit that changes shared test support runs the full suite", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-10-30", "heading": "## Scenario: a test-only commit whose staged tests fail is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a thrashing fix-forward releases the held revert", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: a valid fix-forward claim holds the revert while the fix makes progress", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-07", "heading": "## Scenario: a version-only release change still touches a test that names the changed file", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: a wall time that rounds up into the next unit is shown in that unit", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a warn-default finding whose lever CI arms fails a just check run that sets no lever", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-07", "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-f3q7r7"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fsle5g"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fsle5g"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: an aged runner pin raises a trigger", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jkwzwv"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-cvef23"},
+
+{"first_seen": "2026-11-05", "heading": "## Scenario: an apply on a host missing a role's out-of-band input fails before the role changes anything", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an apply refuses a plugin binary whose digest differs from an instance pin, and drift compares live pins to the installed binary", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-rnsfgg"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-2xxnku"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: an armed enablement fence refuses incident mode without a current enablement record", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-2xxnku"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: an execution target stays closed until its reading falls back past the exit threshold", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hvfc6c"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-k1iz4"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an expedited local gate skips slow work and preserves fast failures", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-bqnzcm.4"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: an explicit local gate-runner run is recorded as local", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-op67ed"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: an incident label event's forge writes repeat only what did not take effect", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-levu6j"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an incident revert preserves later changes without waiting for CI", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an incident rollback follows released artifacts into consuming repositories", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-wbvbj6"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-levu6j"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: an opted-in commit from a credentialed host runs its replay tests against the staged tree", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-sewnfp"},
+
+{"first_seen": "2026-11-07", "heading": "## Scenario: an orchestrator build adopted outside ensure-plugins is reported and never downgraded", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-7upzav"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zcp5vb"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an unknown CI-facilities posture is refused", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an unparseable Codex plugin hooks file fails the producing repository's gate", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-10-30", "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-kvvfo3"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-3xeqvg"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: an unready API server or a failing datastore fires its trigger", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: an untouched test that fails every attempt still fails the session", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: at the hard cap a revert whose CI is not green is not merged", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-07", "heading": "## Scenario: branch protection alignment accepts a required gate held by a ruleset whose only bypass is a GitHub App", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: changing a committed capacity value to another valid value leaves every test passing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-symfx2"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: dev host retention removes an aged Codex marketplace backup and leaves the live marketplaces", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-aaveom"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-10-24", "heading": "## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-s6go5s"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: focused incident verification cannot satisfy normal validation", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: incident commit provenance remains verifiable on normal master", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-j2rdde"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-vobfwi"},
+
+{"first_seen": "2026-10-22", "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lugvnr"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-7upzav"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zfgtin"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: runner pods select the committed runner scheduler profile and every other pod keeps the default profile", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mtvxde"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: stopping a delegated gate ends its gate Job", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-kjwanx"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: the CI priority producer is idempotent and its dry-run writes nothing", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5wewi2"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: the cohort churn-slot quota equals the sum of the nodes' declared capacities", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-62zla3"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: the coverage receipt is stamped over the final rewritten data", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-r5o5zh"},
+
+{"first_seen": "2026-11-02", "heading": "## Scenario: the dev host's available memory is queryable in livespec", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-z6yf2a"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: the enablement fence is armed for a repository only after that repository is enabled", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-2xxnku"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: the first required master leaf failure fences incident recovery", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-mdqkkz"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-zbu7jf"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: the highest-ordered ready target is admitted to any execution target with headroom for its cost", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hvfc6c"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-2xxnku"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: the observer role renders one production installation per declared repository beside livespec-dev-tooling's", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-lqp2qx"},
+
+{"first_seen": "2026-11-04", "heading": "## Scenario: the radar admission function decides every ready target identically on identical inputs", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-hvfc6c"},
+
+{"first_seen": "2026-11-09", "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-5uobsl"},
+
+{"first_seen": "2026-11-03", "heading": "## Scenario: the replay legs never retry the Red test and never accept a final failure", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-h6jsgv"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: the shared entry point refuses a push naming a member that fails after it accepted a delegated pre-commit verdict", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-yud7rc"},
+
+{"first_seen": "2026-11-11", "heading": "## Scenario: the shared entry point tells its caller to continue with its own gate when no delegated pre-commit verdict qualifies", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-yud7rc"},
+
+{"first_seen": "2026-11-01", "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-fgy4au"},
+
+{"first_seen": "2026-11-08", "heading": "## Scenario: two scale sets pinning different runner versions fail the check", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-jkwzwv"},
+
+{"first_seen": "2026-11-12", "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0", "spec_file": "scenarios.md", "spec_root": "SPECIFICATION", "work_item": "livespec-dev-tooling-vobfwi"}
 ]

@@ -175,6 +175,15 @@ def _write_register(*, tmp_path: Path, entries: object) -> None:
     )
 
 
+def _write_generated_register(*, tmp_path: Path, today: str) -> None:
+    """Generate and write the fixture register using the shipped renderer."""
+    generated = _MODULE.generate_register(cwd=tmp_path, today=today)
+    assert isinstance(generated, IOSuccess)
+    _ = (tmp_path / "tests" / "heading-coverage-debt.json").write_text(
+        _MODULE.render_register(rows=unsafe_perform_io(generated.unwrap())), encoding="utf-8"
+    )
+
+
 def _write_livespec_config(*, tmp_path: Path, spec_root: str) -> None:
     """Write the consuming repository's configured specification root."""
     _ = (tmp_path / ".livespec.jsonc").write_text(
@@ -748,9 +757,66 @@ def test_generate_register_propagates_an_unreadable_recorded_register(*, tmp_pat
 
 
 def test_render_register_is_stable_and_newline_terminated() -> None:
-    """The on-disk bytes are indented JSON with a trailing newline — diffable."""
+    """Each row is one JSON line, separated for default Git merge safety."""
     rendered = _MODULE.render_register(rows=[{"heading": "## Héading"}])
-    assert rendered == '[\n  {\n    "heading": "## Héading"\n  }\n]\n'
+    assert rendered == '[\n{"heading": "## Héading"}\n]\n'
+
+
+@pytest.mark.integration
+def test_adjacent_regenerated_rows_rebase_cleanly_and_preserve_first_seen(
+    *, tmp_path: Path
+) -> None:
+    """Independent changes to adjacent debt rows survive a default Git rebase.
+
+    Each branch changes the owner of a different adjacent live TODO row, then
+    regenerates the register. The rebase uses Git's built-in text merge only:
+    no attributes or merge drivers are configured in this fixture.
+    """
+    _init_repo(tmp_path=tmp_path)
+    _write_registry(tmp_path=tmp_path, entries=[_TODO_A, _TODO_B])
+    _write_generated_register(tmp_path=tmp_path, today="2026-01-02")
+    _git(cwd=tmp_path, args=["add", "tests"])
+    _git(
+        cwd=tmp_path,
+        args=["commit", "-q", "-m", "base register"],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    before = json.loads(
+        (tmp_path / "tests" / "heading-coverage-debt.json").read_text(encoding="utf-8")
+    )
+    before_dates = {row["heading"]: row["first_seen"] for row in before}
+
+    _git(cwd=tmp_path, args=["checkout", "-q", "-b", "first"])
+    _write_registry(tmp_path=tmp_path, entries=[{**_TODO_A, "work_item": "first"}, _TODO_B])
+    _write_generated_register(tmp_path=tmp_path, today="2026-09-09")
+    _git(cwd=tmp_path, args=["add", "tests"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "change first row"])
+
+    _git(cwd=tmp_path, args=["checkout", "-q", "master"])
+    _git(cwd=tmp_path, args=["checkout", "-q", "-b", "second"])
+    _write_registry(tmp_path=tmp_path, entries=[_TODO_A, {**_TODO_B, "work_item": "second"}])
+    _write_generated_register(tmp_path=tmp_path, today="2026-09-09")
+    _git(cwd=tmp_path, args=["add", "tests"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "change second row"])
+
+    rebase = subprocess.run(
+        ["git", "rebase", "first"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={"HOME": str(tmp_path), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+    assert rebase.returncode == 0, rebase.stderr
+
+    regenerated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+    assert isinstance(regenerated, IOSuccess)
+    register = tmp_path / "tests" / "heading-coverage-debt.json"
+    assert register.read_text(encoding="utf-8") == _MODULE.render_register(
+        rows=unsafe_perform_io(regenerated.unwrap())
+    )
+    after = json.loads(register.read_text(encoding="utf-8"))
+    assert {row["heading"]: row["first_seen"] for row in after} == before_dates
 
 
 @pytest.mark.integration
