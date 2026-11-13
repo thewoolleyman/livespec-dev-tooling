@@ -52,6 +52,17 @@
 #
 # Fork pull requests are excluded: their token cannot re-run a workflow, and
 # the incident path itself refuses a head repository other than this one.
+#
+# Every forge call the step makes goes through livespec-forge-read, the retrying
+# call the composite Action `forge-read` puts on the job's path, so one
+# unusable GitHub answer cannot strand the hold (SPECIFICATION/contracts.md,
+# expedited incident execution; work item livespec-dev-tooling-pwabtl). This
+# workflow checks nothing out, so it references the Action at a release tag of
+# this library. The two writes whose outcome can be unknown (exit 75) are the
+# hold create and the re-run: the hold carries an external_id naming this job,
+# and before either is repeated the step re-reads the forge state it changes.
+# Waiting for a cancel to be accepted, or for a run to complete, is not a retry
+# of a forge call's failure, and stays this step's own.
 name: incident label CI
 
 on:
@@ -80,6 +91,8 @@ jobs:
       checks: write
       pull-requests: read
     steps:
+      - name: Put livespec-forge-read on the job's path
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/forge-read@v1.203.0
       - name: Hold ci-green, re-run the CI workflow on the pull request's current head, release on completion
         shell: bash
         env:
@@ -89,35 +102,53 @@ jobs:
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
-          head="$(gh api "repos/${repo}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          head="$(livespec-forge-read incident-label-head-read "repos/${repo}/pulls/${PR_NUMBER}" | jq -r '.head.sha')"
           runs="repos/${repo}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}&per_page=20"
-          run_id="$(gh api "$runs" --jq '[.workflow_runs[] | select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))] | first | .id // empty')"
+          run_id="$(livespec-forge-read incident-label-runs-read "$runs" | jq -r '[.workflow_runs[] | select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))] | first | .id // empty')"
           if [ -z "$run_id" ]; then
             note="no CI run of PR #${PR_NUMBER} is listed on head ${head} yet; the run its open or push event starts reads the labels itself"
             echo "::notice::${note}"
             printf '## incident label CI\n\n%s.\n' "$note" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          hold_id="$(gh api -X POST "repos/${repo}/check-runs" \
-            -f name=ci-green -f head_sha="$head" -f status=in_progress \
-            -f "output[title]=held: expedited-incident-response ${LABEL_ACTION}" \
-            -f "output[summary]=The incident label changed, so the earlier ci-green on this head is stale. CI run ${run_id} is re-run on this head, and this hold stays until that re-run completes." \
-            --jq '.id')"
+          holds="repos/${repo}/commits/${head}/check-runs?check_name=ci-green&filter=all&per_page=100"
+          hold_ref="incident-label-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          hold_id=""
+          for create in $(seq 1 3); do
+            created_rc=0
+            created="$(livespec-forge-read incident-label-hold-create --method POST "repos/${repo}/check-runs" \
+              --field name=ci-green --field head_sha="$head" --field status=in_progress \
+              --field external_id="$hold_ref" \
+              --field "output[title]=held: expedited-incident-response ${LABEL_ACTION}" \
+              --field "output[summary]=The incident label changed, so the earlier ci-green on this head is stale. CI run ${run_id} is re-run on this head, and this hold stays until that re-run completes.")" || created_rc=$?
+            if [ "$created_rc" -eq 0 ]; then
+              hold_id="$(jq -r '.id' <<<"$created")"
+              break
+            fi
+            [ "$created_rc" -eq 75 ] || exit "$created_rc"
+            hold_id="$(livespec-forge-read incident-label-hold-read "$holds" | jq -r --arg ref "$hold_ref" '[.check_runs[] | select(.external_id == $ref)] | first | .id // empty')"
+            [ -n "$hold_id" ] && break
+            echo "the hold create's outcome is unknown (try ${create}) and no hold ${hold_ref} is on head ${head}; creating it again"
+          done
+          if [ -z "$hold_id" ]; then
+            echo "::error::the ci-green hold on head ${head} could not be confirmed after 3 creates; CI run ${run_id} is left untouched"
+            exit 1
+          fi
           export HOLD_ID="$hold_id"
-          status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
+          status="$(livespec-forge-read incident-label-run-read "repos/${repo}/actions/runs/${run_id}" | jq -r '.status')"
           if [ "$status" != "completed" ]; then
             echo "CI run ${run_id} is ${status}; stopping it, because it may have read the label set before this event"
             # A run that GitHub has not queued yet refuses cancellation (HTTP
-            # 409), so the cancel is retried until it is accepted.
+            # 409), so the cancel is repeated until it is accepted.
             for attempt in $(seq 1 30); do
-              if gh api -X POST "repos/${repo}/actions/runs/${run_id}/cancel" >/dev/null; then
+              if livespec-forge-read incident-label-run-cancel --method POST --idempotent "repos/${repo}/actions/runs/${run_id}/cancel" >/dev/null; then
                 break
               fi
               echo "cancel of CI run ${run_id} not accepted yet (try ${attempt}); retrying"
               sleep 5
             done
             for _ in $(seq 1 60); do
-              status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
+              status="$(livespec-forge-read incident-label-run-read "repos/${repo}/actions/runs/${run_id}" | jq -r '.status')"
               [ "$status" = "completed" ] && break
               sleep 10
             done
@@ -126,11 +157,31 @@ jobs:
               exit 1
             fi
           fi
-          gh api -X POST "repos/${repo}/actions/runs/${run_id}/rerun" >/dev/null
+          before="$(livespec-forge-read incident-label-run-read "repos/${repo}/actions/runs/${run_id}" | jq -r '.run_attempt')"
+          rerun=""
+          for request in $(seq 1 3); do
+            rerun_rc=0
+            livespec-forge-read incident-label-run-rerun --method POST "repos/${repo}/actions/runs/${run_id}/rerun" >/dev/null || rerun_rc=$?
+            if [ "$rerun_rc" -eq 0 ]; then
+              rerun="accepted"
+              break
+            fi
+            [ "$rerun_rc" -eq 75 ] || exit "$rerun_rc"
+            after="$(livespec-forge-read incident-label-run-read "repos/${repo}/actions/runs/${run_id}" | jq -r '.run_attempt')"
+            if [ "$after" -gt "$before" ]; then
+              rerun="accepted"
+              break
+            fi
+            echo "the re-run's outcome is unknown (try ${request}) and CI run ${run_id} is still on attempt ${after}; requesting it again"
+          done
+          if [ -z "$rerun" ]; then
+            echo "::error::the re-run of CI run ${run_id} could not be confirmed after 3 requests; ci-green stays held until the label is toggled again"
+            exit 1
+          fi
           echo "re-ran CI run ${run_id}; ci-green stays held until the re-run completes"
           for poll in $(seq 1 460); do
             sleep 30
-            status="$(gh api "repos/${repo}/actions/runs/${run_id}" --jq '.status')"
+            status="$(livespec-forge-read incident-label-run-read "repos/${repo}/actions/runs/${run_id}" | jq -r '.status')"
             [ "$status" = "completed" ] && break
             if [ $((poll % 20)) -eq 0 ]; then
               echo "the re-run of CI run ${run_id} is still ${status} after ${poll} polls"
@@ -140,12 +191,11 @@ jobs:
             echo "::error::the re-run of CI run ${run_id} did not complete within about 230 minutes; ci-green stays held, and toggling the label again retries"
             exit 1
           fi
-          holds="repos/${repo}/commits/${head}/check-runs?check_name=ci-green&filter=all&per_page=100"
-          for id in $(gh api "$holds" --jq '.check_runs[] | select(.status != "completed" and ((.output.title // "") | startswith("held: expedited-incident-response")) and .id <= (env.HOLD_ID | tonumber)) | .id'); do
-            gh api -X PATCH "repos/${repo}/check-runs/${id}" \
-              -f status=completed -f conclusion=neutral \
-              -f "output[title]=released: CI run ${run_id} decides" \
-              -f "output[summary]=The re-run of CI run ${run_id} has completed on this head; its own ci-green decides." >/dev/null
+          for id in $(livespec-forge-read incident-label-holds-read "$holds" | jq -r '.check_runs[] | select(.status != "completed" and ((.output.title // "") | startswith("held: expedited-incident-response")) and .id <= (env.HOLD_ID | tonumber)) | .id'); do
+            livespec-forge-read incident-label-hold-release --method PATCH --idempotent "repos/${repo}/check-runs/${id}" \
+              --field status=completed --field conclusion=neutral \
+              --field "output[title]=released: CI run ${run_id} decides" \
+              --field "output[summary]=The re-run of CI run ${run_id} has completed on this head; its own ci-green decides." >/dev/null
           done
           note="label expedited-incident-response ${LABEL_ACTION} on PR #${PR_NUMBER}: held ci-green, re-ran CI run ${run_id} on head ${head}, and released the hold once the re-run completed, so ci-green on that head reflects the current label set"
           echo "::notice::${note}"

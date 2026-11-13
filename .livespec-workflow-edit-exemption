@@ -1,17 +1,19 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/ci.yml routes the incident-ci job's latest-release
-# read and pull-request body read, and ci-green's read of its own run's jobs,
-# through livespec-forge-read (the composite Action .github/actions/forge-read),
-# which retries an unusable GitHub answer. An unreadable pull-request body fails
-# the selection step without writing its block output. Each job gains one step
-# that uses the Action from the checked-out tree. No job, trigger, permission,
-# runner or required check changes; the incident label workflow is unchanged
-# until a release ships the Action.
+# The change: .github/workflows/incident-label-ci.yml routes every forge call
+# its one step makes through livespec-forge-read, the retrying call the
+# composite Action forge-read puts on the job's path. The job gains one first
+# step that uses the Action at release tag v1.203.0 (the workflow checks
+# nothing out). The hold check-run create carries an external_id naming this
+# job, and the two writes whose outcome can be unknown (exit 75), the hold
+# create and the re-run, are repeated only after the step re-reads the forge
+# state they change. No job, trigger, permission, runner, concurrency group or
+# required check changes, and the job's waits keep their bounds.
 #
-# The line diff replaces three bare `gh api` reads and ci-green's ad-hoc
-# two-retry, so it is not mechanically additive. legacy-coordinator-agent ruled
-# it coordinator tier and logically additive (2026-11-12); the coordinator sets
-# the label and records that ruling on the work item.
-work_item=livespec-dev-tooling-levu6j
-reason=Route the incident-ci and ci-green forge reads through the retrying livespec-forge-read so one unusable GitHub answer cannot redden the required ci-green check (contracts.md, expedited incident execution; proposal one-unretried-github-api-answer)
+# The line diff replaces the bare `gh api` calls, so it is not mechanically
+# additive. The same shape on ci.yml (livespec-dev-tooling-levu6j) was ruled
+# coordinator tier and logically additive by legacy-coordinator-agent
+# (2026-11-12); the coordinator sets the label and records its ruling on the
+# work item.
+work_item=livespec-dev-tooling-pwabtl
+reason=Route the incident label workflow's forge calls through the released retrying livespec-forge-read, with an external_id on the hold and a re-read before any repeated write, so one unusable GitHub answer cannot strand the ci-green hold (contracts.md, expedited incident execution; proposal one-unretried-github-api-answer)
