@@ -43,4 +43,6 @@ And when a later refresh finds the PR head current and no discovered pin to rewr
 
 Owed at revise: the revise that ratifies this proposal MUST add a `tests/heading-coverage.json` row for the new scenario heading with `"test": "TODO"`, a reason naming the tier the owed test runs at (integration tier or above) and `"work_item": "livespec-dev-tooling-m5cpnl"`, and MUST regenerate `tests/heading-coverage-debt.json` with `just generate-heading-coverage-debt-register`.
 
+Related, also out of scope: a release-please release PR whose contents were computed on an older base can carry a stale pin line in the same way; measured on 2026-11-13, livespec-overseer 65dce2d8 (#2972) rolled the dev-tooling pin back to v1.200.0. That sibling class is owned by plan ci-runtime-and-cost as a required pre-merge check against the current base, and this proposal does not cover it.
+
 Out of scope: livespec-overseer's ruleset 27138269 not requiring ci-green, which let the stale-line PR merge red. legacy-coordinator-agent routed it to plan ci-runtime-and-cost as a fleet sweep.
