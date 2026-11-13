@@ -354,3 +354,36 @@ ref by name before diffing it. Cross-check a surprising "empty" or "wrong
 commit" result with `git ls-remote` before reporting it. Compare two preserved
 trees with `git diff <base> <ref> | git patch-id --stable` against each one's
 own master base, not with a direct diff, because their bases drift apart.
+
+## Lifting A `do-not-merge` Hold Does Not Re-Arm Auto-Merge
+
+The `do-not-merge` label disarms a pull request's auto-merge (the
+disarm-on-hold-label workflow). Removing the label does NOT turn it back on.
+The pull request then sits green and unmerged, and nothing reports it. After you
+lift a hold, re-arm it explicitly with `gh pr merge <n> -R <owner/repo> --auto
+--rebase`, then read back `gh pr view <n> --json autoMergeRequest` and confirm
+it is not `null`.
+
+Measured 2026-11-13 in the o4hkgh Rule-G pin sweep. Eight v1.207.0 bot bump
+pull requests were held with `do-not-merge` until each showed a pre-merge
+delegated gate. The first four lifted holds (livespec-runtime#900,
+livespec-driver-pi#555, livespec-orchestrator-beads-fabro#5181,
+livespec-driver-claude#1078) stayed open with `autoMergeRequest: null` for up
+to an hour. All of them merged within seconds of an explicit re-arm.
+
+## Search The Target Tenant Before Filing A Flaky-Test Root Fix
+
+Several seats meet the same flake in the same hour: the coordinator, the
+dispatcher, a CI-cost seat, and the plan that owns the failing code. Before you
+file a root-fix item through capture-work-item, search the TARGET tenant with
+`bd list --status all --json` for the failing case's literal identity: the
+harness case number or name, the test node id, or the failure string. Match on
+title AND description, and include `active` items, because a factory run may
+already be building the fix. In a shared harness file, also find the active
+items that edit that file and order yours after them.
+
+Measured 2026-11-13. The fleet-flaky-tests seat filed bd-ib-opfsxp for
+check-fleet-launch case 10b about 20 minutes after bd-ib-tctou7 had claimed
+the same case, and tctou7 was already running on petri. The duplicate cost a
+close and two cross-seat messages. tctou7 also named a deeper cause, a launcher
+re-ticket race, than the seat's own reading of the test's wall-clock deadlines.
