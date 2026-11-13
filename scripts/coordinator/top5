@@ -24,6 +24,11 @@ The HOLDS section (rule HOLD-ENDS-ARE-DRIVEN, coordinator 2026-11-13, after hold
 stood more than 3 h past the release of its fix) prints every live hold with its age,
 marks one older than 60 minutes STALE HOLD, and marks one with no OWNER: line or no
 END CONDITION as MALFORMED HOLD.
+
+The OVERCOMMIT section (maintainer-approved 2026-11-13) prints, first in the header, every
+node fleet-utilization.sh --overcommit-only marks FLAGGED (idle under 5 % with the BestEffort
+CI slice's CPU pressure above 30: the classes sharing the node exceed its CPU) or UNREAD, for
+routing to the per-node CPU budget owner the same tick.
 """
 import datetime as dt
 import json
@@ -56,21 +61,45 @@ NOW = dt.datetime.now(dt.timezone.utc)
 STRANDED_TIMEOUT_S = 120
 
 
-def stranded_header():
-    """FLAGGED and UNREAD lines of fleet-utilization.sh's STRANDED-CAPACITY section (one source)."""
+OVERCOMMIT_TIMEOUT_S = 120
+OVERCOMMIT_RESOLVE = (
+    "resolve THIS tick: route to the per-node CPU budget owner, plan gate-job-resources (livespec-dev-tooling-ukoeah)"
+)
+
+
+def section_hits(flag, section, timeout_s):
+    """FLAGGED and UNREAD lines of one fleet-utilization.sh section (one source), or None after printing why not."""
     script = os.path.join(os.environ.get("COORDINATOR_DIR", "."), "fleet-utilization.sh")
     try:
-        proc = subprocess.run(
-            ["bash", script, "--stranded-only"], capture_output=True, text=True, timeout=STRANDED_TIMEOUT_S
-        )
+        proc = subprocess.run(["bash", script, flag], capture_output=True, text=True, timeout=timeout_s)
     except Exception as exc:
-        print(f"STRANDED-CAPACITY READ FAILED: {exc}")
-        return
+        print(f"{section} READ FAILED: {exc}")
+        print()
+        return None
     if proc.returncode != 0:
         err = (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}").splitlines()[-1]
-        print(f"STRANDED-CAPACITY READ FAILED: {err[:200]}")
+        print(f"{section} READ FAILED: {err[:200]}")
+        print()
+        return None
+    return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith(("FLAGGED", "UNREAD"))]
+
+
+def overcommit_header():
+    """FLAGGED and UNREAD lines of fleet-utilization.sh's OVERCOMMIT section, first in the header."""
+    hits = section_hits("--overcommit-only", "OVERCOMMIT", OVERCOMMIT_TIMEOUT_S)
+    if hits is None:
         return
-    hits = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith(("FLAGGED", "UNREAD"))]
+    print(f"OVERCOMMIT (fleet-utilization.sh --overcommit-only; {OVERCOMMIT_RESOLVE}):")
+    for line in hits or ["none flagged"]:
+        print(f"  {line}")
+    print()
+
+
+def stranded_header():
+    """FLAGGED and UNREAD lines of fleet-utilization.sh's STRANDED-CAPACITY section (one source)."""
+    hits = section_hits("--stranded-only", "STRANDED-CAPACITY", STRANDED_TIMEOUT_S)
+    if hits is None:
+        return
     print("STRANDED-CAPACITY (fleet-utilization.sh --stranded-only; resolve every FLAGGED line THIS tick):")
     for line in hits or ["none flagged"]:
         print(f"  {line}")
@@ -147,6 +176,7 @@ print(
     " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
 )
 print()
+overcommit_header()
 stranded_header()
 holds_header()
 
