@@ -96,6 +96,9 @@ case "$*" in
     *"green_token undeclared"*)        exit 0 ;;
     *"green_token check")              exit "${GREEN_TOKEN_EXIT:-1}" ;;
     *"green_token pre-push-evidence")
+        if [ -n "${CLUSTER_READER:-}" ]; then
+            exec "${CLUSTER_READER_PYTHON}" "${CLUSTER_READER}"
+        fi
         [ -n "${EVIDENCE:-}" ] || exit 1
         printf '%b' "${EVIDENCE}"
         exit 0
@@ -344,6 +347,49 @@ def _a_delegated_pre_commit(
     return status
 
 
+def _cluster_reply(*, argv: list[str], tree: str, record_state: str) -> Success[GateCommandResult]:
+    """The cluster's answer to the reader's queries about the evidence's gate Job `J`."""
+    if "job" in argv:
+        if record_state == "missing":
+            return Success(GateCommandResult(returncode=1, stdout="", stderr="NotFound"))
+        output = json.dumps(
+            {
+                "metadata": {
+                    "labels": {
+                        "livespec.gate/tree-hash": tree if record_state == "matches" else "b" * 40
+                    }
+                },
+                "status": {"conditions": [{"type": "Complete", "status": "True"}]},
+            }
+        )
+    elif "pods" in argv:
+        output = json.dumps({"items": [{"metadata": {"name": "gate-pod"}}]})
+    else:
+        output = (
+            'LIVESPEC_GATE_MEMBERS {"check-approval": "passed", "check-beta": "passed", '
+            '"check-world": "passed"}\n'
+        )
+    return Success(GateCommandResult(returncode=0, stdout=output, stderr=""))
+
+
+# The hook's own `green_token pre-push-evidence` call, run as the real reader in a child
+# process: only the cluster's answer is replaced, by the scenario module's `_cluster_reply`.
+_CLUSTER_READER = f"""import importlib.util, os, subprocess, sys
+spec = importlib.util.spec_from_file_location("scenario", {str(Path(__file__).resolve())!r})
+scenario = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(scenario)
+from livespec_dev_tooling import _pre_push_evidence as pre_push, green_token
+tree = subprocess.run(
+    ["git", "rev-parse", "HEAD^{{tree}}"], capture_output=True, text=True, check=True
+).stdout.strip()
+pre_push.default_gate_command_runner = lambda *, argv, cwd, stdin=None, stream=False: (
+    scenario._cluster_reply(argv=argv, tree=tree, record_state=os.environ["CLUSTER_RECORD_STATE"])
+)
+sys.argv = ["green-token", "pre-push-evidence"]
+sys.exit(green_token.main())
+"""
+
+
 def _pre_push_evidence(
     *,
     repo: Path,
@@ -359,27 +405,11 @@ def _pre_push_evidence(
         *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
     ) -> Success[GateCommandResult]:
         _ = cwd, stdin, stream
-        tree = _git(repo=repo, args=("rev-parse", "HEAD^{tree}"))
-        if "job" in argv:
-            if record_state == "missing":
-                return Success(GateCommandResult(returncode=1, stdout="", stderr="NotFound"))
-            output = json.dumps(
-                {
-                    "metadata": {
-                        "labels": {
-                            "livespec.gate/tree-hash": (
-                                tree if record_state == "matches" else "b" * 40
-                            )
-                        }
-                    },
-                    "status": {"conditions": [{"type": "Complete", "status": "True"}]},
-                }
-            )
-        elif "pods" in argv:
-            output = json.dumps({"items": [{"metadata": {"name": "gate-pod"}}]})
-        else:
-            output = 'LIVESPEC_GATE_MEMBERS {"check-approval": "passed", "check-beta": "passed", "check-world": "passed"}\n'
-        return Success(GateCommandResult(returncode=0, stdout=output, stderr=""))
+        return _cluster_reply(
+            argv=argv,
+            tree=_git(repo=repo, args=("rev-parse", "HEAD^{tree}")),
+            record_state=record_state,
+        )
 
     monkeypatch.setattr(pre_push, "default_gate_command_runner", cluster_record)
     _scrub_process(monkeypatch=monkeypatch)
@@ -536,8 +566,29 @@ def _reused_evidence_falls_through_to_a_new_gate(
 
     assert accepted == 1, "a cluster record that no longer confirms J must not be reused"
     assert lines == []
-    run = _run_pre_push(root=repo, overrides={"SWITCH_EXIT": "0"})
+    reader = tmp_path / "cluster_reader.py"
+    _ = reader.write_text(_CLUSTER_READER, encoding="utf-8")
+    run = _run_pre_push(
+        root=repo,
+        overrides={
+            "SWITCH_EXIT": "0",
+            "CLUSTER_READER": str(reader),
+            "CLUSTER_READER_PYTHON": sys.executable,
+            "CLUSTER_RECORD_STATE": cluster_record,
+            "PYTHONPATH": os.pathsep.join(
+                (str(_REPO_ROOT), str(_REPO_ROOT / "livespec_dev_tooling" / "_vendor"))
+            ),
+        },
+    )
     assert run.code == 0, f"output={run.output!r} invoked={run.invoked}"
+    events = [json.loads(line)["event"] for line in diagnostics]
+    assert events, "the reader must have named the rejection"
+    assert all(
+        event in run.output for event in events
+    ), f"the hook must have read the rejected cluster record; output={run.output!r}"
+    assert not _carrying(
+        run=run, needle="just-env"
+    ), f"a rejected record must not narrow the aggregate; invoked={run.invoked}"
     assert _carrying(run=run, needle="gate_remote_delegate run"), f"invoked={run.invoked}"
     assert "accepted the delegated pre-commit verdict" not in run.output
     return diagnostics
