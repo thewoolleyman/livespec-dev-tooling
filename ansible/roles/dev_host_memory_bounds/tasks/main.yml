@@ -1,0 +1,415 @@
+---
+# dev_host_memory_bounds — bound the dev host's RAM-backed /tmp, move the
+# session scratchpads onto disk, and give fleet Python memory slices and
+# OOM-killer priorities. See defaults/main.yml for the incident and every
+# number's source, and HOST_VARS.md for the procedure and the rollback.
+#
+# A PLAIN CONVERGE CHANGES NOTHING THAT IS RUNNING. It writes unit files and
+# drop-ins, publishes one file, reloads the managers, and enables the
+# scratchpad bind mount for the next boot. No session's environment changes,
+# the mounted /tmp keeps its size, and the scratchpads stay where they are.
+#
+# TWO LIVE STEPS, each a `never`-tagged invocation of its own, taken at a
+# moment the operator chose and never as a side effect of a converge:
+# - `--tags dev_host_memory_bounds_tmp_cap` remounts the running /tmp at its
+#   cap. It moves no file, so it is safe whenever /tmp fits under the cap.
+# - `--tags dev_host_memory_bounds_cutover` starts the scratchpad bind on the
+#   running host. It REFUSES while any process holds a file open under the
+#   scratchpad directory, because a writer would keep its RAM inode while
+#   readers met the disk copy. The ordinary route is the next planned reboot,
+#   where the enabled mount unit takes effect before any session starts.
+# The `when:` on each live task repeats the tag test because the role-level tag
+# in dev-host.yml would otherwise select a `never` task whenever
+# `--tags dev_host_memory_bounds` is given (the trap docker_sandbox_slice
+# documents).
+#
+# NO TMPDIR IS EXPORTED. Long-lived daemons that are not started from a
+# session shell (the codex daemon under a user service, the browser bridge)
+# meet their clients through sockets in the default temporary directory, so a
+# seat-only TMPDIR would split those rendezvous permanently. The bind moves
+# the measured consumer, the Claude Code scratchpads, without changing any
+# path.
+#
+# EVERY INSTALL TASK HAS A REMOVING TWIN under state `absent`.
+
+- name: Refuse an unrecognised dev_host_memory_bounds_state disposition
+  ansible.builtin.assert:
+    that:
+      - dev_host_memory_bounds_state in ['present', 'absent']
+    fail_msg: >-
+      dev_host_memory_bounds_state is '{{ dev_host_memory_bounds_state }}'; it
+      must be present or absent.
+    success_msg: dev_host_memory_bounds_state disposition is understood
+  tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+- name: Refuse an empty or malformed memory bound
+  # An empty MemoryMax= renders a slice systemd still loads with NO limit, and
+  # an empty size= gives /tmp the default of half of RAM. Both are silent.
+  ansible.builtin.assert:
+    that:
+      - item is match('^[0-9]+[KMG]$')
+    fail_msg: "a memory bound must read like 8G or 512M; got '{{ item }}'"
+    success_msg: "{{ item }} is a memory bound"
+    quiet: true
+  loop:
+    - "{{ dev_host_memory_bounds_tmp_size }}"
+    - "{{ dev_host_memory_bounds_dispatch_memory_high }}"
+    - "{{ dev_host_memory_bounds_dispatch_memory_max }}"
+    - "{{ dev_host_memory_bounds_gate_memory_high }}"
+    - "{{ dev_host_memory_bounds_gate_memory_max }}"
+    - "{{ dev_host_memory_bounds_reconcile_memory_high }}"
+    - "{{ dev_host_memory_bounds_reconcile_memory_max }}"
+    - "{{ dev_host_memory_bounds_dispatch_loop_memory_max }}"
+  tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+- name: Refuse a swap bound systemd will not read
+  ansible.builtin.assert:
+    that:
+      - dev_host_memory_bounds_memory_swap_max | string is match('^([0-9]+[KMG]?|infinity)$')
+    fail_msg: >-
+      dev_host_memory_bounds_memory_swap_max must be 0, a size like 2G, or
+      infinity; got '{{ dev_host_memory_bounds_memory_swap_max }}'
+    success_msg: the swap bound is readable
+
+- name: Read the uid of the login whose scratchpads move
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ dev_host_memory_bounds_user }}"
+  tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+- name: Name the scratchpad directories and the bind mount unit
+  # systemd names a mount unit after its escaped mount point: `/tmp/claude-1000`
+  # is `tmp-claude\x2d1000.mount`. The escape is computed rather than written
+  # down so a different uid cannot leave a unit systemd refuses to load.
+  ansible.builtin.set_fact:
+    dev_host_memory_bounds_rt_uid: "{{ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1] }}"
+    dev_host_memory_bounds_rt_scratch_ram_dir: >-
+      {{ dev_host_memory_bounds_scratch_ram_root }}/claude-{{ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1] }}
+    dev_host_memory_bounds_rt_scratch_disk_dir: >-
+      {{ dev_host_memory_bounds_scratch_disk_root }}/claude-{{ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1] }}
+    dev_host_memory_bounds_rt_mount_unit: >-
+      {{ (dev_host_memory_bounds_scratch_ram_root ~ '/claude-' ~ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1])[1:]
+         | replace('-', '\\x2d') | replace('/', '-') }}.mount
+  tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+# --- install ----------------------------------------------------------------
+
+- name: Install the /tmp size cap for the next mount of /tmp
+  ansible.builtin.template:
+    src: tmp-mount-bounds.conf.j2
+    dest: "{{ dev_host_memory_bounds_tmp_dropin_dir }}/{{ dev_host_memory_bounds_tmp_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: dev_host_memory_bounds_rt_tmp_dropin
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Create the on-disk scratchpad directory
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_rt_scratch_disk_dir }}"
+    state: directory
+    owner: "{{ dev_host_memory_bounds_user }}"
+    group: "{{ dev_host_memory_bounds_user }}"
+    mode: "0700"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Install the scratchpad bind mount unit
+  ansible.builtin.template:
+    src: scratch-bind.mount.j2
+    dest: "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_rt_mount_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: dev_host_memory_bounds_rt_mount_file
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Install the reconcile-runs memory bound
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_reconcile_unit }}.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Write the reconcile-runs memory bound drop-in
+  ansible.builtin.template:
+    src: reconcile-memory-bounds.conf.j2
+    dest: >-
+      {{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_reconcile_unit }}.d/{{ dev_host_memory_bounds_reconcile_dropin }}
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: dev_host_memory_bounds_rt_reconcile_dropin
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Reload the system manager so the new units and drop-ins are read
+  # A reload changes no running unit: the tmp.mount drop-in applies at the next
+  # mount of /tmp, the reconcile drop-in at the next timer pass.
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - >-
+      dev_host_memory_bounds_rt_tmp_dropin is changed
+      or dev_host_memory_bounds_rt_mount_file is changed
+      or dev_host_memory_bounds_rt_reconcile_dropin is changed
+
+- name: Enable the scratchpad bind mount for every boot
+  # Enabled, NOT started. Starting it is the cutover's job (see the header).
+  # Skipped in check mode when the unit file is still only a would-be write:
+  # systemd cannot enable a unit it has not been given.
+  ansible.builtin.systemd:
+    name: "{{ dev_host_memory_bounds_rt_mount_unit }}"
+    enabled: true
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - not (ansible_check_mode and dev_host_memory_bounds_rt_mount_file is changed)
+
+- name: Create the directory the per-loop dispatch bound is published in
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_dispatch_loop_memory_max_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Publish the per-loop dispatch bound for launchers to read
+  # A launcher runs `systemd-run --user --scope --slice=<dispatch slice>
+  # -p MemoryMax=$(cat <this file>)` so the bound is this host's, not a
+  # number copied from another host.
+  ansible.builtin.copy:
+    content: "{{ dev_host_memory_bounds_dispatch_loop_memory_max }}\n"
+    dest: "{{ dev_host_memory_bounds_dispatch_loop_memory_max_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Install the user-manager memory slices
+  ansible.builtin.template:
+    src: memory-slice.slice.j2
+    dest: "{{ dev_host_memory_bounds_user_unit_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: dev_host_memory_bounds_rt_slices
+  loop:
+    - name: "{{ dev_host_memory_bounds_dispatch_slice }}"
+      description: Every per-run factory dispatcher loop and its launcher
+      memory_high: "{{ dev_host_memory_bounds_dispatch_memory_high }}"
+      memory_max: "{{ dev_host_memory_bounds_dispatch_memory_max }}"
+    - name: "{{ dev_host_memory_bounds_gate_slice }}"
+      description: Local full-suite gate runs, one at a time (local_gate_slots)
+      memory_high: "{{ dev_host_memory_bounds_gate_memory_high }}"
+      memory_max: "{{ dev_host_memory_bounds_gate_memory_max }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: dev_host_memory_bounds_state == 'present'
+
+# --- remove (state absent) -------------------------------------------------
+
+- name: Withdraw the files this role installed
+  # The bind mount is DISABLED and its unit removed, but a live bind is left
+  # mounted: unmounting it hides the on-disk scratchpads from every running
+  # session, so that is an operator step (HOST_VARS.md, Rollback).
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  register: dev_host_memory_bounds_rt_removed
+  loop:
+    - "{{ dev_host_memory_bounds_tmp_dropin_dir }}/{{ dev_host_memory_bounds_tmp_dropin }}"
+    - >-
+      {{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_reconcile_unit }}.d/{{ dev_host_memory_bounds_reconcile_dropin }}
+    - "{{ dev_host_memory_bounds_user_unit_dir }}/{{ dev_host_memory_bounds_dispatch_slice }}"
+    - "{{ dev_host_memory_bounds_user_unit_dir }}/{{ dev_host_memory_bounds_gate_slice }}"
+    - "{{ dev_host_memory_bounds_dispatch_loop_memory_max_file }}"
+  when: dev_host_memory_bounds_state == 'absent'
+
+- name: Disable the scratchpad bind mount
+  ansible.builtin.command:
+    argv: [systemctl, disable, "{{ dev_host_memory_bounds_rt_mount_unit }}"]
+  become: true
+  register: dev_host_memory_bounds_rt_disable
+  changed_when: "'Removed' in dev_host_memory_bounds_rt_disable.stderr"
+  failed_when: false
+  when: dev_host_memory_bounds_state == 'absent'
+
+- name: Remove the scratchpad bind mount unit file
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_rt_mount_unit }}"
+    state: absent
+  become: true
+  register: dev_host_memory_bounds_rt_mount_removed
+  when: dev_host_memory_bounds_state == 'absent'
+
+- name: Reload the system manager after the withdrawal
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'absent'
+    - dev_host_memory_bounds_rt_removed is changed or dev_host_memory_bounds_rt_mount_removed is changed
+
+# --- either state: the user manager must see the slice change ---------------
+
+- name: Reload the scratchpad login's user manager so its slices are current
+  # Only when that login's manager is running; one that is not reads the unit
+  # directory afresh when it starts.
+  ansible.builtin.command:
+    argv: [systemctl, --user, daemon-reload]
+    removes: "/run/user/{{ dev_host_memory_bounds_rt_uid }}/systemd"
+  become: true
+  become_user: "{{ dev_host_memory_bounds_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ dev_host_memory_bounds_rt_uid }}"
+  changed_when: true
+  when: dev_host_memory_bounds_rt_slices is changed or dev_host_memory_bounds_rt_removed is changed
+
+# --- live: /tmp cap (never-tagged; an explicit second invocation) ------------
+
+- name: Refuse a live step on a host whose state is not present
+  ansible.builtin.assert:
+    that:
+      - dev_host_memory_bounds_state == 'present'
+    fail_msg: a live step applies installed bounds; converge with state present first.
+    success_msg: state is present
+  tags: [never, dev_host_memory_bounds_tmp_cap, dev_host_memory_bounds_cutover]
+  when: >-
+    'dev_host_memory_bounds_tmp_cap' in ansible_run_tags
+    or 'dev_host_memory_bounds_cutover' in ansible_run_tags
+
+- name: Read what /tmp holds now
+  ansible.builtin.command:
+    argv: [df, --output=used, -B1, "{{ dev_host_memory_bounds_scratch_ram_root }}"]
+  register: dev_host_memory_bounds_rt_tmp_used
+  check_mode: false  # read-only probe; a dry run must see the real answer
+  changed_when: false
+  tags: [never, dev_host_memory_bounds_tmp_cap]
+  when: "'dev_host_memory_bounds_tmp_cap' in ansible_run_tags"
+
+- name: Refuse to shrink /tmp below what it holds
+  ansible.builtin.assert:
+    that:
+      - (dev_host_memory_bounds_rt_tmp_used.stdout_lines[-1] | trim | int) < (dev_host_memory_bounds_tmp_size | human_to_bytes) * 0.75
+    fail_msg: >-
+      /tmp holds {{ dev_host_memory_bounds_rt_tmp_used.stdout_lines[-1] | trim | int | human_readable }},
+      more than three quarters of the {{ dev_host_memory_bounds_tmp_size }} cap;
+      find what holds it before capping.
+    success_msg: /tmp fits under its cap with room to spare
+  tags: [never, dev_host_memory_bounds_tmp_cap]
+  when: "'dev_host_memory_bounds_tmp_cap' in ansible_run_tags"
+
+- name: Apply the /tmp cap to the mounted /tmp
+  # A tmpfs remount changes only its limits; no file moves and no open file is
+  # disturbed.
+  ansible.builtin.command:
+    argv:
+      - mount
+      - -o
+      - "remount,size={{ dev_host_memory_bounds_tmp_size }},nr_inodes={{ dev_host_memory_bounds_tmp_nr_inodes }}"
+      - "{{ dev_host_memory_bounds_scratch_ram_root }}"
+  become: true
+  changed_when: true
+  tags: [never, dev_host_memory_bounds_tmp_cap]
+  when: "'dev_host_memory_bounds_tmp_cap' in ansible_run_tags"
+
+# --- live: scratchpad bind (never-tagged; refused while files are open) ------
+
+- name: Read whether the scratchpad bind is already live
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, SOURCE, --mountpoint, "{{ dev_host_memory_bounds_rt_scratch_ram_dir }}"]
+  register: dev_host_memory_bounds_rt_bind_live
+  check_mode: false  # read-only probe; a dry run must see the real answer
+  changed_when: false
+  failed_when: false
+  tags: [never, dev_host_memory_bounds_cutover]
+  when: "'dev_host_memory_bounds_cutover' in ansible_run_tags"
+
+- name: List every file a process holds open under the RAM scratchpads
+  # `lsof +D` exits 1 when it finds nothing, which here is the GO answer.
+  ansible.builtin.command:
+    argv: [lsof, -w, -n, +D, "{{ dev_host_memory_bounds_rt_scratch_ram_dir }}"]
+  become: true
+  register: dev_host_memory_bounds_rt_open_files
+  check_mode: false  # read-only probe; a dry run must see the real answer
+  changed_when: false
+  failed_when: dev_host_memory_bounds_rt_open_files.rc not in [0, 1]
+  tags: [never, dev_host_memory_bounds_cutover]
+  when:
+    - "'dev_host_memory_bounds_cutover' in ansible_run_tags"
+    - dev_host_memory_bounds_rt_bind_live.stdout | length == 0
+
+- name: Refuse the bind while any process holds a scratchpad file open
+  ansible.builtin.assert:
+    that:
+      - dev_host_memory_bounds_rt_open_files.stdout | trim | length == 0
+    fail_msg: >-
+      {{ (dev_host_memory_bounds_rt_open_files.stdout_lines | length) - 1 }} open
+      handle(s) under {{ dev_host_memory_bounds_rt_scratch_ram_dir }}. A writer
+      would keep its RAM inode while readers met the disk copy. Take the bind at
+      the next planned reboot, or when the seats are quiesced.
+    success_msg: no process holds a scratchpad file open
+  tags: [never, dev_host_memory_bounds_cutover]
+  when:
+    - "'dev_host_memory_bounds_cutover' in ansible_run_tags"
+    - dev_host_memory_bounds_rt_bind_live.stdout | length == 0
+
+- name: Mount the bind, then move what the RAM directory held onto disk
+  # Mount FIRST, so every file created from here on lands on disk; then copy
+  # what is now hidden under the mount point through a NON-recursive bind of
+  # /tmp, which shows the directory beneath it, and delete that RAM copy. No
+  # file is created in a gap between a copy and a mount, because there is none.
+  ansible.builtin.shell: |
+    set -euo pipefail
+    systemctl start '{{ dev_host_memory_bounds_rt_mount_unit }}'
+    underlay=$(mktemp -d /run/livespec-tmp-underlay.XXXXXX)
+    trap 'umount "$underlay" 2>/dev/null || true; rmdir "$underlay"' EXIT
+    mount --bind {{ dev_host_memory_bounds_scratch_ram_root }} "$underlay"
+    cp -a --no-clobber "$underlay/claude-{{ dev_host_memory_bounds_rt_uid }}/." {{ dev_host_memory_bounds_rt_scratch_disk_dir }}/
+    find "$underlay/claude-{{ dev_host_memory_bounds_rt_uid }}" -mindepth 1 -delete
+  args:
+    executable: /bin/bash
+  become: true
+  changed_when: true
+  tags: [never, dev_host_memory_bounds_cutover]
+  when:
+    - "'dev_host_memory_bounds_cutover' in ansible_run_tags"
+    - dev_host_memory_bounds_rt_bind_live.stdout | length == 0
+
+# --- live: read back ----------------------------------------------------------
+
+- name: Read back the mounted /tmp and the scratchpad bind
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, "TARGET,SOURCE,FSTYPE,SIZE,OPTIONS", "{{ item }}"]
+  loop:
+    - "{{ dev_host_memory_bounds_scratch_ram_root }}"
+    - "{{ dev_host_memory_bounds_rt_scratch_ram_dir }}"
+  register: dev_host_memory_bounds_rt_readback
+  check_mode: false  # read-only probe; a dry run must see the real answer
+  changed_when: false
+  failed_when: false
+  tags: [never, dev_host_memory_bounds_tmp_cap, dev_host_memory_bounds_cutover]
+  when: >-
+    'dev_host_memory_bounds_tmp_cap' in ansible_run_tags
+    or 'dev_host_memory_bounds_cutover' in ansible_run_tags
+
+- name: Show the read-back
+  ansible.builtin.debug:
+    msg: "{{ dev_host_memory_bounds_rt_readback.results | map(attribute='stdout') | list }}"
+  tags: [never, dev_host_memory_bounds_tmp_cap, dev_host_memory_bounds_cutover]
+  when: >-
+    'dev_host_memory_bounds_tmp_cap' in ansible_run_tags
+    or 'dev_host_memory_bounds_cutover' in ansible_run_tags

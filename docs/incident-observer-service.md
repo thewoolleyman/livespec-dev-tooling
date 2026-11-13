@@ -168,7 +168,9 @@ The existing repository lock continues to serialize actual durable effects.
   A repeated receipt answers its retained action from protected state without a
   canonical read, including after a restart or during a tenant outage.
 - `POST /reconcile` requires the control credential and exactly `repository`,
-  the 64-hex `action_id` and a boolean `retry_publish`. It is the operator's way
+  the 64-hex `action_id`, and a boolean `retry_publish`; its optional
+  `clear_sweep` boolean is the explicit operator reset for a repaired quarantined
+  entry or a diagnosed terminal action. It is the operator's way
   out of an unknown recovery outcome: a timed-out principal leaves the action
   `pending`, and a pending action refuses every later `/arm`. The route asks the
   principal's `lookup` for the action's exact receipt, using the intent retained
@@ -185,7 +187,11 @@ The existing repository lock continues to serialize actual durable effects.
   recorded in the chain with the orchestrator's `record-revert-receipt`. A
   rollback-conflict receipt is written to the chain by this route itself (see
   "Rollback-conflict on the chain" below), and the reply's `reason` names how that
-  write ended.
+  write ended. With `clear_sweep: true`, the route clears that action's sweep
+  bookkeeping and its `sweep_quarantine` entry before normal reconciliation, and it
+  does not publish a retained conflict receipt in that call: publishing would record
+  an attempt and recreate the sweep state, so the cleared action is left to the next
+  sweep to publish.
 - `POST /callback` verifies GitHub's raw-body HMAC with the existing verifier,
   requires the configured repository, then uses the existing observer endpoint.
   The first registered failing required leaf records immutable intent and calls
@@ -241,7 +247,9 @@ answering 503, and GitHub never redelivers it. So the write never runs under the
     reason (`streak`), up to an hour.
   - The action turns `terminal` once its streak reaches that reason's bound: 3 for
     `claim-changed` (journaled as the half-reopen below), 12 for an unrecorded
-    merge, 48 for anything else.
+    merge, 48 for anything else. It also turns terminal at 48 total attempts,
+    even when alternating refusal reasons prevent any one streak from reaching
+    its reason-specific bound.
   - Only the chain's own proof that the write can never land is `terminal` at once:
     the owner already resolved the conflict (`incident-generation-stale`), or a
     different reopen holds the chain (`incident-authority-identity-mismatch`).
@@ -249,6 +257,18 @@ answering 503, and GitHub never redelivers it. So the write never runs under the
     reason without writing it again. A `landed` outcome still wins, though: it marks
     the action `reconciled` even over a terminal another publisher recorded
     meanwhile, and keeps that diagnosis as `superseded_terminal`.
+  - An operator's `/reconcile` before `next_at` either waits for the back-off by
+    leaving the action to the sweep, or performs the explicit immediate attempt.
+    An immediate attempt records `operator_overrides`, and updates `attempts` and
+    `next_at` with the same outcome bookkeeping as a sweep attempt.
+  - **Clearing a sweep hold.** To clear a quarantined action, first repair the
+    malformed action fields named by its `sweep_quarantine` reason, then call
+    `/reconcile` with that action's `repository`, `action_id`, `retry_publish`, and
+    `clear_sweep: true`. To clear a terminal action after diagnosing it, make the
+    same call with `clear_sweep: true`. In both cases the route removes the action's
+    `sweep` state (including `terminal`, attempts and `next_at`) and its quarantine
+    entry under the observer lock, leaving the repaired action eligible for the next
+    sweep.
 
 ### Known limitation: the orchestrator's `reopen-regression` is not atomic
 

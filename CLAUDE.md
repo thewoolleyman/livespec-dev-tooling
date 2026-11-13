@@ -70,7 +70,10 @@ The files:
   classification logic, before treating a clean filing display as evidence an
   item will pass its pre-dispatch screen, before filing a work item with a raw
   `bd create` instead of capture-work-item (it leaves no claim token, so
-  approve and accept refuse `claim-token-missing`, 2026-11-12) — and,
+  approve and accept refuse `claim-token-missing`, 2026-11-12), before filing
+  a flaky-test root fix without first searching the target tenant for the
+  same case (a duplicate of an active item, 2026-11-13), before lifting a
+  `do-not-merge` hold (it does not re-arm auto-merge, 2026-11-13) — and,
   whatever your role, before capturing a path from
   `ls` in a command substitution (`$(ls -d …)`, `$(ls -td … | head -1)`) or
   reporting a surprising `No such file or directory`: `ls` is aliased to lsd

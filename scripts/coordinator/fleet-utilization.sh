@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# READ-ONLY fleet utilization read for the coordinator seat. Usage: fleet-utilization.sh [--json] [--stranded-only]
+# READ-ONLY fleet utilization read for the coordinator seat.
+# Usage: fleet-utilization.sh [--json] [--stranded-only | --overcommit-only]
 # Shell entry point; the logic is embedded Python (stdlib only) so the repo's
 # product-Python AST gates, which govern the package, do not apply to a script.
 set -euo pipefail
 exec python3 -I - "$@" <<'PY'
 """READ-ONLY fleet utilization read for the coordinator seat.
 
-Run first every tick:  scripts/coordinator/fleet-utilization.sh [--json] [--stranded-only]
+Run first every tick:  scripts/coordinator/fleet-utilization.sh [--json] [--stranded-only | --overcommit-only]
 
 Reports each execution node's real utilization (PSI, idle, memory), the
 k3s cluster's pods / pending / quota, and the factory's fleet-vs-cap state,
@@ -59,6 +60,18 @@ ARC's normal startup window (the set reads "current N, pending N, running 0" for
 while the pods register) and is printed as `starting`; it never makes the line FLAGGED.
 When the EphemeralRunners cannot be read the line says their ages are UNREAD and every
 pending runner counts as waiting.
+
+The OVERCOMMIT section is STRANDED-CAPACITY's converse: the classes sharing a node (gate
+Jobs, factory sandboxes, ARC CI runners), each capped by a different plan, together ask for
+more CPU than the node has. For every execution node it samples /proc/stat and the
+usage_usec of kubepods.slice and system.slice twice, OVERCOMMIT_SAMPLE_S apart, and reads
+kubepods-besteffort.slice's cpu.pressure `full avg60`. It prints idle %, that pressure, the
+cores used by pods and by system.slice, and nproc. A node is FLAGGED when idle is under
+OVERCOMMIT_IDLE_PCT_MAX AND the BestEffort pressure is above OVERCOMMIT_BE_FULL_AVG60_MIN:
+the ratified saturation test of .ai/ci-node-capacity-reads.md ("Host CPU pressure counts
+throttle stall"). A node that cannot be read prints `UNREAD <node>: <reason>`, never
+silence; a node with no kubepods.slice (the VPS) prints N/A. `--overcommit-only` prints just
+that section; scripts/coordinator/top5 calls it.
 """
 
 import argparse
@@ -1232,7 +1245,137 @@ def render_stranded(stranded):
         out(f"  {row['text']}")
 
 
-def build_flags(nodes, cluster, factory, unticketed, stranded):
+# ---- OVERCOMMIT (maintainer-approved 2026-11-13, scope event on livespec-dev-tooling-6tgd2z) ----
+# The ratified saturation test (.ai/ci-node-capacity-reads.md, "Host CPU pressure counts
+# throttle stall"; legacy-coordinator-agent ruling 2026-11-04 on livespec-dev-tooling-6e5pyj):
+# idle under about 5 % AND the BestEffort CI slice's pressure avg60 above about 30.
+OVERCOMMIT_IDLE_PCT_MAX = 5.0
+OVERCOMMIT_BE_FULL_AVG60_MIN = 30.0
+# Seconds between the two /proc/stat and cpu.stat samples; well inside SSH_OVERALL_TIMEOUT.
+OVERCOMMIT_SAMPLE_S = 2
+OVERCOMMIT_OWNER = "plan gate-job-resources (livespec-dev-tooling-ukoeah)"
+# /proc/stat cpu line: user nice system idle iowait irq softirq steal (guest is inside user).
+PROC_STAT_FIELDS = 8
+PROC_STAT_IDLE = 3
+CG_BE_PRESSURE = "/sys/fs/cgroup/kubepods.slice/kubepods-besteffort.slice/cpu.pressure"
+
+# Read-only two-sample probe (POSIX sh, stdin to `sh -s`); errors land in the value, never silence.
+OVERCOMMIT_PROBE = rf"""
+CG=/sys/fs/cgroup
+echo "nproc=$(nproc)"
+echo "kp_present=$(test -d $CG/kubepods.slice && echo 1 || echo 0)"
+echo "be_full=$(grep '^full' {CG_BE_PRESSURE} 2>&1)"
+for i in 1 2; do
+  echo "up$i=$(cut -d' ' -f1 /proc/uptime)"
+  echo "stat$i=$(head -n1 /proc/stat)"
+  echo "kp$i=$(awk '/^usage_usec/ {{print $2}}' $CG/kubepods.slice/cpu.stat 2>&1)"
+  echo "sys$i=$(awk '/^usage_usec/ {{print $2}}' $CG/system.slice/cpu.stat 2>&1)"
+  if [ "$i" = 1 ]; then sleep {OVERCOMMIT_SAMPLE_S}; fi
+done
+exit 0
+"""
+
+
+def _int_or_none(text):
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_overcommit(name, target, text):
+    """One OVERCOMMIT row from the probe output; status FLAGGED, ok, N/A or UNREAD."""
+    kv = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    row = {"name": name, "target": target, "nproc": _int_or_none(kv.get("nproc")), "idle_pct": None,
+           "be_full_avg60": None, "pod_cores": None, "system_cores": None, "status": "UNREAD", "reason": None}
+    try:
+        s1 = [int(x) for x in kv["stat1"].split()[1 : PROC_STAT_FIELDS + 1]]
+        s2 = [int(x) for x in kv["stat2"].split()[1 : PROC_STAT_FIELDS + 1]]
+        elapsed = float(kv["up2"]) - float(kv["up1"])
+    except (KeyError, ValueError, IndexError) as exc:
+        row["reason"] = f"/proc/stat or /proc/uptime sample unparseable ({exc})"
+        return row
+    total = sum(s2) - sum(s1)
+    if total <= 0 or elapsed <= 0:
+        row["reason"] = "no /proc/stat progress between samples"
+        return row
+    row["idle_pct"] = round(100.0 * (s2[PROC_STAT_IDLE] - s1[PROC_STAT_IDLE]) / total, 1)
+    for key, a, b in (("pod_cores", "kp1", "kp2"), ("system_cores", "sys1", "sys2")):
+        u1, u2 = _int_or_none(kv.get(a)), _int_or_none(kv.get(b))
+        if u1 is not None and u2 is not None:
+            row[key] = round((u2 - u1) / (elapsed * 1e6), 1)
+    if kv.get("kp_present") != "1":
+        row["status"], row["reason"] = "N/A", "no kubepods.slice: not a k3s node, BestEffort test does not apply"
+        return row
+    m = re.search(r"avg60=([\d.]+)", kv.get("be_full", ""))
+    if not m:
+        row["reason"] = f"BestEffort cpu.pressure unread: {kv.get('be_full', '(no output)')[:120]}"
+        return row
+    row["be_full_avg60"] = float(m.group(1))
+    saturated = row["idle_pct"] < OVERCOMMIT_IDLE_PCT_MAX and row["be_full_avg60"] > OVERCOMMIT_BE_FULL_AVG60_MIN
+    row["status"] = "FLAGGED" if saturated else "ok"
+    return row
+
+
+def probe_overcommit(name):
+    """Sample one node over ssh (the VPS locally); UNREAD with every candidate's error."""
+    if name == "vps":
+        try:
+            return parse_overcommit(name, "local", local(OVERCOMMIT_PROBE))
+        except Exception as exc:  # noqa: BLE001 - a read failure is a row, never a crash
+            return {"name": name, "status": "UNREAD", "reason": f"local probe failed: {exc}"}
+    errors = []
+    for target in HOSTS.get(name, []):
+        ok, text = ssh(target, "sh -s", stdin=OVERCOMMIT_PROBE)
+        if ok:
+            return parse_overcommit(name, target, text)
+        errors.append(f"{target}: {text}")
+    return {"name": name, "status": "UNREAD", "reason": " ; ".join(errors) or "no ssh candidate"}
+
+
+def read_overcommit():
+    """Every execution node (and the VPS), sampled in parallel so the section costs one probe."""
+    names = [*HOSTS, "vps"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(names)) as pool:
+        rows = list(pool.map(probe_overcommit, names))
+    return {
+        "idle_pct_max": OVERCOMMIT_IDLE_PCT_MAX,
+        "be_full_avg60_min": OVERCOMMIT_BE_FULL_AVG60_MIN,
+        "owner": OVERCOMMIT_OWNER,
+        "rows": rows,
+    }
+
+
+def overcommit_text(row):
+    if row["status"] == "UNREAD" and row.get("idle_pct") is None:
+        return f"UNREAD {row['name']}: {row['reason']}"[:300]
+
+    def fmt(value, suffix=""):
+        return "?" if value is None else f"{value}{suffix}"
+
+    body = (
+        f"{row['name']}: idle {fmt(row['idle_pct'], '%')}, besteffort full avg60 {fmt(row['be_full_avg60'])}, "
+        f"pod cores {fmt(row['pod_cores'])}, system cores {fmt(row['system_cores'])}, nproc {fmt(row['nproc'])}"
+    )
+    if row["status"] == "FLAGGED":
+        return f"FLAGGED {body}: the classes sharing it exceed its CPU; route to {OVERCOMMIT_OWNER}"
+    if row["status"] == "UNREAD":
+        return f"UNREAD {body} ({row['reason']})"
+    if row["status"] == "N/A":
+        return f"N/A {body} ({row['reason']})"
+    return f"ok {body}"
+
+
+def render_overcommit(overcommit):
+    out(
+        f"\nOVERCOMMIT (FLAGGED = idle under {overcommit['idle_pct_max']}% AND kubepods-besteffort cpu.pressure "
+        f"full avg60 above {overcommit['be_full_avg60_min']}; see .ai/ci-node-capacity-reads.md)"
+    )
+    for row in overcommit["rows"]:
+        out(f"  {overcommit_text(row)}")
+
+
+def build_flags(nodes, cluster, factory, unticketed, stranded, overcommit):
     flags = []
     live = [n for n in nodes if n["reachable"] and n["name"] != "vps"]
     for n in nodes:
@@ -1271,10 +1414,13 @@ def build_flags(nodes, cluster, factory, unticketed, stranded):
     for row in stranded["rows"]:
         if row["flagged"]:
             flags.append(f"STRANDED-CAPACITY {row['name']} (see section)")
+    for row in overcommit["rows"]:
+        if row["status"] in ("FLAGGED", "UNREAD"):
+            flags.append(f"OVERCOMMIT {row['status']} {row['name']} (see section)")
     return flags
 
 
-def render(nodes, cluster, factory, unticketed, stranded, flags):
+def render(nodes, cluster, factory, unticketed, stranded, overcommit, flags):
     ns_all = sorted({ns for v in cluster["pods"].values() for ns in v})
     out(f"FLEET UTILIZATION {datetime.datetime.now(datetime.UTC):%Y-%m-%dT%H:%M:%SZ}")
     out(
@@ -1293,6 +1439,7 @@ def render(nodes, cluster, factory, unticketed, stranded, flags):
             f"{n['mem_avail_gib']:>8}{n['swap_used_gib']:>8}  {pod_s}"
         )
     render_stranded(stranded)
+    render_overcommit(overcommit)
     out(f"\nCluster namespaces seen: {', '.join(ns_all) or '-'}")
     out(
         "Pending pods: "
@@ -1342,8 +1489,22 @@ def main():
     ap.add_argument(
         "--stranded-only", action="store_true", help="read and print only the STRANDED-CAPACITY section"
     )
+    ap.add_argument(
+        "--overcommit-only", action="store_true", help="read and print only the OVERCOMMIT section"
+    )
     args = ap.parse_args()
-    nodes = [probe_node(h) for h in HOSTS] + [probe_vps()]
+    if args.overcommit_only:
+        overcommit = read_overcommit()
+        if args.json:
+            out(json.dumps(overcommit, indent=2))
+        else:
+            render_overcommit(overcommit)
+        return 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        # The full read samples OVERCOMMIT beside the node probes; --stranded-only skips it.
+        overcommit_future = None if args.stranded_only else pool.submit(read_overcommit)
+        nodes = [probe_node(h) for h in HOSTS] + [probe_vps()]
+        overcommit = overcommit_future.result() if overcommit_future else None
     factory = read_factory()
     stranded = read_stranded(nodes, factory)
     if args.stranded_only:
@@ -1354,7 +1515,7 @@ def main():
         return 0
     cluster = read_cluster()
     unticketed = read_unticketed_ready()
-    flags = build_flags(nodes, cluster, factory, unticketed, stranded)
+    flags = build_flags(nodes, cluster, factory, unticketed, stranded, overcommit)
     if args.json:
         out(
             json.dumps(
@@ -1364,13 +1525,14 @@ def main():
                     "factory": factory,
                     "unticketed_ready": unticketed,
                     "stranded_capacity": stranded,
+                    "overcommit": overcommit,
                     "flags": flags,
                 },
                 indent=2,
             )
         )
     else:
-        render(nodes, cluster, factory, unticketed, stranded, flags)
+        render(nodes, cluster, factory, unticketed, stranded, overcommit, flags)
     return 0
 
 
