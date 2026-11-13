@@ -186,6 +186,8 @@ def test_classifier_helpers_refuse_unreadable_or_ambiguous_staged_data(
 
     valid = '{"harnesses": {"dispatcher": {"wip_cap": 4}}}'
     configure(before=valid, after="{")
+    assert subject.is_config_value_fast_path(cwd=tmp_path) is True
+    configure(before="{", after=valid)
     assert subject.is_config_value_fast_path(cwd=tmp_path) is False
     configure(before=valid, after=valid, before_returncode=1)
     assert subject.is_config_value_fast_path(cwd=tmp_path) is False
@@ -298,6 +300,25 @@ def test_any_value_only_replacement_on_a_listed_key_is_refused_by_validation_not
     failures = subject.validate_config_value_fast_path(cwd=root)
     assert {(failure.path, failure.key_path) for failure in failures} == {
         (".livespec.jsonc", "dispatcher.wip_cap")
+    }
+
+
+def test_an_unparsable_value_only_replacement_is_refused_by_name_not_skipped(
+    *, tmp_path: Path
+) -> None:
+    """A value that breaks JSONC parsing still qualifies, so validation names the file and key."""
+    subject = _subject()
+    root = _repository(tmp_path=tmp_path)
+    target = root / ".livespec.jsonc"
+    _ = target.write_text(
+        target.read_text(encoding="utf-8").replace('"wip_cap": 4', '"wip_cap": 1e'),
+        encoding="utf-8",
+    )
+    _git(cwd=root, args=["add", ".livespec.jsonc"])
+    assert subject.is_config_value_fast_path(cwd=root) is True
+    failures = subject.validate_config_value_fast_path(cwd=root)
+    assert (".livespec.jsonc", "dispatcher.wip_cap") in {
+        (failure.path, failure.key_path) for failure in failures
     }
 
 
