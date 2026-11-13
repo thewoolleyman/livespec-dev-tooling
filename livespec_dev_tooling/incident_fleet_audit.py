@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from dataclasses import replace
 
+from livespec_dev_tooling._incident_fleet_capabilities import SURFACE_CAPABILITY
 from livespec_dev_tooling._incident_fleet_row_gap import row_gap
 from livespec_dev_tooling._incident_fleet_types import (
     CapabilityEvidence,
@@ -60,6 +62,8 @@ SURFACES: tuple[str, ...] = (
 
 
 _GUIDANCE_SURFACES = frozenset({"Agent tool and stop guards", "Operator factory routing"})
+# The consumer's own incident installation; every other capability is a shared build.
+_OWN_INSTALLATION = frozenset({"independent-controller", "recovery-authorization"})
 
 
 def _consumers(*, manifest: Manifest) -> tuple[tuple[str, bool], ...]:
@@ -86,6 +90,21 @@ def _index_evidence(
     return indexed, tuple(findings)
 
 
+def _judged(*, evidence: CapabilityEvidence | None, surface: str) -> CapabilityEvidence | None:
+    """The claim as its row is judged: a ruled-normal row on a shared build drops that read.
+
+    A shared gate-reader, template or driver-hooks build serves every consumer that pins
+    this library, so it contradicts no deliberately-normal ruling; it stays printed.
+    """
+    if (
+        evidence is not None
+        and evidence.disposition == "deliberately-normal"
+        and SURFACE_CAPABILITY.get(surface) not in _OWN_INSTALLATION
+    ):
+        return replace(evidence, serving_build="")
+    return evidence
+
+
 def _consumer_rows(
     *,
     repository: str,
@@ -110,7 +129,7 @@ def _consumer_rows(
             )
             continue
         gap = row_gap(
-            claim=evidence,
+            claim=_judged(evidence=evidence, surface=surface),
             manifest_sha256=manifest_sha256,
             instruction_only=instruction_only,
             inapplicable=inapplicable,

@@ -780,6 +780,13 @@ subprocess_spawn_allowlist = [
     # cannot observe. The test scrubs COVERAGE_PROCESS_START + COV_CORE_* + COVERAGE_*
     # from the child env.
     "tests/livespec_dev_tooling/test_incident_fleet_cli.py",
+    # livespec-dev-tooling-kddu2b: the v207 scenario "a consumer ruled
+    # deliberately-normal classifies from claims citing the ruling, with no
+    # installation serving it" is the same CLI-binary behavior: the operator runs
+    # `just incident-fleet-audit`, and only a fresh `python -I` interpreter shows
+    # its exit status and printed rows. The test scrubs COVERAGE_PROCESS_START +
+    # COV_CORE_* + COVERAGE_* from the child env.
+    "tests/livespec_dev_tooling/test_incident_fleet_deliberately_normal.py",
     # livespec-dev-tooling-dkgwsm: the rule-26 kill-matrix scenarios run the
     # engine as a consumer does, `python -m ...mutation_kill_matrix_runner`, and
     # the engine itself starts the mutmut stand-in and pytest per mutant; only a
