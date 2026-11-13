@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.hang_guard import HANG_GUARD_SECONDS
+from tests.hang_guard import HANG_GUARD_SECONDS, run_under_hang_guard
 
 _ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _ROOT / "ansible" / "roles" / "dev_host_retention"
@@ -263,13 +263,12 @@ def _run_over_process_root(*, base: Path, process_count: int) -> tuple[Path, Pat
     bash = shutil.which("bash")
     assert bash is not None
 
-    done = subprocess.run(
+    done = run_under_hang_guard(
         [bash, str(_RETENTION)],
         env=environment,
         capture_output=True,
         check=False,
         text=True,
-        timeout=600,
     )
 
     assert done.returncode == 0, done.stdout + done.stderr
@@ -325,13 +324,12 @@ def test_retention_removes_no_session_scratch_when_the_liveness_scan_cannot_run(
     _stub(directory=tmp_path / "bin", name="xargs", body="#!/bin/sh\nexit 127\n")
     environment["LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT"] = str(proc_root)
 
-    done = subprocess.run(
+    done = run_under_hang_guard(
         ["bash", str(_RETENTION)],
         env=environment,
         capture_output=True,
         check=False,
         text=True,
-        timeout=600,
     )
 
     assert done.returncode == 0, done.stdout + done.stderr
@@ -361,13 +359,12 @@ def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(
     # is; it is terminated as soon as the run returns.
     child = subprocess.Popen(["sleep", "600"], env=os.environ | {"CLAUDE_CODE_SESSION_ID": "live"})
     try:
-        done = subprocess.run(
+        done = run_under_hang_guard(
             ["bash", str(_RETENTION)],
             env=_hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=bulk),
             capture_output=True,
             check=False,
             text=True,
-            timeout=60,
         )
     finally:
         child.terminate()
