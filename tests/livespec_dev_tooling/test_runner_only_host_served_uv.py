@@ -246,12 +246,10 @@ def test_off_hp_the_wrapper_runs_the_first_uv_on_path_outside_its_own_mount(
 def _tools_dir(*, root: Path) -> Path:
     """A PATH directory holding only the one external command the wrapper runs, `dirname`."""
     tools = root / "tools"
-    tools.mkdir(exist_ok=True)
+    tools.mkdir()
     dirname = shutil.which("dirname")
     assert dirname is not None
-    link = tools / "dirname"
-    if not link.exists():
-        link.symlink_to(dirname)
+    (tools / "dirname").symlink_to(dirname)
     return tools
 
 
