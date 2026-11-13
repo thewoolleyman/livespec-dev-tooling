@@ -556,6 +556,7 @@ supervisor_entry_files = [
     # two it does not need is the same whole-file widening the block above
     # records.
     "livespec_dev_tooling/green_token.py",
+    "livespec_dev_tooling/reuse_outcome_detector.py",
     # WHAT IT NEEDS, and only this one: `no_write_direct`. The `members`
     # subcommand emits one check-target name per line on stdout, which
     # `scripts/just/check.sh` reads back to take those members out of a
