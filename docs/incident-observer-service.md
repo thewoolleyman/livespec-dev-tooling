@@ -188,7 +188,10 @@ The existing repository lock continues to serialize actual durable effects.
   rollback-conflict receipt is written to the chain by this route itself (see
   "Rollback-conflict on the chain" below), and the reply's `reason` names how that
   write ended. With `clear_sweep: true`, the route clears that action's sweep
-  bookkeeping and its `sweep_quarantine` entry before normal reconciliation.
+  bookkeeping and its `sweep_quarantine` entry before normal reconciliation, and it
+  does not publish a retained conflict receipt in that call: publishing would record
+  an attempt and recreate the sweep state, so the cleared action is left to the next
+  sweep to publish.
 - `POST /callback` verifies GitHub's raw-body HMAC with the existing verifier,
   requires the configured repository, then uses the existing observer endpoint.
   The first registered failing required leaf records immutable intent and calls
