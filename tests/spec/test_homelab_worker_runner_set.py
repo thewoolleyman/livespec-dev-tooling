@@ -8,7 +8,7 @@ file and assert rules that hold for any host:
   and idles at zero runners;
 - its runner pods select that host's worker and arm64, and tolerate the permanent class taint but
   not the admission hold, so lifting the hold stays the operator's explicit gate;
-- its listener runs on the fleet's amd64 nodes, never on a worker;
+- its listener runs on the fleet's always-on amd64 nodes, never on a worker;
 - the runner image is pinned by digest;
 - jobs run in the fleet's container mode (compared against the fleet's reference set), asking
   for none of the fleet CI nodes' capacity;
@@ -70,9 +70,12 @@ def test_runner_pods_land_only_on_that_hosts_arm64_worker(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", _VALUES, ids=lambda p: p.name)
-def test_the_listener_runs_on_the_fleets_amd64_nodes(path: Path) -> None:
+def test_the_listener_runs_on_the_fleets_always_on_amd64_nodes(path: Path) -> None:
     listener = _load(path)["listenerTemplate"]["spec"]
-    assert listener["nodeSelector"] == {"kubernetes.io/arch": "amd64"}
+    assert listener["nodeSelector"] == {
+        "kubernetes.io/arch": "amd64",
+        "ci-runner.io/always-on": "true",
+    }
     assert not listener.get("tolerations")
 
 
@@ -111,7 +114,9 @@ _HOOK_PUBLISH_STEP = 'Publish the hook-template ConfigMap revision the scale set
 _LISTENER_STEP = "Assert every scale-set listener references its scale set"
 
 
-def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> list[str]:
+def _run_converge_scale_set_step(
+    *, tmp_path: Path, worker_files: list[str], listeners_placeable: bool = True
+) -> list[str]:
     """Run the converge's own release-map and step-7 text against stub tools; return helm's calls."""
     converge = _CONVERGE.read_text(encoding="utf-8")
     scale_sets = converge.split("declare -A SCALE_SETS=(", 1)[1].split("\nlog() {", 1)[0]
@@ -162,6 +167,9 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
             "RUNNERS_NAMESPACE=arc-runners",
             "ARC_SCALE_SET_CHART=chart.tgz",
             "log() { :; }",
+            # Step 5b's decision, which step 7 reads: whether any node can host a listener.
+            f"arc_listeners_placeable={'true' if listeners_placeable else 'false'}",
+            'arc_listeners_refusal="no node carries ci-runner.io/always-on=true"',
             f"declare -A SCALE_SETS=({scale_sets}",
             step,
         ]
@@ -174,7 +182,7 @@ def _run_converge_scale_set_step(*, tmp_path: Path, worker_files: list[str]) -> 
         env={"PATH": f"{stubs}:/usr/bin:/bin"},
         timeout=60,
     )
-    return calls.read_text(encoding="utf-8").splitlines()
+    return calls.read_text(encoding="utf-8").splitlines() if calls.is_file() else []
 
 
 def test_the_ci_stack_converge_upgrades_each_worker_set_on_the_published_hook_revision(
@@ -190,6 +198,18 @@ def test_the_ci_stack_converge_upgrades_each_worker_set_on_the_published_hook_re
     for release in ("alpha-homelab-worker-k3s", "beta-homelab-worker-k3s"):
         assert by_release[release] == "mount: arc-hook-pod-template-cafe"
     assert all(_PLACEHOLDER not in rendered for rendered in by_release.values())
+
+
+def test_the_ci_stack_converge_installs_no_scale_set_when_no_node_can_host_a_listener(
+    tmp_path: Path,
+) -> None:
+    # livespec-dev-tooling-crvvxt: with no always-on node, a listener could be placed nowhere.
+    calls = _run_converge_scale_set_step(
+        tmp_path=tmp_path,
+        worker_files=["values-alpha-homelab-worker.yaml"],
+        listeners_placeable=False,
+    )
+    assert calls == []
 
 
 def test_the_ci_stack_converge_runs_unchanged_with_no_worker_set(tmp_path: Path) -> None:

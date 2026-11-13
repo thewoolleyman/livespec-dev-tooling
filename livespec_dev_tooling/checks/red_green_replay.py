@@ -22,7 +22,8 @@ commit-msg mode (argv[1] = path to `.git/COMMIT_EDITMSG`, the lefthook
    staged beside it, which the `.py`-only impl bucket cannot see and
    which makes that reject's premise false (work-item
    livespec-dev-tooling-9yrr); any other prefix is a test-only cleanup
-   and takes the green-verified leg;
+   and takes the green-verified leg, reusing the probe's exact
+   staged-test result rather than replaying it;
 4. product impl `.py` staged with `TDD-Red-*` trailers WITHOUT
    `TDD-Green-*` trailers at HEAD — a genuine amend-in-progress
    (work-item livespec-dev-tooling-xn0: a completed Red+Green
@@ -104,7 +105,6 @@ from _red_green_replay_incident import (  # noqa: E402  — sibling private impo
 from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     RED_GREEN_REPLAY_PROTOCOL,
     _handle_green_mode,
-    _handle_red_mode,
     _handle_suite_green_mode,
     _refuse_half_pair,
 )
@@ -113,9 +113,7 @@ from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     RANGE_MISSING_TRAILERS_HINT,
     is_forge_authored_revert,
 )
-from _red_green_replay_suite import (  # noqa: E402  — sibling private import
-    stages_only_shared_test_support,
-)
+from _red_green_replay_test_only import dispatch_tests_only  # noqa: E402  — sibling private import
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
     _narrate_git_failure,
     dropped_red_trailers,
@@ -308,29 +306,6 @@ def _staged_files_list() -> list[str]:
     deleted paths while keeping additions and modifications.
     """
     return _git_stdout_lines(args=["diff", "--cached", "--name-only", "--diff-filter=d"])
-
-
-def _staged_tests_pass(*, tests_paths: list[str]) -> bool:
-    """Return True iff pytest passes on the staged tests-tree files.
-
-    Discriminates branch 2 (failing ⇒ the Red leg, any prefix) from
-    branch 3 (passing ⇒ `test-passed-at-red` for declared Red intent,
-    the green-verified leg otherwise) for tests-only stagings.
-    """
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            *[str(Path.cwd() / p) for p in tests_paths],
-            "--tb=no",
-            "-q",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0
 
 
 def _commit_violates(*, sha: str) -> bool:
@@ -549,25 +524,11 @@ def main() -> int:
         # subjects and empty commits included.
         return 0
     if not impl_paths:
-        # A non-`.py` implementation staged beside the test cannot enter
-        # the `.py`-only impl bucket, which makes the `test-passed-at-red`
-        # premise false — see `_stages_non_python_implementation`.
-        non_py_impl = _stages_non_python_implementation(paths=staged_paths)
-        declares_red_intent = _RED_INTENT_TYPE_RE.match(subject) is not None and not non_py_impl
-        # Shared support staged with no test module has no test of its own
-        # to fail or pass (pytest exits 5), so it is never a Red: it is
-        # green-verified by the full suite it can affect.
-        if not stages_only_shared_test_support(
-            staged_paths=staged_paths, tests_paths=tests_paths
-        ) and (declares_red_intent or not _staged_tests_pass(tests_paths=tests_paths)):
-            # Branch 2 (failing tests ⇒ Red leg, any prefix) and
-            # branch 3's feat:/fix: arm (declared Red intent: the
-            # handler records Red trailers on failure and rejects a
-            # passing test with `test-passed-at-red`).
-            return _handle_red_mode(msg_path=msg_path, log=log, tests_paths=tests_paths)
-        # Branch 3, other prefixes — a passing test-only cleanup is
-        # green-verified.
-        return _handle_suite_green_mode(
+        return dispatch_tests_only(
+            declares_red_intent=(
+                _RED_INTENT_TYPE_RE.match(subject) is not None
+                and not _stages_non_python_implementation(paths=staged_paths)
+            ),
             msg_path=msg_path,
             log=log,
             staged_paths=staged_paths,

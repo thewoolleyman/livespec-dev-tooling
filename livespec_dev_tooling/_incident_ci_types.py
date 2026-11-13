@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from livespec_dev_tooling.incident_execution import ExecutionContext
 
@@ -83,6 +84,9 @@ class CiPlan:
     environment: tuple[tuple[str, str], ...]
     authority: CiAuthority | None
     incident_label: str
+    # The plan-time enablement reading (livespec-dev-tooling-exdkra). It is recorded in the
+    # plan but is not part of the plan identity the entrance rechecks.
+    enablement: dict[str, Any] | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, kw_only=True)

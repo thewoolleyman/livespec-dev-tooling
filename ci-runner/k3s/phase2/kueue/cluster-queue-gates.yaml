@@ -281,23 +281,26 @@ spec:
             # gate-livespec-orchestrator-beads-fabro-xjbqp, terminal in 8 m 25 s
             # with zero signal denials.
             #
-            # TWO gate units, 10 cpu / 16 Gi, since 2026-11-12 ~19:4xZ
-            # (legacy-coordinator-agent GO, R301; plan gate-job-resources).
-            # Measured ~19:37Z during priority 1's hand-land burst (~95 gate
-            # workloads in an hour):
-            # - gmktec-xubuntu 2.1% idle, CI slice cpu.pressure avg60 29.7;
-            # - poweredge-xubuntu 0.7% idle, avg60 27.5, at 30/30;
-            # - gamingpc 94% idle of 16 cores, PSI avg60 2.8, 23 GiB available.
-            # 4 gates waited 347-409 s for a lane. The second unit's requests
-            # come out of gamingpc's factory share: factory_pod_budget 2 -> 1 in
-            # ansible/inventory/host_vars/gamingpc-xubuntu.yml.
-            # REVERT to 5 / 8Gi, with the budget back to 2, when priority 1's
-            # burst ends (its plan archived) AND a re-measure shows gate waits
-            # under 300 s.
+            # Two gate units (10 cpu / 16 Gi) from 2026-11-12 ~19:4xZ, for priority
+            # 1's hand-land burst (legacy-coordinator-agent GO, R301; plan
+            # gate-job-resources). That second unit's requests came out of
+            # gamingpc's factory share: factory_pod_budget 2 -> 1.
+            #
+            # ONE gate unit, 5 cpu / 8 Gi, from 2026-11-13. The maintainer asked
+            # that about 25% of this machine stay free for local sessions, so
+            # homelab-k8s-worker-nodes raises its kubelet system-reserved and
+            # allocatable CPU drops 14.5 -> 12, effective at the next k3s-agent
+            # restart. 12 CPU less one factory sandbox (4 cpu, the budget of 1)
+            # leaves 8, which fits one 5-cpu gate unit and not two. Memory does
+            # not bind: ~92 GiB stays allocatable. factory_pod_budget STAYS 1,
+            # because one gate and two sandboxes would ask 13 of 12. Kueue's
+            # per-node fit (the gates-hostname Topology) already keeps a second
+            # gate off a full node, so this quota keeps admission honest rather
+            # than preventing overcommit.
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 5
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 8Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

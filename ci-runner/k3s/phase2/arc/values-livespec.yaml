@@ -56,6 +56,18 @@ containerMode:
         # capacity and the ephemeral volume's deletion with the runner pod.
         storage: 5Gi
 
+# The listener pod runs only on a node whose committed profile declares
+# ALWAYS_ON_NODE=true (the `ci-runner.io/always-on` node label): a listener on a
+# node that is powered off at will leaves this scale set taking no jobs
+# (livespec-dev-tooling-crvvxt). The `listener` container entry names the
+# chart's own container and overrides nothing in it.
+listenerTemplate:
+  spec:
+    nodeSelector:
+      ci-runner.io/always-on: "true"
+    containers:
+      - name: listener
+
 template:
   metadata:
     labels:

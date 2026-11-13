@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.204.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.203.0...v1.204.0) (2026-11-13)
+
+
+### Features
+
+* **incident:** the controller holds the incident enablement record, its fence and its query (livespec-dev-tooling-qmuk7z) ([19f7159](https://github.com/thewoolleyman/livespec-dev-tooling/commit/19f7159ef7a4270053550d217e11bcd8326fc152))
+* **incident:** the enablement step writes through the serving controller's route (livespec-dev-tooling-qmuk7z) ([6814db0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6814db061af2d1eaffa36d82b33157a319208c8d))
+
+
+### Bug Fixes
+
+* **ci-runner:** pin the warm-cache budget derivation ([34809e4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34809e489b0fa54fdd9ff05c4998eb86541700c9))
+* **incident:** the enablement controller itself refuses another repository's operation (livespec-dev-tooling-qmuk7z) ([6d69698](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d69698457d3995a6a25629497c46f0668ff7b4e))
+
 ## [1.203.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.202.0...v1.203.0) (2026-11-13)
 
 

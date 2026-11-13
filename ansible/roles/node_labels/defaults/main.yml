@@ -12,7 +12,8 @@ node_labels_server_host: >-
      | selectattr('cluster_role', 'equalto', 'server')
      | map(attribute='inventory_hostname') | first }}
 node_labels_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
-# This role manages exactly ONE label — the FACTORY role. Never anything else on
+# This role manages exactly the TWO labels a profile declares as a posture —
+# the FACTORY role here and the ALWAYS-ON label below. Never anything else on
 # the node: `k3s-role=arc-runner-host` is set by the install command and is the
 # RUNNER role, and `ci-runner.io/cache-tier-carrier` is set by
 # provision-k3s.sh's own step 2b only when the tier is actually mounted. Labels
@@ -29,3 +30,15 @@ node_labels_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
 # two to agreement, rather than trusting them to it.
 node_labels_factory_key: ci-runner.io/factory
 node_labels_factory_value: "true"
+# The ALWAYS-ON label, read from the profile's ALWAYS_ON_NODE: "a node nobody
+# powers off at will". Every ARC runner scale set's listener pod selects on it
+# (ci-runner/k3s/phase2/arc/values-*.yaml `listenerTemplate`), so a listener is
+# never placed on a node that is powered down at will
+# (livespec-dev-tooling-crvvxt). Same two-scalar shape as the factory label and
+# the same quoting, for the same reasons. provision-k3s.sh registers the SAME
+# `key=value` at join (its ALWAYS_ON_NODE_LABEL constant),
+# ci-runner/k3s/phase2/reconstruct/converge-always-on-node-labels.sh re-asserts
+# it at boot, and tests/livespec_dev_tooling/test_always_on_node_label.py holds
+# the three to agreement.
+node_labels_always_on_key: ci-runner.io/always-on
+node_labels_always_on_value: "true"

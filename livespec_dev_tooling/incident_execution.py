@@ -21,6 +21,11 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling._incident_enablement_reading import (  # noqa: E402
+    REVERT_PHASES,
+    EnablementReader,
+    fence_refusal,
+)
 from livespec_dev_tooling._incident_execution_types import (  # noqa: E402
     ExecutionContext,
     ExecutionMode,
@@ -54,6 +59,7 @@ _FALSE = False
 _FIRST_PRINTABLE = 32
 _DELETE_CONTROL = 127
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-sh3vz3
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 _OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+\Z")
 
@@ -185,13 +191,17 @@ def resolve_execution_context(
     environ: Mapping[str, str],
     invocation: str,
     identity: OperationIdentity | None,
+    read_enablement: EnablementReader | None = None,
 ) -> IncidentResolution:
     """Resolve the trusted operation context before a caller selects any gate.
 
     Normal master and normal factory follow-up are trusted normal origins. They
     intentionally never parse inherited incident flags: even a malformed value
     must be inert there.  Other origins parse both flags, with emergency revert
-    taking precedence over expedited repair.
+    taking precedence over expedited repair. A vantage that passes
+    `read_enablement` has the enablement record read once an incident mode is
+    selected and its identity validated; neither a normal origin nor an absent
+    flag ever reads it.
     """
     if invocation not in {
         Invocation.ORDINARY,
@@ -218,7 +228,28 @@ def resolve_execution_context(
     mode = selected_mode.unwrap()
     if mode == ExecutionMode.NORMAL:
         return _success(context=ExecutionContext(mode=mode, invocation=invocation, identity=None))
-    return _incident_context(mode=mode, invocation=invocation, identity=identity)
+    resolved = _incident_context(mode=mode, invocation=invocation, identity=identity)
+    if read_enablement is None or not resolved.is_successful:
+        return resolved
+    return _fenced(resolved=resolved, read_enablement=read_enablement)
+
+
+def _fenced(
+    *, resolved: IncidentResolution, read_enablement: EnablementReader
+) -> IncidentResolution:
+    """Record the vantage's reading; refuse only what an armed installation's answer requires."""
+    identity = cast(OperationIdentity, resolved.unwrap().identity)
+    reading = read_enablement(repository=identity.repository)
+    refusal = fence_refusal(
+        reading=reading,
+        repository=identity.repository,
+        revert=identity.phase in REVERT_PHASES,
+    )
+    if refusal is not None:
+        return _failure(
+            refusal=IncidentConfigurationRefusal(code="incident-not-enabled", detail=refusal)
+        )
+    return IncidentResolution(result=resolved.result, enablement=reading.record())
 
 
 def _incident_context(

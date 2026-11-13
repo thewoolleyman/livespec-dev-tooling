@@ -160,6 +160,11 @@ RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
 # still build the cluster stack, so step 10f tests it there and WARNs.
 FACTORY_LABEL_CONVERGE="${SCRIPT_DIR}/converge-factory-node-labels.sh"
 WARM_UV_LABEL_CONVERGE="${SCRIPT_DIR}/converge-warm-uv-node-labels.sh"
+# The per-node ALWAYS-ON label reconcile steps 5b and 10h run
+# (livespec-dev-tooling-crvvxt). Not in the fail-closed check below either, but
+# for a different reason than the factory label: its absence is reported loudly
+# at step 5b, because every ARC listener pod selects on the label it sets.
+ALWAYS_ON_LABEL_CONVERGE="${SCRIPT_DIR}/converge-always-on-node-labels.sh"
 for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR" "$FACTORY_DIR" "$FACTORY_MI_HOMELAB_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
 done
@@ -571,6 +576,56 @@ done
 "${KUEUE_DIR}/converge-worker-queues.sh"
 
 # ---------------------------------------------------------------------------
+log "5b. Assert the ALWAYS-ON label on every registered node whose profile declares it (ARC listeners select on it)"
+# livespec-dev-tooling-crvvxt. Every runner scale set's listener pod carries a
+# nodeSelector on `ci-runner.io/always-on=true` (../arc/values-*.yaml
+# `listenerTemplate`), so a listener is never placed on a node that is powered
+# off at will. This host's datastore is a tmpfs, so after a reboot no Node
+# object carries the label until something sets it again — and until then every
+# listener step 7 creates stays Pending and its scale set takes no jobs.
+#
+# BEFORE the ARC controller for that reason, and with NO registration wait
+# (CI_ALWAYS_ON_LABEL_WAIT_SECONDS=0): this server is Ready since step 1 and is
+# labelled at once, which is enough for every listener to schedule, while an
+# agent that has not re-registered yet must not hold Kueue-to-ARC up. Step 10h
+# runs the same reconcile again with the bounded wait and reports what is left.
+#
+# A WARN, never a failure: a non-zero exit here is the ordinary case of an
+# agent still re-registering, and step 10h is the pass whose verdict counts.
+if [ ! -x "${ALWAYS_ON_LABEL_CONVERGE}" ]; then
+  echo "WARN: ${ALWAYS_ON_LABEL_CONVERGE} not found or not executable, so no node's ci-runner.io/always-on label is asserted this boot and EVERY ARC listener pod stays Pending (no scale set takes a job) unless a node's own registration carries the label. Re-install the boot tree with the ci_converge_unit Ansible role (just ansible-apply ansible/ci-pool.yml)"
+elif ! CI_ALWAYS_ON_LABEL_WAIT_SECONDS=0 "${ALWAYS_ON_LABEL_CONVERGE}"; then
+  echo "WARN: the early converge-always-on-node-labels.sh pass did not reconcile every node (see above) — continuing; step 10h repeats it with the registration wait"
+fi
+# THE SCALE SETS ARE NOT INSTALLED WHEN NO NODE CARRIES THE LABEL. Everything
+# above is a WARN because one unlabelled agent costs nothing. No labelled node
+# at all is different: step 7 would install every scale set with a listener
+# that can be placed nowhere, and the fleet's CI would stop behind a
+# "converged" boot log.
+#
+# THE STOP IS SCOPED TO THE SCALE SETS. Step 7's helm loop is skipped, and
+# nothing else is: the controller, the proxies, the warm cache, the probe and
+# gate identities, the node-status credential re-mint (10d), the factory
+# namespace (10e) and the label reconciles (10f to 10h) still converge, because
+# a factory run or a delegated gate does not need a CI listener. The converge
+# then exits NON-ZERO at its end, naming this, so the unit reads failed and no
+# boot log says "converged" over a pool with no scale sets.
+arc_listeners_placeable=true
+arc_listeners_refusal=""
+if ! always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true -o name)"; then
+  arc_listeners_placeable=false
+  arc_listeners_refusal="could not read which nodes carry ci-runner.io/always-on=true, so it is not established that any ARC listener pod can be placed"
+elif [ -z "${always_on_nodes}" ]; then
+  arc_listeners_placeable=false
+  arc_listeners_refusal="no node carries ci-runner.io/always-on=true, so every ARC listener pod would stay Pending and no scale set would take a job"
+fi
+if [ "${arc_listeners_placeable}" = true ]; then
+  printf 'nodes that can host an ARC listener pod: %s\n' "$(printf '%s' "${always_on_nodes}" | tr '\n' ' ')"
+else
+  echo "FATAL (deferred): ${arc_listeners_refusal}. Step 7 will NOT install or upgrade any runner scale set this run; every other step continues, and this converge exits non-zero at its end." >&2
+fi
+
+# ---------------------------------------------------------------------------
 log "6. Install/upgrade the ARC controller (idempotent via helm upgrade --install)"
 # Inlined from install-arc.sh step 1 rather than invoked, because install-arc.sh
 # is not decomposed into a controller-only entry point and its step 2 applies
@@ -625,6 +680,10 @@ hook_revision="$("${ARC_DIR}/converge-hook-pod-template.sh" --name)"
 rendered_values_dir="$(mktemp -d)"
 trap 'rm -rf "${rendered_values_dir}"' EXIT
 for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
+  if [ "${arc_listeners_placeable}" != true ]; then
+    log "7.${release}: NOT installed (${arc_listeners_refusal})"
+    continue
+  fi
   values_file="${ARC_DIR}/${SCALE_SETS[$release]}"
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
   rendered_values="${rendered_values_dir}/${SCALE_SETS[$release]}"
@@ -1042,6 +1101,19 @@ elif ! "${WARM_UV_LABEL_CONVERGE}"; then
 fi
 
 # ---------------------------------------------------------------------------
+log "10h. Reconcile every ci_pool node's ALWAYS-ON label from its committed profile"
+# The second pass of step 5b's reconcile, now with the bounded registration
+# wait: it labels the always-on agents that re-registered behind the control
+# plane and removes the label from a node whose profile does not declare it.
+# Ordered with the other label reconciles so its wait sits in front of nothing.
+# A WARN like them, and the output names every node it could not reconcile.
+if [ ! -x "${ALWAYS_ON_LABEL_CONVERGE}" ]; then
+  echo "WARN: ${ALWAYS_ON_LABEL_CONVERGE} not found or not executable (see step 5b) — no node's ci-runner.io/always-on label is reconciled this boot"
+elif ! "${ALWAYS_ON_LABEL_CONVERGE}"; then
+  echo "WARN: converge-always-on-node-labels.sh failed (see above) — continuing; ARC listener pods can be placed only on the nodes that already carry ci-runner.io/always-on=true until it is re-run"
+fi
+
+# ---------------------------------------------------------------------------
 log "11. Verify (informational — non-fatal reads of the converged state)"
 kubectl -n kube-system get deployment local-path-provisioner
 kubectl -n "$CONTROLLER_NAMESPACE" get deployment -l app.kubernetes.io/name=gha-rs-controller
@@ -1054,4 +1126,12 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig + every ci_pool node's factory and warm-uv labels."
+if [ "${arc_listeners_placeable}" != true ]; then
+  # Sorted, so the message is the same on every run: a bash associative array
+  # has no key order of its own.
+  not_installed="$(printf '%s\n' "${!SCALE_SETS[@]}" | sort | tr '\n' ' ')"
+  echo "FATAL: the runner scale sets were NOT installed or upgraded: ${arc_listeners_refusal}. The ${#SCALE_SETS[@]} scale sets not installed or upgraded: ${not_installed% }. Every other step of this converge ran. Set the label from the committed profiles (just ansible-apply ansible/ci-pool.yml --tags node_labels, or re-run converge-always-on-node-labels.sh) and re-run this converge (systemctl start converge-ci-stack.service)." >&2
+  exit 1
+fi
+
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig + every ci_pool node's factory, warm-uv and always-on labels."

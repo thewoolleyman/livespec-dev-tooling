@@ -95,6 +95,13 @@ ci_converge_unit_files:
   - src: reconstruct/converge-warm-uv-node-labels.sh
     dest: converge-warm-uv-node-labels.sh
     mode: "0755"
+  # The per-node ALWAYS-ON label reconcile the boot converge's steps 5b and 10h
+  # run (livespec-dev-tooling-crvvxt). Every ARC listener pod selects on the
+  # label it sets, and it reads the same installed `profiles` directory as the
+  # factory-label reconcile above.
+  - src: reconstruct/converge-always-on-node-labels.sh
+    dest: converge-always-on-node-labels.sh
+    mode: "0755"
   - src: arc/converge-hook-pod-template.sh
     dest: arc/converge-hook-pod-template.sh
     mode: "0755"

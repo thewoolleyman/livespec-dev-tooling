@@ -991,6 +991,12 @@ check-heading-coverage-debt-register:
 generate-heading-coverage-debt-register:
     uv run python -m livespec_dev_tooling.heading_coverage_debt
 
+# Render one adopter's released incident CI inventory from its own workflow and
+# check-targets.txt at a commit of its default branch (see the script header).
+[positional-arguments]
+render-incident-ci-inventory repository clone commit:
+    scripts/just/render-incident-ci-inventory.sh "$1" "$2" "$3"
+
 check-keyword-only-args:
     uv run python -m livespec_dev_tooling.checks.keyword_only_args
 
