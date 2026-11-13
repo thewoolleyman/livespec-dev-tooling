@@ -1,0 +1,230 @@
+{
+ "since": "2026-11-12T22:04:21Z",
+ "until": "2026-11-13T22:04:21Z",
+ "hours": 24,
+ "repos": {
+  "livespec-dev-tooling": {
+   "master_commits": 295,
+   "merged_prs": 144,
+   "strict": {
+    "CANCELLED": 101,
+    "SUCCESS": 25,
+    "FAILURE": 17,
+    "QUEUED": 1
+   },
+   "covered": {
+    "SUCCESS": 101,
+    "FAILURE": 37,
+    "UNVERIFIED_YET": 6
+   },
+   "merged_per_h": 6.0,
+   "strict_green_per_h": 1.042,
+   "covered_green_per_h": 4.208,
+   "gql_cost": 6
+  },
+  "livespec-orchestrator-beads-fabro": {
+   "master_commits": 157,
+   "merged_prs": 85,
+   "strict": {
+    "CANCELLED": 39,
+    "SUCCESS": 41,
+    "FAILURE": 2,
+    "IN_PROGRESS": 2,
+    "PENDING": 1
+   },
+   "covered": {
+    "SUCCESS": 78,
+    "FAILURE": 2,
+    "UNVERIFIED_YET": 5
+   },
+   "merged_per_h": 3.542,
+   "strict_green_per_h": 1.708,
+   "covered_green_per_h": 3.25,
+   "gql_cost": 4
+  },
+  "livespec-overseer": {
+   "master_commits": 62,
+   "merged_prs": 44,
+   "strict": {
+    "SUCCESS": 37,
+    "FAILURE": 4,
+    "QUEUED": 3
+   },
+   "covered": {
+    "SUCCESS": 37,
+    "FAILURE": 4,
+    "UNVERIFIED_YET": 3
+   },
+   "merged_per_h": 1.833,
+   "strict_green_per_h": 1.542,
+   "covered_green_per_h": 1.542,
+   "gql_cost": 2
+  },
+  "livespec": {
+   "master_commits": 22,
+   "merged_prs": 16,
+   "strict": {
+    "SUCCESS": 16
+   },
+   "covered": {
+    "SUCCESS": 16
+   },
+   "merged_per_h": 0.667,
+   "strict_green_per_h": 0.667,
+   "covered_green_per_h": 0.667,
+   "gql_cost": 2
+  },
+  "livespec-console-beads-fabro": {
+   "master_commits": 15,
+   "merged_prs": 9,
+   "strict": {
+    "SUCCESS": 9
+   },
+   "covered": {
+    "SUCCESS": 9
+   },
+   "merged_per_h": 0.375,
+   "strict_green_per_h": 0.375,
+   "covered_green_per_h": 0.375,
+   "gql_cost": 2
+  },
+  "livespec-driver-claude": {
+   "master_commits": 12,
+   "merged_prs": 11,
+   "strict": {
+    "SUCCESS": 11
+   },
+   "covered": {
+    "SUCCESS": 11
+   },
+   "merged_per_h": 0.458,
+   "strict_green_per_h": 0.458,
+   "covered_green_per_h": 0.458,
+   "gql_cost": 2
+  },
+  "livespec-driver-codex": {
+   "master_commits": 12,
+   "merged_prs": 12,
+   "strict": {
+    "SUCCESS": 11,
+    "FAILURE": 1
+   },
+   "covered": {
+    "SUCCESS": 11,
+    "FAILURE": 1
+   },
+   "merged_per_h": 0.5,
+   "strict_green_per_h": 0.458,
+   "covered_green_per_h": 0.458,
+   "gql_cost": 2
+  },
+  "livespec-driver-pi": {
+   "master_commits": 8,
+   "merged_prs": 8,
+   "strict": {
+    "SUCCESS": 8
+   },
+   "covered": {
+    "SUCCESS": 8
+   },
+   "merged_per_h": 0.333,
+   "strict_green_per_h": 0.333,
+   "covered_green_per_h": 0.333,
+   "gql_cost": 2
+  },
+  "livespec-orchestrator-git-jsonl": {
+   "master_commits": 9,
+   "merged_prs": 8,
+   "strict": {
+    "SUCCESS": 8
+   },
+   "covered": {
+    "SUCCESS": 8
+   },
+   "merged_per_h": 0.333,
+   "strict_green_per_h": 0.333,
+   "covered_green_per_h": 0.333,
+   "gql_cost": 2
+  },
+  "livespec-runtime": {
+   "master_commits": 13,
+   "merged_prs": 13,
+   "strict": {
+    "SUCCESS": 13
+   },
+   "covered": {
+    "SUCCESS": 13
+   },
+   "merged_per_h": 0.542,
+   "strict_green_per_h": 0.542,
+   "covered_green_per_h": 0.542,
+   "gql_cost": 2
+  },
+  "dolt-server": {
+   "master_commits": 10,
+   "merged_prs": 6,
+   "strict": {
+    "SUCCESS": 6
+   },
+   "covered": {
+    "SUCCESS": 6
+   },
+   "merged_per_h": 0.25,
+   "strict_green_per_h": 0.25,
+   "covered_green_per_h": 0.25,
+   "gql_cost": 2
+  },
+  "homelab": {
+   "master_commits": 3,
+   "merged_prs": 3,
+   "strict": {
+    "SUCCESS": 3
+   },
+   "covered": {
+    "SUCCESS": 3
+   },
+   "merged_per_h": 0.125,
+   "strict_green_per_h": 0.125,
+   "covered_green_per_h": 0.125,
+   "gql_cost": 2
+  },
+  "hetzner-xubuntu-info": {
+   "master_commits": 35,
+   "merged_prs": 35,
+   "strict": {
+    "SUCCESS": 35
+   },
+   "covered": {
+    "SUCCESS": 35
+   },
+   "merged_per_h": 1.458,
+   "strict_green_per_h": 1.458,
+   "covered_green_per_h": 1.458,
+   "gql_cost": 2
+  },
+  "1password-env-wrapper": {
+   "master_commits": 2,
+   "merged_prs": 2,
+   "strict": {
+    "NO_RUN": 2
+   },
+   "covered": {
+    "UNVERIFIED_YET": 2
+   },
+   "merged_per_h": 0.083,
+   "strict_green_per_h": 0.0,
+   "covered_green_per_h": 0.0,
+   "gql_cost": 2
+  },
+  "openbrain": {
+   "master_commits": 9,
+   "merged_prs": 0,
+   "strict": {},
+   "covered": {},
+   "merged_per_h": 0.0,
+   "strict_green_per_h": 0.0,
+   "covered_green_per_h": 0.0,
+   "gql_cost": 2
+  }
+ }
+}
