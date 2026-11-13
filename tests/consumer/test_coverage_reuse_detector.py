@@ -16,6 +16,7 @@ __all__: list[str] = []
 
 
 _REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+_SINCE = "2026-11-12T18:00:00Z"
 
 
 def _read_responses(*, responses: list[GhRead]) -> Callable[..., GhRead]:
@@ -103,7 +104,9 @@ def test_an_unreadable_github_document_stops_the_detector(*, responses: list[GhR
     """A budgeted read that did not answer cannot become a silent clean detector pass."""
     assert (
         reuse_outcome_detector.gather(
-            repository=_REPOSITORY, read=_read_responses(responses=responses)
+            repository=_REPOSITORY,
+            since=_SINCE,
+            read=_read_responses(responses=responses),
         )
         is None
     )
@@ -113,6 +116,7 @@ def test_non_consumer_incomplete_and_invalid_records_are_not_notifications() -> 
     """Only completed mandatory consumers with their valid record yield a detector input."""
     outcomes = reuse_outcome_detector.gather(
         repository=_REPOSITORY,
+        since=_SINCE,
         read=_read_responses(
             responses=[
                 GhRead(returncode=0, stdout='[{"databaseId":42}]', stderr=""),
@@ -177,3 +181,17 @@ def test_invalid_schedule_or_failed_gather_does_not_mark_the_detector_successful
         == 1
     )
     assert not state.exists()
+
+
+def test_run_discovery_is_windowed_and_a_full_listing_is_never_read_as_complete() -> None:
+    """Discovery narrows to the recent window and refuses a listing that may be truncated."""
+    seen: list[list[str]] = []
+
+    def read(*, args: list[str]) -> GhRead:
+        seen.append(args)
+        runs = [{"databaseId": run_id} for run_id in range(1_000)]
+        return GhRead(returncode=0, stdout=json.dumps(runs), stderr="")
+
+    assert reuse_outcome_detector.gather(repository=_REPOSITORY, since=_SINCE, read=read) is None
+    assert f">={_SINCE}" in seen[0]
+    assert len(seen) == 1
