@@ -10,7 +10,47 @@ from pathlib import Path
 
 import pytest
 
+from livespec_dev_tooling.config import load_config
+
 __all__: list[str] = []
+
+
+_CONFIG_API_CONSUMERS = {
+    "load_delegated_gate": (
+        "livespec-orchestrator-beads-fabro's tests/integration/test_delegated_pre_push_gate.py",
+        "livespec-driver-claude's tests/hooks/test_check_pre_push_delegation.py",
+        "livespec-overseer's tests/test_pre_push_delegated_gate.py",
+        "livespec's tests/test_delegated_pre_push_gate_wiring.py",
+        "livespec-orchestrator-git-jsonl's tests/integration/test_pre_push_delegated_gate.py",
+    ),
+    "load_delegated_pre_commit": (
+        "livespec-orchestrator-beads-fabro's tests/test_delegated_pre_commit.py",
+        "livespec-driver-claude's tests/hooks/test_delegated_pre_commit.py",
+        "livespec-overseer's tests/test_pre_commit_gate_shape.py",
+        "livespec's tests/test_delegated_pre_commit_wiring.py",
+        "livespec-driver-codex's tests/integration/test_delegated_pre_commit.py",
+    ),
+    "load_gate_check_suite": (
+        "livespec-orchestrator-beads-fabro's tests/integration/test_delegated_pre_push_gate.py",
+        "livespec-orchestrator-beads-fabro's tests/test_delegated_pre_commit.py",
+        "livespec-driver-claude's tests/hooks/test_delegated_pre_commit.py",
+        "livespec-overseer's tests/test_pre_commit_gate_shape.py",
+    ),
+    "load_config": (
+        "livespec-orchestrator-beads-fabro's .claude/hooks/livespec_tdd_order_guard.py",
+        "livespec-orchestrator-beads-fabro's tests/integration/test_incident_lifecycle_walk.py",
+    ),
+    "derive_source_prefixes": (
+        "livespec-orchestrator-beads-fabro's .claude/hooks/livespec_tdd_order_guard.py",
+        "livespec-orchestrator-beads-fabro's tests/integration/test_incident_lifecycle_walk.py",
+    ),
+    "is_vendored_path": (
+        "livespec-orchestrator-beads-fabro's .claude/hooks/livespec_tdd_order_policy.py",
+    ),
+    "iter_first_party_py_files": (
+        "livespec-orchestrator-git-jsonl's tests/test_no_buffer_write_dodge.py",
+    ),
+}
 
 
 _GIT_ENV_VARS = (
@@ -126,6 +166,45 @@ def test_declared_local_public_and_private_reaches_pass(
     )
     result, output = _run(repo=repo, fail=True, monkeypatch=monkeypatch, capsys=capsys)
     assert result == 0, output
+
+
+def test_declared_config_api_imports_pass_in_a_consumer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The released config API surface covers every fleet-consumed helper."""
+    repo = _consumer(
+        tmp_path=tmp_path,
+        test_body=(
+            "from livespec_dev_tooling.config import (\n"
+            "    derive_source_prefixes,\n"
+            "    is_vendored_path,\n"
+            "    iter_first_party_py_files,\n"
+            "    load_config,\n"
+            "    load_delegated_gate,\n"
+            "    load_delegated_pre_commit,\n"
+            "    load_gate_check_suite,\n"
+            ")\n"
+        ),
+    )
+
+    result, output = _run(repo=repo, fail=True, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result == 0, output
+
+
+def test_config_api_consumers_are_declared_with_their_import_sites() -> None:
+    """Every fleet-consumed config helper names its consuming files."""
+    root = Path(__file__).resolve().parents[3]
+    declarations = {
+        entry.function: entry.reason
+        for entry in load_config(repo_root=root).cross_repo_public_api
+        if entry.file.as_posix() == "livespec_dev_tooling/config.py"
+    }
+
+    assert set(declarations) == set(_CONFIG_API_CONSUMERS)
+    for function, consuming_files in _CONFIG_API_CONSUMERS.items():
+        for consuming_file in consuming_files:
+            assert consuming_file in declarations[function]
 
 
 def test_module_attribute_reach_is_refused(
