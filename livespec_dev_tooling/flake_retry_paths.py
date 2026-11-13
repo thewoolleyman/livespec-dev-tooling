@@ -4,19 +4,13 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path, PurePosixPath
 
-from livespec_dev_tooling._flake_retry_scopes import (
-    Scope,
-    ScopeIndex,
-    binding_scope,
-    index_scopes,
-    is_root_name,
-)
+from livespec_dev_tooling._flake_retry_places import repository_root_expressions
+from livespec_dev_tooling._flake_retry_scopes import ScopeIndex, index_scopes
 from livespec_dev_tooling.flake_retry_divisions import division_operands
 
-__all__: list[str] = ["PathChain", "path_chains", "path_literals", "repository_root_expressions"]
+__all__: list[str] = ["PathChain", "path_chains", "path_literals"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -30,58 +24,6 @@ class PathChain:
     operand_ids: frozenset[int]
 
 
-def _path_from_file_expression(
-    *,
-    expression: ast.expr,
-    scope: Scope,
-    index: ScopeIndex,
-    source_path: Path,
-    repo_root: Path,
-) -> Path | None:
-    """Resolve the limited ``Path(__file__)`` forms that can bind the repository root."""
-    again = partial(
-        _path_from_file_expression,
-        scope=scope,
-        index=index,
-        source_path=source_path,
-        repo_root=repo_root,
-    )
-    if isinstance(expression, ast.Name):
-        return repo_root if is_root_name(name=expression.id, scope=scope, index=index) else None
-    if (
-        isinstance(expression, ast.Call)
-        and isinstance(expression.func, ast.Name)
-        and expression.func.id == "Path"
-        and len(expression.args) == 1
-        and isinstance(expression.args[0], ast.Name)
-        and expression.args[0].id == "__file__"
-    ):
-        return source_path
-    if (
-        isinstance(expression, ast.Call)
-        and isinstance(expression.func, ast.Attribute)
-        and expression.func.attr == "resolve"
-    ):
-        base = again(expression=expression.func.value)
-        return None if base is None else base.resolve()
-    if isinstance(expression, ast.Attribute) and expression.attr == "parent":
-        base = again(expression=expression.value)
-        return None if base is None else base.parent
-    if (
-        isinstance(expression, ast.Subscript)
-        and isinstance(expression.value, ast.Attribute)
-        and expression.value.attr == "parents"
-        and isinstance(expression.slice, ast.Constant)
-        and isinstance(expression.slice.value, int)
-        and not isinstance(expression.slice.value, bool)
-    ):
-        base = again(expression=expression.value.value)
-        position = expression.slice.value
-        if base is not None and 0 <= position < len(base.parents):
-            return base.parents[position]
-    return None
-
-
 def _repository_root_context(
     *, source_path: Path | None, repo_root: Path | None, index: ScopeIndex
 ) -> frozenset[int] | None:
@@ -93,47 +35,6 @@ def _repository_root_context(
     if source_path is None or repo_root is None:
         return None
     return repository_root_expressions(source_path=source_path, repo_root=repo_root, index=index)
-
-
-def repository_root_expressions(
-    *, source_path: Path, repo_root: Path, index: ScopeIndex
-) -> frozenset[int]:
-    """The ids of every expression of one module that resolves to the repository root."""
-    resolved_root = repo_root.resolve()
-    changed = True
-    while changed:
-        changed = False
-        for targets, value, scope in index.assignments:
-            resolved = _path_from_file_expression(
-                expression=value,
-                scope=scope,
-                index=index,
-                source_path=source_path,
-                repo_root=resolved_root,
-            )
-            if resolved != resolved_root:
-                continue
-            for target in targets:
-                if not isinstance(target, ast.Name):
-                    continue
-                target_scope = binding_scope(name=target.id, scope=scope, index=index)
-                target_scope.bound.add(target.id)
-                if target.id not in target_scope.roots:
-                    target_scope.roots.add(target.id)
-                    changed = True
-    return frozenset(
-        id(expression)
-        for expression in index.nodes
-        if isinstance(expression, ast.expr)
-        and _path_from_file_expression(
-            expression=expression,
-            scope=index.scope_of[id(expression)],
-            index=index,
-            source_path=source_path,
-            repo_root=resolved_root,
-        )
-        == resolved_root
-    )
 
 
 def _path_names(

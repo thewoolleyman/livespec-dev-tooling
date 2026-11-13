@@ -4,13 +4,14 @@ SPECIFICATION non-functional-requirements.md "Untouched-test retry": a path
 expression counts only when its base is repository-rooted
 (livespec-dev-tooling-bob7iv). A `RootTerm` says whether a base may be the
 repository -- `rooted`, where anything this analysis cannot classify counts,
-so a doubt keeps a test touched -- and whether it positively is the
-repository root -- `evident`, which only an expression the module resolves to
-the root from `__file__`, or `rootpath` or `rootdir`, proves
-(livespec-dev-tooling-4ai5ao). Either holds on its own or through bindings,
-fixtures, attribute stores and imports that the whole closure then solves; a
-derived path such as `ROOT.parent` keeps the doubt of its object but not its
-evidence, so only `through` carries it, never `evidence`.
+so a doubt keeps a test touched -- and which repository directories it
+positively is -- `places`, repository-relative with `""` for the root, which
+only an expression the module resolves from `__file__`, a request's test path,
+`rootpath`, `rootdir` or `invocation_params.dir` proves, extended by literal
+`/` segments (livespec-dev-tooling-4ai5ao). Either holds on its own or through
+bindings, fixtures, attribute stores and imports that the whole closure then
+solves; any other derived path, such as `ROOT.parent`, keeps the doubt of its
+object but not its places, so only `through` carries it, never `evidence`.
 """
 
 from __future__ import annotations
@@ -56,17 +57,17 @@ _ROOT_ATTRIBUTES = frozenset({"__file__", "rootpath", "rootdir"})
 
 @dataclass(frozen=True, kw_only=True)
 class RootTerm:
-    """Rooted when any key it goes through is; evident when any key of its evidence is."""
+    """Rooted when any key it goes through is; placed wherever a key of its evidence is."""
 
     rooted: bool
-    evident: bool
+    places: frozenset[str]
     through: frozenset[Key]
     evidence: frozenset[Key] = frozenset()
 
 
-ROOTED = RootTerm(rooted=True, evident=True, through=frozenset())
-DOUBT = RootTerm(rooted=True, evident=False, through=frozenset())
-NOT_ROOTED = RootTerm(rooted=False, evident=False, through=frozenset())
+ROOTED = RootTerm(rooted=True, places=frozenset({""}), through=frozenset())
+DOUBT = RootTerm(rooted=True, places=frozenset(), through=frozenset())
+NOT_ROOTED = RootTerm(rooted=False, places=frozenset(), through=frozenset())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -77,28 +78,42 @@ class TermContext:
     module: str
     numbers: dict[int, int]
     import_sources: Mapping[int, str]
-    roots: frozenset[int]
+    places: Mapping[int, str]
 
 
 def union(*, terms: Iterable[RootTerm]) -> RootTerm:
-    """Combine terms: rooted or evident when any of them is."""
+    """Combine terms: rooted when any of them is, placed wherever any of them is."""
     collected = list(terms)
     return RootTerm(
         rooted=any(term.rooted for term in collected),
-        evident=any(term.evident for term in collected),
+        places=frozenset(place for term in collected for place in term.places),
         through=frozenset(key for term in collected for key in term.through),
         evidence=frozenset(key for term in collected for key in term.evidence),
     )
 
 
 def through(*keys: Key) -> RootTerm:
-    """A term rooted, and evident, exactly when one of these keys is."""
-    return RootTerm(rooted=False, evident=False, through=frozenset(keys), evidence=frozenset(keys))
+    """A term rooted, and placed, exactly when one of these keys is."""
+    return RootTerm(
+        rooted=False, places=frozenset(), through=frozenset(keys), evidence=frozenset(keys)
+    )
 
 
 def _derived(*, term: RootTerm) -> RootTerm:
-    """A path derived from a base keeps the base's doubt but not its evidence."""
-    return RootTerm(rooted=term.rooted, evident=False, through=term.through)
+    """A path derived from a base keeps the base's doubt but not its places."""
+    return RootTerm(rooted=term.rooted, places=frozenset(), through=term.through)
+
+
+def _divided(*, term: RootTerm, segments: tuple[ast.expr, ...]) -> RootTerm:
+    """A base divided by plain literal segments is placed at those segments under each place."""
+    texts = [str(getattr(segment, "value", "")) for segment in segments]
+    plain = all(
+        isinstance(segment, ast.Constant) and isinstance(segment.value, str) for segment in segments
+    ) and all(text and not text.startswith("/") and ".." not in text.split("/") for text in texts)
+    places = frozenset("/".join(part for part in (place, *texts) if part) for place in term.places)
+    return RootTerm(
+        rooted=term.rooted, places=places if plain else frozenset(), through=term.through
+    )
 
 
 def binding_key(*, name: str, scope: Scope, context: TermContext) -> Key:
@@ -107,11 +122,13 @@ def binding_key(*, name: str, scope: Scope, context: TermContext) -> Key:
 
 
 def _name_term(*, name: str, scope: Scope, context: TermContext) -> RootTerm:
-    """A name is rooted through its binding where it resolves; an unbound name is a doubt."""
+    """A name is rooted through its binding where it resolves; an unbound name is a doubt.
+
+    `__file__` reaches here only when it resolves outside the repository, and as
+    an unbound name it stays a doubt.
+    """
     if name in _TEMPORARY_NAMES:
         return NOT_ROOTED
-    if name == "__file__":
-        return DOUBT
     owner = owning_scope(name=name, scope=scope, index=context.index)
     if owner is None:
         return DOUBT
@@ -155,8 +172,9 @@ def _attribute_term(*, attribute: ast.Attribute, context: TermContext) -> RootTe
 
 def base_term(*, expression: ast.expr, context: TermContext) -> RootTerm:
     """Whether a path expression's base is, or may be, repository-rooted, and through what."""
-    if id(expression) in context.roots:
-        term = ROOTED
+    if id(expression) in context.places:
+        place = frozenset({context.places[id(expression)]})
+        term = RootTerm(rooted=True, places=place, through=frozenset())
     elif isinstance(expression, ast.Constant):
         term = DOUBT if isinstance(expression.value, str) else NOT_ROOTED
     elif isinstance(expression, ast.Name):
@@ -169,8 +187,8 @@ def base_term(*, expression: ast.expr, context: TermContext) -> RootTerm:
     elif isinstance(expression, ast.Call):
         term = _call_term(call=expression, context=context)
     elif isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Div):
-        base = division_operands(expression=expression)[0]
-        term = _derived(term=base_term(expression=base, context=context))
+        base, *segments = division_operands(expression=expression)
+        term = _divided(term=base_term(expression=base, context=context), segments=tuple(segments))
     else:
         children = [
             child for child in ast.iter_child_nodes(expression) if isinstance(child, ast.expr)
