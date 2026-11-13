@@ -1765,14 +1765,20 @@
   # whether the catalog may change. The request is GET /api/v1/runs on this
   # instance's own loopback server, never the CLI's ambient default target.
   #
-  # The read sends NO server-side status filter. Each Fabro build refuses, with
+  # The read sends no list of status filters. Each Fabro build refuses, with
   # HTTP 400, any status variant its own enum lacks, and builds differ: the
   # gmktec server refused `starting` and `paused` on 2026-11-13
   # (livespec-dev-tooling-lmuhvi). So every page of runs is read, and a run
   # counts as non-terminal unless its status is succeeded, failed or archived,
-  # including a status this role has never heard of. The token reaches curl on
-  # stdin (`--header @-`), never in argv. A listing longer than the page bound
-  # leaves meta.has_more true, which the refusal below turns into a failure.
+  # including a status this role has never heard of. An unfiltered listing
+  # hides `removing` runs, which still hold their environment, so a second
+  # paged pass asks for `removing` by name; a build that refuses that filter
+  # fails the task. Any page that is not a JSON object with a `data` list and
+  # a boolean `meta.has_more` fails the task too, so a listing the guard
+  # cannot read in full never reads as "nothing running". The token reaches
+  # curl on stdin (`--header @-`), never in argv. A listing longer than the
+  # page bound leaves meta.has_more true, which the refusal below turns into
+  # a failure.
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
@@ -1787,6 +1793,11 @@
       TERMINAL = {"succeeded", "failed", "archived"}
       PAGE_LIMIT = 100
 
+
+      def refuse(reason):
+          sys.exit(f"run listing refused: {reason}")
+
+
       with open(os.environ["FABRO_SERVER_ENV_FILE"], encoding="utf-8") as env:
           tokens = [
               line.rstrip("\n")[len("FABRO_DEV_TOKEN="):]
@@ -1794,17 +1805,14 @@
               if line.startswith("FABRO_DEV_TOKEN=")
           ]
       if not tokens:
-          sys.exit("run listing refused: the server env file has no FABRO_DEV_TOKEN")
+          refuse("the server env file has no FABRO_DEV_TOKEN")
       header = f"Authorization: Bearer {tokens[-1]}\n"
       max_pages = int(os.environ.get("FABRO_SERVER_RUNS_MAX_PAGES", "200"))
       runs_url = os.environ["FABRO_SERVER_RUNS_URL"]
 
-      kept = []
-      offset = 0
-      pages = 0
-      more = True
-      while more and pages < max_pages:
-          query = urlencode({"page[limit]": PAGE_LIMIT, "page[offset]": offset})
+
+      def read_page(filters, offset):
+          query = urlencode({**filters, "page[limit]": PAGE_LIMIT, "page[offset]": offset})
           read = subprocess.run(
               [
                   "curl", "--silent", "--show-error", "--fail-with-body",
@@ -1817,29 +1825,70 @@
               check=False,
           )
           if read.returncode != 0:
-              sys.exit(
-                  f"run listing refused: {read.stderr.strip()}: {read.stdout.strip()}"
-              )
-          body = json.loads(read.stdout)
-          data = body.get("data") or []
-          pages += 1
-          offset += len(data)
-          more = bool((body.get("meta") or {}).get("has_more"))
-          for run in data:
-              lifecycle = run.get("lifecycle")
-              kind = None
-              if isinstance(lifecycle, dict) and isinstance(lifecycle.get("status"), dict):
-                  kind = lifecycle["status"].get("kind")
-              if kind is None:
-                  kind = run.get("status")
-              if not (isinstance(kind, str) and kind in TERMINAL):
-                  kept.append({"id": run["id"], "status": kind})
-          if not data:
-              break
+              refuse(f"{read.stderr.strip()}: {read.stdout.strip()[:500]}")
+          try:
+              body = json.loads(read.stdout)
+          except ValueError:
+              refuse(f"the listing is not JSON: {read.stdout.strip()[:200]}")
+          if not isinstance(body, dict):
+              refuse("the listing is not a JSON object")
+          data = body.get("data")
+          meta = body.get("meta")
+          if not isinstance(data, list) or not all(isinstance(run, dict) for run in data):
+              refuse("the listing carries no `data` list of runs")
+          if not isinstance(meta, dict) or not isinstance(meta.get("has_more"), bool):
+              refuse("the listing carries no boolean `meta.has_more`")
+          return data, meta["has_more"]
+
+
+      def read_all(filters):
+          runs = []
+          offset = 0
+          pages = 0
+          more = True
+          while more and pages < max_pages:
+              data, more = read_page(filters, offset)
+              pages += 1
+              offset += len(data)
+              runs.extend(data)
+              if not data:
+                  break
+          return runs, more, pages
+
+
+      def kind_of(run):
+          lifecycle = run.get("lifecycle")
+          kind = None
+          if isinstance(lifecycle, dict) and isinstance(lifecycle.get("status"), dict):
+              kind = lifecycle["status"].get("kind")
+          if kind is None:
+              kind = run.get("status")
+          return kind
+
+
+      listed, listed_more, listed_pages = read_all({})
+      removing, removing_more, removing_pages = read_all({"status": "removing"})
+
+      kept = []
+      held = set()
+      for run in listed + removing:
+          if "id" not in run:
+              refuse("a listed run carries no id")
+          kind = kind_of(run)
+          if isinstance(kind, str) and kind in TERMINAL:
+              continue
+          if run["id"] in held:
+              continue
+          held.add(run["id"])
+          kept.append({"id": run["id"], "status": kind})
 
       print(json.dumps({
           "data": kept,
-          "meta": {"has_more": more, "pages": pages, "read": offset},
+          "meta": {
+              "has_more": listed_more or removing_more,
+              "pages": listed_pages + removing_pages,
+              "read": len(listed) + len(removing),
+          },
       }))
       PY
   become: true
@@ -1859,7 +1908,7 @@
     fabro_server_retired_nonterminal_runs: >-
       {{ (fabro_server_retired_runs_read.stdout | from_json).data }}
     fabro_server_retired_runs_have_more: >-
-      {{ (fabro_server_retired_runs_read.stdout | from_json).meta.has_more | default(false) }}
+      {{ (fabro_server_retired_runs_read.stdout | from_json).meta.has_more }}
     fabro_server_retired_run_environments: []
   check_mode: false
   when:
