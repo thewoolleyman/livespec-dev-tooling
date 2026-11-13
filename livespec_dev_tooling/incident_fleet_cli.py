@@ -79,6 +79,7 @@ class CliEnvironment:
     write_enablement: EnablementWriter
     read_manifest: Callable[[], str | None]
     read_serving: ServingReader
+    read_incident_phase: Callable[[str], str] = lambda _item: ""
 
 
 def production_environment(*, run: CommandRunner = scrubbed_runner) -> CliEnvironment:
@@ -131,6 +132,7 @@ def main(*, argv: Sequence[str], environment: CliEnvironment) -> int:
         read_manifest=environment.read_manifest,
         claims=() if isinstance(claims, Failure) else claims.unwrap(),
         read_serving=environment.read_serving,
+        read_incident_phase=environment.read_incident_phase,
     )
     if args.command == "audit":
         notes = (

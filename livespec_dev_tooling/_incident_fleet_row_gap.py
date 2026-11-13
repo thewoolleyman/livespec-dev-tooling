@@ -25,7 +25,23 @@ _INCOMPLETE_CLAIM = "claim lacks a source path, proof reference, owner or releas
 _INCOMPLETE_IMPLEMENTED = (
     "implemented claim lacks its incident item, normal factory proof or scope digest"
 )
+_DRILL_CLOSED = "drill-closed"
 _UNREADABLE = "serving version unreadable: no installed serving build was read (unverified)"
+
+
+def _implemented_gap(*, claim: CapabilityEvidence, instruction_only: bool) -> str:
+    """What an implemented claim lacks in its incident evidence; "" when nothing."""
+    if claim.incident_phase == _DRILL_CLOSED:
+        return (
+            f"incident item {claim.incident_item} is {_DRILL_CLOSED}, "
+            "which is not recovery capability for master"
+        )
+    if instruction_only or (
+        bool(claim.incident_item and claim.normal_factory_proof)
+        and _SCOPE_DIGEST.fullmatch(claim.cumulative_scope) is not None
+    ):
+        return ""
+    return _INCOMPLETE_IMPLEMENTED
 
 
 def _claim_gap(*, claim: CapabilityEvidence, manifest_sha256: str, instruction_only: bool) -> str:
@@ -44,12 +60,7 @@ def _claim_gap(*, claim: CapabilityEvidence, manifest_sha256: str, instruction_o
         return _INCOMPLETE_CLAIM
     if claim.disposition != "implemented":
         return "" if claim.reason else f"claim gives no reason for {claim.disposition}"
-    if instruction_only or (
-        bool(claim.incident_item and claim.normal_factory_proof)
-        and _SCOPE_DIGEST.fullmatch(claim.cumulative_scope) is not None
-    ):
-        return ""
-    return _INCOMPLETE_IMPLEMENTED
+    return _implemented_gap(claim=claim, instruction_only=instruction_only)
 
 
 def _serving_gap(

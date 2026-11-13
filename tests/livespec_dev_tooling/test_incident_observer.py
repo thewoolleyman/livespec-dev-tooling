@@ -148,6 +148,20 @@ def test_incomplete_or_candidate_tree_observer_cannot_admit_merge(tmp_path, regi
     )
 
 
+def test_drill_closed_incident_cannot_supply_a_durable_master_observer_receipt(
+    tmp_path, registration
+):
+    result = _admit(
+        directory=tmp_path / "controller",
+        registration=replace(registration, phase="drill-closed"),
+        authorize_current=lambda _: True,
+    )
+
+    assert result.status == "refused"
+    assert result.reason == "drill-closed incident cannot supply a durable observer receipt"
+    assert not (tmp_path / "controller").exists()
+
+
 def test_registration_is_idempotent_and_generation_changes_are_compare_and_swap(
     tmp_path, registration
 ):

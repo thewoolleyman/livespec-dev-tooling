@@ -42,6 +42,7 @@ _OBJECT_IDS = frozenset({"base", "head", "commit_sha", "tree_sha"})
 _TEXTS = frozenset({"repository", "item_id", "attempt_id", "phase", "operation_id", "owner"})
 # A repayment carrier is normal factory work and earns normal evidence instead.
 _DEFERRING_PHASE = "repair"
+_DRILL_CLOSED = "drill-closed"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,7 +54,10 @@ class ObserverProvenance:
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         _ = path
         settings = self.installation
-        if not _valid_query(payload=payload) or payload["phase"] != _DEFERRING_PHASE:
+        if not _valid_query(payload=payload) or payload["phase"] not in {
+            _DEFERRING_PHASE,
+            _DRILL_CLOSED,
+        }:
             return _refused(reason="invalid exact provenance query")
         query = IncidentCommitQuery(**payload)
         flags = {
@@ -75,6 +79,14 @@ class ObserverProvenance:
         decoded = decode_historical_result(result=checked.unwrap(), query=query)
         if not is_successful(decoded):
             return _refused(reason=decoded.failure().code)
+        if query.phase == _DRILL_CLOSED:
+            return {
+                "schema": 1,
+                "status": "drill-closure",
+                "query": asdict(query),
+                "repayment_outstanding": False,
+                "incident_complete": False,
+            }
         return {"schema": 1, "status": "provenance", "query": asdict(query)}
 
 
