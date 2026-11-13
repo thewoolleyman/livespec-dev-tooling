@@ -590,8 +590,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
-    "test": "TODO",
-    "reason": "Spec-first (v203): a real test at the integration tier is owed for this heading. It drives ONE confirmed apply of the committed `ansible/factory-sandbox-loss-drill.yml` through the pinned `ansible-core` against a stand-in `kubectl` state machine, on the model of `tests/livespec_dev_tooling/test_container_termination_drill_playbook.py`, and asserts the Then-clauses on the ordered command log: one UID-preconditioned delete of the one `petri.run`-selected pod carrying `sandbox-driver-kubernetes/sandbox`, a wait until no pod with that UID is listed, the printed run id, pod name, UID and both UTC times, and no other write; siblings carry the unconfirmed, invalid-run-id, non-factory-namespace, zero-pod, two-pod and unlabelled-pod refusals, and the unpreserved-tree refusal: an absent preserved-ref, a ref origin does not hold, and a ref whose diff against its merge-base with the default branch is empty each exit non-zero before any cluster write. The live-cluster half is host-captured. livespec-dev-tooling-5wybjq owns it.",
+  "test": "tests.livespec_dev_tooling.test_factory_sandbox_loss_drill_playbook.test_deletes_exactly_one_uid_and_reports_the_api_observed_times",
+  "reason": "Integration-tier: the test drives the committed playbook through pinned ansible-core against a stateful kubectl stand-in and a real local Git origin. It proves the one UID-preconditioned sandbox-pod delete, UID disappearance wait and UTC report; siblings cover consent, validation, selection, preserved-ref and same-name replacement refusals. The live-cluster half is host-captured.",
     "work_item": "livespec-dev-tooling-5wybjq"
   },
   {

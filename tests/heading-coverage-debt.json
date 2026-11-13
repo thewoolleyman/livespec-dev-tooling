@@ -534,13 +534,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
-    "work_item": "livespec-dev-tooling-5wybjq",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failed read of the runner scheduler changes nothing",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-08"
