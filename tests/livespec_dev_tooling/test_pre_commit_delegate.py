@@ -396,6 +396,102 @@ def _git(*, cwd: Path, args: list[str]) -> str:
     return done.stdout.strip()
 
 
+def _capture_delegated_staged_commits(
+    *, module: object, monkeypatch: pytest.MonkeyPatch, repo_root: Path, tree_hash: str
+) -> list[str]:
+    """Configure a passed gate and retain the commit each request publishes."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    published: list[str] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: tree_hash)
+    monkeypatch.setattr(module, "_pre_commit_check_suite", lambda **_kwargs: ("check",))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=repo_root,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+
+    def publish(**kwargs: object) -> GateVerdict:
+        """Capture the staged commit the gate Job receives."""
+        request = kwargs["request"]
+        assert isinstance(request, GateRunRequest)
+        published.append(request.source_ref)
+        return GateVerdict(
+            state=GATE_PASSED,
+            detail="the Job passed",
+            token_written=True,
+            job_name="gate-pre-commit-1",
+            tree_hash=tree_hash,
+        )
+
+    monkeypatch.setattr(module, "run_gated_push", publish)
+    return published
+
+
+def test_a_staged_commit_preserves_the_merge_history_the_gate_must_judge(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The published tree keeps normal and merge commit parentage distinct."""
+    module = _module()
+    _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
+    _ = (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "base.txt"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
+    head = _git(cwd=tmp_path, args=["rev-parse", "HEAD"])
+    tree = _git(cwd=tmp_path, args=["write-tree"])
+    first_merge_head = _git(
+        cwd=tmp_path,
+        args=["commit-tree", tree, "-p", head, "-m", "first merged history"],
+    )
+    second_merge_head = _git(
+        cwd=tmp_path,
+        args=["commit-tree", tree, "-p", head, "-m", "second merged history"],
+    )
+    _ = (tmp_path / "staged.txt").write_text("staged\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "staged.txt"])
+    staged_tree = _git(cwd=tmp_path, args=["write-tree"])
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n", encoding="utf-8"
+    )
+    published = _capture_delegated_staged_commits(
+        module=module,
+        monkeypatch=monkeypatch,
+        repo_root=tmp_path,
+        tree_hash=staged_tree,
+    )
+
+    normal = module.run_pre_commit(repo_root=tmp_path)
+    normal_commit = published[-1]
+
+    assert normal.exit_status == 0
+    assert _git(cwd=tmp_path, args=["show", "-s", "--format=%P", normal_commit]) == head
+
+    merge_head_path = tmp_path / _git(cwd=tmp_path, args=["rev-parse", "--git-path", "MERGE_HEAD"])
+    _ = merge_head_path.write_text(f"{first_merge_head}\n{second_merge_head}\n", encoding="utf-8")
+
+    merged = module.run_pre_commit(repo_root=tmp_path)
+    merge_commit = published[-1]
+
+    assert _git(cwd=tmp_path, args=["show", "-s", "--format=%P", merge_commit]) == " ".join(
+        [head, first_merge_head, second_merge_head]
+    )
+    assert merged.exit_status == 0
+    _git(cwd=tmp_path, args=["merge-base", "--is-ancestor", first_merge_head, merge_commit])
+    _git(cwd=tmp_path, args=["merge-base", "--is-ancestor", second_merge_head, merge_commit])
+
+
 def test_the_gated_tree_recipe_restores_the_staged_index_before_the_aggregate(
     *, tmp_path: Path
 ) -> None:

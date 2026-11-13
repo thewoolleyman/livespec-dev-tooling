@@ -121,6 +121,14 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
     """Wrap the index tree in a commit object the gate client can publish."""
     from returns.result import Failure
 
+    parents = ("HEAD",)
+    marker = default_gate_command_runner(
+        argv=["git", "rev-parse", "--git-path", "MERGE_HEAD"], cwd=repo_root
+    )
+    if not isinstance(marker, Failure) and marker.unwrap().returncode == 0:
+        merge_head_path = repo_root / marker.unwrap().stdout.strip()
+        if merge_head_path.is_file():
+            parents += tuple(merge_head_path.read_text(encoding="utf-8").split())
     argv = [
         "git",
         "-c",
@@ -129,10 +137,10 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
         "user.email=pre-commit@livespec.invalid",
         "commit-tree",
         tree_hash,
-        "-p",
-        "HEAD",
-        "-mpre-commit aggregate of the staged tree",
     ]
+    for parent in parents:
+        argv.extend(["-p", parent])
+    argv.append("-mpre-commit aggregate of the staged tree")
     committed = default_gate_command_runner(argv=argv, cwd=repo_root)
     if isinstance(committed, Failure):
         return ""
