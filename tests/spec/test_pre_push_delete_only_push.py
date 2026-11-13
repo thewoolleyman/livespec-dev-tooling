@@ -249,18 +249,21 @@ def test_a_seed_ref_pushed_beside_an_ordinary_ref_keeps_the_full_gate(*, tmp_pat
     assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
 
 
-def test_a_seed_update_beside_an_ordinary_ref_deletion_keeps_the_full_gate(
+def test_a_seed_update_beside_an_ordinary_ref_deletion_runs_only_authorization_members(
     *, tmp_path: Path
 ) -> None:
-    """Deleting a mergeable-namespace ref is not a seed-only push, so the gate runs."""
+    """A deletion publishes no tree and cannot turn a seed push into an ordinary one."""
+    seed = "refs/heads/needs-human/seed"
     code, stdout, invoked = _run_pre_push(
         tmp_path=tmp_path,
-        stdin=_update_line(ref="refs/heads/needs-human/seed") + _delete_line(ref="refs/heads/gone"),
+        stdin=_update_line(ref=seed) + _delete_line(ref="refs/heads/gone"),
+        authority_members="check-widget-approval",
     )
 
     assert code == 0, f"stdout={stdout!r} invoked={invoked}"
-    assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
-    assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
+    assert "just check-widget-approval" in invoked, f"invoked={invoked}"
+    assert "just hook_gate=1 check" not in invoked, f"invoked={invoked}"
+    assert seed in stdout and "test aggregate was not run" in stdout, f"stdout={stdout!r}"
 
 
 def test_a_seed_update_with_a_malformed_remote_oid_keeps_the_full_gate(*, tmp_path: Path) -> None:

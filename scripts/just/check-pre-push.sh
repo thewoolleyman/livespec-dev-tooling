@@ -80,12 +80,9 @@ while IFS=' ' read -r local_ref local_oid remote_ref remote_oid trailing; do
             ;;
         *)
             deleted_refs=$((deleted_refs + 1))
-            # A deleted ref outside the seed and preserve namespaces is an
-            # update to a non-seed ref, so the push is not seed-or-preserve-only.
-            case "${remote_ref}" in
-                refs/heads/needs-human/* | refs/heads/preserve/*) ;;
-                *) seed_or_preserve_only=0 ;;
-            esac
+            # A deletion publishes no tree. It therefore neither needs an
+            # authorization check nor changes the classification of a push
+            # that does publish seed or preserve refs.
             ;;
     esac
 done <<<"${push_refs}"
