@@ -111,7 +111,6 @@ def mark_untouched_tests(
     )
     if withheld is not None:
         return withheld
-    markers: dict[Path, dict[str, int] | None] = {}
     for item in items:
         test_path = Path(str(item.path))
         retry_withheld = retry_withheld_reason_for(
@@ -126,15 +125,9 @@ def mark_untouched_tests(
             if isinstance(nodeid, str):
                 withheld_by_nodeid[nodeid] = retry_withheld
             continue
-        if test_path not in markers:
-            markers[test_path] = retry_marker_for(
-                repo_root=root,
-                test_path=test_path,
-                change_paths=paths,
-                memo=memo,
-                closures=closures,
-            )
-        marker = markers[test_path]
+        marker = retry_marker_for(
+            repo_root=root, test_path=test_path, change_paths=paths, memo=memo, closures=closures
+        )
         if marker is not None:
             item.add_marker(pytest.mark.flaky(**marker))
     return None
