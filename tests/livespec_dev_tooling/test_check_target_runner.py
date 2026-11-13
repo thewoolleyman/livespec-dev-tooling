@@ -35,6 +35,7 @@ from livespec_dev_tooling._check_target_runner import (
     _renew_progress_stamp,
     run_targets,
 )
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 __all__: list[str] = []
 
@@ -67,10 +68,19 @@ _HOLD = 'exec 3> "{fifo}"; trap "" TERM; sleep 30 & touch ready; wait'
 _AFTER_READY = "while [ ! -e ready ]; do sleep 0.05; done"
 
 
+# `slow` polls for `fast`'s marker this often, and gives up after the repository's ONE
+# hang guard (tests/hang_guard.py) worth of polls: at least HANG_GUARD_SECONDS, since
+# each poll sleeps the full interval. Giving up exits with `_HANG_EXIT`, which the test
+# reports as a hang naming the marker it waited for.
+_MARKER_POLL_S = 0.05
+_MARKER_POLLS = int(HANG_GUARD_SECONDS / _MARKER_POLL_S)
+_HANG_EXIT = 97
+
+
 def test_outcomes_keep_run_order_status_output_and_stdin_closed(tmp_path: Path) -> None:
     # `slow` ends only once `fast`'s `on_complete` callback has written the marker, so
-    # the completion order holds however late either target is spawned. The ceiling
-    # (about 30s) only guards a hang: reaching it fails `slow` with status 4.
+    # the completion order holds however late either target is spawned. Its poll
+    # ceiling is the repository's hang guard, not a margin a loaded host can exceed.
     marker = tmp_path / "fast-completed"
     seen: list[str] = []
 
@@ -86,7 +96,8 @@ def test_outcomes_keep_run_order_status_output_and_stdin_closed(tmp_path: Path) 
                 script=(
                     "n=0; "
                     f'while [ ! -e "{marker}" ]; do '
-                    "n=$((n + 1)); [ $n -gt 600 ] && exit 4; sleep 0.05; done; "
+                    f"n=$((n + 1)); [ $n -gt {_MARKER_POLLS} ] && exit {_HANG_EXIT}; "
+                    f"sleep {_MARKER_POLL_S}; done; "
                     "echo slow-out; exit 3"
                 ),
             ),
@@ -95,6 +106,11 @@ def test_outcomes_keep_run_order_status_output_and_stdin_closed(tmp_path: Path) 
         cwd=tmp_path,
         max_workers=2,
         on_complete=on_complete,
+    )
+    assert outcomes[0].returncode != _HANG_EXIT, (
+        f"HANG: `slow` was waiting for `fast`'s on_complete marker {marker}, and it had "
+        f"not appeared after {HANG_GUARD_SECONDS} s, the repository's hang guard "
+        "(tests/hang_guard.py). This is a run that never ended, not a slow one."
     )
     assert [(o.name, o.status, o.returncode) for o in outcomes] == [
         ("slow", COMPLETED, 3),
