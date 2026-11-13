@@ -3705,8 +3705,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer ruled deliberately-normal classifies from claims citing the ruling, with no installation serving it",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the real audit and the committed-claims checks run against deliberately-normal claims for a fleet member no installation serves and an instruction-only adopter, and classify, refuse and report contradictions as the scenario states. livespec-dev-tooling-kddu2b owns it.",
+    "test": "tests.livespec_dev_tooling.test_incident_fleet_deliberately_normal.test_run_as_a_child_process_a_ruled_normal_member_and_adopter_classify_with_no_installation",
+    "reason": "Integration-tier: the real audit entry point runs as a child process (`python -I -c`) against a fixture manifest whose fleet member and instruction-only adopter carry deliberately-normal claims citing the ruling, with no controller installation serving either; every member row and both guidance rows read deliberately-normal, the other 35 adopter rows read not-applicable, no consumer is ready, no lacks-serving-version finding names them, and the command exits 0. A sibling child-process test reads the member's own independent controller as serving and sees its controller rows unclassified with a finding naming the contradiction (livespec-dev-tooling-kddu2b).",
     "work_item": "livespec-dev-tooling-kddu2b"
   },
   {

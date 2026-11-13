@@ -1,0 +1,177 @@
+"""Count the old owner's references left in the 10 fleet repositories' committed master trees.
+
+The org move's Definition of Done (note 005 §4) requires this count to be 0 after the move, so the
+fleet never depends on GitHub's redirects. This is the ONE committed grep that assertion names.
+
+Run:  python3 old_owner_refs.py.txt [--old-owner thewoolleyman] [--clones /data/projects]
+                                    [--ref origin/master] [--fetch] [--json]
+      python3 old_owner_refs.py.txt --self-test
+
+`--old-owner` is the account the fleet moves AWAY from. It is NOT read from the manifest's `owner`
+key, because after the move that key names the new organization. The fleet list is the `fleet`
+entries of livespec's `.livespec-fleet-manifest.jsonc`, read from `--ref` in the livespec clone and
+never from its working tree; adopters stay out of the move. Each repository is grepped at its own
+`--ref` tree with `git grep`, so working-tree edits, unpushed commits and untracked files never count.
+The script fetches nothing unless `--fetch` is passed. That flag runs `git fetch origin master` in
+each clone, and every row prints the commit it read.
+
+The DoD grades committed CONFIGURATION. These exact paths are excluded as history or narrative (the
+2026-11-13 survey of all 10 repositories found no other `history` or `archive` directories outside
+them):
+  - `SPECIFICATION/history/`: spec revision snapshots;
+  - `archive/` at the root, and everything under `plan/`. Live `plan/` research notes are narrative
+    permalinks to PRs, commits and blobs, and the `prose` column counts them, excluding `plan/archive/`;
+  - `CHANGELOG.md` files, which are release-generated.
+
+Graded columns (all of them count toward the DoD's 0):
+  url   — `github.com/<old-owner>/<fleet-repo>`, in https, ssh `github.com:` and API `repos/` forms
+  raw   — `raw.githubusercontent.com/<old-owner>/<fleet-repo>`
+  ghcr  — `ghcr.io/<old-owner>/`
+  slug  — a bare `<old-owner>/<fleet-repo>` that is not part of a url or raw hit: reusable-workflow
+          `uses:` refs, marketplace `repo:` entries, `gh --repo` arguments. Graded at
+          legacy-coordinator-agent's direction (its grade of livespec-dev-tooling#4427), because these
+          lean on GitHub's redirect just as URLs do.
+Informational column:
+  prose — url, raw and ghcr hits in live `plan/` research notes.
+
+Exit status: 0 when every graded count is 0; 1 otherwise, or when a self-test row fails; 2 when a
+repository could not be read.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+EXCLUDES = (":(exclude)SPECIFICATION/history", ":(exclude)archive", ":(exclude)plan",
+            ":(exclude,glob)**/CHANGELOG.md")
+PROSE_ONLY = ("plan", ":(exclude)plan/archive", ":(exclude,glob)**/CHANGELOG.md")
+END = r"(?![A-Za-z0-9_-])"
+
+
+def patterns(old_owner: str, repos: list[str]) -> dict[str, str]:
+    names = "|".join(re.escape(r) for r in sorted(repos, key=len, reverse=True))
+    owner = re.escape(old_owner)
+    return {
+        "url": rf"(?<!raw\.)github\.com[:/](?:repos/)?{owner}/(?:{names}){END}",
+        "raw": rf"raw\.githubusercontent\.com/{owner}/(?:{names}){END}",
+        "ghcr": rf"ghcr\.io/{owner}/",
+        # Not preceded by a host or path character, so it never double-counts a url or raw hit.
+        "slug": rf"(?<![A-Za-z0-9_./:-]){owner}/(?:{names}){END}",
+    }
+
+
+def fleet_from_text(text: str) -> list[str]:
+    """Raises ValueError (JSONDecodeError is one) or KeyError on a manifest with no readable fleet entries."""
+    repos = [entry["repo"] for entry in json.loads(re.sub(r"^\s*//.*$", "", text, flags=re.M))["fleet"]]
+    if not repos:
+        raise ValueError("no fleet entries")
+    return repos
+
+
+def git(repo_dir: Path, *argv: str) -> str:
+    return subprocess.run(["git", "-C", str(repo_dir), *argv], check=True, capture_output=True, text=True).stdout
+
+
+def grep(repo_dir: Path, ref: str, pattern: str, paths: tuple[str, ...]) -> list[str]:
+    proc = subprocess.run(["git", "-C", str(repo_dir), "grep", "-I", "-o", "-P", pattern, ref, "--", *paths],
+                          capture_output=True, text=True, check=False)
+    if proc.returncode not in (0, 1):
+        raise RuntimeError(proc.stderr.strip() or f"git grep exited {proc.returncode}")
+    return [line for line in proc.stdout.splitlines() if line]
+
+
+def self_test() -> int:
+    pats = patterns("old", ["livespec", "livespec-dev-tooling"])
+    rows = (
+        ("https url", "see https://github.com/old/livespec-dev-tooling/pull/1", {"url": 1}),
+        ("ssh url", "git@github.com:old/livespec.git", {"url": 1}),
+        ("api url", "https://api.github.com/repos/old/livespec/contents", {"url": 1}),
+        ("raw url", "https://raw.githubusercontent.com/old/livespec/master/x.sh", {"raw": 1}),
+        ("ghcr", "image: ghcr.io/old/livespec-fabro-sandbox:v1", {"ghcr": 1}),
+        ("uses: slug", "uses: old/livespec-dev-tooling/.github/workflows/x.yml@v1", {"slug": 1}),
+        ("marketplace slug", '"repo": "old/livespec"', {"slug": 1}),
+        ("non-fleet repo", "https://github.com/old/fabro and old/fabro", {}),
+        ("longer name is not a fleet name", "old/livespec-extra", {}),
+        ("other owner", "https://github.com/new/livespec", {}),
+    )
+    failures = 0
+    for desc, text in (("manifest with an empty fleet", '{"fleet": []}'), ("manifest that is not JSON", "{oops"),
+                       ("manifest with no fleet key", '{"owner": "x"}')):
+        try:
+            fleet_from_text(text)
+            ok = False
+        except (ValueError, KeyError):
+            ok = True
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {desc}: refused")
+    for desc, text, expected in rows:
+        got = {k: len(re.findall(p, text)) for k, p in pats.items()}
+        got = {k: v for k, v in got.items() if v}
+        ok = got == expected
+        failures += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {desc}: expected {expected}, got {got}")
+    return 1 if failures else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--old-owner", default="thewoolleyman")
+    parser.add_argument("--clones", default="/data/projects", type=Path)
+    parser.add_argument("--ref", default="origin/master")
+    parser.add_argument("--fetch", action="store_true", help="git fetch origin master in each clone first")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        return self_test()
+
+    livespec = args.clones / "livespec"
+    try:
+        if args.fetch:
+            git(livespec, "fetch", "-q", "origin", "master")
+        repos = fleet_from_text(git(livespec, "show", f"{args.ref}:.livespec-fleet-manifest.jsonc"))
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError, KeyError, TypeError) as err:
+        print(f"UNREADABLE fleet manifest: {type(err).__name__}: {str(err).strip()[:200]}")
+        return 2
+    pats = patterns(args.old_owner, repos)
+
+    rows, unreadable = [], []
+    for repo in repos:
+        repo_dir = args.clones / repo
+        try:
+            if args.fetch and repo != "livespec":
+                git(repo_dir, "fetch", "-q", "origin", "master")
+            head = git(repo_dir, "rev-parse", "--short", args.ref).strip()
+            hits = {k: grep(repo_dir, args.ref, p, (".", *EXCLUDES)) for k, p in pats.items()}
+            prose = grep(repo_dir, args.ref, "|".join(pats[k] for k in ("url", "raw", "ghcr")), PROSE_ONLY)
+        except (subprocess.CalledProcessError, RuntimeError, FileNotFoundError) as err:
+            unreadable.append({"repo": repo, "error": str(err)})
+            continue
+        files = {h.split(":", 2)[1] for v in hits.values() for h in v}
+        rows.append({"repo": repo, "ref": f"{args.ref}@{head}", **{k: len(v) for k, v in hits.items()},
+                     "graded_files": len(files), "prose": len(prose)})
+
+    graded = sum(r[k] for r in rows for k in pats)
+    if args.json:
+        print(json.dumps({"old_owner": args.old_owner, "rows": rows, "unreadable": unreadable,
+                          "graded_total": graded}, indent=2))
+    else:
+        print(f"{'repository':36} {'ref':28} {'url':>5} {'raw':>5} {'ghcr':>5} {'slug':>5} {'files':>5} {'prose*':>6}")
+        for r in rows:
+            print(f"{r['repo']:36} {r['ref']:28} {r['url']:>5} {r['raw']:>5} {r['ghcr']:>5} {r['slug']:>5} "
+                  f"{r['graded_files']:>5} {r['prose']:>6}")
+        for u in unreadable:
+            print(f"{u['repo']:36} UNREADABLE: {u['error']}")
+        print(f"graded total (url + raw + ghcr + slug): {graded}   * prose is informational, not graded")
+    if unreadable:
+        return 2
+    return 0 if graded == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

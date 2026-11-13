@@ -171,10 +171,22 @@ def run_fleet_audit(
         return _unauthenticated(
             digest=digest, cause="core's master did not confirm this membership and identity"
         )
+    # A consumer whose every row is ruled normal or inapplicable adopts nothing, so it owes
+    # no serving-version evidence.
+    normal = {
+        repository
+        for repository in _applicable_consumers(manifest=manifest)
+        if all(
+            row.disposition in {"deliberately-normal", "not-applicable"}
+            for row in audit.rows
+            if row.repository == repository
+        )
+    }
     lacking = tuple(
         f"{repository}: lacks serving-version evidence for {', '.join(missing)}"
         for repository in _applicable_consumers(manifest=manifest)
-        if (
+        if repository not in normal
+        and (
             missing := [
                 c for c in CAPABILITIES if served(repository=repository, capability=c).build == ""
             ]

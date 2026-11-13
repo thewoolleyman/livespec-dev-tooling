@@ -113,8 +113,8 @@ class ObserverEnablement:
         if not (isinstance(identity, str) and isinstance(operation, str) and operation):
             return _refused(reason="unknown or malformed enablement operation")
         request = _digest(value=payload)
-        with self._lock():
-            state = self._load()
+        with self.lock():
+            state = self.load()
             retained = _retained(state=state, operation=operation)
             if retained is not None:
                 return _retry(retained=retained, request=request)
@@ -130,8 +130,8 @@ class ObserverEnablement:
             "controller_revision": self.installation.revision,
         }
         answer = {"schema": 1, "status": "enabled", "record": record}
-        with self._lock():
-            state = self._load()
+        with self.lock():
+            state = self.load()
             retained = _retained(state=state, operation=operation)
             if retained is not None:
                 return _retry(retained=retained, request=request)
@@ -147,8 +147,8 @@ class ObserverEnablement:
             return _refused(reason="unknown or malformed enablement operation")
         request = _digest(value={"path": path, **payload})
         confirmed = self._confirmed() if path == ARM_PATH else None
-        with self._lock():
-            state = self._load()
+        with self.lock():
+            state = self.load()
             retained = _retained(state=state, operation=operation)
             if retained is not None:
                 return _retry(retained=retained, request=request)
@@ -170,8 +170,8 @@ class ObserverEnablement:
 
     def _read(self, *, payload: dict[str, Any]) -> dict[str, Any]:
         confirmed = self._confirmed()
-        with self._lock():
-            state = self._load()
+        with self.lock():
+            state = self.load()
         return {
             "schema": 1,
             "status": _reading(state=state, confirmed=confirmed),
@@ -184,8 +184,8 @@ class ObserverEnablement:
         """The committed manifest identity under the bounded freshness rule, or None."""
         head = self.source.read_head()
         moment = self.now()
-        with self._lock():
-            state = self._load()
+        with self.lock():
+            state = self.load()
         cached = cast("dict[str, Any] | None", state.get("confirmed"))
         fresh = cached is not None and moment - float(cached["at"]) <= FRESHNESS_SECONDS
         if head is None:
@@ -195,17 +195,17 @@ class ObserverEnablement:
         identity = self.source.read_identity()
         if identity is None:
             return None
-        with self._lock():
-            state = self._load()
+        with self.lock():
+            state = self.load()
             state["confirmed"] = {"head": head, "identity": identity, "at": moment}
             self._save(state=state)
         return identity
 
-    def _lock(self) -> Any:
+    def lock(self) -> Any:
         settings = self.installation
         return repository_lock(directory=settings.state, repository=settings.repository)
 
-    def _load(self) -> dict[str, Any]:
+    def load(self) -> dict[str, Any]:
         return cast("dict[str, Any]", load_record(path=self._state_path()))
 
     def _save(self, *, state: dict[str, Any]) -> None:
