@@ -15,9 +15,11 @@ import os
 import re
 import subprocess
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import pairwise
 from pathlib import Path
+from typing import TypeAlias
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -88,10 +90,11 @@ def test_the_role_reads_all_live_runs_before_retiring_catalog_entries() -> None:
     assert "/api/v1/runs" in read_runs
     assert "--header @-" in read_runs
     assert "FABRO_SERVER_ENV_FILE" in read_runs
-    assert "status=" not in read_runs, (
-        "the run read must not send a server-side status filter: each Fabro build "
-        "refuses a status variant it does not know"
-    )
+    for status in ("pending", "starting", "running", "paused"):
+        assert f"status={status}" not in read_runs, (
+            "the run read must not filter on a status list: each Fabro build "
+            "refuses a status variant it does not know"
+        )
     assert "include_tasks: retired_run.yml" in _task(
         source=_MAIN, name="Read every non-terminal run's selected environment"
     )
@@ -190,7 +193,7 @@ def test_gmktec_declares_the_completed_environment_rename_and_its_operator_inter
 # read from each reachable gmktec instance (:32276, :32277 and :32278 answered
 # with this same list on 2026-11-13; hp-xubuntu and vps refused connections).
 # A filter naming anything else is refused with HTTP 400, which is why the role
-# must not send one: another build may know a different set.
+# must not send a status list: another build may know a different set.
 _LIVE_STATUS_FILTER_ENUM = (
     "pending",
     "runnable",
@@ -202,9 +205,17 @@ _LIVE_STATUS_FILTER_ENUM = (
     "archived",
     "removing",
 )
+# A Fabro listing with no status filter hides `removing` and archived runs
+# (fabro-store run_summary_store.rs, RunSummaryVisibility::Default, at fabro
+# 3b3781888). A `removing` run still holds its environment, so the role must
+# ask for it by name.
+_HIDDEN_BY_DEFAULT = frozenset({"removing", "archived"})
 _TERMINAL_KINDS = frozenset({"succeeded", "failed", "archived"})
 _TOKEN = "fake-dev-token"
 _READ_TASK = "Read this instance's non-terminal runs before retiring environments"
+
+_Query: TypeAlias = "dict[str, list[str]]"
+_Responder: TypeAlias = "Callable[[_Query], tuple[int, bytes]]"
 
 
 def _read_runs_command() -> str:
@@ -220,7 +231,7 @@ def _fake_runs() -> list[dict[str, object]]:
     kinds = ["running", "failed", "succeeded", "blocked", "pending", "archived", "removing"]
     runs: list[dict[str, object]] = [
         {"id": f"run-{index:03d}", "lifecycle": {"status": {"kind": kinds[index % len(kinds)]}}}
-        for index in range(230)
+        for index in range(460)
     ]
     runs.append({"id": "run-paused", "lifecycle": {"status": {"kind": "paused"}}})
     runs.append({"id": "run-starting", "lifecycle": {"status": {"kind": "starting"}}})
@@ -237,32 +248,44 @@ def _fake_kind(*, run: dict[str, object]) -> object:
     return run["status"]
 
 
-def _strict_fabro_server(*, runs: list[dict[str, object]], seen: list[dict[str, list[str]]]):
-    """A Fabro runs API that refuses an unknown status variant as the live one does."""
+def _fabro_listing(*, runs: list[dict[str, object]]) -> _Responder:
+    """GET /api/v1/runs as the live server answers it, visibility rules included."""
+
+    def respond(query: _Query) -> tuple[int, bytes]:
+        statuses = query.get("status", [])
+        unknown = [value for value in statuses if value not in _LIVE_STATUS_FILTER_ENUM]
+        if unknown:
+            expected = ", ".join(f"`{name}`" for name in _LIVE_STATUS_FILTER_ENUM)
+            message = (
+                "Failed to deserialize query string: status[0]: unknown variant "
+                f"`{unknown[0]}`, expected one of {expected}"
+            )
+            return 400, message.encode()
+        visible = [
+            run
+            for run in runs
+            if (_fake_kind(run=run) in statuses)
+            or (not statuses and _fake_kind(run=run) not in _HIDDEN_BY_DEFAULT)
+        ]
+        limit = min(int(query.get("page[limit]", ["100"])[0]), 100)
+        offset = int(query.get("page[offset]", ["0"])[0])
+        page = visible[offset : offset + limit]
+        more = offset + len(page) < len(visible)
+        body = {"data": page, "meta": {"has_more": more, "total": len(visible)}}
+        return 200, json.dumps(body).encode()
+
+    return respond
+
+
+def _serve(*, responder: _Responder, seen: list[_Query]) -> ThreadingHTTPServer:
+    """Serve one scripted responder on loopback, recording each request's query."""
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 — the stdlib handler's own name.
             query = parse_qs(urlsplit(self.path).query)
             seen.append({**query, "authorization": [self.headers.get("Authorization", "")]})
-            unknown = [
-                value for value in query.get("status", []) if value not in _LIVE_STATUS_FILTER_ENUM
-            ]
-            if unknown:
-                expected = ", ".join(f"`{name}`" for name in _LIVE_STATUS_FILTER_ENUM)
-                body = (
-                    "Failed to deserialize query string: status[0]: unknown variant "
-                    f"`{unknown[0]}`, expected one of {expected}"
-                ).encode()
-                self.send_response(400)
-            else:
-                limit = min(int(query.get("page[limit]", ["100"])[0]), 100)
-                offset = int(query.get("page[offset]", ["0"])[0])
-                page = runs[offset : offset + limit]
-                more = offset + len(page) < len(runs)
-                body = json.dumps(
-                    {"data": page, "meta": {"has_more": more, "total": len(runs)}}
-                ).encode()
-                self.send_response(200)
+            status, body = responder(query)
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             _ = self.wfile.write(body)
@@ -276,86 +299,133 @@ def _strict_fabro_server(*, runs: list[dict[str, object]], seen: list[dict[str, 
 
 
 def _run_read(
-    *, tmp_path: Path, url: str, extra_env: dict[str, str]
+    *, tmp_path: Path, responder: _Responder, seen: list[_Query], extra_env: dict[str, str]
 ) -> subprocess.CompletedProcess[str]:
+    """Run the role's real run-read shell against one scripted server."""
     env_file = tmp_path / "server.env"
     _ = env_file.write_text(f"FABRO_DEV_TOKEN=stale\nFABRO_DEV_TOKEN={_TOKEN}\n", encoding="utf-8")
+    server = _serve(responder=responder, seen=seen)
     env = {
         "PATH": os.environ["PATH"],
         "FABRO_SERVER_ENV_FILE": str(env_file),
-        "FABRO_SERVER_RUNS_URL": url,
+        "FABRO_SERVER_RUNS_URL": f"http://127.0.0.1:{server.server_port}/api/v1/runs",
         **extra_env,
     }
-    return subprocess.run(
-        ["/bin/bash", "-c", _read_runs_command()],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=False,
-    )
-
-
-def test_the_run_read_keeps_every_non_terminal_run_from_a_server_that_refuses_unknown_status_variants(
-    tmp_path: Path,
-) -> None:
-    """The guard pages every run and filters client-side, so no build's status enum can refuse it."""
-    runs = _fake_runs()
-    seen: list[dict[str, list[str]]] = []
-    server = _strict_fabro_server(runs=runs, seen=seen)
-    url = f"http://127.0.0.1:{server.server_port}/api/v1/runs"
     try:
-        probe = subprocess.run(
-            [
-                "curl",
-                "--silent",
-                "--get",
-                "--data-urlencode",
-                "status=starting",
-                "--write-out",
-                "%{http_code}",
-                url,
-            ],
+        return subprocess.run(
+            ["/bin/bash", "-c", _read_runs_command()],
             capture_output=True,
             text=True,
+            env=env,
             check=False,
         )
-        result = _run_read(tmp_path=tmp_path, url=url, extra_env={})
     finally:
         server.shutdown()
 
-    assert probe.stdout.endswith(
-        "400"
-    ), "the fake must refuse an unknown status variant as the live server does"
-    assert "unknown variant `starting`" in probe.stdout
+
+def test_the_run_read_keeps_every_non_terminal_run_including_the_removing_runs_fabro_hides(
+    tmp_path: Path,
+) -> None:
+    """Every status page is read, `removing` is asked for by name, and only terminal runs drop."""
+    runs = _fake_runs()
+    seen: list[_Query] = []
+    listing = _fabro_listing(runs=runs)
+    refused_status, refused_body = listing({"status": ["starting"]})
+    result = _run_read(tmp_path=tmp_path, responder=listing, seen=seen, extra_env={})
+
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    expected = [run["id"] for run in runs if _fake_kind(run=run) not in _TERMINAL_KINDS]
+    kept = [run["id"] for run in payload["data"]]
+    expected = {run["id"] for run in runs if _fake_kind(run=run) not in _TERMINAL_KINDS}
+    removing = {run["id"] for run in runs if _fake_kind(run=run) == "removing"}
     facts = [
-        [run["id"] for run in payload["data"]] == expected,
-        {"run-paused", "run-starting", "run-legacy-shape"}
-        <= {run["id"] for run in payload["data"]},
-        "run-legacy-done" not in {run["id"] for run in payload["data"]},
+        refused_status == 400,
+        b"unknown variant `starting`" in refused_body,
+        set(kept) == expected,
+        len(kept) == len(set(kept)),
+        removing <= set(kept),
+        {"run-paused", "run-starting", "run-legacy-shape"} <= set(kept),
+        "run-legacy-done" not in kept,
         payload["meta"]["has_more"] is False,
-        all("status" not in query for query in seen[1:]),
-        all(query["authorization"] == [f"Bearer {_TOKEN}"] for query in seen[1:]),
-        len(seen) - 1 == 3,
+        all(query.get("status", ["removing"]) == ["removing"] for query in seen),
+        any(query.get("status") == ["removing"] for query in seen),
+        all(query["authorization"] == [f"Bearer {_TOKEN}"] for query in seen),
     ]
-    assert all(facts), (facts, result.stdout[:400], seen[1:])
+    assert all(facts), (facts, result.stdout[:400], seen)
+
+
+def test_the_run_read_reports_no_run_when_every_run_is_terminal(tmp_path: Path) -> None:
+    """A listing of only finished runs lets the retirement proceed with nothing held."""
+    runs: list[dict[str, object]] = [
+        {"id": f"done-{index}", "lifecycle": {"status": {"kind": kind}}}
+        for index, kind in enumerate(["succeeded", "failed", "archived"] * 50)
+    ]
+    seen: list[_Query] = []
+    result = _run_read(
+        tmp_path=tmp_path, responder=_fabro_listing(runs=runs), seen=seen, extra_env={}
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [payload["data"], payload["meta"]["has_more"]] == [[], False]
 
 
 def test_the_run_read_reports_more_runs_when_its_page_bound_is_reached(tmp_path: Path) -> None:
     """A listing longer than the page bound reaches the role's has_more refusal, never a partial pass."""
-    seen: list[dict[str, list[str]]] = []
-    server = _strict_fabro_server(runs=_fake_runs(), seen=seen)
-    try:
-        result = _run_read(
-            tmp_path=tmp_path,
-            url=f"http://127.0.0.1:{server.server_port}/api/v1/runs",
-            extra_env={"FABRO_SERVER_RUNS_MAX_PAGES": "2"},
-        )
-    finally:
-        server.shutdown()
+    seen: list[_Query] = []
+    result = _run_read(
+        tmp_path=tmp_path,
+        responder=_fabro_listing(runs=_fake_runs()),
+        seen=seen,
+        extra_env={"FABRO_SERVER_RUNS_MAX_PAGES": "1"},
+    )
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert [payload["meta"]["has_more"], len(seen)] == [True, 2]
+
+
+def _answering(*, status: int, body: str) -> _Responder:
+    """A server that gives every request the same answer."""
+
+    def respond(query: _Query) -> tuple[int, bytes]:
+        _ = query
+        return status, body.encode()
+
+    return respond
+
+
+def _refusing_the_removing_read(query: _Query) -> tuple[int, bytes]:
+    """A build whose status enum lacks `removing`: the unfiltered page is fine."""
+    if "status" in query:
+        return 400, b"unknown variant `removing`"
+    return 200, json.dumps({"data": [], "meta": {"has_more": False}}).encode()
+
+
+_UNREADABLE_LISTINGS: dict[str, _Responder] = {
+    "server error": _answering(status=500, body='{"errors": []}'),
+    "empty object": _answering(status=200, body="{}"),
+    "no meta": _answering(status=200, body='{"data": []}'),
+    "no has_more": _answering(status=200, body='{"data": [], "meta": {"total": 0}}'),
+    "has_more not a boolean": _answering(
+        status=200, body='{"data": [], "meta": {"has_more": "false"}}'
+    ),
+    "data not a list": _answering(status=200, body='{"data": "x", "meta": {"has_more": false}}'),
+    "body not an object": _answering(status=200, body="[]"),
+    "removing filter refused": _refusing_the_removing_read,
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_UNREADABLE_LISTINGS))
+def test_the_run_read_refuses_a_listing_it_cannot_read_completely(
+    tmp_path: Path, shape: str
+) -> None:
+    """Any listing the guard cannot read in full fails the task, never proceeds as empty."""
+    seen: list[_Query] = []
+    result = _run_read(
+        tmp_path=tmp_path, responder=_UNREADABLE_LISTINGS[shape], seen=seen, extra_env={}
+    )
+
+    assert result.returncode != 0, (shape, result.stdout)
+    assert "run listing refused" in result.stderr, (shape, result.stderr)
+    assert _TOKEN not in result.stdout + result.stderr
