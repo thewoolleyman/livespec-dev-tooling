@@ -90,6 +90,52 @@ def _flaky_repository(
     return repo
 
 
+def _touched_flaky_repository(*, root: Path, kind: str) -> Path:
+    """Create a failing test with one changed closure module or named path."""
+    repo = root / "repo"
+    _init_repo(repo=repo)
+    _write_touched_flaky_base(repo=repo, kind=kind)
+    _git(repo=repo, args=["add", "-A"])
+    _git(repo=repo, args=["commit", "-qm", "failing test base"])
+    _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    if kind == "module":
+        _ = (repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+        changed_path = "app.py"
+    elif kind == "literal":
+        _ = (repo / "fixture-data.json").write_text("changed\n", encoding="utf-8")
+        changed_path = "fixture-data.json"
+    else:
+        _ = (repo / "fixtures" / "changed.json").write_text("changed\n", encoding="utf-8")
+        changed_path = "fixtures/changed.json"
+    _commit_touched_path(repo=repo, path=changed_path)
+    return repo
+
+
+def _write_touched_flaky_base(*, repo: Path, kind: str) -> None:
+    """Write a clean base whose later change is the touched closure evidence."""
+    test_source = _FLAKY_TEST
+    if kind == "module":
+        _ = (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        test_source = "import app\n\n" + test_source
+    elif kind == "literal":
+        test_source = "DATA_FILE = 'fixture-data.json'\n\n" + test_source
+        _ = (repo / "fixture-data.json").write_text("base\n", encoding="utf-8")
+    else:
+        test_source = "FIXTURES = 'fixtures'\n\n" + test_source
+        fixtures = repo / "fixtures"
+        fixtures.mkdir()
+        _ = (fixtures / "base.json").write_text("base\n", encoding="utf-8")
+    _ = (repo / "test_flaky.py").write_text(test_source, encoding="utf-8")
+    _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
+    _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
+
+
+def _commit_touched_path(*, repo: Path, path: str) -> None:
+    """Commit the one changed closure path after recording the fixture's base."""
+    _git(repo=repo, args=["add", path])
+    _git(repo=repo, args=["commit", "-qm", "touched closure"])
+
+
 def _fixture_finalizer_repository(
     *, root: Path, scope: str, after_retry: bool = False, same_module: bool = False
 ) -> Path:
@@ -285,6 +331,89 @@ def test_a_failing_test_the_run_touched_fails_at_once_with_no_retry(*, tmp_path:
     assert "rerun" not in completed.stdout
     assert "FLAKE-RETRIED" not in completed.stdout
     assert not (repo / "tmp" / "flake-retries").exists()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("kind", "expected_evidence"),
+    [
+        ("module", "changed closure module app.py"),
+        ("literal", "closure string literal 'fixture-data.json'"),
+        ("directory", "closure string literal 'fixtures'"),
+    ],
+)
+def test_a_failing_touched_test_names_the_evidence_that_withheld_its_retry(
+    *, tmp_path: Path, kind: str, expected_evidence: str
+) -> None:
+    """A touched failure names the module, literal, or directory behind the hold."""
+    repo = _touched_flaky_repository(root=tmp_path, kind=kind)
+
+    completed = _run_session(repo=repo)
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 1, output
+    assert "FLAKE-RETRY-WITHHELD" in output
+    assert "test_flaky.py::test_flaky" in output
+    assert expected_evidence in output
+    assert "rerun" not in output
+
+
+@pytest.mark.integration
+def test_a_touched_failure_reaches_the_xdist_controller_with_a_github_annotation(
+    *, tmp_path: Path
+) -> None:
+    """A worker's touched hold reaches the controller and GitHub Actions output."""
+    repo = _touched_flaky_repository(root=tmp_path, kind="module")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:livespec_flake_retry",
+            "-p",
+            "livespec_dev_tooling.flake_retry",
+            "-n",
+            "2",
+            "test_flaky.py",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+        env={**_environ_without_github(), "GITHUB_ACTIONS": "true"},
+    )
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 1, output
+    assert "FLAKE-RETRY-WITHHELD" in output
+    assert "test_flaky.py::test_flaky" in output
+    assert "changed closure module app.py" in output
+    assert "::warning::FLAKE-RETRY-WITHHELD test_flaky.py::test_flaky" in output
+
+
+def test_a_safe_closure_still_has_no_withheld_reason_without_change_paths(
+    *, tmp_path: Path
+) -> None:
+    """The optional reason API preserves its uncertainty-only caller behavior."""
+    test_path = tmp_path / "test_example.py"
+    _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
+    decisions = importlib.import_module("livespec_dev_tooling.flake_retry_decisions")
+
+    assert (
+        decisions.retry_withheld_reason_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            memo={},
+            change_paths=None,
+        )
+        is None
+    )
 
 
 @pytest.mark.integration
