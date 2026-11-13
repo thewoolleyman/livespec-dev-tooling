@@ -174,7 +174,7 @@ class _Cluster:
             check=False,
         )
         patch = self.fake / "patch.json"
-        if run.returncode == 0 and patch.exists() and "--dry-run" not in args:
+        if run.returncode in (0, 3) and patch.exists() and "--dry-run" not in args:
             ops: list[_Json] = json.loads(patch.read_text(encoding="utf-8"))
             assert ops[0] == {
                 "op": "test",
@@ -274,7 +274,7 @@ def test_a_lane_whose_idle_share_cannot_be_read_falls_back_to_the_static_order(
     cluster.lane_node = {_FLAVOR[_GMK]: _GMK, _FLAVOR[_PE]: _PE}
     cluster.used_cpu = {_FLAVOR[_GMK]: 0, _FLAVOR[_PE]: 0}
     run = cluster.reconcile()
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == 3, run.stderr
     assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE]]
     assert cluster.admit() == _GMK
     assert f"UNREAD node={_PE} reading=cpu.idle60 why=reading is unreadable" in run.stdout
@@ -296,7 +296,7 @@ def test_every_unread_reading_is_logged_by_node_and_never_taken_as_saturated_or_
 ) -> None:
     cluster = _pool(tmp_path, [_saturated(_GMK), broken], lanes=[_PE, _GMK])
     run = cluster.reconcile()
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == 3, run.stderr
     assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE]]  # the static order, not "PE is free"
     assert f"UNREAD node={_PE} reading={reading} why=" in run.stdout
 
@@ -304,8 +304,38 @@ def test_every_unread_reading_is_logged_by_node_and_never_taken_as_saturated_or_
 def test_a_lane_node_the_cluster_does_not_know_is_an_unread_reading(tmp_path: Path) -> None:
     cluster = _pool(tmp_path, [_free(_GMK)], lanes=[_GMK, _PE])
     run = cluster.reconcile()
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == 3, run.stderr
     assert f"UNREAD node={_PE} reading=cpu.idle60 why=node not found" in run.stdout
+
+
+def test_an_unread_gate_lane_raises_one_named_alarm_and_fails_the_pass(
+    tmp_path: Path,
+) -> None:
+    cluster = _pool(tmp_path, [_saturated(_GMK)], lanes=[_GMK, _PE])
+    cluster.write_queue([_FLAVOR[_PE], _FLAVOR[_GMK]])  # a previously steered order
+    run = cluster.reconcile()
+    assert run.returncode == 3, run.stderr
+    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE]]
+    alarm_lines = [line for line in run.stderr.splitlines() if "ALARM" in line]
+    assert len(alarm_lines) == 1
+    assert _PE in alarm_lines[0]
+    assert "cpu.idle60" in alarm_lines[0]
+    assert "ci.slice.some.avg60" in alarm_lines[0]
+
+    dry_path = tmp_path / "dry-run"
+    dry_path.mkdir()
+    dry_run = _pool(dry_path, [_saturated(_GMK)], lanes=[_GMK, _PE])
+    dry = dry_run.reconcile("--dry-run")
+    assert dry.returncode == 3, dry.stderr
+    assert "ALARM" in dry.stderr
+    assert not dry_run.patched()
+
+    healthy_path = tmp_path / "healthy"
+    healthy_path.mkdir()
+    healthy = _pool(healthy_path, [_free(_GMK), _free(_PE)], lanes=[_GMK, _PE])
+    complete = healthy.reconcile()
+    assert complete.returncode == 0, complete.stderr
+    assert "ALARM" not in complete.stderr
 
 
 def test_a_node_that_joins_the_pool_is_covered_without_editing_the_reconciler(
