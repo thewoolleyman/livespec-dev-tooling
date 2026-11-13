@@ -12,6 +12,10 @@ ConditionPathExists=/etc/otel-collector/config.yaml
 ConditionPathExists=/etc/otel-collector/.env
 
 [Service]
+# Transitional compatibility: before the pinned configuration is split, its
+# pod receiver still reads this value. The leading `-` keeps the host collector
+# independent of cni0 once it runs the split host-only configuration.
+EnvironmentFile=-/etc/otel-collector/node.env
 EnvironmentFile=/etc/otel-collector/.env
 ExecStart=/usr/local/bin/otelcol-contrib --config=/etc/otel-collector/config.yaml
 Restart=on-failure
