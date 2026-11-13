@@ -953,24 +953,24 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
-    "test": "TODO",
-    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that answers the first fetch with an anonymous 401 and a later one with the ref, and the test shows a second attempt after a wait, the consumer's recipe running, and one log line per attempt naming its number and class. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
+    "test": "tests.test_gate_forge_retry.test_a_throttled_401_is_retried_until_the_fetch_succeeds",
+    "reason": "Integration-tier: the rendered gate Job's shipped forge-retry helper retries an anonymous 401 and logs each attempt before succeeding (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
-    "test": "TODO",
-    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that reports the pinned ref not found, and the test shows exactly one fetch, a FATAL line naming the ref, and no recipe run. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
+    "test": "tests.test_gate_forge_retry.test_a_missing_ref_is_never_retried",
+    "reason": "Integration-tier: the rendered gate Job's shipped forge-retry helper fails a missing ref after exactly one fetch (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
-    "test": "TODO",
-    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer naming a private sibling drives the shipped gate client's mint through a forge double that answers the token request with HTTP 500 and then with a token, and the test shows a second request after a wait, the minted token reaching the gate Job's private clone, and per-attempt status lines that never contain the token. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
+    "test": "tests.livespec_dev_tooling.test_mint_private_sibling_token.test_a_transient_mint_server_error_is_retried_until_the_token_is_minted",
+    "reason": "Integration-tier: the shipped private-sibling minter retries an HTTP 500, mints the scoped token, and keeps that token out of its attempt log (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -1612,8 +1612,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding a dead session's aged scratch directory and an equally aged one whose session id a real live child process carries; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ovnrsv on 2026-11-13.)",
+    "test": "tests.livespec_dev_tooling.test_dev_host_retention_tmpfs.test_retention_keeps_sessions_held_by_process_cwd_or_file_descriptor",
+    "reason": "Integration-tier: the committed retention script retains live scratch directories and removes an aged dead peer in one fixture process tree (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2209,8 +2209,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a pytest session in which an untouched test's first attempt fails with a failure text over 4000 characters and its second passes, then reading its tmp/flake-retries/ record and FLAKE-RETRIED block; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-b7l6it on 2026-11-13.)",
+    "test": "tests.livespec_dev_tooling.test_flake_retry_session.test_a_rerun_record_and_summary_carry_a_long_failed_attempt_text",
+    "reason": "Integration-tier: a real rerun session records and summarizes the identifying text of a failed attempt longer than 4000 characters (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2396,8 +2396,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-zfgtin owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-fdquen on 2026-11-13.)",
+    "test": "tests.livespec_dev_tooling.test_incident_recovery_principal.test_moved_master_is_recomputed_against_the_new_head_preserving_later_work",
+    "reason": "Integration-tier: the recovery principal recomputes the complete inverse against a moved master, preserves later work, and records the recovery action (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2684,8 +2684,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the production join's per-class enrollment against a mocked cluster and mocked node resources, and a host-captured rejoin. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ko26ez.7 on 2026-11-13.)",
+    "test": "tests.spec.test_homelab_worker_enroll.test_every_class_declaring_the_nodes_architecture_is_enrolled",
+    "reason": "Integration-tier: the production enrollment script labels every workload class declared for the worker architecture (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2714,8 +2714,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: it exercises a measured departure of the real worker during live load, plus a stub test of the rejoin path. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ko26ez.8 on 2026-11-13.)",
+    "test": "tests.spec.test_homelab_worker_departure_drill.test_each_captured_pod_is_classified_from_the_read_back",
+    "reason": "Integration-tier: the departure drill reads live workload replacements after the worker rejoins and reports their preservation state (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2806,8 +2806,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a held service converges installed and disabled",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this scenario: the held editor-stack role converged with its enable variable at the held value, asserting its units are installed, disabled and inactive, a second converge changes nothing, and a hand-enabled unit reads as drift. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-fmbnyd on 2026-11-13.)",
+    "test": "tests.spec.test_vps_editor_stack_provisioning.test_the_dev_host_provisions_the_held_editor_stack_from_one_role",
+    "reason": "Integration-tier: the dev-host editor-stack role owns both service units while its false hold leaves them stopped and disabled (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {

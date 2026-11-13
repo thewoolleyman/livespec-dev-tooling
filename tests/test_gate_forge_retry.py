@@ -16,6 +16,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 __all__: list[str] = []
 
 _FORGE_RETRY = (
@@ -81,6 +83,7 @@ def _calls(*, tmp_path: Path) -> int:
     return int((tmp_path / "calls").read_text(encoding="utf-8").strip())
 
 
+@pytest.mark.integration
 def test_a_throttled_401_is_retried_until_the_fetch_succeeds(*, tmp_path: Path) -> None:
     """A 401 from the shared egress is retried, and the next good answer is a pass."""
     bin_dir = _fake_git(tmp_path=tmp_path, answers=[(128, _UNAUTHENTICATED), (0, "")])
@@ -93,6 +96,7 @@ def test_a_throttled_401_is_retried_until_the_fetch_succeeds(*, tmp_path: Path) 
     assert "attempt 2/5: ok" in result.stderr
 
 
+@pytest.mark.integration
 def test_a_missing_ref_is_never_retried(*, tmp_path: Path) -> None:
     """A ref the forge reports missing fails at once with git's own status."""
     bin_dir = _fake_git(tmp_path=tmp_path, answers=[(128, _MISSING_REF), (0, "")])

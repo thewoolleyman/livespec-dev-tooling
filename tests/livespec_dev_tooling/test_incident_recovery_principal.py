@@ -53,6 +53,7 @@ from livespec_dev_tooling.incident_recovery_principal import RecoveryPrincipal
 REPOSITORY = "owner/repo"
 _PEM = "-----BEGIN RSA PRIVATE KEY-----\nZmFrZQ==\n-----END RSA PRIVATE KEY-----\n"
 _OK, _CREATED, _NOT_FOUND, _UNPROCESSABLE = 200, 201, 404, 422
+pytestmark = pytest.mark.integration
 
 
 def git(repo, *args, data=None, env=None):
