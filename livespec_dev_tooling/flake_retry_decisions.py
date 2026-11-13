@@ -33,6 +33,7 @@ from livespec_dev_tooling.flake_retry_release import version_only_release_change
 __all__: list[str] = [
     "RETRY_ATTEMPTS",
     "RETRY_DELAY_SECONDS",
+    "Closure",
     "retry_marker_for",
     "retry_withheld_reason_for",
     "session_withheld_reason",
@@ -228,17 +229,43 @@ def _unsafe_change_reason(*, repo_root: Path, change_paths: set[Path]) -> str | 
     return "a flake-retry plugin change"
 
 
+Closure = tuple[set[Path], set[str], bool] | None
+
+
+def _solved_closure(
+    *,
+    repo_root: Path,
+    test_path: Path,
+    memo: dict[Path, _ModuleFacts | None] | None,
+    closures: dict[Path, Closure] | None,
+) -> Closure:
+    """Solve a test path's closure once per caller's session when `closures` is given.
+
+    Collection asks both `retry_withheld_reason_for` and `retry_marker_for`
+    about every item, and a test file holds many items, so `closures` keeps
+    each test path's solved closure beside `memo`'s parsed modules.
+    """
+    if closures is None:
+        return _closure(repo_root=repo_root, test_path=test_path, memo=memo)
+    if test_path not in closures:
+        closures[test_path] = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
+    return closures[test_path]
+
+
 def retry_withheld_reason_for(
     *,
     repo_root: Path,
     test_path: Path,
     memo: dict[Path, _ModuleFacts | None],
     change_paths: set[Path] | None = None,
+    closures: dict[Path, Closure] | None = None,
 ) -> str | None:
     """Name the closure evidence that makes this test itself count as touched."""
     if not test_path.is_relative_to(repo_root):
         return None
-    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
+    analyzed = _solved_closure(
+        repo_root=repo_root, test_path=test_path, memo=memo, closures=closures
+    )
     if analyzed is None:
         return "an unparseable closure module"
     if analyzed[2]:
@@ -266,12 +293,13 @@ def session_withheld_reason(
     return unsafe
 
 
-def retry_marker_for(
+def retry_marker_for(  # noqa: PLR0913 — the two caches and the retry policy are each optional.
     *,
     repo_root: Path,
     test_path: Path,
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
+    closures: dict[Path, Closure] | None = None,
     retry_attempts: int = RETRY_ATTEMPTS,
     retry_delay_seconds: int = RETRY_DELAY_SECONDS,
 ) -> dict[str, int] | None:
@@ -285,15 +313,13 @@ def retry_marker_for(
         return None
     if _unsafe_change_reason(repo_root=repo_root, change_paths=change_paths) is not None:
         return None
-    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
-    if analyzed is None:
-        return None
     if (
         retry_withheld_reason_for(
             repo_root=repo_root,
             test_path=test_path,
             memo={} if memo is None else memo,
             change_paths=change_paths,
+            closures=closures,
         )
         is not None
     ):
