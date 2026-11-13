@@ -456,8 +456,12 @@ def test_an_accepting_push_submits_no_gate_job_and_names_the_job_and_tree(
     )
     reuse = _carrying(run=run, needle="green_token pre-push-evidence")
     assert reuse == [
-        "uv run python -m livespec_dev_tooling.green_token pre-push-evidence " + " ".join(_MEMBERS)
-    ], f"the shared entry point must receive the consumer's check set; invoked={run.invoked}"
+        "uv run python -m livespec_dev_tooling.green_token pre-push-evidence "
+        + " ".join(member for member in _MEMBERS if member != _HOOK_OMITTED)
+    ], (
+        f"the shared entry point must receive the consumer's check set without the member "
+        f"every hook path omits; invoked={run.invoked}"
+    )
     assert not _carrying(run=run, needle="just-env"), (
         f"the shared entry point, rather than this script's aggregate, owns the narrowed run; "
         f"invoked={run.invoked}"

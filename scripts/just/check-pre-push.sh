@@ -105,12 +105,16 @@ fi
 # `pre-push-evidence` command. Consumers pass their own check-set members, so its
 # host-only rerun is identical across the fleet rather than copied into each
 # pre-push hook. Its status 3 means no qualifying evidence and falls through to
-# this hook's ordinary delegated/local gate below.
+# this hook's ordinary delegated/local gate below. `check-fleet-conformance-admin`
+# is left out of the list: `hook_gate_skips` in check.sh omits it from every hook
+# gate because it reads admin-scoped fleet state, so the shared command must not
+# run it on a push either.
 pre_push_members=()
 if [ -f check-targets.txt ]; then
     mapfile -t pre_push_members < <(
         sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt \
-            | grep -E '^check-' || true
+            | grep -E '^check-' \
+            | grep -vxF 'check-fleet-conformance-admin' || true
     )
 fi
 pre_push_reuse_status=0
