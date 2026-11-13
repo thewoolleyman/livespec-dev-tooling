@@ -3895,5 +3895,29 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## No credential in a process's argument vector",
+    "test": "TODO",
+    "reason": "Spec-first (v214): a real test at the integration tier or above is owed for this heading, running each shipped script that hands a credential to a child process with a recording stand-in and asserting the credential is absent from every recorded argument vector; livespec-dev-tooling-d5k6qc owns it.",
+    "work_item": "livespec-dev-tooling-d5k6qc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a shipped script hands its Honeycomb key to curl without placing it in curl's argument vector",
+    "test": "TODO",
+    "reason": "Spec-first (v214): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving pressure-telemetry.sh and apply-triggers.sh against a recording curl stand-in; livespec-dev-tooling-d5k6qc owns it.",
+    "work_item": "livespec-dev-tooling-d5k6qc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a dev host that stops sending host metrics fires its no-data trigger",
+    "test": "TODO",
+    "reason": "Spec-first (v214): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, rendering the per-host no-data trigger definitions from the committed dev-host list and asserting one definition per host; livespec-dev-tooling-exx6f5 owns it.",
+    "work_item": "livespec-dev-tooling-exx6f5"
   }
 ]
