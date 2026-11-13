@@ -108,6 +108,23 @@ def _duration_notices(*, jobs: Sequence[dict[str, object]], now: datetime) -> li
     return [notice for notice in candidates if notice is not None]
 
 
+def _stale_detector_notices(
+    *, now: datetime, last_success: str, interval_seconds: int
+) -> list[Notice]:
+    """Report the detector when it has missed more than two scheduled intervals."""
+    last_run = cast(datetime, _timestamp(value=last_success))
+    if now - last_run <= timedelta(seconds=interval_seconds * 2):
+        return []
+    return [
+        Notice(
+            message=(
+                "coverage reuse outcome detector stale: "
+                f"last_success={last_success} interval_seconds={interval_seconds}"
+            )
+        )
+    ]
+
+
 def evaluate(
     *,
     outcomes: Sequence[dict[str, object]],
@@ -117,7 +134,6 @@ def evaluate(
     interval_seconds: int,
 ) -> list[Notice]:
     """Render every recorded mandatory-consumer fallback as a notification."""
-    _ = (last_success, interval_seconds)
     fallback_notices = [
         Notice(
             message=(
@@ -138,4 +154,9 @@ def evaluate(
         now=current_time,
     )
     duration_notices = _duration_notices(jobs=jobs, now=current_time)
-    return [*fallback_notices, *missing_notices, *duration_notices]
+    stale_notices = _stale_detector_notices(
+        now=current_time,
+        last_success=last_success,
+        interval_seconds=interval_seconds,
+    )
+    return [*fallback_notices, *missing_notices, *duration_notices, *stale_notices]

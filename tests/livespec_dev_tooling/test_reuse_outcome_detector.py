@@ -166,3 +166,21 @@ def test_duration_regression_names_job_and_compares_24_hour_p90_to_7_day_baselin
         "CI duration regression: job=check-coverage runner=k3s "
         "p90_24h_seconds=1260 baseline_7d_seconds=300"
     ]
+
+
+def test_stale_detector_heartbeat_names_the_detector() -> None:
+    """A missed detector schedule cannot remain silent for longer than two intervals."""
+    detector = importlib.import_module("livespec_dev_tooling.reuse_outcome_detector")
+
+    notices = detector.evaluate(
+        outcomes=[],
+        jobs=[],
+        now="2026-11-12T21:00:00Z",
+        last_success="2026-11-12T20:29:00Z",
+        interval_seconds=900,
+    )
+
+    assert [notice.message for notice in notices] == [
+        "coverage reuse outcome detector stale: last_success=2026-11-12T20:29:00Z "
+        "interval_seconds=900"
+    ]
