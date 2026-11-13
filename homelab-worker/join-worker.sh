@@ -109,6 +109,28 @@ converge() {
   in_vm bash -s -- "$worker" "$host" "$image" "$state_root" $worker_network <"$hw/vm/converge-worker-container.sh"
 }
 
+bridge_address() {
+  in_vm docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null |
+    awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true
+}
+
+refresh_pod_span_endpoint() {
+  local bridge waited
+  waited=0
+  bridge="$(bridge_address)"
+  until [ -n "$bridge" ]; do
+    if [ "$waited" -ge "$wait_seconds" ]; then
+      say "pod-span endpoint is not yet set: cni0 received no address within ${wait_seconds}s after Node registration"
+      return
+    fi
+    sleep "$poll"
+    waited=$((waited + poll))
+    bridge="$(bridge_address)"
+  done
+  converge
+  say "pod-span endpoint now uses cni0 at $bridge:4319"
+}
+
 if kubectl get node "$worker" >/dev/null 2>&1; then
   say "Node $worker is already registered; reconciling its container without a new enrollment"
   converge
@@ -134,6 +156,7 @@ until kubectl get node "$worker" >/dev/null 2>&1; do
   waited=$((waited + poll))
 done
 say "Node $worker registered"
+refresh_pod_span_endpoint
 
 waited=0
 until "$hw/enrollment/approve-serving-csr.sh" "$host" | grep '^approve-serving-csr: approved ' >/dev/null; do
