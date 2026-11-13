@@ -71,6 +71,16 @@ jobs:
     permissions:
       id-token: write
     steps:
+      # uv is pinned to the version this library's .mise.toml pins, and installed
+      # through the same mise action the shipped pin-freshness workflow uses. No
+      # checkout is needed, because the tool list is given inline.
+      - name: Install the pinned uv via mise
+        uses: jdx/mise-action@v4
+        with:
+          mise_toml: |
+            [tools]
+            uv = "0.9.26"
+
       # The tag comes from incident-ci, which resolved it from the forge's latest
       # release; this job installs exactly that tag of THIS library (a consumer
       # calls it from its own repository) into a venv outside any workspace, and
@@ -86,8 +96,8 @@ jobs:
             *) echo "::error::incident-ci-publish: release input '${RELEASE}' is not a release tag"; exit 1 ;;
           esac
           venv="${RUNNER_TEMP}/released-dev-tooling"
-          python3 -m venv "$venv"
-          "${venv}/bin/python" -m pip install --quiet \
+          uv venv --python 3.10 "$venv"
+          uv pip install --python "${venv}/bin/python" \
             "livespec-dev-tooling @ git+https://github.com/thewoolleyman/livespec-dev-tooling@${RELEASE}"
           resolved="$("${venv}/bin/python" -I -c 'import livespec_dev_tooling as m; print(m.__file__)')"
           case "$resolved" in
