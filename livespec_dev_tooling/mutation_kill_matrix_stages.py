@@ -21,11 +21,13 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from livespec_dev_tooling.mutation_kill_matrix import Mutant
 from livespec_dev_tooling.mutation_kill_matrix_cache import CacheKeys
@@ -44,6 +46,10 @@ from livespec_dev_tooling.mutation_kill_matrix_measurement import (
     measurement_path,
     reuse_or_measure,
     still_failing,
+)
+from livespec_dev_tooling.mutation_kill_matrix_pytest_plugin import (
+    COLLECTED_VARIABLE,
+    SELECT_VARIABLE,
 )
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
     MutantLocator,
@@ -101,9 +107,18 @@ def _mutants_from_results(*, output: str) -> list[Mutant]:
     ]
 
 
-def _collected_tests(*, output: str) -> list[str]:
-    """Extract pytest node IDs from quiet collection output."""
-    return sorted(line.strip() for line in output.splitlines() if "::" in line and " " not in line)
+def _collected_tests(*, path: Path) -> list[str]:
+    """Read the final pytest item inventory without parsing human console output."""
+    failure = "pytest collection inventory is missing or invalid"
+    try:
+        loaded: object = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(failure) from exc
+    if isinstance(loaded, list):
+        nodes = cast("list[object]", loaded)
+        if all(isinstance(node, str) for node in nodes):
+            return sorted(cast("list[str]", nodes))
+    raise RuntimeError(failure)
 
 
 def _checked_command(
@@ -130,13 +145,27 @@ def generate(*, execute: CommandExecutor, target: Path) -> tuple[list[Mutant], l
     mutants = _mutants_from_results(output=results.stdout)
     if not mutants:
         raise RuntimeError(_NO_MUTANTS)
-    collected = _checked_command(
-        execute=execute,
-        args=[*PYTHON, "-m", "pytest", "--collect-only", "-q", "--ignore=mutants"],
-        target=target,
-        failure="pytest collection failed for the kill matrix",
-    )
-    return mutants, _collected_tests(output=collected.stdout)
+    with tempfile.TemporaryDirectory(prefix="kill-matrix-collection-") as scratch:
+        inventory = Path(scratch) / "collected.json"
+        _ = _checked_command(
+            execute=execute,
+            args=[
+                "env",
+                f"{COLLECTED_VARIABLE}={inventory}",
+                f"{SELECT_VARIABLE}=",
+                *PYTHON,
+                "-m",
+                "pytest",
+                "-p",
+                PLUGIN_MODULE,
+                "--collect-only",
+                "-q",
+                "--ignore=mutants",
+            ],
+            target=target,
+            failure="pytest collection failed for the kill matrix",
+        )
+        return mutants, _collected_tests(path=inventory)
 
 
 def measure(
