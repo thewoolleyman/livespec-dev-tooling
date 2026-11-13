@@ -31,6 +31,7 @@ _CLASSES = frozenset({"fast", "slow", "not-applicable"})
 # naming the member line, so nothing is run, deferred or receipted.
 _RECIPE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _UNUSABLE = "incident-inventory-unusable-member"
+_UNCLASSIFIED = "incident-inventory-unclassified-member"
 
 
 def timing_classes(*, inventory: str) -> dict[str, str]:
@@ -54,7 +55,9 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
     """Build argv from the canonical inventory, retaining explicit deferrals.
 
     These annotations are comments to the normal aggregate's existing reader.
-    A member that is not a bare recipe name raises `ValueError` naming it.
+    A member that is not a bare recipe name, or whose timing class is missing or
+    not exactly one recognised class, raises `ValueError` naming it
+    (livespec-dev-tooling-dixgta): an unclassified member is never deferred in silence.
     """
     members = inventory_lines(text=inventory)
     unusable = [member.name for member in members if _RECIPE.fullmatch(member.name) is None]
@@ -63,6 +66,17 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
             f"{_UNUSABLE}: {unusable[0]!r} is not a bare recipe name;"
             " nothing was run, deferred or receipted"
         )
+        raise ValueError(message)
+    classes = timing_classes(inventory=inventory)
+    for member in members:
+        if classes[member.name] != "unclassified":
+            continue
+        why = (
+            "declares no incident-timing class"
+            if not annotation_values(member=member, key=_TIMING_KEY)
+            else "has no single recognised incident-timing class (fast, slow or not-applicable)"
+        )
+        message = f"{_UNCLASSIFIED}: {member.name!r} {why}; nothing was run, deferred or receipted"
         raise ValueError(message)
     preconditions = {
         member.name: " ".join(annotation_values(member=member, key=_PRECONDITION_KEY))
@@ -75,5 +89,5 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
             classification=timing,
             precondition=preconditions[name],
         )
-        for name, timing in timing_classes(inventory=inventory).items()
+        for name, timing in classes.items()
     )
