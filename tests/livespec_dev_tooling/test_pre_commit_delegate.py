@@ -540,6 +540,51 @@ def test_the_gated_tree_recipe_restores_the_staged_index_before_the_aggregate(
     assert _git(cwd=tmp_path, args=["write-tree"]) == tree
 
 
+def test_the_gated_tree_recipe_restores_merge_heads_before_the_aggregate(*, tmp_path: Path) -> None:
+    """The remote aggregate receives the merge state that the local hook sees."""
+    scripts = tmp_path / "scripts" / "just"
+    scripts.mkdir(parents=True)
+    recipe = _REPO_ROOT / "scripts" / "just" / "check-pre-commit-gated-tree.sh"
+    _ = shutil.copy(recipe, scripts / recipe.name)
+    seen = tmp_path / "seen.txt"
+    stub = scripts / "check-pre-commit.sh"
+    _ = stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'{{ git rev-parse HEAD; cat "$(git rev-parse --git-path MERGE_HEAD)"; '
+        f'git diff --cached --name-only; }} > "{seen}"\n'
+        "exit 7\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
+    _ = (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "base.txt", "scripts"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
+    parent = _git(cwd=tmp_path, args=["rev-parse", "HEAD"])
+    base_tree = _git(cwd=tmp_path, args=["write-tree"])
+    merge_head = _git(cwd=tmp_path, args=["commit-tree", base_tree, "-p", parent, "-m", "merged"])
+    _ = (tmp_path / "staged.txt").write_text("staged\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "staged.txt"])
+    tree = _git(cwd=tmp_path, args=["write-tree"])
+    commit = _git(
+        cwd=tmp_path,
+        args=["commit-tree", tree, "-p", parent, "-p", merge_head, "-m", "staged merge"],
+    )
+    _git(cwd=tmp_path, args=["reset", "-q", "--hard", commit])
+
+    ran = subprocess.run(
+        ["bash", str(scripts / recipe.name)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert ran.returncode == 7
+    assert seen.read_text(encoding="utf-8").split() == [parent, merge_head, "staged.txt"]
+    assert _git(cwd=tmp_path, args=["write-tree"]) == tree
+
+
 def test_only_a_clean_full_pre_commit_aggregate_records_reusable_evidence(
     *, tmp_path: Path
 ) -> None:
