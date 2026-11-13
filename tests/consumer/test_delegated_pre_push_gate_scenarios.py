@@ -310,6 +310,108 @@ def _run_pre_push(
     return completed.returncode, invoked
 
 
+_SEED_UV_STUB = """#!/usr/bin/env bash
+printf 'uv %s\\n' "$*" >> "${STUB_LOG}"
+case "$*" in
+    *"green_token pre-push-evidence"*) exit 3 ;;
+    *"check_authority members") printf '%s\\n' "${AUTHORITY_MEMBERS}"; exit 0 ;;
+esac
+exit 1
+"""
+
+_SEED_JUST_STUB = """#!/usr/bin/env bash
+printf 'just %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$*" = "check-widget-approval" ]; then exit "${AUTHORITY_MEMBER_EXIT}"; fi
+exit 0
+"""
+
+
+def _run_seed_pre_push(
+    *, tmp_path: Path, stdin: str, authority_member_exit: str = "0"
+) -> tuple[int, str, list[str]]:
+    """Drive the recipe's ref-list path with a declared host authorization member."""
+    stub_dir = tmp_path / "seed-bin"
+    stub_dir.mkdir(parents=True)
+    for name, body in (("uv", _SEED_UV_STUB), ("just", _SEED_JUST_STUB)):
+        stub = stub_dir / name
+        _ = stub.write_text(body, encoding="utf-8")
+        stub.chmod(0o755)
+    log = tmp_path / "seed-invocations.log"
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COVERAGE_", "COV_CORE_"))}
+    env.update(
+        {
+            "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
+            "STUB_LOG": str(log),
+            "AUTHORITY_MEMBERS": "check-widget-approval",
+            "AUTHORITY_MEMBER_EXIT": authority_member_exit,
+        }
+    )
+    completed = subprocess.run(
+        ["bash", str(_PRE_PUSH)],
+        cwd=str(tmp_path),
+        env=env,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    invoked = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+    return completed.returncode, completed.stdout, invoked
+
+
+def _seed_push_update(*, ref: str) -> str:
+    """One pre-push stdin row publishing `ref`."""
+    oid = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"
+    return f"{ref} {oid} {ref} {'0' * 40}\n"
+
+
+def test_seed_and_preserve_refs_run_only_host_authorization_members(*, tmp_path: Path) -> None:
+    """A non-mergeable push skips its test aggregate but cannot skip authorization."""
+    seed = "refs/heads/needs-human/01M6WGJ6MFBXYD51SHD5V890DV"
+    preserve = "refs/heads/preserve/factory-run"
+    code, stdout, invoked = _run_seed_pre_push(
+        tmp_path=tmp_path,
+        stdin=_seed_push_update(ref=seed) + _seed_push_update(ref=preserve),
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just check-widget-approval" in invoked, f"invoked={invoked}"
+    assert not [line for line in invoked if "green_token" in line], f"invoked={invoked}"
+    assert not [line for line in invoked if "gate_remote_delegate" in line], f"invoked={invoked}"
+    assert "just hook_gate=1 check" not in invoked, f"invoked={invoked}"
+    assert seed in stdout and preserve in stdout and "test aggregate was not run" in stdout
+
+
+def test_seed_or_preserve_authorization_failure_refuses_without_the_aggregate(
+    *, tmp_path: Path
+) -> None:
+    """A gate Job omission cannot turn an unread authorization into a pass."""
+    code, _stdout, invoked = _run_seed_pre_push(
+        tmp_path=tmp_path,
+        stdin=_seed_push_update(ref="refs/heads/needs-human/seed"),
+        authority_member_exit="7",
+    )
+
+    assert code == 7, f"invoked={invoked}"
+    assert "just check-widget-approval" in invoked, f"invoked={invoked}"
+    assert "just hook_gate=1 check" not in invoked, f"invoked={invoked}"
+
+
+def test_a_seed_ref_mixed_with_an_ordinary_ref_uses_the_normal_gate(*, tmp_path: Path) -> None:
+    """A mixed push can publish a merge candidate, so it remains fully gated."""
+    code, stdout, invoked = _run_seed_pre_push(
+        tmp_path=tmp_path,
+        stdin=(
+            _seed_push_update(ref="refs/heads/needs-human/seed")
+            + _seed_push_update(ref="refs/heads/feature")
+        ),
+    )
+
+    assert code == 0, f"stdout={stdout!r} invoked={invoked}"
+    assert "just hook_gate=1 check" in invoked, f"invoked={invoked}"
+    assert "test aggregate was not run" not in stdout, f"stdout={stdout!r}"
+
+
 _FLEET_CREDENTIAL_HELPER = "!/home/ubuntu/.local/bin/livespec-agent-github-credential-helper"
 
 
