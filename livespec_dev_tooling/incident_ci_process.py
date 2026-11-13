@@ -85,6 +85,7 @@ class CiProcess:
             "selected": selected,
             "deferred": [asdict(item) for item in plan.deferred],
             "jobs": jobs,
+            "enablement": plan.enablement,
         }
         if args.operation == "plan":
             if "GITHUB_OUTPUT" in environment:

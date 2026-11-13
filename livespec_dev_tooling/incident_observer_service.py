@@ -170,8 +170,8 @@ class ControllerService:
             source, installation = self.identity_source, self.installation
             return enable.ObserverEnablement(installation=installation, source=source)
         if path in QUERY_PATHS:
-            return ObserverQuery(installation=self.installation)
-        return ObserverControl(installation=self.installation)
+            return ObserverQuery(installation=self.installation, source=self.identity_source)
+        return ObserverControl(installation=self.installation, source=self.identity_source)
 
     def _identity(
         self, *, environ: dict[str, Any], start_response: _StartResponse, path: str
