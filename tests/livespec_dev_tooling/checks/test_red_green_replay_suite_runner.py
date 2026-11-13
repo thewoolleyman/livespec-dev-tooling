@@ -475,20 +475,64 @@ def test_process_cleanup_tolerates_unavailable_process_records_and_disappearing_
         def poll(self) -> int:
             return 0
 
+    monkeypatch.setattr(mod, "_KILL_GRACE_SECONDS", 1)
     monkeypatch.setattr(mod, "out_of_group_descendants", lambda **_kwargs: ((2, "escaped"),))
-    alive = iter((True, False, True))
-    monkeypatch.setattr(mod, "is_alive", lambda **_kwargs: next(alive))
-    monkeypatch.setattr(mod.os, "kill", _process_missing)
+    delivered: list[tuple[int, int]] = []
+
+    def deliver(pid: int, sig: int) -> None:
+        delivered.append((pid, sig))
+        if sig == signal.SIGKILL:
+            raise ProcessLookupError
+
+    monkeypatch.setattr(
+        mod, "is_alive", lambda **_kwargs: signal.SIGKILL not in {sig for _, sig in delivered}
+    )
+    monkeypatch.setattr(mod.os, "kill", deliver)
     monkeypatch.setattr(mod.os, "killpg", _process_missing)
     reported: list[str] = []
     assert mod.end_stalled_suite(proc=FinishedProcess(), mark="mark", report=reported.append) == (
         (2, "escaped"),
     )
     assert reported == ["suite-green: ending out-of-group descendant pid=2 cmdline=escaped\n"]
+    assert delivered == [(2, signal.SIGTERM), (2, signal.SIGKILL)]
 
-    alive = iter((True, False, False))
-    monkeypatch.setattr(mod, "is_alive", lambda **_kwargs: next(alive))
+    delivered.clear()
     assert mod.end_stalled_suite(proc=FinishedProcess(), mark="mark") == ((2, "escaped"),)
+
+
+def test_a_stalled_suite_reaps_an_escapee_that_respawns_another_on_term(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An escapee that answers TERM by starting a new session-leader is ended too."""
+    mod = _load()
+    token = f"livespec-stall-respawn-{uuid.uuid4().hex}"
+    successor = f"import time; time.sleep(300)  # {token}"
+    handler = (
+        "import os, signal, subprocess, sys, time\n"
+        "def on_term(*_):\n"
+        f"    subprocess.Popen([sys.executable, '-c', {successor!r}, {token!r}],"
+        " start_new_session=True)\n"
+        "    os._exit(0)\n"
+        "signal.signal(signal.SIGTERM, on_term)\n"
+        "time.sleep(300)\n"
+    )
+    try:
+        monkeypatch.setattr(mod, "_KILL_GRACE_SECONDS", 5)
+        run = mod.run_suite(
+            argv=[
+                "sh",
+                "-c",
+                f'setsid {sys.executable} -c "$0" & printf ready; sleep 300',
+                handler,
+            ],
+            bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+        )
+
+        assert run.timed_out is True
+        assert not _live_processes_carrying(token)
+        assert run.output.count("ending out-of-group descendant pid=") >= 2
+    finally:
+        _ = [os.kill(int(pid), signal.SIGKILL) for pid in _live_processes_carrying(token)]
 
 
 def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables() -> None:
