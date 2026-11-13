@@ -6,8 +6,7 @@ This is the ONE budget from which every CPU-bearing cap of the pool derives:
   `../phase0-bare-metal/profiles/<node>.env`);
 - each gate lane's cpu quota (`kueue/cluster-queue-gates.yaml`);
 - each node's factory pod budget (`factory_pod_budget` in
-  `ansible/inventory/host_vars/<node>.yml`);
-- the CI job's workflow-pod CPU request (`arc/hook-pod-template.yaml`).
+  `ansible/inventory/host_vars/<node>.yml`).
 
 Its machine-readable form is `node-cpu-budget.yaml` beside this file.
 
@@ -29,38 +28,35 @@ follows. Each cap keeps its own owner:
 
 ## The rule
 
-The budget has two halves. Each answers a different question.
-
-**Use: do the classes fit when they run?** For each node:
+For each node:
 
     usable = allocatable CPU - measured system.slice share
     usable >= runner use + gate use + factory use
 
 - Each class's use is MEASURED (the tables below), not read from requests.
-- **Requests understate use.** CI pods request 0 CPU today. A gate requesting 5
-  has used up to 26 cores (per-pod max, below). So the scheduler alone cannot
-  keep a node inside its budget, and the budget sets the caps.
+- **Requests understate use.** CI pods request no CPU. A gate requesting 5 has
+  used up to 26 cores (per-pod max, below). So the scheduler alone cannot keep a
+  node inside its budget, and the budget sets the caps.
 - **The sum must fit at the peak hours, not only on the 24-hour average.** The
-  pool's saturation rule is idle under 5% while CI `cpu.pressure` `some` avg60
-  is over 30 (contracts §"Placement by node pressure"). Past that point every
-  extra job only lengthens every job (`.ai/ci-node-capacity-reads.md`).
+  pool's saturation rule is idle under 5% while the BestEffort CI slice's
+  `cpu.pressure` `some` avg60 is over 30 (contracts §"Placement by node
+  pressure"). Past that point every extra job only lengthens every job
+  (`.ai/ci-node-capacity-reads.md`).
 
-**Requests: can the kubelet always admit a CI job?** Once the CI job's workflow
-pod requests CPU, the kubelet refuses it with OutOfcpu when its node's requests
-are full. The workflow pod is bound to the runner's node by name, so no scheduler
-can move it. With every churn slot in use, each node must therefore satisfy:
+`node-cpu-budget.yaml` beside this file holds the budgeted caps in
+machine-readable form, and it names the cap files that must equal them.
 
-    churn slots x ci_job_cpu
-    + gate lane cpu quota
-    + factory_pod_budget x factory sandbox request
-    + other workloads' requests
-    <= allocatable CPU
+**Maintainer ruling, 2026-11-13 ~21:3xZ: "Do whatever maximises throughput."**
+A request-based fit was considered and NOT taken. It would have required:
+- CI workflow pods to request 1.5 cores;
+- every node's committed requests to fit its allocatable CPU with every churn
+  slot in use.
 
-`node-cpu-budget.yaml` beside this file holds every term in machine-readable
-form. It names the cap files that must equal its values and shows each node's
-sum. The fit is a clause of the pending proposal
-`per-node-cpu-budget-honest-requests` (livespec-dev-tooling#4565), and its check
-is armed only with values that satisfy it.
+That fit required cutting the x86 factory pod budget from 19 to 14, which would
+have queued about 12% of factory pod-time (below). So under the ruling:
+- CI pods stay BestEffort;
+- factory pod budgets stay at today's values;
+- there is no node request-fit check.
 
 ## Measurements (2026-11-12 19:00Z to 2026-11-13 19:00Z)
 
@@ -146,12 +142,12 @@ apart in query `FLoxCmwxT76` (W1, 120-second buckets):
 | gmktec | 1.69 | 0.07 |
 | hp | 1.78 | 0.10 |
 
-The pod-weighted fleet value is 1.54, so `ci_job_cpu` is **1.5**. The runner pod
-is an idle agent. Do not read per-pod CPU from a 24-hour query: its 15-minute
+The pod-weighted fleet value is 1.54 cores per CI job, which confirms the 1.7
+cores per job the slot cut is sized on. The runner pod is an idle agent. Do not read per-pod CPU from a 24-hour query: its 15-minute
 buckets keep one late sample per pod and read the workflow pod at 0.77-1.00
 (query `4X3sgRmarYY`).
 
-### Other workloads' requests (live, 2026-11-13 ~20:5xZ)
+### Other workloads' requests (live, 2026-11-13 ~20:5xZ; for reference)
 
 | Node | Requests outside gates, factory and CI |
 |---|---|
@@ -163,56 +159,50 @@ buckets keep one late sample per pod and read the workflow pod at 0.77-1.00
 
 ## The budget (cores)
 
-Decided by plan gate-job-resources, 2026-11-13 ~21:3xZ. Today's values are the
-committed caps after the `6e5pyj` slot cut.
+Decided by plan gate-job-resources, 2026-11-13, under the maintainer's
+throughput ruling. Slots are the `6e5pyj` values.
 
-| Node | Allocatable | Slots | Gate lane (was) | Factory pods (was) | Other | Request fit, today | Request fit, budgeted |
-|---|---|---|---|---|---|---|---|
-| gmktec-xubuntu | 32 | 6 | **9** (15) | **4** (7) | 1.1 | 9 + 15 + 21 + 1.1 = 46.1 | 9 + 9 + 12 + 1.1 = **31.1** |
-| poweredge-xubuntu | 72 | 17 | **21** (30) | **8** (9) | 1.3 | 25.5 + 30 + 27 + 1.3 = 83.8 | 25.5 + 21 + 24 + 1.3 = **71.8** |
-| hp-xubuntu | 14.5 | 4 | **3** (5) | **1** (2) | 0.6 | 6 + 5 + 6 + 0.6 = 17.6 | 6 + 3 + 3 + 0.6 = **12.6** |
-| gamingpc-xubuntu | 12 | 3 | **3** (5) | 1 | 0 | 4.5 + 5 + 3 = 12.5 | 4.5 + 3 + 3 = **10.5** |
-| macbook-m4-max-homelab-worker | 12 | 1 | 3 (5) | 1 | 0.1 | 1.5 + 5 + 3 + 0.1 = 9.6 | 1.5 + 3 + 3 + 0.1 = **7.6** |
-
-Slots are counted at `ci_job_cpu` 1.5 and factory pods at the 3-CPU sandbox
-request. On gamingpc and the M4 worker, kubelet reserves are already taken out of
-allocatable.
+| Node | Allocatable | System | Slots | Gate lane (was) | Factory pods |
+|---|---|---|---|---|---|
+| gmktec-xubuntu | 32 | 1.6 | 6 | **9** (15) | 7 |
+| poweredge-xubuntu | 72 | 5.7 | 17 | **21** (30) | 9 |
+| hp-xubuntu | 14.5 | 1.2 | 4 | **3** (5) | 2 |
+| gamingpc-xubuntu | 12 | in reserves | 3 | **3** (5) | 1 |
+| macbook-m4-max-homelab-worker | 12 | in reserves | 1 | 3 (5) | - |
 
 How each row follows:
 
 - **Slots.** The `6e5pyj` cut (gmktec 8 to 6, hp 5 to 4, gamingpc 1 to 3) is
-  sized on USE. At 8 slots the gmktec runner peak is 8 x 1.7 = 13.6 cores.
-  W1 and W2 already sum 27.9-28.4 class cores plus 1.6 system, against 32.
-  At 6 slots the peak is 10.2 cores, which takes about 3.4 cores off every peak
-  hour. hp's classes averaged 12.7 cores against 13.3 usable. The cohort goes from
-  31 slots to 30 on `churn-slot-flavor`; the arm64 flavor is separate.
-- **Gate lanes.** The default request drops to 3, and each lane drops to the gate
-  share of the node's measured gate use. gmktec runs 7.4 average gate cores, so
-  it gets 3 gates. poweredge runs 17.1, so it gets 7. hp runs 2.0 and gamingpc
-  0.8, so each gets 1. Every lane is a multiple of the 3-CPU gate unit.
-- **Factory pods.** They are the remainder that the request fit leaves at the
-  3-CPU sandbox request.
+  sized on USE.
+  - At 8 slots the gmktec runner peak is 8 x 1.7 = 13.6 cores. W1 and W2
+    already sum 27.9-28.4 class cores plus 1.6 system, against 32.
+  - At 6 slots the peak is 10.2 cores, about 3.4 cores off every peak hour.
+  - hp's classes averaged 12.7 cores against 13.3 usable.
+  - The cohort goes from 31 slots to 30 on `churn-slot-flavor`. The arm64 flavor
+    is separate.
+- **Gate lanes.** The default request drops to 3, and each lane drops to the
+  node's gate share of measured gate use:
+  - gmktec runs 7.4 average gate cores: 3 gates;
+  - poweredge runs 17.1: 7 gates;
+  - hp runs 2.0 and gamingpc 0.8: 1 gate each.
 
-**What the budgeted values cost, measured on the last 24 hours:**
+  Every lane is a multiple of the 3-CPU gate unit. Without the lane cut, a
+  3-CPU default would let gmktec admit 5 gates instead of 3.
+- **Factory pods.** Today's values, per the maintainer's throughput ruling.
+
+**What the decisions cost, measured on the last 24 hours:**
 
 - **Gates** (query `dbbVLi5S76A`). Today's gate pods were replayed, in 5-minute
   buckets, into the budgeted lanes: orchestrator gates at 5, every other gate
   at 3. They leave about 195 more pod-minutes a day waiting than today's lanes,
   1.8% of gate pod-time, concentrated in 32 of 273 buckets.
-  - poweredge at 18 instead of 21 would cost 2.1%.
   - Lanes of 3 on gamingpc and hp hold no orchestrator gate. Under today's 5,
     each holds one.
-- **Factory** (query `764UoV97fVs`). Factory pods averaged 11.6 concurrent
-  across the fleet: p50 12.0, p90 18.4, max 21.6.
-  - Per node mean / p90: gmktec 3.6 / 6.0, poweredge 5.9 / 9.1, hp 1.4 / 2.0,
-    gamingpc 0.5 / 1.0.
-  - An x86 factory budget of 14 instead of today's 19 would have held about 12%
-    of factory pod-time in queue, about 1,950 pod-minutes a day.
-  - That is the material cost of the request fit. The maintainer decides it
-    before the revise.
-  - The alternative is to keep factory budgets and NOT give CI workflow pods a
-    request. That leaves them BestEffort, starving first under contention, and
-    leaves plan assertion 7 unmet for CI pods.
+  - The coordinator ruled this cost not significant (~21:1xZ).
+- **Factory, the option NOT taken** (query `764UoV97fVs`). Factory pods averaged
+  11.6 concurrent across the fleet: p50 12.0, p90 18.4, max 21.6. An x86 budget
+  of 14 instead of 19 would have queued about 12% of factory pod-time, about
+  1,950 pod-minutes a day.
 
 ## What is in force, and what waits for the specification revise
 
@@ -221,29 +211,18 @@ How each row follows:
 - **The churn-slot changes**, by ci-runtime-and-cost under `6e5pyj`, with the
   cohort and ClusterQueue quota rebalance and its read-back. A node's declared
   churn-slot capacity is the specification's ONE per-node limit on runner pods.
-- **The factory sandbox request stays at 3 cpu.** Lowering it while CI requests 0
-  would pack MORE sandboxes onto a node.
+- **The factory sandbox request stays at 3 cpu.** Lowering it while CI requests
+  none would pack MORE sandboxes onto a node.
 
 **After the revise of livespec-dev-tooling#4565, one change (wirn53):**
 
-1. **Prerequisite.** livespec-orchestrator-beads-fabro declares `gate_cpu = 5` in
-   a merged change. Its gates use 4.6-5.1 cores and it relies on today's default.
+1. **Prerequisite.** livespec-orchestrator-beads-fabro declares `gate_cpu = 5`
+   in a merged change. Its gates use 4.6-5.1 cores and it relies on today's
+   default.
 2. **The gate default becomes 3.** In the same commit:
    - `gates-cq`'s `ci-runner.io/gate-unit-cpu` becomes 3;
    - every committed lane takes its `gate_cpu` above;
    - enrolled worker lanes follow the unit through `converge-worker-queues.sh`.
-3. **CI workflow pods request `ci_job_cpu`.** The request goes on the job
-   container of `arc/hook-pod-template.yaml`. Runner pods request
-   nothing, so churn slots stay the only runner limit.
-4. **`factory_pod_budget` takes the values above** in `ansible/inventory/host_vars`.
-5. **The aggregate's checks are armed:**
-   - the node CPU fit;
-   - the template's request equal to `ci_job_cpu`;
-   - the lanes equal to `gate_cpu`.
-6. **The saturation rule reads the highest pod-level `cpu.pressure` `some`
-   avg60 among the CI workflow pods.** The cgroup is
-   `kubepods-burstable.slice/kubepods-burstable-pod<uid>.slice`. The threshold
-   is set from a 24-hour side-by-side reading with the BestEffort slice.
 
 **Not done: a gate CPU limit.** A limit must be at least the request, so the
 cheapest one at declared parallelism is `max(gate_cpu, gate_parallelism)`: 5 for
