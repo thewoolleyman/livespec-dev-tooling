@@ -827,6 +827,10 @@ subprocess_spawn_allowlist = [
     # annotation is added. Its child environments scrub COVERAGE_PROCESS_START
     # and COV_CORE_* before they start the Python CLI.
     "tests/consumer/test_check_aggregate_purity_declarations.py",
+    # The consumer-tier authorized_keys scenarios execute the committed role
+    # against a temporary account fixture using the exact ansible-core pin that
+    # the drift recipe uses; the child process is the behaviour under test.
+    "tests/consumer/test_authorized_keys_managed.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed
     # in pytest's already-imported process; the exact test file scrubs coverage

@@ -342,6 +342,7 @@ check:
         check-ansible-lint
         check-ansible-hostname-free
         check-ansible-get-url-checksum
+        check-ansible-authorized-keys-managed
         check-dev-host-fabro-client-bins-declared
         check-lint
         check-format
@@ -413,6 +414,9 @@ check-ansible-hostname-free:
 # `# check-mode-exempt: <why>` comment.
 check-ansible-get-url-checksum:
     uv run python -m livespec_dev_tooling.ansible_get_url_checksum
+
+check-ansible-authorized-keys-managed:
+    uv run pytest tests/consumer/test_authorized_keys_managed.py
 
 # Every `dispatcher.factories.<name>.bin` this repository commits names the
 # `path` of one `fabro_client_builds` entry, so the Fabro client a Dispatcher
