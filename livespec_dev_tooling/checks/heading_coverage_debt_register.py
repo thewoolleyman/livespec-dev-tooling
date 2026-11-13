@@ -131,6 +131,7 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -157,6 +158,7 @@ from livespec_dev_tooling.checks._heading_coverage_spec_first import (  # noqa: 
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     COVERAGE_PATH,
     REGISTER_PATH,
+    generate_register,
     head_rows,
     load_rows,
     parent_rows,
@@ -171,6 +173,20 @@ CHECK_PURITY = "world-reading"
 
 
 _SCOPE_ENV_VAR = "LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF"
+
+_SCOPE_BASELINE_UNREADABLE_MESSAGE = "".join(
+    (
+        "staged-diff scope requested but HEAD's heading-coverage registry is not ",
+        "comparable — the ratchet falls back to judging the WHOLE register",
+    )
+)
+_PARENT_BASELINE_UNREADABLE_MESSAGE = "".join(
+    (
+        "a pending-commit parent carries no comparable heading-coverage debt register — ",
+        "the shrink-only direction is UNJUDGED for this run (adoption, or a tree with no ",
+        "history)",
+    )
+)
 
 _MESSAGES = {
     "unregistered_todo": (
@@ -194,6 +210,10 @@ _MESSAGES = {
     "register_row_incomplete": (
         "heading-coverage-debt.json entry is missing a required field — every entry "
         "carries `spec_root`, `spec_file`, `heading`, `work_item` and `first_seen`"
+    ),
+    "register_not_regenerated": (
+        "heading-coverage-debt.json row differs from fresh mechanical regeneration — "
+        "regenerate the register rather than retaining stale row data"
     ),
 }
 
@@ -301,6 +321,29 @@ def _ratchet_findings(
     return findings
 
 
+def _regeneration_findings(*, cwd: Path, register_rows: list[dict[str, object]]) -> list[_Finding]:
+    """Rows whose current register values differ from a fresh mechanical generation.
+
+    Generation carries the existing `first_seen` evidence forward, so this
+    comparison validates the generated projection without replacing that state.
+    The comparison is by keyed row value, so a diagnostic names the live debt
+    row an author must regenerate instead of reporting the register as an
+    opaque file-level mismatch.
+    """
+    generated = generate_register(cwd=cwd, today=datetime.now(timezone.utc).date().isoformat())
+    if isinstance(generated, IOFailure):
+        return []
+    expected_rows = unsafe_perform_io(generated.unwrap())
+    actual = _keyed(rows=register_rows)
+    expected = _keyed(rows=expected_rows)
+    findings = [
+        _Finding(code="register_not_regenerated", key=key)
+        for key in sorted(set(actual) | set(expected))
+        if actual.get(key) != expected.get(key)
+    ]
+    return findings
+
+
 def _growth_findings(
     *, register_rows: list[dict[str, object]], baseline_rows: list[dict[str, object]]
 ) -> list[_Finding]:
@@ -349,8 +392,7 @@ def _judged(
     changed = _changed_keys(cwd=cwd, registry_rows=registry_rows, register_rows=register_rows)
     if changed is None:
         emit.warning(
-            "staged-diff scope requested but HEAD's heading-coverage registry is not "
-            "comparable — the ratchet falls back to judging the WHOLE register",
+            _SCOPE_BASELINE_UNREADABLE_MESSAGE,
             baseline_unreadable=True,
             failing=False,
         )
@@ -362,6 +404,34 @@ def _judged(
             continue
         _emit(finding=finding, failing=False)
     return in_scope
+
+
+def _scope_regeneration_findings(
+    *,
+    authoring: bool,
+    findings: list[_Finding],
+    regeneration: list[_Finding],
+    cwd: Path,
+    registry_rows: list[dict[str, object]],
+    register_rows: list[dict[str, object]],
+) -> tuple[list[_Finding], list[_Finding]]:
+    """Apply authoring scope equally to ordinary and regeneration findings."""
+    if not authoring:
+        return findings, regeneration
+    return (
+        _judged(
+            findings=findings,
+            cwd=cwd,
+            registry_rows=registry_rows,
+            register_rows=register_rows,
+        ),
+        _judged(
+            findings=regeneration,
+            cwd=cwd,
+            registry_rows=registry_rows,
+            register_rows=register_rows,
+        ),
+    )
 
 
 def main() -> int:
@@ -376,8 +446,10 @@ def main() -> int:
     )
     emit = structlog.get_logger("heading_coverage_debt_register")
     cwd = Path.cwd()
-    registry_scan = load_rows(path=cwd / COVERAGE_PATH)
-    register_scan = load_rows(path=cwd / REGISTER_PATH)
+    registry_scan, register_scan = (
+        load_rows(path=cwd / COVERAGE_PATH),
+        load_rows(path=cwd / REGISTER_PATH),
+    )
     for scan in (registry_scan, register_scan):
         if isinstance(scan, IOFailure):
             # The record's fields ARE the diagnostic fields, so they are spread
@@ -392,6 +464,7 @@ def main() -> int:
     registry_rows = unsafe_perform_io(registry_scan.unwrap())
     register_rows = unsafe_perform_io(register_scan.unwrap())
     findings = _ratchet_findings(registry_rows=registry_rows, register_rows=register_rows)
+    regeneration = _regeneration_findings(cwd=cwd, register_rows=register_rows)
     # Stays EMPTY unless growth was both computed and asked about, which is what
     # keeps the v067 refusals off the first-adoption commit: with no comparable
     # `HEAD` register there is no grown key whose admission either of them could
@@ -400,9 +473,7 @@ def main() -> int:
     baseline_scan = parent_rows(cwd=cwd, path=REGISTER_PATH)
     if isinstance(baseline_scan, IOFailure):
         emit.warning(
-            "a pending-commit parent carries no comparable heading-coverage debt register — "
-            "the shrink-only direction is UNJUDGED for this run (adoption, or a tree with no "
-            "history)",
+            _PARENT_BASELINE_UNREADABLE_MESSAGE,
             **asdict(unsafe_perform_io(baseline_scan.failure())),
             baseline_unreadable=True,
             failing=False,
@@ -429,13 +500,14 @@ def main() -> int:
         findings += [finding for finding in grown if finding.key not in decision.admitted]
         reported = decision.reported
     authoring = bool(os.environ.get(_SCOPE_ENV_VAR))
-    if authoring:
-        findings = _judged(
-            findings=findings,
-            cwd=cwd,
-            registry_rows=registry_rows,
-            register_rows=register_rows,
-        )
+    findings, regeneration = _scope_regeneration_findings(
+        authoring=authoring,
+        findings=findings,
+        regeneration=regeneration,
+        cwd=cwd,
+        registry_rows=registry_rows,
+        register_rows=register_rows,
+    )
     # The age direction is NOT narrowed by the staged-diff scope above, and
     # cannot be: it is armed by the release lever, which the authoring-time
     # subset never sets for this check, so there is no commit whose authorship
@@ -456,6 +528,8 @@ def main() -> int:
     )
     for finding in findings:
         _emit(finding=finding, failing=True)
+    for finding in regeneration:
+        _emit(finding=finding, failing=True)
     report_age_violations(findings=aged)
     report_first_seen_violations(findings=dated)
     report_spec_first_violations(findings=reported)
@@ -466,7 +540,7 @@ def main() -> int:
     # "evidence could not be read" or "the acknowledgment was refused" verdict
     # on that coincidence is exactly the shape that fails silently if either
     # side is ever rescoped.
-    return 1 if findings or aged or dated or reported else 0
+    return 1 if findings or regeneration or aged or dated or reported else 0
 
 
 if __name__ == "__main__":
