@@ -73,6 +73,18 @@ helm upgrade --install arc \
 kubectl -n "$CONTROLLER_NAMESPACE" rollout status deployment -l app.kubernetes.io/name=gha-rs-controller --timeout=120s
 
 # ---------------------------------------------------------------------------
+# The scale set's listener pod selects on `ci-runner.io/always-on=true`
+# (arc/values-host-unique.yaml `listenerTemplate`; livespec-dev-tooling-crvvxt).
+# With no node carrying that label the listener can be placed nowhere and the
+# set takes no jobs, so stop here, before the install, on an empty answer and
+# on a read that failed (a failed read is never an empty answer). The label
+# comes from the node's committed profile: provision-k3s.sh registers it, and
+# `just ansible-apply ansible/ci-pool.yml --tags node_labels` reconciles it.
+always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true -o name)" \
+  || { echo "FATAL: could not read which nodes carry ci-runner.io/always-on=true, so it is not established that the listener pod can be placed. Not installing the scale set." >&2; exit 1; }
+[ -n "${always_on_nodes}" ] \
+  || { echo "FATAL: no node carries ci-runner.io/always-on=true, so the listener pod would stay Pending and the scale set would take no jobs. Not installing the scale set. Set the label from the committed profiles first (just ansible-apply ansible/ci-pool.yml --tags node_labels)." >&2; exit 1; }
+
 log "2. Install/upgrade the host-unique runner scale set (poweredge-xubuntu-k3s)"
 # The shared-pool-label release `local-ci-k3s` that phase 1 installed first
 # in this step was retired under livespec-s43svm.28 — see the header.

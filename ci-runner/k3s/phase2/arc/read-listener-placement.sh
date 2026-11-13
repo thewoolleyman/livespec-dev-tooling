@@ -34,6 +34,8 @@ ALWAYS_ON_LABEL="ci-runner.io/always-on=true"
 # Where the ARC controller keeps every AutoscalingListener and its pod — the
 # namespace ../reconstruct/converge-ci-stack.sh installs the controller into.
 CONTROLLER_NAMESPACE="${ARC_CONTROLLER_NAMESPACE:-arc-systems}"
+# Where every AutoscalingRunnerSet (one per scale set) is installed.
+RUNNERS_NAMESPACE="${ARC_RUNNERS_NAMESPACE:-arc-runners}"
 
 command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH" >&2; exit 2; }
 
@@ -46,6 +48,12 @@ listeners="$(kubectl -n "$CONTROLLER_NAMESPACE" get autoscalinglisteners.actions
 pods="$(kubectl -n "$CONTROLLER_NAMESPACE" get pods \
   -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.ownerReferences[0].kind}{"|"}{.metadata.ownerReferences[0].name}{"|"}{.spec.nodeName}{"|"}{.status.phase}{"|"}{.metadata.deletionTimestamp}{"\n"}{end}')" \
   || { echo "FATAL: could not read the pods in ${CONTROLLER_NAMESPACE}" >&2; exit 2; }
+# The scale sets themselves, read from where they are installed. A scale set
+# with NO AutoscalingListener object at all (the 2026-11-05 shape) appears in
+# no listener read, so the listeners alone cannot show it missing.
+runner_sets="$(kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnersets.actions.github.com \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')" \
+  || { echo "FATAL: could not read the AutoscalingRunnerSets in ${RUNNERS_NAMESPACE}" >&2; exit 2; }
 labelled="$(kubectl get nodes -l "$ALWAYS_ON_LABEL" -o name)" \
   || { echo "FATAL: could not read the nodes that carry ${ALWAYS_ON_LABEL}" >&2; exit 2; }
 
@@ -98,8 +106,28 @@ while IFS='|' read -r listener scale_set; do
   printf '%-44s %-52s %-32s %-12s %s\n' "${scale_set:-<unnamed>}" "${pod:-<none>}" "${node:-<none>}" "${state:-<none>}" "$verdict"
 done <<< "$listeners"
 
+# Every installed scale set must have a listener object. One that has none is
+# a scale set that takes no jobs and that the table above cannot show.
+declare -A listened=()
+while IFS='|' read -r listener scale_set; do
+  [ -n "$scale_set" ] || continue
+  listened["$scale_set"]=1
+done <<< "$listeners"
+sets_total=0
+while IFS= read -r scale_set; do
+  [ -n "$scale_set" ] || continue
+  sets_total=$(( sets_total + 1 ))
+  [ -z "${listened[$scale_set]:-}" ] || continue
+  bad=$(( bad + 1 ))
+  printf '%-44s %-52s %-32s %-12s %s\n' "$scale_set" "<none>" "<none>" "<none>" "FAIL: the scale set has no AutoscalingListener"
+done <<< "$runner_sets"
+
 printf '\nnodes carrying %s: %s\n' "$ALWAYS_ON_LABEL" "${!always_on[*]}"
 
+if [ "$sets_total" -eq 0 ]; then
+  echo "FAIL: ${RUNNERS_NAMESPACE} holds no AutoscalingRunnerSet, so no scale set is installed and there is no placement to confirm"
+  exit 1
+fi
 if [ "$total" -eq 0 ]; then
   echo "FAIL: ${CONTROLLER_NAMESPACE} holds no AutoscalingListener, so no scale set can take a job and there is no placement to confirm"
   exit 1

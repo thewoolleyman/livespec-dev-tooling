@@ -549,7 +549,7 @@ def test_the_ci_converge_unit_role_installs_the_boot_converge_script() -> None:
 # --- 4. the read-back -------------------------------------------------------
 
 # `kubectl`, faked for the read-back: any verb but `get` is a recorded WRITE and
-# fails; the three reads are answered from files, and FAIL_READ names one to fail.
+# fails; the four reads are answered from files, and FAIL_READ names one to fail.
 _READ_BACK_KUBECTL = """\
 printf 'kubectl %s\\n' "$*" >> "$ARGV_LOG"
 case " $* " in
@@ -558,6 +558,9 @@ case " $* " in
 esac
 fail() { echo 'Unable to connect to the server: dial tcp: i/o timeout' >&2; exit 1; }
 case " $* " in
+  *" autoscalingrunnersets.actions.github.com "*)
+    [ "${FAIL_READ:-}" != runner_sets ] || fail
+    cat "$RUNNER_SETS_FILE" ;;
   *" autoscalinglisteners.actions.github.com "*)
     [ "${FAIL_READ:-}" != listeners ] || fail
     cat "$LISTENERS_FILE" ;;
@@ -589,10 +592,15 @@ def _run_read_back(
     listeners: tuple[tuple[str, str], ...] = _LISTENERS,
     labelled: tuple[str, ...] = ("poweredge-xubuntu", "hp-xubuntu"),
     fail_read: str = "",
+    runner_sets: tuple[str, ...] | None = None,
 ) -> tuple[int, str, list[str]]:
     """Run the shipped read-back against a faked cluster; return code, output, argv."""
     env, log = _scratch_path(tmp_path=tmp_path, kubectl=_READ_BACK_KUBECTL)
+    installed = (
+        tuple(scale_set for _, scale_set in listeners) if runner_sets is None else runner_sets
+    )
     files = {
+        "RUNNER_SETS_FILE": "".join(f"{scale_set}\n" for scale_set in installed),
         "LISTENERS_FILE": "".join(f"{name}|{scale_set}\n" for name, scale_set in listeners),
         # The controller's own pod shares the namespace and is owned by a
         # ReplicaSet on a node without the label: it must be ignored.
@@ -636,7 +644,11 @@ def test_the_read_back_lists_each_listener_with_its_node_and_passes_when_all_are
     assert re.search(
         r"(?m)^livespec-local-ci-k3s\s+\S+\s+poweredge-xubuntu\s+Running\s+ok$", output
     )
-    assert len(invoked) == 3 and all(" get " in f" {line} " for line in invoked), invoked
+    assert len(invoked) == 4 and all(" get " in f" {line} " for line in invoked), invoked
+    assert sum("autoscalingrunnersets.actions.github.com" in line for line in invoked) == 1
+    assert any(
+        line.startswith("kubectl -n arc-runners get autoscalingrunnersets") for line in invoked
+    )
 
 
 def test_the_read_back_fails_naming_a_listener_on_a_node_without_the_label(
@@ -707,12 +719,43 @@ def test_the_read_back_prefers_a_listeners_live_pod_over_its_terminating_predece
 
 def test_the_read_back_fails_when_the_cluster_has_no_listener_at_all(*, tmp_path: Path) -> None:
     """Zero listeners is zero scale sets taking jobs, not a clean placement."""
-    code, output, _ = _run_read_back(tmp_path=tmp_path, pods=(), listeners=())
+    code, output, _ = _run_read_back(
+        tmp_path=tmp_path, pods=(), listeners=(), runner_sets=("livespec-overseer-k3s",)
+    )
     assert code == 1, output
     assert "holds no AutoscalingListener" in output
 
 
-@pytest.mark.parametrize("read", ["listeners", "pods", "nodes"])
+def test_the_read_back_fails_when_no_scale_set_is_installed(*, tmp_path: Path) -> None:
+    """Zero AutoscalingRunnerSets is no CI at all, not a clean placement."""
+    code, output, _ = _run_read_back(tmp_path=tmp_path, pods=(), listeners=(), runner_sets=())
+    assert code == 1, output
+    assert "holds no AutoscalingRunnerSet" in output
+    assert "OK:" not in output
+
+
+def test_the_read_back_fails_naming_a_scale_set_that_has_no_listener_object(
+    *, tmp_path: Path
+) -> None:
+    """The 2026-11-05 shape: a scale set is installed and no AutoscalingListener exists for it."""
+    code, output, _ = _run_read_back(
+        tmp_path=tmp_path,
+        pods=(
+            _pod(listener="livespec-k3s-listener", node="poweredge-xubuntu"),
+            _pod(listener="overseer-k3s-listener", node="hp-xubuntu"),
+        ),
+        runner_sets=("livespec-local-ci-k3s", "livespec-overseer-k3s", "livespec-runtime-k3s"),
+    )
+    assert code == 1, output
+    row = next(line for line in output.splitlines() if line.startswith("livespec-runtime-k3s"))
+    assert "FAIL: the scale set has no AutoscalingListener" in row, row
+    for healthy in ("livespec-local-ci-k3s", "livespec-overseer-k3s"):
+        ok_row = next(line for line in output.splitlines() if line.startswith(healthy))
+        assert ok_row.rstrip().endswith("ok"), ok_row
+    assert "OK:" not in output
+
+
+@pytest.mark.parametrize("read", ["listeners", "pods", "nodes", "runner_sets"])
 def test_the_read_back_fails_loudly_when_a_kubectl_read_fails(*, tmp_path: Path, read: str) -> None:
     """A failed read is never an empty list: exit 2, FATAL, and no verdict line."""
     code, output, _ = _run_read_back(
@@ -728,8 +771,8 @@ def test_the_read_back_fails_loudly_when_a_kubectl_read_fails(*, tmp_path: Path,
     assert "OK:" not in output
 
 
-def test_the_boot_converge_stops_before_the_scale_sets_when_no_node_carries_the_label() -> None:
-    text = (
+def _converge_text() -> str:
+    return (
         Path(__file__).resolve().parents[2]
         / "ci-runner"
         / "k3s"
@@ -737,9 +780,55 @@ def test_the_boot_converge_stops_before_the_scale_sets_when_no_node_carries_the_
         / "reconstruct"
         / "converge-ci-stack.sh"
     ).read_text(encoding="utf-8")
-    guard = text.index('if [ -z "${always_on_nodes}" ]; then')
-    assert text.index('log "5b. Assert the ALWAYS-ON label') < guard
-    assert text.index("FATAL: no node carries ci-runner.io/always-on=true") > guard
-    assert "FATAL: could not read which nodes carry ci-runner.io/always-on=true" in text
-    assert guard < text.index('log "6. Install/upgrade the ARC controller')
-    assert guard < text.index('log "7. Install/upgrade all ')
+
+
+def test_the_boot_converge_installs_no_scale_set_when_no_node_carries_the_label() -> None:
+    """The stop is scoped to step 7's installs, decided after 5b and before step 6."""
+    text = _converge_text()
+    decided = text.index('if ! always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true')
+    assert text.index('log "5b. Assert the ALWAYS-ON label') < decided
+    assert decided < text.index('log "6. Install/upgrade the ARC controller')
+    for refusal in (
+        "could not read which nodes carry ci-runner.io/always-on=true",
+        "no node carries ci-runner.io/always-on=true",
+    ):
+        assert f'arc_listeners_refusal="{refusal}' in text, refusal
+    loop = text.index("for release in $(printf")
+    skip = text.index('if [ "${arc_listeners_placeable}" != true ]; then', loop)
+    install = text.index('helm upgrade --install "$release"', loop)
+    assert loop < skip < install
+    assert "continue" in text[skip:install]
+
+
+def test_the_boot_converge_still_runs_every_other_step_and_then_exits_non_zero() -> None:
+    """No `exit` between the decision and the end: the credential re-mint and factory converge."""
+    text = _converge_text()
+    decided = text.index("arc_listeners_placeable=true")
+    step_six = text.index('log "6. Install/upgrade the ARC controller')
+    assert "exit 1" not in text[decided:step_six]
+    final = text.index("FATAL: the runner scale sets were NOT installed or upgraded")
+    for step in (
+        "log \"10d. Re-mint every AGENT node's node-status credential",
+        'log "10e. Re-apply the factory namespace',
+        "log \"10h. Reconcile every ci_pool node's ALWAYS-ON label",
+    ):
+        assert step_six < text.index(step) < final, step
+    done = text.index('log "DONE. CI cluster stack converged:')
+    assert final < done
+    assert "exit 1" in text[final:done]
+    assert "Every other step of this converge ran." in text[final:done]
+
+
+def test_the_first_install_script_refuses_the_scale_set_when_no_node_carries_the_label() -> None:
+    """install-arc.sh installs the host-unique set by hand, so it carries the same guard."""
+    text = (Path(__file__).resolve().parents[2] / "ci-runner" / "k3s" / "install-arc.sh").read_text(
+        encoding="utf-8"
+    )
+    read = text.index(
+        'always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true -o name)"'
+    )
+    failed = text.index("FATAL: could not read which nodes carry ci-runner.io/always-on=true", read)
+    empty = text.index("FATAL: no node carries ci-runner.io/always-on=true", failed)
+    install = text.index("helm upgrade --install poweredge-xubuntu-k3s")
+    assert read < failed < empty < install
+    assert text[read:install].count("exit 1") == 2
