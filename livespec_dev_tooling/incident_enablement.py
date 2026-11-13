@@ -61,6 +61,8 @@ CONTROL_PATHS = frozenset({ENABLE_PATH, REVOKE_PATH, ARM_PATH, DISARM_PATH})
 QUERY_PATHS = frozenset({READ_PATH})
 FRESHNESS_SECONDS = 6 * 60 * 60
 _UNCONFIRMED = "manifest identity unconfirmed by the controller's own core read; nothing retained"
+_ENABLE_KEYS = frozenset({"repository", "manifest_sha256", "operation_id"})
+_ANOTHER_REPOSITORY = "an enablement operation for another repository than this installation's"
 _NOT_ENABLED = "no record binds the current manifest identity; the fence stays disarmed"
 
 
@@ -89,11 +91,9 @@ class ObserverEnablement:
     now: Callable[[], float] = field(default=time.time)
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if path == ENABLE_PATH and set(payload) == {
-            "repository",
-            "manifest_sha256",
-            "operation_id",
-        }:
+        if payload.get("repository") != self.installation.repository:
+            return _refused(reason=_ANOTHER_REPOSITORY)
+        if path == ENABLE_PATH and frozenset(payload) == _ENABLE_KEYS:
             return self._enable(payload=payload)
         if path in {REVOKE_PATH, ARM_PATH, DISARM_PATH} and set(payload) == {
             "repository",

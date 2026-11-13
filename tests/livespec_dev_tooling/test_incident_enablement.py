@@ -450,3 +450,46 @@ def test_the_served_ports_are_the_incident_observer_roles_listener_ports() -> No
     port = re.search(r"^incident_observer_port: (\d+)$", defaults, re.MULTILINE)
     assert port is not None
     assert {"thewoolleyman/livespec-dev-tooling": int(port.group(1))} == INSTALLATION_PORTS
+
+
+def test_the_controller_itself_refuses_another_repositorys_operation_retaining_nothing(
+    tmp_path: Path,
+) -> None:
+    controller = _controller(tmp_path=tmp_path, core=Core())
+    other = "example/other"
+    operations = (
+        ("/enablement", {"repository": other, "manifest_sha256": CURRENT, "operation_id": "o"}),
+        ("/enablement/revoke", {"repository": other, "operation_id": "o"}),
+        ("/fence/arm", {"repository": other, "operation_id": "o"}),
+        ("/fence/disarm", {"repository": other, "operation_id": "o"}),
+        ("/enablement/read", {"repository": other}),
+    )
+    statuses = [controller.execute(path=path, payload=payload) for path, payload in operations]
+    named = "an enablement operation for another repository than this installation's"
+    assert statuses == [{"schema": 1, "status": "refused", "reason": named}] * len(operations)
+    assert (_read(controller)["status"], _read(controller)["armed"]) == ("absent", False)
+
+
+def test_arming_is_refused_on_a_revoked_reading(tmp_path: Path) -> None:
+    controller = _controller(tmp_path=tmp_path, core=Core())
+    _ = _enable(controller)
+    _ = _fence(controller, path="/enablement/revoke", op="revoke-1")
+    refused = _fence(controller, path="/fence/arm", op="arm-1")
+    assert (refused["status"], refused["reason"]) == (
+        "refused",
+        "no record binds the current manifest identity; the fence stays disarmed",
+    )
+    assert (_read(controller)["status"], _read(controller)["armed"]) == ("revoked", False)
+
+
+def test_arming_is_refused_on_an_unavailable_reading(tmp_path: Path) -> None:
+    core = Core()
+    controller = _controller(tmp_path=tmp_path, core=core)
+    _ = _enable(controller)
+    core.head, core.identity = NEW_HEAD, None
+    refused = _fence(controller, path="/fence/arm", op="arm-1")
+    assert (refused["status"], refused["reason"]) == (
+        "refused",
+        "no record binds the current manifest identity; the fence stays disarmed",
+    )
+    assert (_read(controller)["status"], _read(controller)["armed"]) == ("unavailable", False)
