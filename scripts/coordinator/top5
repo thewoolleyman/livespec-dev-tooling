@@ -31,9 +31,10 @@ import os
 import subprocess
 
 TOP = [
-    ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
-    ("2 central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; maintainer-driven design)", "overseer-iyfjbo"),
-    ("3 bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; the Hetzner seat move)", "hxi-vxsmdv"),
+    ("1 dev-host-disk-retention (VPS overload prevention; workspace livespec-dev-tooling, tab dev-host-disk-retention)", "livespec-dev-tooling-qgwxo4"),
+    ("2a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; the Hetzner migration off vmi3006760)", "hxi-vxsmdv"),
+    ("2b central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; the Hetzner credential leg)", "overseer-iyfjbo"),
+    ("3 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
     ("4 stale-base-merge-options (now the GitHub org move plus merge queue; prep only)", "livespec-dev-tooling-xowhol"),
     ("5 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
     ("6 address-honeycomb-alerts (orchestrator; carriers dolt-server-cudtkp, donph5, 7tfa3x, bd-ib-z2y4ca, bd-ib-immkx7)", "bd-ib-xkwdap"),
