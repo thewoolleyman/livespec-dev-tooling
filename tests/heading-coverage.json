@@ -3236,17 +3236,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test whose closure names a changed file only under a temporary root is retried",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the flake-retry plugin, given a failing test whose closure names `.github/workflows/ci.yml` only under a `tmp_path`-rooted path expression and a change set containing that file, re-runs the test on its own. livespec-dev-tooling-jfy23q owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-jfy23q"
+    "test": "tests.livespec_dev_tooling.test_flake_retry_path_bases.test_a_changed_file_named_only_under_a_temporary_root_is_retried",
+    "reason": "Integration-tier test: with a change set of `.github/workflows/ci.yml`, a closure that names the file only through `root / \".github\" / \"workflows\" / \"ci.yml\"` on a parameter `root` or a root built from `tmp_path` gets the retry marker (livespec-dev-tooling-jfy23q, livespec-dev-tooling-bob7iv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test that copies a repository directory into a temporary root is still touched",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the flake-retry plugin, given a failing test that copies `REPO_ROOT / \"ci-runner\"` into `tmp_path` and a change set containing `ci-runner/k3s/x.sh`, fails the session at once with no re-run. livespec-dev-tooling-jfy23q owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-jfy23q"
+    "test": "tests.livespec_dev_tooling.test_flake_retry_path_bases.test_a_test_copying_a_repository_directory_into_a_temporary_root_is_touched",
+    "reason": "Integration-tier test: with a change set of `ci-runner/k3s/x.sh`, a closure that copies `REPO_ROOT / \"ci-runner\"` into `tmp_path / \"ci-runner\"`, `REPO_ROOT` assigned `Path(__file__).resolve().parents[1]`, gets no retry marker (livespec-dev-tooling-jfy23q, livespec-dev-tooling-bob7iv)."
   },
   {
     "spec_root": "SPECIFICATION",
