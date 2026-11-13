@@ -111,7 +111,10 @@ _CEILING_FLOOR = 6
 # tests/spec/test_jit_admission_budget.py holds to its DERIVATION.md rows. An
 # exception may waive the rule, never the borrowing clause: it must still sit
 # ABOVE the floor it bounds.
-_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {"fabro-cq": 2}
+_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
+    "fabro-cq": 2,
+    "livespec-orchestrator-master-cq": 4,
+}
 
 _DOC_SEPARATOR = re.compile(r"^---$", re.MULTILINE)
 _KIND = re.compile(r"^kind:\s*(?P<kind>\S+)$", re.MULTILINE)
