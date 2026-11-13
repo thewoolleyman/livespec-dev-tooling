@@ -6,7 +6,7 @@
 # its tree; the installer is retired there as a follow-up). The unit TEXT stays
 # that repository's: this role reads it from the host's own checkout,
 # substitutes its @PLACEHOLDER@ tokens and the credential wrapper per tenant, and
-# adds host policy (interval, bound, restart, dead-man marker) as drop-ins.
+# adds host policy (interval, bound, sweep order, dead-man marker) as drop-ins.
 #
 # One timer per host starts one sweep; the sweep runs each enabled tenant's
 # pass in list order, one at a time. Every declared tenant's service is always
@@ -25,6 +25,7 @@
       - reconcile_runs_group | string | length > 0
       - reconcile_runs_timeout_seconds | int > 0
       - reconcile_runs_stale_after_seconds | int > reconcile_runs_timeout_seconds | int
+      - reconcile_runs_manage_systemd is boolean
     fail_msg: >-
       reconcile_runs_enabled must be a boolean, reconcile_runs_tenants a list,
       the account declared, and the staleness bound longer than one pass's
@@ -175,6 +176,27 @@
   loop_control:
     label: "{{ item.item.0 }}: {{ item.item.1 }}"
 
+- name: Check the staleness unit's OnFailure= alert unit
+  ansible.builtin.stat:
+    path: >-
+      {{ reconcile_runs_unit_dir }}/{{ reconcile_runs_staleness_on_failure
+         | regex_replace('@.*$', '@') }}.service
+  register: reconcile_runs_alert_unit
+  become: true
+  check_mode: false
+  when: reconcile_runs_staleness_on_failure | length > 0
+
+- name: Refuse an OnFailure= target that is not installed
+  ansible.builtin.assert:
+    that: reconcile_runs_alert_unit.stat.exists
+    fail_msg: >-
+      reconcile_runs_staleness_on_failure names {{ reconcile_runs_staleness_on_failure }},
+      but {{ reconcile_runs_alert_unit.stat.path }} is not installed. A staleness
+      check whose alert unit is missing fails with nobody told; install the alert
+      unit, or clear the variable on a host whose telemetry reads the markers.
+    success_msg: the staleness alert unit is installed
+  when: reconcile_runs_staleness_on_failure | length > 0
+
 # --- Install ---
 
 - name: Create the reconcile-runs success-marker directory
@@ -190,8 +212,8 @@
   ansible.builtin.copy:
     src: livespec-reconcile-runs-staleness
     dest: "{{ reconcile_runs_staleness_bin }}"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0755"
   become: true
 
@@ -216,8 +238,8 @@
          | replace('@PRIMARY_REPO@', item.repo)
          | replace('@RUN_AS_USER@', reconcile_runs_user) }}
     dest: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}.service"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   loop: "{{ reconcile_runs_resolved }}"
   loop_control:
@@ -240,8 +262,8 @@
          | replace('@RUN_AS_USER@', reconcile_runs_user)
          | regex_replace('(?m) --json$', ' --dry-run --json') }}
     dest: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}-dry-run.service"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   loop: "{{ reconcile_runs_resolved }}"
   loop_control:
@@ -256,8 +278,8 @@
       # Rendered from {{ reconcile_runs_template_dir }}/reconcile-runs.timer.
       {{ reconcile_runs_timer_text | replace('Unit=reconcile-runs.service', 'Unit=' ~ reconcile_runs_sweep_unit ~ '.service') }}
     dest: "{{ reconcile_runs_unit_dir }}/{{ reconcile_runs_timer_unit }}.timer"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   register: reconcile_runs_rendered_timer
   become: true
@@ -266,8 +288,8 @@
   ansible.builtin.template:
     src: reconcile-runs-sweep.service.j2
     dest: "{{ reconcile_runs_unit_dir }}/{{ reconcile_runs_sweep_unit }}.service"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   register: reconcile_runs_rendered_sweep
   become: true
@@ -276,20 +298,20 @@
   ansible.builtin.file:
     path: "{{ reconcile_runs_unit_dir }}/{{ item }}.d"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0755"
   loop: >-
     {{ reconcile_runs_resolved | map(attribute='unit') | map('regex_replace', '$', '.service') | list
        + [reconcile_runs_timer_unit ~ '.timer'] }}
   become: true
 
-- name: Install each tenant's service policy (bound, restart, dead-man marker)
+- name: Install each tenant's service policy (bound, sweep order, dead-man marker)
   ansible.builtin.template:
     src: reconcile-runs-policy.conf.j2
     dest: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}.service.d/10-reconcile-runs-role.conf"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   loop: "{{ reconcile_runs_resolved }}"
   loop_control:
@@ -301,8 +323,8 @@
   ansible.builtin.template:
     src: reconcile-runs-interval.conf.j2
     dest: "{{ reconcile_runs_unit_dir }}/{{ reconcile_runs_timer_unit }}.timer.d/10-reconcile-runs-role.conf"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   register: reconcile_runs_rendered_interval
   become: true
@@ -311,8 +333,8 @@
   ansible.builtin.template:
     src: "{{ item }}.j2"
     dest: "{{ reconcile_runs_unit_dir }}/{{ item | replace('reconcile-runs-staleness', reconcile_runs_staleness_unit) }}"
-    owner: root
-    group: root
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
     mode: "0644"
   loop:
     - reconcile-runs-staleness.service
@@ -324,12 +346,16 @@
   ansible.builtin.systemd_service:
     daemon_reload: true
   become: true
-  when: >-
+  when: reconcile_runs_manage_systemd and (
     (reconcile_runs_rendered_services.results + reconcile_runs_rendered_dry_runs.results
      + reconcile_runs_rendered_policies.results + reconcile_runs_rendered_staleness.results
      + [reconcile_runs_rendered_timer, reconcile_runs_rendered_sweep, reconcile_runs_rendered_interval])
-    | selectattr('changed') | list | length > 0
+    | selectattr('changed') | list | length > 0)
 
+# Option (a) of the missing-marker advisory: a tenant enabled here gets its
+# marker now, so no telemetry reading the markers reports it `missing` before
+# its first pass. `creates:` never refreshes an existing marker, so a tenant
+# that really went stale is not hidden.
 - name: Seed the success marker of a newly enabled tenant
   ansible.builtin.command:
     argv: [touch, "{{ item.marker }}"]
@@ -355,7 +381,7 @@
   loop_control:
     label: "{{ item.0 }}.timer"
   become: true
-  when: not ansible_check_mode or item.1.stat.exists
+  when: reconcile_runs_manage_systemd and (not ansible_check_mode or item.1.stat.exists)
 
 # A timer already running when its file changes is NOT re-activated by the
 # daemon-reload, so a past OnBootSec= never fires again, and OnUnitInactiveSec=
@@ -369,6 +395,7 @@
   become: true
   changed_when: true
   when:
+    - reconcile_runs_manage_systemd
     - not ansible_check_mode
     - reconcile_runs_resolved | selectattr('effective_enabled') | list | length > 0
     - reconcile_runs_rendered_timer.changed or reconcile_runs_rendered_interval.changed

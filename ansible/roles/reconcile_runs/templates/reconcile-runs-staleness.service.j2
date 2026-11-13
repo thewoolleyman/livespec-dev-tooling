@@ -1,10 +1,13 @@
 # {{ ansible_managed }}
 [Unit]
 Description=Report reconcile-runs tenants with no successful pass within {{ reconcile_runs_stale_after_seconds }}s
+{% if reconcile_runs_staleness_on_failure %}
+OnFailure={{ reconcile_runs_staleness_on_failure }}
+{% endif %}
 
 [Service]
 Type=oneshot
 User={{ reconcile_runs_user }}
 Group={{ reconcile_runs_group }}
-ExecStart={{ reconcile_runs_staleness_bin }} {{ reconcile_runs_stale_after_seconds }}{% for t in reconcile_runs_resolved if t.effective_enabled %} {{ t.name }}={{ t.marker }}{% endfor %}
+ExecStart={{ reconcile_runs_staleness_bin }}{% if reconcile_runs_staleness_on_failure %} --alert-state {{ reconcile_runs_staleness_alert_state }} --realert-seconds {{ reconcile_runs_staleness_realert_seconds }}{% endif %} {{ reconcile_runs_stale_after_seconds }}{% for t in reconcile_runs_resolved if t.effective_enabled %} {{ t.name }}={{ t.marker }}{% endfor %}
 

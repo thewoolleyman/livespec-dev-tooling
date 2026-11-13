@@ -1,36 +1,71 @@
 #!/usr/bin/env bash
-# Dead-man check for the reconcile-runs timers (role reconcile_runs).
+# Dead-man check for the reconcile-runs sweep (role reconcile_runs).
 #
-# usage: livespec-reconcile-runs-staleness <bound-seconds> [<tenant>=<marker>]...
+# usage: livespec-reconcile-runs-staleness [--alert-state FILE --realert-seconds N]
+#          <bound-seconds> [<tenant>=<marker>]...
 #
-# Each marker is touched by its tenant's reconcile-runs.service ExecStartPost,
-# which runs only after a pass that exits 0. A marker that is missing or older
-# than the bound means that tenant's reconciler has not completed a pass within
-# the bound; this exits 1 and names the tenant and the age, so the unit fails
-# and a reader of the journal or the failed-unit list sees which tenant.
+# Each marker is touched by its tenant's service ExecStartPost, which runs only
+# after a pass that exits 0. A marker missing or older than the bound means that
+# tenant has not completed a pass within the bound, and the check journals
+# `reconcile-runs-stale tenant=<name> age_seconds=<n>`.
+#
+# Without --alert-state the check exits 1 whenever any tenant is stale. With it,
+# the check exits 1 only when the stale set changes or the last alert is older
+# than --realert-seconds, so a unit whose OnFailure= sends an alert raises one
+# alert per stale episode (and a reminder), never one every five minutes.
 set -euo pipefail
 
+alert_state=''
+realert=86400
+while (($#)); do
+  case "$1" in
+    --alert-state) alert_state="${2:?}"; shift 2 ;;
+    --realert-seconds) realert="${2:?}"; shift 2 ;;
+    *) break ;;
+  esac
+done
 bound="${1:?bound seconds required}"
 shift
-[[ "${bound}" =~ ^[0-9]+$ ]] || { printf 'reconcile-runs-staleness: bound %s is not a whole number of seconds\n' "${bound}" >&2; exit 64; }
+for number in "${bound}" "${realert}"; do
+  [[ "${number}" =~ ^[0-9]+$ ]] || { printf 'reconcile-runs-staleness: %s is not a whole number of seconds\n' "${number}" >&2; exit 64; }
+done
 
 now="$(date +%s)"
-status=0
+stale=()
 for pair in "$@"; do
   tenant="${pair%%=*}"
   marker="${pair#*=}"
   if [[ ! -e "${marker}" ]]; then
     printf 'reconcile-runs-stale tenant=%s age_seconds=missing bound_seconds=%s marker=%s\n' \
       "${tenant}" "${bound}" "${marker}"
-    status=1
+    stale+=("${tenant}")
     continue
   fi
   age=$((now - $(stat -c %Y -- "${marker}")))
   if ((age > bound)); then
     printf 'reconcile-runs-stale tenant=%s age_seconds=%d bound_seconds=%s\n' "${tenant}" "${age}" "${bound}"
-    status=1
+    stale+=("${tenant}")
   else
     printf 'reconcile-runs-fresh tenant=%s age_seconds=%d bound_seconds=%s\n' "${tenant}" "${age}" "${bound}"
   fi
 done
-exit "${status}"
+
+if ((${#stale[@]} == 0)); then
+  [[ -z "${alert_state}" ]] || rm -f -- "${alert_state}"
+  exit 0
+fi
+[[ -n "${alert_state}" ]] || exit 1
+
+current="${stale[*]}"
+previous=''
+alerted=0
+if [[ -r "${alert_state}" ]]; then
+  { read -r previous || true; read -r alerted || true; } <"${alert_state}"
+  [[ "${alerted}" =~ ^[0-9]+$ ]] || alerted=0
+fi
+if [[ "${current}" == "${previous}" ]] && ((now - alerted < realert)); then
+  printf 'reconcile-runs-stale-already-alerted tenants=%s alerted_at=%d\n' "${current// /,}" "${alerted}"
+  exit 0
+fi
+printf '%s\n%d\n' "${current}" "${now}" >"${alert_state}"
+exit 1

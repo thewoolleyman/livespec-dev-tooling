@@ -1,0 +1,11 @@
+# Ansible managed
+[Unit]
+Description=Report reconcile-runs tenants with no successful pass within 14400s
+OnFailure=fixture-alert@%n.service
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@GROUP@
+ExecStart=@ROOT@/bin/staleness --alert-state @ROOT@/state/.staleness-alerted --realert-seconds 86400 14400
+
