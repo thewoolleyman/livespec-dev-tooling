@@ -16,7 +16,7 @@ from livespec_dev_tooling._flake_retry_scopes import (
 )
 from livespec_dev_tooling.flake_retry_divisions import division_operands
 
-__all__: list[str] = ["PathChain", "path_chains", "path_literals"]
+__all__: list[str] = ["PathChain", "path_chains", "path_literals", "repository_root_expressions"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,6 +92,13 @@ def _repository_root_context(
     """
     if source_path is None or repo_root is None:
         return None
+    return repository_root_expressions(source_path=source_path, repo_root=repo_root, index=index)
+
+
+def repository_root_expressions(
+    *, source_path: Path, repo_root: Path, index: ScopeIndex
+) -> frozenset[int]:
+    """The ids of every expression of one module that resolves to the repository root."""
     resolved_root = repo_root.resolve()
     changed = True
     while changed:
@@ -189,12 +196,18 @@ def path_chains(
     repo_root: Path | None = None,
     source_path: Path | None = None,
     index: ScopeIndex | None = None,
+    root_expression_ids: frozenset[int] | None = None,
 ) -> tuple[PathChain, ...]:
-    """Every outermost path expression with what it names and whether it is undeterminable."""
+    """Every outermost path expression with what it names and whether it is undeterminable.
+
+    `root_expression_ids`, when given, are the module's repository-root
+    expressions already found; otherwise they are found from `source_path`.
+    """
     scope_index = index_scopes(tree=tree) if index is None else index
-    root_expression_ids = _repository_root_context(
-        source_path=source_path, repo_root=repo_root, index=scope_index
-    )
+    if root_expression_ids is None:
+        root_expression_ids = _repository_root_context(
+            source_path=source_path, repo_root=repo_root, index=scope_index
+        )
     nested_divisions = {
         id(child)
         for node in scope_index.nodes
