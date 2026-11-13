@@ -21,3 +21,14 @@ definition it should apply.
   `apply-boards.sh` write, not the state before any write.
 - Input for livespec-dev-tooling-bgespb: its committed definition must carry
   every panel recorded here.
+
+## livespec-family-all-activity.krThv8DvcwS.2026-11-13.pre-throughput.json
+
+- The same board, `krThv8DvcwS`, exported earlier on 2026-11-13 (about 23:3xZ)
+  by the throughput-track-organization seat, BEFORE the two throughput panels
+  were placed on it. It has 7 panels (6 query and 1 text). It carries the saved
+  query and annotation of each query panel under `queries` and `annotations`.
+- This is the board's state before ANY write for the throughput track. It is
+  the export that livespec-dev-tooling-bgespb's host-captured Definition of Done
+  asks for ("taken before the first applied write"). The file above records
+  the later, hand-edited state that `apply-boards.sh` first wrote over.
