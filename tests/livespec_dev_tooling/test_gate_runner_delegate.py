@@ -1043,3 +1043,18 @@ def test_cluster_runner_cli_omits_absent_evidence_and_streams_its_detail(
     assert not (run_dir / "tree_hash").exists()
     assert not (run_dir / "job_name").exists()
     assert capsys.readouterr().err == "lost\n"
+
+
+def test_the_runner_refuses_before_selecting_a_venue_when_incident_entry_refuses(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused incident boundary remains authoritative over venue selection."""
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    monkeypatch.setattr(module.sys, "argv", ["gate-runner-venue", "--local", "just", "check"])
+    monkeypatch.setattr(
+        module,
+        "resolve_entrance",
+        lambda **_kwargs: SimpleNamespace(mode="refused", status=78),
+    )
+
+    assert module.main() == 78

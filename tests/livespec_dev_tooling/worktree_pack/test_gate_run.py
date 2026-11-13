@@ -258,6 +258,27 @@ def _start(*, cwd: Path, env: dict[str, str], command: list[str]) -> str:
     return started.stdout.strip()
 
 
+def _stop_if_needed(*, cwd: Path, env: dict[str, str], run_dir: Path, run_id: str) -> None:
+    """Stop a still-running fixture gate, preserving the original test failure."""
+    if run_dir.is_dir() and not (run_dir / "stopped").is_file():
+        _ = _gate(cwd=cwd, env=env, args=["stop", run_id])
+
+
+def test_fixture_cleanup_stops_a_gate_that_did_not_reach_its_assertions(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Fixture cleanup cannot leave a detached local gate alive after a test aborts."""
+    primary, worktree, env = fixture_repo
+    run_id = _start(cwd=worktree, env=env, command=["bash", "-c", "while :; do sleep 1; done"])
+    run_dir = primary / _STORE / run_id
+
+    try:
+        _stop_if_needed(cwd=worktree, env=env, run_dir=run_dir, run_id=run_id)
+        assert (run_dir / "stopped").is_file()
+    finally:
+        _stop_if_needed(cwd=worktree, env=env, run_dir=run_dir, run_id=run_id)
+
+
 @pytest.mark.integration
 def test_gate_stop_ends_a_push_hook_client_in_its_own_session_before_the_push(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
@@ -309,8 +330,7 @@ wait "$!"
         )
         assert absent.returncode != 0
     finally:
-        if run_dir.is_dir() and not (run_dir / "stopped").is_file():
-            _ = _gate(cwd=worktree, env=env, args=["stop", run_id])
+        _stop_if_needed(cwd=worktree, env=env, run_dir=run_dir, run_id=run_id)
 
 
 def _wait_for_file(
