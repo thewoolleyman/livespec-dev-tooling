@@ -12,9 +12,9 @@
 # DaemonSets selected onto homelab workers, so the image carries only the node
 # agent, its runtime, CNI plugins, Tailscale and AppArmor userspace, plus the
 # node's host collector (otelcol-contrib, the fleet's pinned release; DoD
-# assertion 18), which starts only once converge and the start task have
-# delivered its configuration, node values and ingest key under
-# /etc/otel-collector.
+# assertion 18), whose hostmetrics unit starts once the configuration and
+# ingest key arrive. The sibling pod-span unit additionally needs node values,
+# so a missing cni0 bridge cannot silence host telemetry.
 #
 # Every downloaded asset is pinned by version AND per-architecture SHA-256 and
 # selected by TARGETARCH. Only arm64 checksums are declared so far; building
@@ -106,7 +106,7 @@ COPY systemd/ /etc/systemd/system/
 COPY containerd-config.toml /etc/containerd/config.toml
 COPY crictl.yaml /etc/crictl.yaml
 
-RUN systemctl enable containerd.service tailscaled.service kubelet.service otel-collector.service \
+RUN systemctl enable containerd.service tailscaled.service kubelet.service otel-collector.service otel-collector-pods.service \
  && mkdir -p /var/lib/kubelet /var/lib/containerd /var/lib/tailscale /etc/homelab-worker /etc/otel-collector
 
 LABEL org.opencontainers.image.source="https://github.com/thewoolleyman/livespec-dev-tooling" \

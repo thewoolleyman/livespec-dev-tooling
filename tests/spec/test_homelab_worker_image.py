@@ -125,16 +125,23 @@ def test_the_worker_enrolls_on_the_tailnet_untagged_with_no_auth_key() -> None:
     assert " up " not in unit
 
 
-def test_the_host_collector_starts_only_once_its_configuration_and_key_are_delivered() -> None:
-    # The worker's telemetry route (research 009, assertion 18): otelcol-contrib as a unit beside
-    # the kubelet, reading the delivered config, the converge-written node values and the key.
-    unit = (_IMAGE / "systemd" / "otel-collector.service").read_text(encoding="utf-8")
-    for path in ("config.yaml", "node.env", ".env"):
-        assert f"ConditionPathExists=/etc/otel-collector/{path}" in unit, path
-    assert "EnvironmentFile=/etc/otel-collector/node.env" in unit
-    assert "EnvironmentFile=/etc/otel-collector/.env" in unit
-    assert "--config=/etc/otel-collector/config.yaml" in unit
+def test_the_host_collector_runs_without_the_pod_bridge_while_pod_spans_retry() -> None:
+    """A missing cni0 bridge must not silence the worker's hostmetrics."""
+    host_unit = (_IMAGE / "systemd" / "otel-collector.service").read_text(encoding="utf-8")
+    assert "ConditionPathExists=/etc/otel-collector/node.env" not in host_unit
+    assert "EnvironmentFile=/etc/otel-collector/node.env" not in host_unit
+    for path in ("config.yaml", ".env"):
+        assert f"ConditionPathExists=/etc/otel-collector/{path}" in host_unit, path
+    assert "--config=/etc/otel-collector/config.yaml" in host_unit
+
+    pod_unit = (_IMAGE / "systemd" / "otel-collector-pods.service").read_text(encoding="utf-8")
+    for path in ("pods-config.yaml", "node.env", ".env"):
+        assert f"ConditionPathExists=/etc/otel-collector/{path}" in pod_unit, path
+    assert "EnvironmentFile=/etc/otel-collector/node.env" in pod_unit
+    assert "--config=/etc/otel-collector/pods-config.yaml" in pod_unit
+    assert "Restart=on-failure" in pod_unit
     text = _DOCKERFILE.read_text(encoding="utf-8")
     [enable] = re.findall(r"systemctl enable ([^\\\n]+)", text)
     assert "otel-collector.service" in enable.split()
+    assert "otel-collector-pods.service" in enable.split()
     assert "/etc/otel-collector" in text
