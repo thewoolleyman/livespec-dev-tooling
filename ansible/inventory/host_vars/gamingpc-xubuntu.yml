@@ -51,7 +51,15 @@ disk_guard_threshold_gb: 40
 # together, and with the lane back at 5 cpu, (12 - 5 - 0.5) / 3 = 2.17. This
 # value and the gate lane are their owners' to re-derive; this change moves
 # neither.
-factory_pod_budget: 1
+#
+# TWO again, re-derived 2026-11-13 by plan gate-job-resources on wsjl7j's
+# measured allocatable, 12 cpu / 94597Mi (read back 08:52:22Z). The gate lane
+# has been back at 5 cpu / 8 GiB since livespec-dev-tooling#4454 was applied at
+# ~08:3xZ. cpu (12 - 5 - 0.5) / 3 = 2.17 and memory
+# (92.4 - 8 - 0.5) / 7.45 = 11.3, so 2. Both remaining parts of the revert
+# condition above held: the hand-land burst ended, and gate waits read under
+# 300 s.
+factory_pod_budget: 2
 
 # --- k3s_config ---
 # user.slice's CPU share, so the maintainer's local sessions on this
