@@ -167,8 +167,8 @@ def test_nextest_archive_extraction_does_not_replay_foreign_ownership() -> None:
     assert 'tar --no-same-owner -xzf "${archive}" -C "${dir}" cargo-nextest' in script
 
 
-def test_warm_uses_the_fork_build_image_that_supplies_make() -> None:
-    """The warm uses the ARC build base, then bootstraps only its runtime tooling."""
+def test_warm_bootstraps_its_runtime_tools_with_the_minimum_apt_capabilities() -> None:
+    """The restricted CronJob retains only the capabilities apt needs to bootstrap."""
     script = (_WARM_CACHE / "warm-cache-fabro-populate.sh").read_text(encoding="utf-8")
     cronjob = _FABRO_CRONJOB.read_text(encoding="utf-8")
 
@@ -176,6 +176,9 @@ def test_warm_uses_the_fork_build_image_that_supplies_make() -> None:
     assert "ensure_fork_toolchain_bootstrap()" in script
     assert "apt-get install -y --no-install-recommends python3 rustup" in script
     assert 'command -v make >/dev/null || die "make is not on PATH"' in script
+    assert "allowPrivilegeEscalation: false" in cronjob
+    assert 'drop: ["ALL"]' in cronjob
+    assert 'add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]' in cronjob
 
 
 def test_both_overlap_reads_count_an_unfinished_job_not_only_an_active_pod() -> None:

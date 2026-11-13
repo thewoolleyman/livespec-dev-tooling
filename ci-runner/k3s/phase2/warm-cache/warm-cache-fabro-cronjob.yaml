@@ -96,6 +96,10 @@ spec:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
+                  # apt bootstraps Python and rustup before the fork build. Its
+                  # unprivileged helper needs these filesystem and group-ID
+                  # operations; all other Linux capabilities remain dropped.
+                  add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
               resources:
                 requests:
                   cpu: "500m"

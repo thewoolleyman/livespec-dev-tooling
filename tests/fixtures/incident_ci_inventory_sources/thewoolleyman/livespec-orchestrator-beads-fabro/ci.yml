@@ -1,0 +1,1578 @@
+# Per-target matrix CI for livespec-orchestrator-beads-fabro.
+#
+# Generated from livespec/templates/impl-plugin/.github/workflows/
+# ci.yml.jinja at copier-copy time; re-sync via `copier update --vcs-ref=master` when
+# livespec publishes a new release.
+#
+# Authority: livespec/SPECIFICATION/non-functional-requirements.md
+#   §"CI as a merge gate (branch protection)" — PR gate ≡ master gate:
+#   every gating job runs identically on a `pull_request` and on a `push`
+#   to master. There is NO change-detection gate. The retired zero-.py
+#   subsetting (a `setup`/`detect-py-changes` job exporting `py_changed`,
+#   on which the Python-code jobs conditioned their real steps so a
+#   doc-only PR skipped them) was the seam that let a workflow-only PR
+#   merge green and redden master on 2026-09-04; check-ci-gate-parity
+#   (armed to fail in check-metadata-batch below) now reddens any
+#   regression that reintroduces a py_changed-conditioned gating job.
+#
+# Authority: livespec/SPECIFICATION/non-functional-requirements.md
+#   §"Toolchain pins" — direct tool invocations (ruff, pyright,
+#   pytest, python3) in `run:` lines are forbidden; every step
+#   delegates to `just <target>`.
+#
+# Starter scaffold: the Python-code matrix carries only the tool-
+# backed checks (lint, format, types, coverage). The metadata matrix
+# is empty. As livespec-orchestrator-beads-fabro populates dev-tooling/checks/
+# scripts, add the corresponding `check-<slug>` targets to the
+# appropriate matrix and to branch protection's required-status-
+# checks list.
+
+name: CI
+
+# uv occasionally fails when the PyPI file CDN (files.pythonhosted.org)
+# drops a wheel download mid-stream ("broken pipe"). UV_HTTP_RETRIES
+# makes uv retry the fetch in-process instead of failing the job.
+# There is no actions/cache step for uv: each job's container image
+# carries the uv cache, and the uid-1000 legs point UV_CACHE_DIR at the
+# node's warm uv seed when it is writable (bd-ib-rpit5z, below).
+#
+# mise reaches the SAME class of CDN (GitHub releases) for its tool binaries
+# and fails identically. mise's own default is `http_retries = 0` — one
+# attempt, no retry — so the lesson already learned for uv above has to be
+# spelled out again here.
+env:
+  UV_HTTP_RETRIES: "5"
+  MISE_HTTP_RETRIES: "5"
+  # Lane-selected uv fetch bounds, required of every workflow that routes
+  # through CI_RUNNER_LABELS (livespec-dev-tooling's self_hosted_uv_lane
+  # check; the fleet form every routed member carries). The self-hosted pool
+  # runs many job slots on ONE host behind one uplink, so per-job download
+  # concurrency is capped there and the transfer timeout raised; the hosted
+  # lane keeps uv's own defaults. Missed by the routing change (livespec-ifwnqj.1)
+  # because a ci.yml-only pull request skips the python-batch job that runs
+  # the check, and it fired on the first master push instead.
+  UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+  UV_HTTP_TIMEOUT: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+
+# merge_group is deliberately ABSENT: no merge queue is configured for this
+# repo (verified live — zero rulesets, required_merge_queue: null; branch
+# protection requires only the ci-green context). Keeping the vestigial trigger
+# would leave a dead event in the trigger set. Re-add it only if a merge queue
+# is actually adopted.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# RUNNER ROUTING — the fleet's flippable form, like the other nine members.
+#
+# Every check job's `runs-on` reads the repository variable CI_RUNNER_LABELS
+# and falls back to GitHub-hosted `ubuntu-latest` when it is unset;
+# `export-telemetry` and `ci-green` stay hosted so the gate reporter never
+# depends on the self-hosted pool (the same convention every routed
+# member's ci.yml follows). The variable
+# points at this repo's PowerEdge scale set (`livespec-orchestrator-k3s`,
+# livespec-dev-tooling ci-runner/k3s/phase2/arc/values-livespec-orchestrator-beads-fabro.yaml)
+# and is written only through livespec-dev-tooling's guarded
+# ci-runner/set-ci-runner-labels.sh, which refuses unless the fork-PR
+# approval tier is at its strictest setting.
+#
+# Until 2026-09-04 this file was plain `runs-on: ubuntu-latest` by a recorded
+# caution: this repo also hosts the fleet's operator-triggered live
+# golden-master tier (acceptance-live-golden-master.yml, a separate workflow
+# on a separate `livespec-orchestrator`-labeled runner), and routing CI here
+# was called a "two-trust-tier" decision. The maintainer settled it in
+# session on 2026-09-04 (livespec plan ci-runner-pod-lifecycle-reliability,
+# epic livespec-ifwnqj, the ~16:15Z scope event, Carrier G1): the exposure is
+# the same as every other member's, and this file's triggers are
+# `pull_request` + `push` exactly like livespec's, so livespec-dev-tooling's
+# self_hosted_routing guard (which fires only when a workflow both names the
+# `local-ci` label and uses an automation trigger) does not bear on it. The
+# fallback here is `ubuntu-latest`, not `local-ci`, for that reason.
+#
+# The baked `container:` image below is orthogonal to routing: it gives the
+# check jobs the SAME environment the Fabro sandbox runs, so "green in CI" and
+# "green in sandbox" mean the same thing (livespec plan/fabro-ci-image-factoring).
+
+# B' master-push concurrency (livespec-dev-tooling SPECIFICATION/constraints.md
+# §"CI matrix shape", v182; bd-ib-5o5ibo; the same shape as
+# livespec-dev-tooling-qzw2gf). Every push to refs/heads/master joins ONE group with
+# cancel-in-progress false: the run in progress always completes, and when a newer
+# master push joins, GitHub cancels the older run still PENDING in the group, so only
+# the newest pending run is kept. A dropped run is never its commit's verdict. Every
+# other run groups by its own run_id and is never held: pull requests,
+# `chore(master): release` commits, the incident recovery principal's
+# `Revert complete incident PR #` commits, and every push in which ANY commit carries a
+# `Factory-Override:` trailer, which covers the expedited-incident trailer (a superset, so
+# no expedited run is ever dropped). This repository calls no master-health reconciler,
+# which the allowance requires.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref == 'refs/heads/master' && !startsWith(github.event.head_commit.message, 'chore(master): release') && !startsWith(github.event.head_commit.message, 'Revert complete incident PR #') && !contains(join(github.event.commits.*.message, ' '), 'Factory-Override:')) && 'master-push' || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  check-python:
+    name: ${{ matrix.target }} (${{ matrix.uid }})
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # bd-ib-sfa2: every target runs under BOTH uids, and BOTH are
+        # required — the nonroot leg HERE, on every pull request and master
+        # push, and the root leg in `ci-root-uid.yml`, on master every three
+        # hours (bd-ib-xufdwx, plan ci-runtime-and-cost, maintainer direction
+        # 2026-11-03: "root and non root . is overkill. move one to
+        # dschrduled master job"). Nonroot stays on pull requests because it
+        # is the production-shaped uid: the janitor and factory workers run
+        # non-root. A red scheduled root run is filed as a breakage work item
+        # (bd-ib-pgbr52), so a root-only divergence is found on master after
+        # merge rather than before it. Before this dimension existed the whole matrix ran as
+        # root, so CI STRUCTURALLY COULD NOT exhibit a non-root divergence —
+        # which is how `_dispatcher_janitor_lock.py:133` stayed uncovered for
+        # every non-root runner while CI reported green on the same SHA, and
+        # the janitor (which runs NON-ROOT in a fresh checkout) was red on
+        # master for weeks.
+        #
+        # NO divergence-detection machinery is needed, and that is deliberate:
+        # the existing 100% coverage gate ALREADY converts divergence into a
+        # failure. A line reachable only as root is unreachable in the non-root
+        # leg, which then misses 100% and fails; a line reachable only as
+        # non-root fails the root leg identically. So divergence cannot survive
+        # two independently-gated legs — no comparison step, no report-diffing,
+        # no second invariant that could drift from the first. Moving the root
+        # leg to a schedule changes WHEN it gates, not WHETHER: each uid is
+        # still gated at 100% on its own.
+        #
+        # THIS ARGUMENT DEPENDS ON THE COVERAGE FAIL-UNDER REMAINING 100%
+        # (`pyproject.toml [tool.coverage.report] fail_under = 100`, which
+        # carries the reciprocal note). Lower it and this reasoning lapses:
+        # explicit divergence detection would then become necessary, because a
+        # line missing in exactly one leg could sit under the threshold in both.
+        #
+        # Both uids run the FULL target list rather than a curated
+        # "targets that can diverge" subset. A hand-enumerated subset would be
+        # a drift-prone allowlist that silently stops covering new targets —
+        # the defect class of `bd-ib-d9gf`. Uniformity costs runner minutes and
+        # buys the absence of a list nobody would remember to update.
+        uid:
+          - nonroot
+        target:
+          # Batched-CI shape (work-item livespec-dev-tooling-yilyxr.9,
+          # porting dev-tooling PR #1469): tool-backed slugs must be
+          # LITERAL matrix members (check-tool-backed-check-completeness)
+          # and the cheap .py-scanning targets moved to
+          # check-python-batch below, which keeps the SAME uid matrix (here
+          # and in ci-root-uid.yml) so the bd-ib-sfa2 both-uids invariant
+          # holds for every target
+          # (slug drift stays policed by ci-matrix-completeness). The
+          # coverage PAIR left this matrix entirely (work-item
+          # livespec-dev-tooling-yilyxr.8, porting dev-tooling PRs #1504
+          # + #1511) for the producer/consumer chain below — which keeps
+          # the uid dimension, so bd-ib-sfa2's argument is untouched.
+          - check-lint
+          - check-format
+          - check-types
+    steps:
+      # Per-step `if:` (not job-level) so each matrix entry still reports a
+      # status check named `${{ matrix.target }} (${{ matrix.uid }})`. With
+      # job-level `if:`, a skipped matrix collapses to one `check-python`
+      # status and the per-target detail is lost from the checks list.
+      #
+      # This is now readability, NOT a gating requirement: branch protection
+      # requires only the aggregate `ci-green` context, which `needs:` this job
+      # and fails when ANY matrix leg fails. That is also why adding the `uid`
+      # dimension — which renames every check context — needs no
+      # branch-protection change.
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # bd-ib-sfa2, the NARROW ROUTE (maintainer-decided 2026-07-21).
+      #
+      # /root is mode 0700 and the ENTIRE baked toolchain lives beneath it —
+      # mise itself is /root/.local/bin/mise and there is NO copy anywhere else
+      # on the filesystem, so `find / -xdev -name mise -not -path '/root/*'`
+      # returns nothing. An unprivileged uid therefore cannot reach the
+      # toolchain at all. Env overrides alone CANNOT fix this: they change
+      # where mise WRITES, not where it IS. Opening /root to 0755 lets uid 1000
+      # reuse the BAKED toolchain read-only, with no image change and no
+      # toolchain install.
+      #
+      # LIMITATION — this must travel WITH the capability and never alone:
+      # this is a PARTIAL replica. It reproduces "uid 1000 with access to
+      # root's toolchain", NOT "uid 1000 as the janitor sees the world". Any
+      # divergence that depends on /root genuinely being 0700 stays invisible
+      # to it. The faithful alternative relocates the toolchain to a
+      # world-readable path in livespec-dev-tooling's docker/fabro-sandbox/base
+      # layer, at the cost of a fleet-wide rebuild, republish, and pin bump;
+      # it was weighed and declined, and remains the upgrade path if a
+      # /root-mode-dependent divergence ever surfaces.
+      #
+      # Runs AFTER `uv sync` on purpose: root creates .venv, so the chown must
+      # follow it or uid 1000 inherits a venv it cannot write.
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          # NO `set -euo pipefail` here. The container job's default shell is
+          # `sh -e {0}` — dash, not bash — where `-o pipefail` is an illegal
+          # option and the whole step dies with exit 2 before doing any work.
+          # The `-e` in the default shell already supplies errexit, so nothing
+          # is lost. Verified in the image: `sh -e -c 'false; echo X'` exits 1
+          # without printing.
+          chmod 0755 /root
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          # HOME deliberately NOT under /tmp: that would put the venue inside
+          # the `/tmp/*` coverage omit glob (pyproject.toml) and trip
+          # livespec-impl-beads-1l6's regression guard.
+          mkdir -p /home/ci
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
+          # The root-side safe.directory trust was written to /github/home,
+          # which uid 1000 does not read (its HOME is /home/ci). Without this,
+          # every git call from a check fails "detected dubious ownership".
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
+
+      # No `--cov` or fail-under override here: this leg runs the SAME recipe
+      # under a different uid, which is the whole point. Nothing about it is
+      # advisory, warn-only, or gated behind an env lever — a failure here
+      # fails the job, and `ci-green` (the sole required context) fails if any
+      # matrix leg fails.
+      # UV_CACHE_DIR for every uid-1000 invocation is NONROOT_UV_CACHE_DIR,
+      # which the prepare step sets to the warm seed /__w/_warm/uv when uid 1000
+      # can write it, and otherwise to a private cold cache under /home/ci. On
+      # 2026-09-04 the seed was root-owned hardlinks into the fleet generation
+      # and uv as uid 1000 could not initialize it ("Failed to initialize cache",
+      # master runs 33903087096 / 33903145604). Since livespec-dev-tooling-hmv2bo
+      # the seed is a private reflink copy per work volume. bd-ib-rpit5z
+      # (plan ci-cache-optimization, lever 4) points the nonroot legs back at it.
+      - name: just ${{ matrix.target }} (uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just ${{ matrix.target }}
+
+  # Coverage-pair PRODUCER (work-item livespec-dev-tooling-yilyxr.8, porting
+  # dev-tooling PRs #1504 + #1511). Direction is fixed by this repo's own
+  # scripts, not by convention: dev-tooling/just-check-per-file-coverage.sh
+  # unconditionally runs `pytest --cov` with COVERAGE_FILE unset and leaves the
+  # repo-root `.coverage` behind, while dev-tooling/just-check-coverage.sh
+  # branches on `[[ -f .coverage ]]` and only runs the suite when the file is
+  # ABSENT. So per-file is the producer and coverage is the consumer, the same
+  # way `just check` already dedups them locally. Before this chain existed
+  # both legs ran the full suite on separate runners, under BOTH uids — four
+  # suite runs per CI run; now it is two.
+  #
+  # THE uid DIMENSION IS LOAD-BEARING HERE AND IS KEPT, split across two
+  # workflows: nonroot here, root in ci-root-uid.yml (bd-ib-xufdwx). bd-ib-sfa2's argument
+  # (see check-python) is that the 100% coverage gate itself converts a
+  # root/non-root divergence into a failure, because a line reachable only
+  # under one uid misses 100% under the other. That argument lives in THESE
+  # two targets, so collapsing them to a single uid would silently retire it.
+  # Each uid produces its OWN `.coverage` under its own artifact name, and the
+  # consumer leg for a uid reads only the artifact its own uid produced — so
+  # the two legs stay independently gated exactly as before.
+  # bd-ib-m26pql: per-file coverage as PARALLEL SHARDS. The suite was the PR
+  # critical path (check-per-file-coverage nonroot: median 35.0 min, p90 63.4,
+  # n=39 since 2026-11-04T20Z) because every pod runs at most
+  # LIVESPEC_TEST_PARALLELISM=3 xdist workers. Each shard runs a disjoint
+  # round-robin quarter of the tracked test files (dev-tooling/just-coverage-shard.sh)
+  # and only RECORDS coverage; check-per-file-coverage below `needs` every shard,
+  # combines their data, and runs the unchanged canonical per-file verifier.
+  # The shard count is 4: at most 4 churn slots per PR, well inside the free
+  # slots on poweredge-xubuntu (15 of 21 free at 05:05Z 2026-11-05). Raising it
+  # means editing both the `shard` list and the count passed to the recipe.
+  # In ci-green's needs, so a failed shard fails the gate directly. Root-uid
+  # coverage (ci-root-uid.yml) is unchanged and still runs the whole suite.
+  check-per-file-coverage-shard:
+    name: check-per-file-coverage-shard (${{ matrix.uid }}, ${{ matrix.shard }}/4)
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      # Lane-selected uv bounds from THIS job's routing (see the top-level env).
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        uid:
+          - nonroot
+        shard: [1, 2, 3, 4]
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # Same narrow non-root route as check-per-file-coverage below.
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          chmod 0755 /root
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          mkdir -p /home/ci
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
+
+      - name: just coverage-shard ${{ matrix.shard }} 4 (uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just coverage-shard ${{ matrix.shard }} 4
+
+      - name: Publish the flake-retry records for the host-side reader
+        if: ${{ !cancelled() }}
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        with:
+          suffix: shard-${{ matrix.uid }}-${{ matrix.shard }}
+
+      # include-hidden-files is REQUIRED: the data file is a dotfile.
+      - name: Publish this shard's coverage data for check-per-file-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.uid }}-${{ matrix.shard }}
+          path: .coverage-shards/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  check-per-file-coverage:
+    name: check-per-file-coverage (${{ matrix.uid }})
+    # bd-ib-m26pql: combines the shards' coverage instead of running the suite.
+    needs: [check-per-file-coverage-shard]
+    # bd-ib-uxv5al: the coverage pair routes through its OWN variable so it can
+    # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
+    # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
+    # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      # Lane-selected uv bounds from THIS job's routing (see the top-level env).
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      # bd-ib-m26pql: just-check-per-file-coverage.sh combines this directory's
+      # shard data instead of re-running the suite.
+      LIVESPEC_COVERAGE_SHARDS_DIR: .coverage-shards
+    strategy:
+      fail-fast: false
+      matrix:
+        uid:
+          - nonroot
+    steps:
+      # Per-step `if:` (not job-level) so the job still reports its own status
+      # check name when skipped — same pattern as the check-python matrix.
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # bd-ib-m26pql: every shard's data, downloaded BEFORE the non-root prep so
+      # its chown covers the files uid 1000 combines.
+      - name: Download every coverage shard's data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-${{ matrix.uid }}-*
+          path: .coverage-shards
+          merge-multiple: true
+
+      # Same narrow route as check-python's non-root leg — see that job for the
+      # /root-mode rationale and its stated limitation. Runs AFTER `uv sync` so
+      # the chown covers the venv root just created.
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          chmod 0755 /root
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          mkdir -p /home/ci
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
+
+      - name: just check-per-file-coverage (uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just check-per-file-coverage
+
+      - name: Publish the flake-retry records for the host-side reader
+        if: ${{ !cancelled() }}
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        with:
+          suffix: per-file-${{ matrix.uid }}
+
+      # include-hidden-files is REQUIRED: upload-artifact@v4 excludes dotfiles
+      # by default and `.coverage` is one; without it the upload silently ships
+      # nothing and the consumer falls back to a full duplicate suite run. The
+      # name carries the uid so the two legs never overwrite each other.
+      - name: Publish .coverage for the check-coverage consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-${{ matrix.uid }}
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+      # bd-ib-xevgsx: since 704a96ded the consumer replays the producer's
+      # canonical verdict only when .coverage-gates/per-file.{status,log} exist;
+      # without them it prints "no canonical per-file verdict; running the
+      # suite" and re-runs the whole suite. Ship the verdict beside .coverage.
+      - name: Publish the canonical per-file verdict for the check-coverage consumer
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Coverage-pair CONSUMER. Kept as a matrix with a literal `check-coverage`
+  # target entry (NOT a plain job) because check-coverage is a tool-backed slug
+  # and check-tool-backed-check-completeness requires every tool-backed slug to
+  # be a LITERAL matrix.target member. `needs` the producer so the downloaded
+  # `.coverage` is present and just-check-coverage.sh takes its consume-once
+  # branch (read + delete, no suite run). Paths inside the data file match
+  # because both jobs run in the same container workspace mount. If the
+  # download ever regresses, the script's else-branch runs the suite
+  # standalone — slower, never wrong.
+  check-coverage:
+    name: ${{ matrix.target }} (${{ matrix.uid }})
+    needs: [check-per-file-coverage]
+    # bd-ib-uxv5al: the coverage pair routes through its OWN variable so it can
+    # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
+    # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
+    # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      # Lane-selected uv bounds from THIS job's routing (see the top-level env).
+      UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
+      UV_HTTP_TIMEOUT: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        uid:
+          - nonroot
+        target:
+          - check-coverage
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # Downloaded BEFORE the non-root prep below, so that step's
+      # targeted ownership pass over "$GITHUB_WORKSPACE" covers the `.coverage` the
+      # uid-1000 leg has to read AND delete (consume-once).
+      - name: Download this uid's .coverage from the producer
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-data-${{ matrix.uid }}
+
+      # bd-ib-xevgsx: restore .coverage-gates/ so check-coverage reads the
+      # producer's verdict instead of re-running the suite.
+      - name: Download this uid's canonical per-file verdict from the producer
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-gates-${{ matrix.uid }}
+          path: .coverage-gates
+
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          chmod 0755 /root
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          mkdir -p /home/ci
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
+
+      - name: just ${{ matrix.target }} (uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just ${{ matrix.target }}
+
+  # livespec core's doctor STATIC phase (reference-discipline + out-of-band
+  # invariants), wired fleet-wide per livespec epic livespec-6jfq. core ships
+  # the checker (doctor_static.py — self-contained, bare python3); this job
+  # checks core out at the tag THIS repo pins (.livespec.jsonc compat.pinned)
+  # and points the recipe at it via LIVESPEC_CORE_PLUGIN_ROOT. Its OWN job
+  # (not the matrix) because it needs a second checkout — livespec core —
+  # that no other target does.
+  # Batched cheap .py-scanning checks (work-item livespec-dev-tooling-yilyxr.9,
+  # porting dev-tooling PR #1469): one container setup per uid for 22
+  # sub-minute targets that each previously paid it alone as a matrix leg
+  # under BOTH uids. The uid dimension is KEPT (bd-ib-sfa2: every target
+  # runs as nonroot here and as root in ci-root-uid.yml; the 100% coverage gates in the retained
+  # coverage legs carry the divergence argument), so batching changes the
+  # per-target setup cost, not the uid coverage. Failures are COLLECTED;
+  # each target is a literal `just <slug>` line (ci-matrix-completeness
+  # assertion a) and the job is gating (assertion b).
+  check-python-batch:
+    name: check-python-batch (${{ matrix.uid }})
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        uid:
+          - nonroot
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: matrix.uid == 'nonroot'
+        run: |
+          chmod 0755 /root
+          # bd-ib-uuatg4: touch ONLY entries that lack the permission. A blanket
+          # `chmod -R` rewrites every mode even when unchanged, so overlayfs copies
+          # up the image's whole 462 MB mise/uv tree (177-216 s measured in
+          # python-v1.168.0, where 1 of 11,437 entries lacked o+r). Same end state.
+          find /root/.config /root/.local \( ! -perm -o+r -o \( -type d ! -perm -o+x \) \) -exec chmod a+rX {} +
+          mkdir -p /home/ci
+          # bd-ib-vnmph2: give uid 1000 ownership with a targeted pass, as
+          # bd-ib-uuatg4 did for modes: change ONLY the entries uid 1000 does not
+          # already own. find visits its starting points too, so /home/ci and the
+          # workspace root themselves are covered. -h changes a symlink itself,
+          # as chown -R does, and never follows one out of the tree.
+          find /home/ci "$GITHUB_WORKSPACE" \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} +
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+          # bd-ib-rpit5z: point the uid-1000 uv invocations at the pool's warm
+          # seed /__w/_warm/uv when uid 1000 can write every directory in it, and
+          # otherwise fall back to the private cold cache with a warning, never a
+          # job failure. The seed is no longer root-owned hardlinks into the fleet
+          # generation (livespec-dev-tooling-hmv2bo made it a private reflink copy
+          # per work volume), and hosted runners have no seed at all.
+          nonroot_uv_cache=/home/ci/.cache/uv
+          if [ -d /__w/_warm/uv ]; then
+            # The provisioner seeds the volume as root (`cp -a --reflink`), so the
+            # seed arrives root-owned and uid 1000 cannot write it (measured on
+            # livespec-orchestrator-beads-fabro#4453, 2026-11-05). It is this
+            # pod's OWN reflink copy, reachable from no other pod (hook template,
+            # header item 2), so handing it to uid 1000 cannot touch the fleet
+            # generation. The pass is targeted: it changes only entries uid 1000
+            # does not already own, and it is metadata only.
+            find /__w/_warm/uv \( ! -user 1000 -o ! -group 1000 \) -exec chown -h 1000:1000 {} + || true
+            unwritable=$(setpriv --reuid=1000 --regid=1000 --clear-groups \
+              find /__w/_warm/uv -type d ! -writable -print -quit 2>&1) || unwritable="${unwritable:-find exited non-zero}"
+            if [ -z "$unwritable" ]; then
+              nonroot_uv_cache=/__w/_warm/uv
+            else
+              echo "::warning::bd-ib-rpit5z: uid 1000 cannot write the warm uv seed (${unwritable}); this leg uses the cold private cache"
+            fi
+          fi
+          echo "NONROOT_UV_CACHE_DIR=${nonroot_uv_cache}" >> "$GITHUB_ENV"
+
+      - name: Run the batched python checks (nonroot)
+        if: matrix.uid == 'nonroot'
+        run: |
+          run_nonroot() {
+            setpriv --reuid=1000 --regid=1000 --clear-groups \
+              env HOME=/home/ci \
+                  UV_CACHE_DIR="$NONROOT_UV_CACHE_DIR" \
+                  MISE_DATA_DIR=/root/.local/share/mise \
+                  MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                  MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                  MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                  PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                  GITHUB_TOKEN="$GITHUB_TOKEN" \
+                  GH_TOKEN="$GH_TOKEN" \
+                "$@"
+          }
+          failed=""
+          run_nonroot just check-all-declared || failed="$failed check-all-declared"
+          run_nonroot just check-assert-never-exhaustiveness || failed="$failed check-assert-never-exhaustiveness"
+          run_nonroot just check-check-mutation || failed="$failed check-check-mutation"
+          run_nonroot just check-file-lloc || failed="$failed check-file-lloc"
+          run_nonroot just check-global-writes || failed="$failed check-global-writes"
+          run_nonroot just check-keyword-only-args || failed="$failed check-keyword-only-args"
+          run_nonroot just check-main-guard || failed="$failed check-main-guard"
+          run_nonroot just check-match-keyword-only || failed="$failed check-match-keyword-only"
+          run_nonroot just check-newtype-domain-primitives || failed="$failed check-newtype-domain-primitives"
+          run_nonroot just check-no-except-outside-io || failed="$failed check-no-except-outside-io"
+          run_nonroot just check-no-inheritance || failed="$failed check-no-inheritance"
+          run_nonroot just check-no-lloc-soft-warnings || failed="$failed check-no-lloc-soft-warnings"
+          run_nonroot just check-no-raise-outside-io || failed="$failed check-no-raise-outside-io"
+          run_nonroot just check-no-write-direct || failed="$failed check-no-write-direct"
+          run_nonroot just check-pbt-coverage-pure-modules || failed="$failed check-pbt-coverage-pure-modules"
+          run_nonroot just check-private-calls || failed="$failed check-private-calls"
+          run_nonroot just check-public-api-result-typed || failed="$failed check-public-api-result-typed"
+          run_nonroot just check-rop-pipeline-shape || failed="$failed check-rop-pipeline-shape"
+          run_nonroot just check-rule-26-keep-out || failed="$failed check-rule-26-keep-out"
+          run_nonroot just check-self-hosted-uv-lane || failed="$failed check-self-hosted-uv-lane"
+          run_nonroot just check-supervisor-discipline || failed="$failed check-supervisor-discipline"
+          run_nonroot just check-tests-mirror-pairing || failed="$failed check-tests-mirror-pairing"
+          run_nonroot just check-tests-no-subprocess-spawn || failed="$failed check-tests-no-subprocess-spawn"
+          run_nonroot just check-wrapper-shape || failed="$failed check-wrapper-shape"
+          if [ -n "$failed" ]; then
+            echo "Failed targets:$failed"
+            exit 1
+          fi
+
+  check-doctor-static:
+    name: check-doctor-static
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      # bd-ib-hik3mz: ONE step, not two. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+
+      - name: Resolve pinned livespec core ref (.livespec.jsonc compat.pinned)
+        id: corepin
+        run: |
+          pinned="$(grep -oE '"pinned"[[:space:]]*:[[:space:]]*"[^"]*"' .livespec.jsonc | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/')"
+          echo "ref=${pinned:-master}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout livespec core at the pinned ref
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec
+          ref: ${{ steps.corepin.outputs.ref }}
+          path: .livespec-core
+
+      - name: just check-doctor-static
+        run: |
+          # In a container job, the github.workspace CONTEXT may be the HOST
+          # path; $GITHUB_WORKSPACE (env) is the in-container mount, so derive
+          # the core plugin root from it to stay container-correct.
+          export LIVESPEC_CORE_PLUGIN_ROOT="${GITHUB_WORKSPACE}/.livespec-core/.claude-plugin"
+          just check-doctor-static
+
+  # Metadata matrix runs unconditionally to preserve the repo-metadata
+  # safety net. check-aggregate-completeness is the wiring-completeness
+  # gate (epic li-univck) — verifies the justfile `check:` aggregate
+  # wires every canonical slug. check-tool-backed-check-completeness
+  # (dev-tooling v0.8.0, epic li-pyright-gate) asserts the four
+  # tool-backed checks (lint, format, types, coverage) are LITERAL
+  # members of BOTH the `just check` targets array AND a CI matrix —
+  # so the metadata matrix MUST carry it here to satisfy the both-
+  # surfaces invariant it enforces.
+  check-metadata:
+    name: ${{ matrix.target }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # Batched-CI shape (work-item livespec-dev-tooling-yilyxr.9):
+          # only the pytest-spawning, variable-duration targets keep
+          # their own matrix leg; the cheap repo-metadata targets moved
+          # to the single check-metadata-batch job below.
+          - check-red-green-replay
+          - check-check-coverage-incremental
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history for ALL matrix entries: the
+          # check-red-green-replay range validation enumerates
+          # origin/master..HEAD and needs origin/master plus the merge
+          # base in the clone — a fetch-depth: 1 checkout would make
+          # the base unresolvable and fail the check actionably (it
+          # never silently passes). Cheap for this repo; harmless for
+          # the other metadata entries.
+          fetch-depth: 0
+
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: just ${{ matrix.target }}
+        env:
+          # Arm the CI-matrix drift guard (epic livespec-cf4bcu slice 5):
+          # now that this repo's matrix + ci-green are complete, flip
+          # check-ci-matrix-completeness from warn (exit 0) to FAIL
+          # (exit 4), so any future canonical slug wired into `just check`
+          # but dropped from CI reddens this leg instead of silently
+          # warning. Harmless for the other metadata legs — they do not
+          # read this var.
+          LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
+          # Arm the formatter-suppression guard (check-no-fmt-directives, a
+          # check-metadata leg): flip it from warn (exit 0) to FAIL (exit 1)
+          # so a `# fmt: off`/`on`/`skip` counter-shave in this repo's own
+          # first-party code reddens CI instead of silently warning. This
+          # repo is clean, so the leg still exits 0; every OTHER repo stays
+          # warn-only until it arms this lever in its own PR. Harmless for
+          # the other metadata legs — they do not read it.
+          LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST: "true"
+        run: just ${{ matrix.target }}
+
+  # CLI end-to-end harness — the top-of-pyramid, user-surface tier whose
+  # sole interaction surface is the `claude` CLI binary (per
+  # livespec/SPECIFICATION/contracts.md §"CLI end-to-end harness
+  # contract"). The harness ships from livespec-dev-tooling (v0.8.0) and
+  # is consumed via the imported test_workflow_full_round_trip entry
+  # point wired in tests/e2e-cli/. This job runs the MOCK tier
+  # (LIVESPEC_E2E_HARNESS=mock — the one mocked boundary is the
+  # `claude -p` subprocess; real install-shape setup, real structural
+  # skill discovery, the real fail-closed time-bomb coverage gate, and
+  # the real per-skill orchestration loop all run). The coverage gate is
+  # fail-closed: a `/livespec-orchestrator-beads-fabro:*` skill added without a
+  # `tests/e2e-cli/fixtures/<skill>/` directory raises CoverageGateError
+  # and fails this job. The `real` tier (driving the actual `claude`
+  # binary against the upstream livespec plugin paired in lockstep)
+  # requires ANTHROPIC_API_KEY and is deliberately NOT run in CI.
+  e2e-cli:
+    name: e2e-cli
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    # SINGLE env block — this job already had a job-level `env:` carrying
+    # LIVESPEC_E2E_HARNESS before the baked-image cutover, so the container
+    # preamble's vars are MERGED in here rather than added as a second `env:`
+    # key. Two `env:` keys in one job make GitHub reject the entire workflow at
+    # startup (zero jobs, no logs), and a permissive YAML parser would silently
+    # keep only the last block and drop LIVESPEC_E2E_HARNESS. Keep this ONE block.
+    env:
+      LIVESPEC_E2E_HARNESS: mock
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: Run the CLI e2e harness (mock tier, fail-closed coverage gate)
+        run: just check-e2e-cli
+
+      - name: Publish the flake-retry records for the host-side reader
+        if: ${{ !cancelled() }}
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        with:
+          suffix: e2e-cli
+
+  # Batched cheap repo-metadata checks (work-item livespec-dev-tooling-yilyxr.9,
+  # porting dev-tooling PR #1469): one container setup for 34 sub-minute
+  # targets. Failures are COLLECTED; every target is a literal `just <slug>`
+  # line (ci-matrix-completeness assertion a) and the job is gating
+  # (assertion b: in ci-green.needs). The commit-refuse hook and worktree
+  # pack install UNCONDITIONALLY because
+  # check-primary-checkout-commit-refuse-hook-installed and
+  # check-shell-quality live in this batch (livespec-dev-tooling-9ywf /
+  # y6e2 explain why the pack must be materialized).
+  check-metadata-batch:
+    name: check-metadata-batch
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: Install commit-refuse hook (satisfy invariant)
+        run: just install-commit-refuse-hooks
+
+      - name: Install canonical worktree pack (satisfy invariant)
+        run: just install-worktree-pack
+
+      # bd-ib-6t4: the factory-graph gate needs a real `fabro` binary, and until
+      # this step CI had none, so the gate never ran here at all. The pinned,
+      # sha256-verified upstream release is installed first, and the batch runs
+      # the gate FAIL-CLOSED: an unresolvable binary is a failure, not a skip.
+      - name: Install pinned fabro for the factory-graph gate
+        run: just install-ci-fabro
+
+      - name: Run the batched metadata checks
+        env:
+          LIVESPEC_FABRO_GRAPH_VALIDATION: fail_when_fabro_absent
+          LIVESPEC_FABRO_BIN: /usr/local/bin/fabro
+          FABRO_NO_UPGRADE_CHECK: "1"
+          LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
+          # Arm the PR-gate-parity guard (livespec plan pr-gate-master-parity
+          # R3, epic livespec-citqsd): flip check-ci-gate-parity from warn
+          # (exit 0) to FAIL (exit 4) now that this repo's zero-.py gate skip
+          # is retired, so any future gating job that reintroduces a
+          # `py_changed`-conditioned skip reddens CI here instead of silently
+          # warning. This repo is clean post-retirement, so the check exits 0.
+          LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST: "true"
+        run: |
+          failed=""
+          # bd-ib-xghjzh: on a GitHub-hosted runner this root container step has no
+          # node on PATH (the k3s runner hook supplies the baked mise shims), so
+          # pyright's PyPI wrapper falls back to a nodeenv download and
+          # check-no-shadow-ledger-body-typechecks fails. Put the image's mise
+          # shims first on PATH, exactly as the nonroot legs do.
+          export PATH="/root/.local/share/mise/shims:$PATH"
+          # bd-ib-oy643z: the shims resolve node from mise's GLOBAL config, which
+          # lives under /root while a hosted container's HOME is /github/home, so
+          # from the check's temp dir the node shim fails "No version is set".
+          export MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml
+          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
+          just check-ci-single-container-image || failed="$failed check-ci-single-container-image"
+          just check-codex-hook-reconcilable || failed="$failed check-codex-hook-reconcilable"
+          just check-delegated-gate-check-suite || failed="$failed check-delegated-gate-check-suite"
+          just check-delegated-job-authority-skip || failed="$failed check-delegated-job-authority-skip"
+          just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
+          just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"
+          just check-hook-trees-not-io-exempt || failed="$failed check-hook-trees-not-io-exempt"
+          just check-local-memory-drift-audit || failed="$failed check-local-memory-drift-audit"
+          just check-marketplace-ref-release-only || failed="$failed check-marketplace-ref-release-only"
+          just check-no-direct-destructive-cli || failed="$failed check-no-direct-destructive-cli"
+          just check-no-shadow-ledger-body-identical || failed="$failed check-no-shadow-ledger-body-identical"
+          just check-no-shadow-ledger-body-typechecks || failed="$failed check-no-shadow-ledger-body-typechecks"
+          just check-plan-anchor-declared || failed="$failed check-plan-anchor-declared"
+          just check-plan-no-live-handoff-file || failed="$failed check-plan-no-live-handoff-file"
+          just check-plan-no-tombstone || failed="$failed check-plan-no-tombstone"
+          just check-plan-close-proof || failed="$failed check-plan-close-proof"
+          just check-plan-continuation-ruling || failed="$failed check-plan-continuation-ruling"
+          just check-primary-checkout-commit-refuse-hook-installed || failed="$failed check-primary-checkout-commit-refuse-hook-installed"
+          just check-required-role-keys-declared || failed="$failed check-required-role-keys-declared"
+          just check-self-hosted-routing || failed="$failed check-self-hosted-routing"
+          just check-tool-backed-check-completeness || failed="$failed check-tool-backed-check-completeness"
+          just check-codex-plugin-structure || failed="$failed check-codex-plugin-structure"
+          just check-fabro-graph-validity || failed="$failed check-fabro-graph-validity"
+          just check-bd-guard || failed="$failed check-bd-guard"
+          just check-fleet-launch || failed="$failed check-fleet-launch"
+          just check-codex-skill-picker || failed="$failed check-codex-skill-picker"
+          just check-agents-ai-references-resolve || failed="$failed check-agents-ai-references-resolve"
+          just check-canonical-recipe-fidelity || failed="$failed check-canonical-recipe-fidelity"
+          just check-check-tools || failed="$failed check-check-tools"
+          just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
+          just check-ci-gate-parity || failed="$failed check-ci-gate-parity"
+          just check-ci-wires-repo-local-gates || failed="$failed check-ci-wires-repo-local-gates"
+          just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
+          just check-comment-line-anchors || failed="$failed check-comment-line-anchors"
+          just check-commit-pairs-source-and-test || failed="$failed check-commit-pairs-source-and-test"
+          just check-fleet-marketplace-relative-sources || failed="$failed check-fleet-marketplace-relative-sources"
+          just check-heading-coverage || failed="$failed check-heading-coverage"
+          just check-no-direct-tool-invocation || failed="$failed check-no-direct-tool-invocation"
+          just check-no-fleet-toolchain-literals || failed="$failed check-no-fleet-toolchain-literals"
+          just check-no-fmt-directives || failed="$failed check-no-fmt-directives"
+          just check-no-todo-registry || failed="$failed check-no-todo-registry"
+          just check-partition-completeness || failed="$failed check-partition-completeness"
+          just check-plugin-resolution || failed="$failed check-plugin-resolution"
+          just check-seam-equivalence || failed="$failed check-seam-equivalence"
+          just check-skill-invocation-paths || failed="$failed check-skill-invocation-paths"
+          just check-shell-quality || failed="$failed check-shell-quality"
+          just check-source-trees-scoped-to-consumer || failed="$failed check-source-trees-scoped-to-consumer"
+          just check-vendor-manifest || failed="$failed check-vendor-manifest"
+          # Repo-local slugs (no canonical checks/<slug>.py behind them) that
+          # `just check` runs and that CAN run here: the four ledger doctors
+          # select the fake store through LIVESPEC_BEADS_FAKE=1 in their own
+          # recipes, the rest are pure filesystem guards. Mirrored by hand
+          # because the canonical reconciler never sees repo-local slugs
+          # (livespec-dev-tooling-8o8e.18); check-ci-matrix-completeness fails
+          # this batch if one goes missing (bd-ib-74sqh7).
+          just check-acp-preflight-config || failed="$failed check-acp-preflight-config"
+          just check-closed-item-integrity || failed="$failed check-closed-item-integrity"
+          just check-fabro-port-seam || failed="$failed check-fabro-port-seam"
+          just check-materialized-workflow-toml-size || failed="$failed check-materialized-workflow-toml-size"
+          just check-needs-attention-surface-ownership || failed="$failed check-needs-attention-surface-ownership"
+          just check-no-fleet-pat-dispatch-surface || failed="$failed check-no-fleet-pat-dispatch-surface"
+          just check-pi-plugin-structure || failed="$failed check-pi-plugin-structure"
+          just check-spec-governance-default-block || failed="$failed check-spec-governance-default-block"
+          just check-spec-id-presence-discipline || failed="$failed check-spec-id-presence-discipline"
+          just check-status-conformance || failed="$failed check-status-conformance"
+          just check-work-item-merge-evidence || failed="$failed check-work-item-merge-evidence"
+          just check-work-item-state-invariants || failed="$failed check-work-item-state-invariants"
+          if [ -n "$failed" ]; then
+            echo "Failed targets:$failed"
+            exit 1
+          fi
+
+  # bd-ib-pwkhqz (plan dispatch-payload-packaging, bd-ib-x5ypbf): the fleet-wide
+  # Scenario 279 size bound. check-fleet-materialized-workflow-toml-size renders
+  # EVERY member of livespec's fleet manifest from that member's origin/master, so
+  # it needs a clone of each, which the delegated cluster gate's pod lacks; that
+  # is why it is not in `just check`. Every member is a public repository, so the
+  # clones are anonymous and this job carries no token. A member that cannot be
+  # cloned fails the clone step, and one the check cannot find fails the check.
+  check-fleet-materialized-workflow-toml-size:
+    name: check-fleet-materialized-workflow-toml-size
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      LIVESPEC_SIBLING_CLONES_ROOT: /tmp/fleet-clones
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # This checkout stands in for this repository, so only the others are
+      # cloned. The member list comes from the manifest through the same parser
+      # the Dispatcher uses, never from a list written here.
+      - name: Clone every other fleet member anonymously
+        run: |
+          root="$LIVESPEC_SIBLING_CLONES_ROOT"
+          mkdir -p "$root"
+          git clone --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY_OWNER}/livespec.git" "$root/livespec"
+          uv run python - "$root/livespec/.livespec-fleet-manifest.jsonc" > "$RUNNER_TEMP/fleet-members.txt" <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path[:0] = [".claude-plugin/scripts", ".claude-plugin/scripts/_vendor"]
+          from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import parse_fleet_members
+          members = parse_fleet_members(manifest_text=Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if members is None:
+              sys.exit(f"fleet manifest {sys.argv[1]} does not parse into an owner and members")
+          for repo in members.repos:
+              print(members.owner, repo)
+          PY
+          while read -r owner repo; do
+            if [ "$repo" = "${GITHUB_REPOSITORY#*/}" ] || [ -d "$root/$repo" ]; then
+              continue
+            fi
+            git clone --quiet --depth 1 "https://github.com/$owner/$repo.git" "$root/$repo"
+          done < "$RUNNER_TEMP/fleet-members.txt"
+
+      - name: just check-fleet-materialized-workflow-toml-size
+        run: just check-fleet-materialized-workflow-toml-size
+
+  acceptance:
+    name: acceptance
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: Run golden-master acceptance harness
+        run: just acceptance
+
+      - name: Publish the flake-retry records for the host-side reader
+        if: ${{ !cancelled() }}
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        with:
+          suffix: acceptance
+
+  # The released incident CI entrance, ported from livespec-dev-tooling's
+  # incident-ci job (plan expedited-incident-response-flag, epic
+  # livespec-dev-tooling-bqnzcm; this repository adopts expedited incident mode
+  # under the maintainer's 2026-11-12 ruling). It installs the LATEST RELEASED
+  # livespec-dev-tooling into its own venv and runs the entrance from THAT
+  # interpreter with `-I`, never from the candidate tree. With no
+  # `<!-- livespec-incident-ci` block in the PR body (read through an
+  # authenticated forge read, never the event payload), or on a push, it
+  # selects nothing and exits 0: the complete normal graph is the gate. With a
+  # block, the released plan/run/aggregate rechecks the observer's /current and
+  # /admitted answers and publishes an aggregate listing every omitted member.
+  # The observer inputs are the variable LIVESPEC_INCIDENT_OBSERVER_URL and the
+  # read-only query secret LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN; until both
+  # exist an incident PR is REFUSED with that named cause and a non-incident PR
+  # is unaffected. Its `omitted` output is not yet consumed by any job here:
+  # the omission guards on the coverage and spec jobs are a follow-up.
+  incident-ci:
+    timeout-minutes: 90
+    name: incident-ci
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      omitted: ${{ steps.entrance.outputs.omitted }}
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      LIVESPEC_DEV_TOOLING_REPOSITORY: thewoolleyman/livespec-dev-tooling
+    steps:
+      # The PR-body prefilter runs FIRST and needs no checkout, so an ordinary
+      # pull request or a push finishes in about a minute: every heavier step
+      # below runs only when the body carries a livespec-incident-ci block.
+      # The test is ANCHORED to the block's opening line: a PR description
+      # that merely MENTIONS the marker selects nothing. The released entrance
+      # does the real parse; this is only the prefilter.
+      - name: Select incident work from an authenticated PR read
+        id: select
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          block=absent
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then
+            body="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.body // ""')"
+            if grep -qE '^<!-- livespec-incident-ci[[:space:]]*$' <<< "$body"; then
+              block=present
+            fi
+          fi
+          if [ "$block" = present ]; then
+            echo "incident-ci: PR #${PR_NUMBER} carries a livespec-incident-ci block; running the released entrance"
+          else
+            reason="no livespec-incident-ci block in the PR body"
+            if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+              reason="${GITHUB_EVENT_NAME} event: the normal complete policy is the gate"
+            fi
+            echo "incident-ci: selected nothing (${reason}); no check executed by this job"
+            printf '## incident-ci\n\nselected nothing (%s); no check executed by this job.\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "block=${block}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.select.outputs.block == 'present'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        if: steps.select.outputs.block == 'present'
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: Install commit-refuse hook (satisfy invariant)
+        if: steps.select.outputs.block == 'present'
+        run: just install-commit-refuse-hooks
+
+      - name: Install canonical worktree pack (satisfy invariant)
+        if: steps.select.outputs.block == 'present'
+        run: just install-worktree-pack
+
+      # The release is resolved from livespec-dev-tooling's forge releases,
+      # never from this repository's candidate tree, and installed into a venv
+      # OUTSIDE the workspace. The last check proves the released module
+      # resolves from that venv.
+      - name: Install the latest released livespec-dev-tooling (never the candidate tree)
+        id: released
+        if: steps.select.outputs.block == 'present'
+        shell: bash
+        run: |
+          tag="$(gh api "repos/${LIVESPEC_DEV_TOOLING_REPOSITORY}/releases/latest" --jq .tag_name)"
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::could not resolve the latest release tag of ${LIVESPEC_DEV_TOOLING_REPOSITORY} (got '${tag}')"; exit 1 ;;
+          esac
+          venv="${RUNNER_TEMP}/released-dev-tooling"
+          uv venv --python "$(cat .python-version)" "$venv"
+          uv pip install --python "${venv}/bin/python" \
+            "livespec-dev-tooling @ git+https://github.com/${LIVESPEC_DEV_TOOLING_REPOSITORY}@${tag}"
+          resolved="$("${venv}/bin/python" -I -c 'import livespec_dev_tooling as m; print(m.__file__)')"
+          case "$resolved" in
+            "${venv}"/*) echo "released livespec-dev-tooling ${tag} resolves from ${resolved}" ;;
+            *) echo "::error::released module resolved from ${resolved}, not from ${venv}"; exit 1 ;;
+          esac
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "python=${venv}/bin/python" >> "$GITHUB_OUTPUT"
+
+      - name: Run the released incident CI entrance (plan, run, aggregate)
+        id: entrance
+        if: steps.select.outputs.block == 'present'
+        shell: bash
+        env:
+          RELEASED_PYTHON: ${{ steps.released.outputs.python }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}
+          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
+        run: |
+          if [ -z "$LIVESPEC_INCIDENT_OBSERVER_URL" ] || [ -z "$LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" ]; then
+            echo "::error::incident PR refused: the repository configures neither LIVESPEC_INCIDENT_OBSERVER_URL (variable) nor LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN (secret) completely; the released entrance cannot recheck /current and /admitted without them"
+            exit 1
+          fi
+          export GITHUB_PR_NUMBER="$PR_NUMBER" GITHUB_PR_HEAD_SHA="$PR_HEAD_SHA"
+          entrance=("$RELEASED_PYTHON" -I -m livespec_dev_tooling.incident_ci_process)
+          if ! plan="$("${entrance[@]}" plan --repo "$PWD")"; then
+            echo "::error::released plan refused: ${plan}"
+            exit 1
+          fi
+          mode="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.load(sys.stdin)["mode"])')"
+          if [ "$mode" != "expedited-repair" ]; then
+            note="PR #${PR_NUMBER} is unexpedited: the released plan selected the '${mode}' mode, so the retained livespec-incident-ci block is ignored, both incident flags are off, and the complete normal policy runs; no check executed by this job"
+            echo "::notice::incident-ci: ${note}"
+            printf '## incident-ci\n\n%s.\n' "$note" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          targets=()
+          while IFS= read -r name; do
+            targets+=(--target "$name")
+          done < <(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print("\n".join(json.load(sys.stdin)["selected"]))')
+          run_code=0
+          "${entrance[@]}" run --repo "$PWD" --report tmp/incident-ci/outcomes.jsonl "${targets[@]}" || run_code=$?
+          echo "released run exited ${run_code}; publishing the aggregate"
+          if ! aggregate="$("${entrance[@]}" aggregate --repo "$PWD" --reports tmp/incident-ci)"; then
+            echo "::error::released aggregate did not pass: ${aggregate}"
+            exit 1
+          fi
+          echo "$aggregate"
+          omitted="$(printf '%s' "$aggregate" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.dumps(sorted(d["name"] for d in json.load(sys.stdin)["deferred"] if d["reason"] in ("incident-policy:coverage", "incident-policy:spec"))))')"
+          echo "omitted=${omitted}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the incident CI outcome records
+        if: ${{ always() && steps.select.outputs.block == 'present' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: incident-ci-outcomes
+          path: tmp/incident-ci
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Closed-loop CI telemetry: export this run's per-job timings to Honeycomb
+  # (dataset github-ci) and FAIL if Honeycomb does not accept them. The run
+  # that produced the data confirms its own telemetry landed — so a broken
+  # pipeline can't die silently (it reddens master CI and fires the existing
+  # failure notification). Master pushes ONLY (never PRs, so PR feedback
+  # stays fast); runs even when checks fail (!cancelled) so failed runs are
+  # observable too; excludes itself (still in_progress → no completedAt).
+  # `needs` lists every top-level job so this runs last, after each job's
+  # timing is final. The export script is a byte-for-byte copy of the
+  # livespec CORE reference (.github/scripts/export-ci-telemetry.sh); it is
+  # repo-agnostic, driven by $REPO/$RUN_ID from the workflow env.
+  export-telemetry:
+    name: export-telemetry
+    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, incident-ci]
+    if: ${{ !cancelled() && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export CI run telemetry to Honeycomb (closed-loop verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC: ${{ secrets.HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC }}
+        run: bash .github/scripts/export-ci-telemetry.sh
+
+  # Factory-provenance merge gate (R6b of plan mechanically-enforce-factory-usage,
+  # bd-ib-xugp7m; the check body is R6a, bd-ib-s3cxrl). A pull request that
+  # touches product Python must be authored by the factory GitHub App unless it
+  # carries the `factory-override` label with the reason in its body. The check
+  # reads the pull_request event payload and `git diff base..head` ONLY: no
+  # tenant, no forge API, no secret, so a credential outage cannot wedge it.
+  # pull_request-only because a push event carries no pull_request payload
+  # (ci_gate_parity classifies that condition as stricter-only). It becomes
+  # required through ci-green's needs list, the single protected context.
+  check-factory-provenance:
+    name: check-factory-provenance
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+    steps:
+      - name: Checkout (full history; the check diffs base..head itself)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # bd-ib-hik3mz: ONE step, not three. Every step of a k3s job pays
+      # about 1 s of container-hook launch; same commands, same order, and the
+      # step shell is -e, so the first failing command still fails the step.
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      - name: just check-factory-provenance
+        run: just check-factory-provenance
+
+  # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5: the single
+  # all-green gate job. It `needs:` every check-bearing job and fails if any
+  # dependency failed or was cancelled — a pure GitHub-expression gate (no
+  # external action, no direct tool invocation, so it satisfies
+  # non-functional-requirements.md §"Toolchain pins"). Branch protection
+  # requires ONLY this context, so one stable name gates the whole matrix and
+  # never churns as checks are added. Every gating job now runs
+  # unconditionally on both a PR and a master push (PR gate ≡ master gate —
+  # the change-detection gate that once let jobs skip on a doc-only PR was
+  # retired), so a genuine SKIPPED dependency arises only from an event
+  # guard (e.g. a release-only job), never a failure. export-telemetry
+  # (push-only, not a gate) is intentionally absent from `needs:`.
+  ci-green:
+    name: ci-green
+    needs: [check-python, check-per-file-coverage-shard, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance, check-fleet-materialized-workflow-toml-size, incident-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required checks passed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

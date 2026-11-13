@@ -73,4 +73,14 @@ sys.stdout.write(text)
 ' >"$rendered"
 mv "$rendered" "$destination"
 trap - EXIT
+# Keep the exact source bytes as test fixtures, with their git blob ids at that
+# commit, so the suite proves offline that every committed entry equals a fresh
+# render of the source it records (test_incident_ci_inventory_sources.py).
+fixture="tests/fixtures/incident_ci_inventory_sources/${repository}"
+mkdir -p "$fixture"
+git -C "$clone" show "${commit}:.github/workflows/ci.yml" >"$fixture/ci.yml"
+git -C "$clone" show "${commit}:check-targets.txt" >"$fixture/check-targets.txt"
+printf '{"check_targets_blob":"%s","commit":"%s","repository":"%s","workflow_blob":"%s"}\n' \
+  "$(git -C "$clone" rev-parse "${commit}:check-targets.txt")" "$commit" "$repository" \
+  "$(git -C "$clone" rev-parse "${commit}:.github/workflows/ci.yml")" >"$fixture/source.json"
 echo "rendered $destination from $repository@$commit"

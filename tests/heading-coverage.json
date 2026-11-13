@@ -3249,6 +3249,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still retries an untouched failing test",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: a delegated gate Job that routes an unchanged `uv.lock`'s locked artifacts through the pool's PyPI cache reads the same change set as the pushed tree, so the flake-retry plugin still re-runs an untouched failing test. livespec-dev-tooling-o4hkgh owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-o4hkgh"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still reports a pushed lockfile change",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: a delegated gate Job that routes a pushed `uv.lock` change through the pool's PyPI cache still lists `uv.lock` in its change set and compares the pushed tree's own `uv.lock` bytes. livespec-dev-tooling-o4hkgh owns it; the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-o4hkgh"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test the run touched is named in a withheld-retry block",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: a pytest session whose touched failing test is withheld prints a `FLAKE-RETRY-WITHHELD` block naming the node id and the touching path, emits the `::warning` under GitHub Actions, and carries a worker's withholding to the controller under pytest-xdist. livespec-dev-tooling-ln77b6 owns it; the implementation PR that ships it replaces this row.",
