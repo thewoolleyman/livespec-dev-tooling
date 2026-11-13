@@ -1,36 +1,33 @@
-# The committed per-node CPU budget of the self-hosted pool, in machine-readable form.
+# The committed per-node CPU budget of the self-hosted pool: the gate lanes.
 #
-# NODE-CPU-BUDGET.md beside this file explains every value and the measurement it
-# comes from. Plan gate-job-resources (livespec-dev-tooling-ukoeah) owns it, and
-# work item livespec-dev-tooling-wirn53 owns the change that moves the gate lanes.
+# This file is the AUTHORITY for each committed gate lane's cpu (`gate_cpu`).
+# The pending proposal per-node-cpu-budget-honest-requests requires every lane
+# in kueue/cluster-queue-gates.yaml to equal it. The values below are TODAY's
+# committed lanes. Work item livespec-dev-tooling-wirn53 moves them, together
+# with the lanes and the gate-unit annotation, in one commit (target
+# 9 / 21 / 3 / 3; NODE-CPU-BUDGET.md gives the rule).
 #
-# ONE OWNING FILE PER NUMBER. This file holds only the gate-lane cpu
-# (`gate_cpu`), which the pending proposal per-node-cpu-budget-honest-requests
-# reads: every committed gate lane's cpu quota must equal it. The other caps
-# live only in their owning files and are NOT copied here:
-#   - churn slots: phase0-bare-metal/profiles/<node>.env ADMISSION_CAPACITY_C
-#     (ci-runtime-and-cost, livespec-dev-tooling-6e5pyj);
-#   - factory pod budgets: ansible/inventory/host_vars/<node>.yml
-#     factory_pod_budget.
+# It owns nothing else. Churn slots (phase0-bare-metal/profiles/<node>.env
+# ADMISSION_CAPACITY_C) and factory pod budgets (ansible/inventory/host_vars/
+# <node>.yml factory_pod_budget) live only in their own files.
+# converge-worker-queues.sh derives a container worker's lane from the gate
+# unit, so no worker appears here.
+#
 # allocatable_cpu is the kubelet's reported allocatable, recorded for reference.
-#
-# Maintainer ruling, 2026-11-13 ~21:3xZ: "Do whatever maximises throughput".
-# Under it, CI pods request no CPU (they stay BestEffort) and there is no node
-# request-fit check. Units are CPU cores.
+# It was read with `kubectl get nodes` on 2026-11-13T23:33:37Z (capacity /
+# allocatable): gmktec 32/32, poweredge 72/72, hp 16/14500m, gamingpc 16/12.
+# Units are CPU cores.
 
 nodes:
   gmktec-xubuntu:
     allocatable_cpu: 32
-    gate_cpu: 9             # gates-flavor; 3 gates at the 3-CPU default (was 15)
+    gate_cpu: 15            # gates-flavor
   poweredge-xubuntu:
     allocatable_cpu: 72
-    gate_cpu: 21            # gates-poweredge-flavor; 7 gates at 3 (was 30)
+    gate_cpu: 30            # gates-poweredge-flavor
   hp-xubuntu:
     allocatable_cpu: 14.5
-    gate_cpu: 3             # gates-hp-flavor (was 5)
+    gate_cpu: 5             # gates-hp-flavor
   gamingpc-xubuntu:
-    allocatable_cpu: 12     # kubelet reserves already taken out
-    gate_cpu: 3             # gates-gamingpc-flavor (was 5)
-  macbook-m4-max-homelab-worker:
-    allocatable_cpu: 12     # kubelet reserves already taken out
-    gate_cpu: 3             # enrolled by converge-worker-queues.sh: one gate unit
+    allocatable_cpu: 12     # capacity 16; kubelet reserves take 4
+    gate_cpu: 5             # gates-gamingpc-flavor
