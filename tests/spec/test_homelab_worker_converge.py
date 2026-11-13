@@ -580,13 +580,14 @@ def test_a_running_worker_with_a_read_only_securityfs_bind_is_replaced(vm: _Vm) 
     assert len(_calls(vm=vm, verb="rm")) == 1
 
 
-def _deliver_telemetry(*, vm: _Vm, key: bool = True) -> None:
+def _deliver_telemetry(*, vm: _Vm, key: bool = True, split: bool = True) -> None:
     telemetry = vm.root / "telemetry"
     telemetry.mkdir(parents=True, exist_ok=True)
     (telemetry / "config.yaml").write_text("# mocked collector configuration\n", encoding="utf-8")
-    (telemetry / "pods-config.yaml").write_text(
-        "# mocked pod-span collector configuration\n", encoding="utf-8"
-    )
+    if split:
+        (telemetry / "pods-config.yaml").write_text(
+            "# mocked pod-span collector configuration\n", encoding="utf-8"
+        )
     if key:
         (telemetry / ".env").write_text("HONEYCOMB_INGEST_KEY_LIVESPEC=x\n", encoding="utf-8")
 
@@ -641,6 +642,27 @@ def test_only_the_pod_span_collector_waits_for_the_bridge(
         assert not (vm.state / "collector.log").exists()
     assert not (vm.root / "telemetry" / "node.env").exists()
     assert "collector" in result.stdout
+
+
+def test_a_combined_pinned_config_keeps_the_host_collector_off_until_cni0_exists(vm: _Vm) -> None:
+    """Until the split pod-span config is pinned, the combined config needs node.env."""
+    _deliver_telemetry(vm=vm, split=False)
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (vm.state / "collector.log").exists()
+    assert not (vm.root / "telemetry" / "node.env").exists()
+
+
+def test_a_combined_pinned_config_restarts_the_host_collector_once_cni0_exists(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm, split=False)
+    (vm.state / "cni0").write_text(
+        "5: cni0    inet 10.99.7.1/24 brd 10.99.7.255 scope global cni0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == "restart otel-collector\n"
 
 
 def test_the_pool_binaries_are_bound_read_only_from_the_data_disk(vm: _Vm) -> None:
