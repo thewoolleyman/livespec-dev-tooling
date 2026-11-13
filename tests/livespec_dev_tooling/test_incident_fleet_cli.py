@@ -673,6 +673,164 @@ def _child(
     )
 
 
+_CONTROLLER_INSTALLATIONS_DRIVER = """
+import hashlib
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+from livespec_dev_tooling.incident_fleet_cli import CliEnvironment, main
+from livespec_dev_tooling._incident_fleet_capabilities import SURFACE_CAPABILITY
+from livespec_dev_tooling.fleet._local_context import CommandResult
+from livespec_dev_tooling.incident_fleet_controller_reader import OBSERVED_REPOSITORY
+from livespec_dev_tooling.incident_fleet_host import HostProbe
+from livespec_dev_tooling.incident_fleet_serving import PRODUCTION_READERS, host_serving_reader
+from returns.io import IOSuccess
+
+config = json.loads(sys.argv[1])
+root = Path(config["root"])
+proc = root / "proc"
+proc.mkdir(parents=True)
+boot = int(time.time())
+(proc / "stat").write_text("cpu 1 2 3\\nbtime " + str(boot) + "\\n", encoding="utf-8")
+asked = []
+units = {}
+versions = {
+    OBSERVED_REPOSITORY: "v1.2.3@" + "a" * 40,
+    "thewoolleyman/livespec": "v4.5.6@" + "b" * 40,
+}
+
+def add_process(repository, pid, config_path, version):
+    venv = root / "venvs" / repository.rsplit("/", 1)[-1]
+    dist = venv / "lib" / "python3.12" / "site-packages" / ("livespec_dev_tooling-" + version[1:6] + ".dist-info")
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text("Metadata-Version: 2.1\\nVersion: " + version[1:6] + "\\n", encoding="utf-8")
+    (dist / "direct_url.json").write_text(json.dumps({"vcs_info": {"commit_id": version.split("@", 1)[1]}}), encoding="utf-8")
+    entry = proc / str(pid)
+    entry.mkdir()
+    argv = [str(venv / "bin" / "python"), "-I", "-m", "livespec_dev_tooling.incident_observer_service", "--config", config_path]
+    (entry / "cmdline").write_bytes(("\\0".join(argv) + "\\0").encode())
+    ticks = 60 * os.sysconf("SC_CLK_TCK")
+    fields = ["S", *["0"] * 18, str(ticks), "0"]
+    (entry / "stat").write_text(str(pid) + " (python) " + " ".join(fields), encoding="utf-8")
+
+add_process(OBSERVED_REPOSITORY, 9101, "/etc/livespec-incident/controller.json", versions[OBSERVED_REPOSITORY])
+add_process("thewoolleyman/livespec", 9102, "/etc/livespec-incident/controller-livespec.json", versions["thewoolleyman/livespec"])
+add_process("scratch", 9103, "/etc/livespec-incident/controller-scratch.json", "v9.9.9@" + "s" * 40)
+units = {
+    "livespec-incident-observer.service": 9101,
+    "livespec-incident-observer-livespec.service": 9102,
+    "livespec-incident-observer-scratch.service": 9103,
+}
+
+def run(*, args, cwd=None):
+    asked.append(args)
+    if args[:2] == ["systemctl", "show"]:
+        pid = units.get(args[2])
+        if pid is None:
+            return IOSuccess(CommandResult(returncode=1, stdout="", stderr="unknown unit"))
+        state = "ActiveState=active\\nSubState=running\\nMainPID=" + str(pid) + "\\n"
+        return IOSuccess(CommandResult(returncode=0, stdout=state, stderr=""))
+    if args[:2] == ["gh", "api"]:
+        path = args[2]
+        repository = path.removeprefix("repos/").split("/rulesets", 1)[0]
+        if path.endswith("/rulesets"):
+            body = [{"id": 71 if repository == OBSERVED_REPOSITORY else 72, "enforcement": "active", "target": "branch"}]
+        elif "/rulesets/" in path:
+            body = {"conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}, "bypass_actors": [{"actor_id": 71 if repository == OBSERVED_REPOSITORY else 72, "actor_type": "Integration", "bypass_mode": "always"}]}
+        else:
+            body = {"default_branch": "master"}
+        return IOSuccess(CommandResult(returncode=0, stdout=json.dumps(body), stderr=""))
+    return IOSuccess(CommandResult(returncode=1, stdout="", stderr="unexpected command"))
+
+probe = HostProbe(clones_root=None, proc_root=proc, home=root, run=run)
+readers = {
+    **PRODUCTION_READERS,
+    "gate-readers": lambda *, probe, repository: "fixture-release",
+    "templates": lambda *, probe, repository: "fixture-release",
+    "driver-hooks": lambda *, probe, repository: "fixture-release",
+}
+read_serving = host_serving_reader(probe=probe, readers=readers)
+manifest = json.dumps({"owner": "thewoolleyman", "fleet": [{"repo": "livespec-dev-tooling", "class": "enforcement-suite"}, {"repo": "livespec", "class": "enforcement-suite"}, {"repo": "unserved", "class": "enforcement-suite"}], "adopters": []})
+digest = hashlib.sha256(manifest.encode()).hexdigest()
+claims = []
+for repository in (*versions, "thewoolleyman/unserved"):
+    for surface, capability in SURFACE_CAPABILITY.items():
+        value = read_serving(repository=repository, capability=capability)
+        build = value if isinstance(value, str) else value.build if value is not None else "unverified-release"
+        claims.append({"repository": repository, "surface": surface, "disposition": "implemented", "manifest_sha256": digest, "source_path": "fixture/component.py", "release_build": build, "proof_ref": "fixture:proof", "owner": "fixture-controller", "incident_item": "fixture-incident", "cumulative_scope": "c" * 64, "normal_factory_proof": "fixture:scope"})
+claims_path = root / "claims.json"
+claims_path.write_text(json.dumps({"schema": 1, "evidence": claims}), encoding="utf-8")
+environment = CliEnvironment(claims_path=claims_path, write_enablement=lambda repository, manifest_sha256: (0, "enabled\\t" + repository), read_manifest=lambda: manifest, read_serving=read_serving)
+status = main(argv=["audit"], environment=environment)
+(root / "asked.json").write_text(json.dumps(asked), encoding="utf-8")
+raise SystemExit(status)
+"""
+
+
+def _controller_installations_child(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    scrubbed = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(("COV_CORE_", "COVERAGE_"))
+    }
+    return subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            _CONTROLLER_INSTALLATIONS_DRIVER,
+            json.dumps({"root": str(tmp_path / "fixture-host")}),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+        env=scrubbed,
+    )
+
+
+@pytest.mark.integration
+def test_run_as_a_child_process_reads_controller_and_recovery_from_each_serving_installation(
+    tmp_path: Path,
+) -> None:
+    completed = _controller_installations_child(tmp_path=tmp_path)
+    lines = completed.stdout.splitlines()
+    dev_tooling = "thewoolleyman/livespec-dev-tooling"
+    livespec = "thewoolleyman/livespec"
+    unserved = "thewoolleyman/unserved"
+    dev_controller = "v1.2.3@" + "a" * 40
+    livespec_controller = "v4.5.6@" + "b" * 40
+
+    assert completed.returncode != 0, completed.stderr
+    assert (
+        f"serving\t{dev_tooling}\tindependent-controller\t{dev_controller}" in lines
+    ), completed.stderr
+    assert f"serving\t{livespec}\tindependent-controller\t{livespec_controller}" in lines
+    assert (
+        f"serving\t{dev_tooling}\trecovery-authorization\t{dev_controller}+bypass-app-71" in lines
+    )
+    assert (
+        f"serving\t{livespec}\trecovery-authorization\t{livespec_controller}+bypass-app-72" in lines
+    )
+    assert f"serving\t{unserved}\tindependent-controller\t-" in lines
+    assert f"serving\t{unserved}\trecovery-authorization\t-" in lines
+    assert f"ready\t{dev_tooling}" in lines
+    assert f"ready\t{livespec}" in lines
+    assert f"ready\t{unserved}" not in lines
+    assert not any("scratch" in line for line in lines)
+
+    asked = json.loads((tmp_path / "fixture-host" / "asked.json").read_text(encoding="utf-8"))
+    units = {call[2] for call in asked if call[:2] == ["systemctl", "show"]}
+    assert units == {
+        "livespec-incident-observer.service",
+        "livespec-incident-observer-livespec.service",
+    }
+    assert all("unserved" not in part and "scratch" not in part for call in asked for part in call)
+
+
 @pytest.mark.integration
 def test_run_as_a_child_process_a_consumer_without_controller_evidence_is_left_out_named_and_refused(
     tmp_path: Path,
