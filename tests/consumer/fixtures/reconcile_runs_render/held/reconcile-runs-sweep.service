@@ -1,0 +1,11 @@
+# Ansible managed
+# The sweep reconcile-runs.timer starts (role reconcile_runs).
+# Starting it queues every enabled tenant's pass; each pass is ordered after the
+# one before it, so they run one at a time, and this unit finishes after the
+# last. Wants=, not Requires=: one tenant's failure never cancels another's pass.
+[Unit]
+Description=Run each enabled tenant's livespec reconcile-runs pass, one at a time
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true

@@ -1,0 +1,64 @@
+# Managed by livespec-dev-tooling role reconcile_runs (tenant alpha).
+# Rendered from @INPUT@/reconcile-runs.service.
+# livespec `reconcile-runs` — host timer unit TEMPLATE.
+#
+# The dispatch path already reconciles once per `dispatch` and once per `loop`
+# tick. This timer covers the interval NOTHING dispatches: a host whose queue
+# has drained still holds every orphaned Fabro run it launched, and an orphan
+# holds a scheduler slot until something looks. Reconciliation is an inventory
+# question, so it has to be asked on a clock and not only on demand.
+#
+# `@ROOT@/plugin`, `@ROOT@/workspace/alpha` and `@USER@` are substituted by
+# `install.sh` in this directory. Do NOT install this file verbatim.
+#
+# The ExecStart runs THROUGH the project's env wrapper. That is load-bearing,
+# not decoration: `bd` reads the tenant password from a bare
+# `BEADS_DOLT_PASSWORD` that only the wrapper injects, so a bare invocation
+# fails with "Access denied" / "no beads database found" and reads as a missing
+# tenant rather than as a missing credential. `install.sh` refuses to install
+# a unit whose wrapper is not an executable file on this host.
+
+[Unit]
+Description=livespec reconcile-runs — reconcile factory run inventory against the ledger
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@ROOT@/workspace/alpha
+ExecStart=@ROOT@/bin/with-env.sh -- /usr/bin/python3 @ROOT@/plugin/scripts/bin/dispatcher.py reconcile-runs --repo @ROOT@/workspace/alpha --invoker timer:reconcile-runs --json
+# One pass surveys every declared factory over the network; the reconciler's own
+# per-factory `fabro ps` timeout is 60s, so this bounds the whole pass rather
+# than any single call. 1800s, not 600s: measured 2026-10-27 on v0.243.15, a live
+# pass over petri's inventory took 24m50s, almost all of it 159 sequential
+# `fabro inspect` calls at about 9s each, so a 600s bound killed every pass. A
+# pass longer than the 10-minute interval is safe: systemd does not start a
+# second instance of a oneshot unit while one is active. The real fix cuts the
+# inspect work itself; this bound only stops the kills meanwhile.
+TimeoutStartSec=1800
+# A failed pass is not an incident: the next tick asks the same question again,
+# and a restart storm against an unreachable factory would be pure noise.
+Restart=no
+# A pass is background inventory work. Under CPU contention it must give way
+# to dispatches and interactive sessions, not compete with them as an equal.
+# The default weight is 100, so a pass gets about a fifth of a contended CPU's
+# share and runs at full speed on an idle host. Measured on vmi3006760 on
+# 2026-11-11: a pass used a median of 264 CPU-seconds, 0.45 of a core over the
+# day, while the host sat at about 80% CPU pressure from 19:40Z to 20:50Z.
+CPUWeight=20
+# A reclaim watermark, not a ceiling. Above 5G the kernel throttles the pass
+# and reclaims its memory before the host comes under memory pressure. Measured
+# memory peaks were 3.5 GB median and 4.7 GB max. A hard cap NEAR that peak
+# would OOM-kill the pass, and every later pass would hit the same limit and be
+# killed again, so MemoryMax below sits well above the measured max. The real
+# fix is to stop re-parsing the dispatch journal in every pass (bd-ib-cwuxfi);
+# these settings only keep the current cost from crowding out the rest of the host.
+MemoryHigh=5G
+# A runaway backstop, not a budget. On 2026-11-12 vmi3006760 (no swap) hit a
+# host-wide OOM at 12:43Z, and the kernel killed this pass's python3 at 3.4 GB
+# rather than a cause it chose. At 8G a pass that runs away past every measured
+# peak is what the kernel kills inside this unit's own cgroup, instead of a
+# seat's user manager. Passes inside the measured range never reach it.
+MemoryMax=8G

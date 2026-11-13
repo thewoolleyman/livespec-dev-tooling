@@ -14,10 +14,12 @@ that dispatches factory runs. It replaces the hand-run
   `credential_wrapper` in place of the wrapper the unit text names.
 - A dry-run twin per tenant, `<unit>-dry-run.service`, with the same user,
   checkout, wrapper and plugin root plus `--dry-run`. It has no timer.
-- A drop-in per tenant service with the pass bound (`TimeoutStartSec`), a
-  bounded restart on failure, the ordering after the previous tenant, and the
-  dead-man marker (`ExecStartPost` touches
-  `<reconcile_runs_state_dir>/<name>.last-success`).
+- A drop-in per tenant service with the pass bound (`TimeoutStartSec`), the
+  ordering after the previous tenant, and the dead-man marker (`ExecStartPost`
+  touches `<reconcile_runs_state_dir>/<name>.last-success`). The role creates
+  that marker when it enables a tenant, so telemetry that reads the markers
+  never reports a newly enabled tenant `missing`. It never refreshes a marker
+  that already exists.
 - `reconcile-runs-sweep.service`, which `Wants=` and is ordered `After=` every
   enabled tenant's service. Starting it runs the enabled passes one at a time,
   in list order.
@@ -25,10 +27,21 @@ that dispatches factory runs. It replaces the hand-run
   `reconcile-runs.timer`, with `Unit=` pointed at the sweep. A drop-in sets
   `OnBootSec` and `OnUnitInactiveSec` from this role's variables.
 - `reconcile-runs-staleness.{service,timer}` and
-  `/usr/local/libexec/livespec-reconcile-runs-staleness`. Every five minutes the
-  staleness unit fails, and journals `reconcile-runs-stale tenant=<name>
-  age_seconds=<n>`, when an enabled tenant's marker is missing or older than
+  `/usr/local/libexec/livespec-reconcile-runs-staleness`. Every five minutes
+  the check journals `reconcile-runs-stale tenant=<name> age_seconds=<n>` for
+  each enabled tenant whose marker is missing or older than
   `reconcile_runs_stale_after_seconds`.
+  - With `reconcile_runs_staleness_on_failure` set (the dev host:
+    `dolt-backup-alert@%n.service`), the unit fails, and so alerts, only when
+    the stale set changes or the last alert is a day old.
+  - With it empty (a host whose own telemetry reads the markers, such as
+    hetzner-xubuntu), the unit fails on every stale check.
+
+This role's drop-in is `10-reconcile-runs-role.conf`. On the dev host, role
+`dev_host_memory_bounds` also places
+`reconcile-runs.service.d/50-livespec-memory-bounds.conf`. That file sorts later,
+so its memory bounds win over the unit text's `MemoryHigh` and `MemoryMax`. The
+two roles write different files and leave each other's alone.
 
 ## Why one sweep instead of one timer per tenant
 
@@ -36,14 +49,27 @@ that dispatches factory runs. It replaces the hand-run
 only that repository's ledger, so each tenant needs its own pass, run against
 its own checkout, through its own credential wrapper. A pass peaked at about
 3.5 GB on the dev host (2026-11-11), so passes run one after another, never in
-parallel. A tenant that keeps failing uses up its start limit
-(`reconcile_runs_start_limit_burst` starts in
-`reconcile_runs_start_limit_interval`), and the sweep then moves on to the
-next tenant.
+parallel.
 
-Each host acts only on the claims it stamped itself. The reconciler holds a
-claim stamped by another host as `owner-elsewhere`. So during a migration
-overlap, both hosts run this role, and each one reconciles its own claims.
+A failed or timed-out pass is not restarted inside the sweep. The
+orchestrator's unit text keeps `Restart=no`, and the next sweep, one interval
+after this one ends, retries the tenant. With restarts, one hung tenant would
+hold every later tenant for several 1800 s bounds instead of one.
+
+## One enabled host at a time
+
+Only the reconciler's CLAIM lane is host-fenced. A claim stamped by another
+host is held as `owner-elsewhere`, and this host never releases it.
+
+The RUN lane has no host fence. Orphan export and terminate, the
+sandbox-container sweep and the ended-run collection all act on every run the
+shared factories list, whichever host dispatched it. If two hosts reconcile at
+once, both can take the same terminal action on the same run.
+
+`reconcile_runs_enabled` MUST therefore stay `false` on every host but one,
+until livespec-orchestrator-beads-fabro's bd-ib-mnkasb fences the run lane by
+dispatching host. Lifting hetzner-xubuntu's hold for the dispatcher move waits
+on that item.
 
 ## Variables
 
@@ -73,6 +99,7 @@ reconcile_runs_interval: 10min           # OnUnitInactiveSec: idle gap between s
 reconcile_runs_boot_delay: 5min
 reconcile_runs_timeout_seconds: 1800     # one pass's bound
 reconcile_runs_stale_after_seconds: 14400
+reconcile_runs_staleness_on_failure: ""   # e.g. dolt-backup-alert@%n.service
 ```
 
 Use the explicit `/home/ubuntu/...` paths. These are system units, and in a
@@ -125,6 +152,9 @@ journalctl -u <unit>-dry-run.service -n 50 --no-pager
 - **A tenant taken out of the list.** Its service, its dry-run twin and its
   marker stay on the host until an operator removes them. The sweep no longer
   wants it, so it never runs.
+- **The OnFailure= alert unit.** On the dev host this is
+  `dolt-backup-alert@.service`, from the dolt-server repository. The role
+  refuses to install the staleness unit when the named alert unit is missing.
 - **First sweep.** If a converge changes the timer or its interval on a host
   that is already enabled, the role starts one sweep. Without that sweep, a
   timer that was already running would never elapse again.

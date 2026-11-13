@@ -34,6 +34,8 @@ reconcile_runs_template_dir: >-
 reconcile_runs_plugin_root: "{{ reconcile_runs_orchestrator_checkout }}/.claude-plugin"
 
 reconcile_runs_unit_dir: /etc/systemd/system
+reconcile_runs_unit_owner: root
+reconcile_runs_unit_group: root
 
 # ONE timer per host starts ONE sweep, which runs the enabled tenants' passes one
 # at a time in list order. A pass peaks at about 3.5 GB (measured on the dev
@@ -43,14 +45,11 @@ reconcile_runs_sweep_unit: reconcile-runs-sweep
 reconcile_runs_boot_delay: 5min
 reconcile_runs_interval: 10min
 
-# Each tenant pass: a bound, and a bounded restart on failure. A tenant that
-# keeps failing exhausts its start limit and the sweep moves on to the next
-# tenant; the next sweep tries it again.
+# Each tenant pass is bounded. A failed pass is retried by the NEXT SWEEP, one
+# interval after this sweep ends, not by Restart=: the orchestrator's unit text
+# commits Restart=no, and an in-sweep retry would hold every later tenant behind
+# a hung one (four 1800 s attempts is two hours of a serial sweep).
 reconcile_runs_timeout_seconds: 1800
-reconcile_runs_restart: on-failure
-reconcile_runs_restart_sec: 1min
-reconcile_runs_start_limit_interval: 30min
-reconcile_runs_start_limit_burst: 4
 
 # Dead-man. Each successful pass touches <state_dir>/<name>.last-success; the
 # staleness unit fails, naming the tenant and the age, once a marker is older
@@ -61,3 +60,14 @@ reconcile_runs_stale_after_seconds: 14400
 reconcile_runs_staleness_interval: 5min
 reconcile_runs_staleness_bin: /usr/local/libexec/livespec-reconcile-runs-staleness
 reconcile_runs_staleness_unit: reconcile-runs-staleness
+# The staleness unit's OnFailure= target, for a host whose telemetry does not
+# read the markers (empty: no OnFailure=). With a target set, the check fails
+# only when the stale set changes or the last alert is older than
+# reconcile_runs_staleness_realert_seconds, so one stale episode raises one alert.
+reconcile_runs_staleness_on_failure: ""
+reconcile_runs_staleness_alert_state: "{{ reconcile_runs_state_dir }}/.staleness-alerted"
+reconcile_runs_staleness_realert_seconds: 86400
+
+# Test seam: false renders every file and skips the systemd calls (daemon-reload,
+# timer state, the post-change sweep). Hosts keep the default.
+reconcile_runs_manage_systemd: true
