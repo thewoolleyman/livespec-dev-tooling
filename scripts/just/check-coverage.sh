@@ -137,6 +137,10 @@ else
     echo ":: check-coverage: no reusable .coverage data file; running the clean suite"
     rm -f "$failure_receipt"
 fi
-record_reuse_outcome "missing_receipt"
+# The outcome is recorded after the clean run so duration_ms covers the
+# invocation's dominant work; pytest's own exit status is preserved.
+status=0
 env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
-    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing || status=$?
+record_reuse_outcome "missing_receipt"
+exit "$status"
