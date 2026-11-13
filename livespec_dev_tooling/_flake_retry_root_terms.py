@@ -3,8 +3,9 @@
 SPECIFICATION non-functional-requirements.md "Untouched-test retry": a path
 expression counts only when its base is repository-rooted
 (livespec-dev-tooling-bob7iv). A `RootTerm` says whether a base may be the
-repository -- `rooted`, where anything this analysis cannot classify counts,
-so a doubt keeps a test touched -- and which repository directories it
+repository -- `rooted`, where a base this analysis cannot classify counts, so
+the literal segments of a `/` chain on it count -- and which repository
+directories it
 positively is -- `places`, repository-relative with `""` for the root, which
 only an expression the module resolves from `__file__`, a request's test path,
 `rootpath`, `rootdir` or `invocation_params.dir` proves, extended by literal
@@ -13,10 +14,12 @@ bindings, fixtures, attribute stores and imports that the whole closure then
 solves; any other derived path, such as `ROOT.parent`, keeps the doubt of its
 object but not its places, so only `through` carries it, never `evidence`.
 
-`spans` are directories a path lies somewhere under, unknown where: a
-request's test path read outside a test module (see `request_span`). Every
-derivation keeps them, and they travel through `through`, so the closure names
-each span directory whole, and a span at the root is undeterminable.
+`spans` are directories a path lies somewhere under (see `Span`): a request's
+test path read outside a test module (see `request_span`). They travel through
+`through`, so the closure names each span directory whole, and a span at the
+root is undeterminable. An upward step (`ascended`) widens the term's own spans
+and turns its own places into spans, and its `ascent` widens, the same way,
+whatever spans and places its `through` keys bring when the closure solves.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from dataclasses import dataclass
 
 from livespec_dev_tooling._flake_retry_places import is_request_path
 from livespec_dev_tooling._flake_retry_scopes import Scope, ScopeIndex, owning_scope
+from livespec_dev_tooling._flake_retry_spans import EXACT, UNBOUNDED, Span, climbed
 from livespec_dev_tooling.flake_retry_divisions import division_operands
 
 __all__: list[str] = [
@@ -36,6 +40,7 @@ __all__: list[str] = [
     "Key",
     "RootTerm",
     "TermContext",
+    "ascended",
     "base_term",
     "binding_key",
     "through",
@@ -69,7 +74,8 @@ class RootTerm:
     places: frozenset[str]
     through: frozenset[Key]
     evidence: frozenset[Key] = frozenset()
-    spans: frozenset[str] = frozenset()
+    spans: frozenset[Span] = frozenset()
+    ascent: int = 0
 
 
 ROOTED = RootTerm(rooted=True, places=frozenset({""}), through=frozenset())
@@ -98,6 +104,7 @@ def union(*, terms: Iterable[RootTerm]) -> RootTerm:
         spans=frozenset(span for term in collected for span in term.spans),
         through=frozenset(key for term in collected for key in term.through),
         evidence=frozenset(key for term in collected for key in term.evidence),
+        ascent=max((term.ascent for term in collected), default=0),
     )
 
 
@@ -110,7 +117,26 @@ def through(*keys: Key) -> RootTerm:
 
 def _derived(*, term: RootTerm) -> RootTerm:
     """A path derived from a base keeps the base's doubt but not its places."""
-    return RootTerm(rooted=term.rooted, places=frozenset(), through=term.through, spans=term.spans)
+    return RootTerm(
+        rooted=term.rooted,
+        places=frozenset(),
+        through=term.through,
+        spans=term.spans,
+        ascent=term.ascent,
+    )
+
+
+def ascended(*, term: RootTerm, steps: int) -> RootTerm:
+    """A base after `steps` upward steps: its places become spans and its spans widen."""
+    own = [*((place, EXACT) for place in term.places), *term.spans]
+    spans = (climbed(span=span, steps=steps) for span in own)
+    return RootTerm(
+        rooted=term.rooted,
+        places=frozenset(),
+        through=term.through,
+        spans=frozenset(span for span in spans if span is not None),
+        ascent=min(term.ascent + steps, UNBOUNDED),
+    )
 
 
 def _divided(*, term: RootTerm, segments: tuple[ast.expr, ...]) -> RootTerm:
@@ -120,12 +146,15 @@ def _divided(*, term: RootTerm, segments: tuple[ast.expr, ...]) -> RootTerm:
         isinstance(segment, ast.Constant) and isinstance(segment.value, str) for segment in segments
     ) and all(text and not text.startswith("/") and ".." not in text.split("/") for text in texts)
     places = frozenset("/".join(part for part in (place, *texts) if part) for place in term.places)
-    return RootTerm(
+    ups = sum(text.split("/").count("..") for text in texts)
+    kept = RootTerm(
         rooted=term.rooted,
         places=places if plain else frozenset(),
         through=term.through,
         spans=term.spans,
+        ascent=term.ascent,
     )
+    return ascended(term=term, steps=ups) if ups else kept
 
 
 def binding_key(*, name: str, scope: Scope, context: TermContext) -> Key:
@@ -165,7 +194,10 @@ def _call_term(*, call: ast.Call, context: TermContext) -> RootTerm:
         return through(("fixture", fixture), ("request", fixture))
     if callee in _PATH_CONSTRUCTORS and first is not None:
         argument = base_term(expression=first, context=context)
-        return argument if callee in _SAME_PATH_CALLS else _derived(term=argument)
+        derived = (
+            ascended(term=argument, steps=1) if callee == "dirname" else _derived(term=argument)
+        )
+        return argument if callee in _SAME_PATH_CALLS else derived
     if isinstance(func, ast.Attribute):
         receiver = base_term(expression=func.value, context=context)
         receiver = receiver if callee in _SAME_PATH_METHODS else _derived(term=receiver)
@@ -178,11 +210,17 @@ def _attribute_term(*, attribute: ast.Attribute, context: TermContext) -> RootTe
     if attribute.attr in _ROOT_ATTRIBUTES:
         return DOUBT if attribute.attr == "__file__" else ROOTED
     if context.request_span is not None and is_request_path(attribute=attribute):
-        spans = frozenset({context.request_span})
+        spans = frozenset({(context.request_span, 1)})
         return RootTerm(rooted=True, places=frozenset(), through=frozenset(), spans=spans)
     stored = through(("attribute", attribute.attr))
-    owner = _derived(term=base_term(expression=attribute.value, context=context))
+    owner = base_term(expression=attribute.value, context=context)
+    steps = {"parent": 1, "parents": UNBOUNDED}.get(attribute.attr, 0)
+    owner = ascended(term=owner, steps=steps) if steps else _derived(term=owner)
     return union(terms=(owner, stored))
+
+
+def _is_parents(*, expression: ast.expr) -> bool:
+    return isinstance(expression, ast.Attribute) and expression.attr == "parents"
 
 
 def base_term(*, expression: ast.expr, context: TermContext) -> RootTerm:
@@ -197,6 +235,14 @@ def base_term(*, expression: ast.expr, context: TermContext) -> RootTerm:
         term = _name_term(name=expression.id, scope=scope, context=context)
     elif isinstance(expression, ast.Attribute):
         term = _attribute_term(attribute=expression, context=context)
+    elif isinstance(expression, ast.Subscript) and _is_parents(expression=expression.value):
+        index = expression.slice
+        constant = isinstance(index, ast.Constant) and type(index.value) is int
+        steps = int(getattr(index, "value", 0)) + 1 if constant else UNBOUNDED
+        owner = base_term(
+            expression=getattr(expression.value, "value", expression), context=context
+        )
+        term = ascended(term=owner, steps=steps)
     elif isinstance(expression, ast.Subscript):
         term = base_term(expression=expression.value, context=context)
     elif isinstance(expression, ast.Call):

@@ -3,9 +3,10 @@
 SPECIFICATION non-functional-requirements.md "Untouched-test retry": a path
 expression whose base is derived from `__file__` is repository-rooted. When the
 base resolves to a directory inside the repository, that directory is a path
-the closure names (livespec-dev-tooling-4ai5ao). This module resolves each
-expression of one module to its repository-relative path, with `""` for the
-repository root.
+the closure names (livespec-dev-tooling-4ai5ao). This module resolves the
+limited forms below in each expression of one module to a repository-relative
+path, with `""` for the repository root; `request` is recognised only by that
+name, never through `getattr` or an alias.
 """
 
 from __future__ import annotations

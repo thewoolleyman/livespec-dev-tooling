@@ -15,13 +15,18 @@ __all__: list[str] = ["PathChain", "path_chains", "path_literals"]
 
 @dataclass(frozen=True, kw_only=True)
 class PathChain:
-    """One path expression: its named paths, its literal segments and its base operand."""
+    """One path expression: its named paths, its literal segments and its base operand.
+
+    `ascent` counts the `..` components of its literal segments: the upward
+    steps the expression takes from its base.
+    """
 
     names: frozenset[str]
     segments: frozenset[str]
     undeterminable: bool
     base: ast.expr
     operand_ids: frozenset[int]
+    ascent: int = 0
 
 
 def _repository_root_context(
@@ -144,6 +149,11 @@ def path_chains(
                 undeterminable=undeterminable,
                 base=operands[0],
                 operand_ids=frozenset(id(operand) for operand in operands),
+                ascent=sum(
+                    str(getattr(operand, "value", "")).split("/").count("..")
+                    for operand in operands[1:]
+                    if isinstance(operand, ast.Constant)
+                ),
             )
         )
     return tuple(chains)
