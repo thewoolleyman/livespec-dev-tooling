@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_dev_tooling._flake_retry_closure import conftest_chain, module_imports
-from livespec_dev_tooling.flake_retry_paths import path_literals
+from livespec_dev_tooling._flake_retry_roots import Key, RootTerm, module_root_terms, rooted_keys
+from livespec_dev_tooling._flake_retry_scopes import index_scopes
+from livespec_dev_tooling.flake_retry_paths import path_chains
 from livespec_dev_tooling.flake_retry_release import version_only_release_change
 
 __all__: list[str] = [
@@ -32,11 +34,19 @@ _PLUGIN_FILE_NAMES = {"flake_retry.py", Path(__file__).name}
 
 @dataclass(frozen=True, kw_only=True)
 class _ModuleFacts:
-    """What one parsed source module contributes to any closure that reaches it."""
+    """What one parsed source module contributes to any closure that reaches it.
+
+    A path expression counts only when its base is repository-rooted
+    (livespec-dev-tooling-bob7iv). `literals` holds what counts whatever the
+    closure; `dependent` holds each path expression whose base is rooted only
+    if a binding the closure solves is, with the literals it then adds.
+    """
 
     imports: frozenset[Path]
     literals: frozenset[str]
     undeterminable_paths: bool
+    dependent: tuple[tuple[RootTerm, frozenset[str]], ...]
+    bindings: tuple[tuple[Key, RootTerm], ...]
 
 
 def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
@@ -45,28 +55,38 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (OSError, SyntaxError, UnicodeError):
         return None
+    index = index_scopes(tree=tree)
+    chains = path_chains(tree=tree, repo_root=repo_root, source_path=path, index=index)
+    bindings, base_terms = module_root_terms(
+        index=index, module=str(path), bases=[chain.base for chain in chains]
+    )
+    operand_ids = {operand_id for chain in chains for operand_id in chain.operand_ids}
     path_component_nodes = {
         id(component)
-        for node in ast.walk(tree)
+        for node in index.nodes
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
         for component in ast.walk(node)
         if isinstance(component, ast.Constant) and isinstance(component.value, str)
     }
     literals = {
         node.value
-        for node in ast.walk(tree)
+        for node in index.nodes
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
-        if id(node) not in path_component_nodes or Path(node.value).suffix
+        if id(node) not in path_component_nodes
+        or (Path(node.value).suffix and id(node) not in operand_ids)
     }
-    path_names, path_is_undeterminable = path_literals(
-        tree=tree,
-        repo_root=repo_root,
-        source_path=path,
-    )
+    dependent: list[tuple[RootTerm, frozenset[str]]] = []
+    for chain, term in zip(chains, base_terms, strict=True):
+        if term.rooted:
+            literals.update(chain.names | chain.segments)
+        elif term.through:
+            dependent.append((term, chain.names | chain.segments))
     return _ModuleFacts(
         imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
-        literals=frozenset(literals | path_names),
-        undeterminable_paths=path_is_undeterminable,
+        literals=frozenset(literals),
+        undeterminable_paths=any(chain.undeterminable for chain in chains),
+        dependent=tuple(dependent),
+        bindings=tuple(pair for pair in bindings if pair[1].rooted or pair[1].through),
     )
 
 
@@ -77,27 +97,36 @@ def _closure(
 
     `memo` holds each module's parsed facts for the caller's whole collection
     pass, so a module many tests import is parsed once rather than once per
-    collected item (livespec-dev-tooling-pprfq2).
+    collected item (livespec-dev-tooling-pprfq2). A path expression whose base
+    is rooted only through a binding, fixture or attribute store counts when
+    the closure's bindings, solved together, root it.
     """
     facts_by_path = {} if memo is None else memo
     pending = [test_path, *conftest_chain(repo_root=repo_root, test_path=test_path)]
-    modules: set[Path] = set()
-    literals: set[str] = set()
-    undeterminable_paths = False
+    reached: dict[Path, _ModuleFacts] = {}
     while pending:
         path = pending.pop()
-        if path in modules:
+        if path in reached:
             continue
         if path not in facts_by_path:
             facts_by_path[path] = _module_facts(repo_root=repo_root, path=path)
         facts = facts_by_path[path]
         if facts is None:
             return None
-        modules.add(path)
-        literals.update(facts.literals)
-        undeterminable_paths = undeterminable_paths or facts.undeterminable_paths
-        pending.extend(facts.imports - modules)
-    return modules, literals, undeterminable_paths
+        reached[path] = facts
+        pending.extend(facts.imports - reached.keys())
+    literals = {literal for facts in reached.values() for literal in facts.literals}
+    dependent = [pair for facts in reached.values() for pair in facts.dependent]
+    if dependent:
+        rooted = rooted_keys(terms=(pair for facts in reached.values() for pair in facts.bindings))
+        literals.update(
+            name for term, names in dependent if term.through & rooted for name in names
+        )
+    return (
+        set(reached),
+        literals,
+        any(facts.undeterminable_paths for facts in reached.values()),
+    )
 
 
 def _changed_names(*, paths: set[Path]) -> set[str]:

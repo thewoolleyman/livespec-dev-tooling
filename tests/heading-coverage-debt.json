@@ -471,13 +471,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test that copies a repository directory into a temporary root is still touched",
-    "work_item": "livespec-dev-tooling-jfy23q",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test that shares only an ancestor directory name with the change set is retried",
     "work_item": "livespec-dev-tooling-h6jsgv",
     "first_seen": "2026-11-05"
@@ -487,13 +480,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test the run touched is named in a withheld-retry block",
     "work_item": "livespec-dev-tooling-ln77b6",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test whose closure names a changed file only under a temporary root is retried",
-    "work_item": "livespec-dev-tooling-jfy23q",
     "first_seen": "2026-11-09"
   },
   {
