@@ -869,6 +869,36 @@ def test_a_register_entry_without_an_owner_fails(
     assert "register_row_incomplete" in result.combined
 
 
+def test_a_register_differing_from_fresh_regeneration_fails_and_names_its_row(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A changed live owner requires the mechanically regenerated register row.
+
+    The key remains present, complete and within the frozen baseline, so the
+    older ratchet directions all pass. A fresh generator resynchronizes the
+    owner from the live registry, making this the precise stale-output shape
+    the regeneration comparison must refuse.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        register=[_entry(heading="## A")],
+    )
+    _stage(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A", work_item="livespec-dev-tooling-new-owner")],
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a register that differs from its fresh generation must be refused; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "register_not_regenerated" in result.combined
+    assert "## A" in result.combined
+
+
 def test_the_scope_lever_spares_an_inherited_finding_and_still_reports_it(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
