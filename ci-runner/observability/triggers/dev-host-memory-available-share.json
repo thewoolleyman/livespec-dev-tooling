@@ -1,0 +1,58 @@
+{
+  "name": "dev host memory — available RAM below 25.5% of total (24 GiB on vmi3006760), per host",
+  "description": "Fires per host.name when a dev host's MIN(system.linux.memory.available / system.memory.limit) over 10 min is below 0.255: the load guard's 24 GiB floor on vmi3006760 (94 GiB), about 32 GiB on hetzner-xubuntu (125 GiB). Early warning; the 8 GiB critical floor is host-memory-available-critical-floor. Hosts are selected by the resource attribute livespec.host.role = dev-host, which the dev-host collector shape stamps, so a dev host joins by running that shape (thewoolleyman/otel-collector config.yaml and its livespec-only variant), never by a copy of this trigger. Cause on 2026-11-13: RAM-backed /tmp at 35-38G, Dolt OOM-killed 15:32:41Z. Runbook: /var/tmp/vps-load-guard.sh; free -g; df -h /tmp /dev/shm; sudo du -xd1 /tmp | sort -h | tail; ps aux --sort=-rss | head. Owner: legacy-coordinator-agent routing, kubernetes-observability seat.",
+  "query": {
+    "calculated_fields": [
+      {
+        "name": "mem_available_share",
+        "expression": "DIV($system.linux.memory.available, $system.memory.limit)"
+      }
+    ],
+    "calculations": [
+      {
+        "op": "MIN",
+        "column": "mem_available_share"
+      }
+    ],
+    "filters": [
+      {
+        "column": "livespec.host.role",
+        "op": "=",
+        "value": "dev-host"
+      }
+    ],
+    "breakdowns": [
+      "host.name"
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": "<",
+    "value": 0.255,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "dev-host"
+    },
+    {
+      "key": "component",
+      "value": "memory"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

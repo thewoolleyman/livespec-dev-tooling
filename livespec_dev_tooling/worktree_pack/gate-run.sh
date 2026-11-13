@@ -132,6 +132,7 @@
 #   75       DIED_WITHOUT_VERDICT (EX_TEMPFAIL) — the gate did not finish;
 #            this is NOT a failing verdict and NOT a pass
 #   64       usage error (EX_USAGE)
+#   69       the gate venue selector cannot be imported (EX_UNAVAILABLE)
 #   70       the runner itself could not launch the gate (EX_SOFTWARE)
 #
 # `set -euo pipefail` (errexit): a runner whose own bookkeeping fails
@@ -143,6 +144,7 @@
 set -euo pipefail
 
 readonly EX_USAGE=64
+readonly EX_UNAVAILABLE=69
 readonly EX_SOFTWARE=70
 readonly EX_NO_VERDICT=75
 readonly SIGNAL_EXIT_FLOOR=128
@@ -844,35 +846,95 @@ cmd_start() {
 
     ensure_worktree_pack "$(repo_root)"
 
-    local venue_fields=()
-    if [[ "$force_local" == "true" ]]; then
-        mapfile -t venue_fields < <(
-            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" 2>/dev/null
-        )
+    # Selecting a venue before creating the run directory preserves the
+    # distinction between a runner fault and a gate that was actually started.
+    # The installed pack can outlive its package pin, so try both the project
+    # environment and the host interpreter before asking either to select.
+    local selector_probe_dir uv_import_status=0 python_import_status=0
+    selector_probe_dir="$(mktemp -d)"
+    if uv run --no-sync python -c 'import livespec_dev_tooling' \
+        >/dev/null 2>"$selector_probe_dir/uv-import.stderr"; then
+        :
     else
-        mapfile -t venue_fields < <(
-            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" 2>/dev/null
-        )
+        uv_import_status=$?
+    fi
+    if python3 -c 'import livespec_dev_tooling' \
+        >/dev/null 2>"$selector_probe_dir/python-import.stderr"; then
+        :
+    else
+        python_import_status=$?
+    fi
+    if [[ "$uv_import_status" -ne 0 && "$python_import_status" -ne 0 ]]; then
+        printf '%s\n' 'ERROR: gate venue selector could not be imported through either `uv run --no-sync python` or `python3`.' >&2
+        printf '%s\n' 'Remedy: run `uv sync` or `just bootstrap` in that checkout; when the installed pack is older than the pinned package, run `just install-worktree-pack`.' >&2
+        cat "$selector_probe_dir/uv-import.stderr" >&2
+        cat "$selector_probe_dir/python-import.stderr" >&2
+        rm -rf "$selector_probe_dir"
+        return "$EX_UNAVAILABLE"
+    fi
+    local venue_fields=()
+    if [[ "$uv_import_status" -eq 0 && "$force_local" == "true" ]]; then
+        if uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+            >"$selector_probe_dir/uv-selector.stdout" \
+            2>"$selector_probe_dir/uv-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/uv-selector.stdout"
+    elif [[ "$uv_import_status" -eq 0 ]]; then
+        if uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+            >"$selector_probe_dir/uv-selector.stdout" \
+            2>"$selector_probe_dir/uv-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/uv-selector.stdout"
+    elif [[ "$force_local" == "true" ]]; then
+        if python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+            >"$selector_probe_dir/python-selector.stdout" \
+            2>"$selector_probe_dir/python-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
+    else
+        if python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+            >"$selector_probe_dir/python-selector.stdout" \
+            2>"$selector_probe_dir/python-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
     fi
     # Consumer worktrees normally have their pinned environment ready, but a
     # source checkout with an importable package and no initialized project
     # environment can still select locally through the interpreter that made
     # the package importable.
-    if [[ "${#venue_fields[@]}" != "2" ]]; then
+    if [[ "${#venue_fields[@]}" != "2" && "$uv_import_status" -eq 0 ]]; then
         if [[ "$force_local" == "true" ]]; then
-            mapfile -t venue_fields < <(
-                python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
-            )
+            if python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+                >"$selector_probe_dir/python-selector.stdout" \
+                2>"$selector_probe_dir/python-selector.stderr"; then
+                :
+            fi
+            mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
         else
-            mapfile -t venue_fields < <(
-                python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@"
-            )
+            if python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+                >"$selector_probe_dir/python-selector.stdout" \
+                2>"$selector_probe_dir/python-selector.stderr"; then
+                :
+            fi
+            mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
         fi
     fi
     [[ "${#venue_fields[@]}" == "2" ]] || {
         printf 'ERROR: gate venue selection did not return a venue and reason\n' >&2
+        if [[ -s "$selector_probe_dir/uv-selector.stderr" ]]; then
+            cat "$selector_probe_dir/uv-selector.stderr" >&2
+        fi
+        if [[ -s "$selector_probe_dir/python-selector.stderr" ]]; then
+            cat "$selector_probe_dir/python-selector.stderr" >&2
+        fi
+        rm -rf "$selector_probe_dir"
         return "$EX_SOFTWARE"
     }
+    rm -rf "$selector_probe_dir"
     local venue="${venue_fields[0]}"
     local venue_reason="${venue_fields[1]}"
 

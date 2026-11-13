@@ -191,6 +191,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a change that authors two exemptions cannot be evaluated",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a check runner reclaims the coverage directory a killed runner left behind",
     "work_item": "livespec-dev-tooling-64ik6g",
     "first_seen": "2026-11-12"
@@ -1129,6 +1136,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow change with no exemption authored in it is refused by name",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
     "work_item": "livespec-dev-tooling-fsle5g",
     "first_seen": "2026-11-11"
@@ -1199,6 +1213,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an authored exemption is judged by its work item's label, not admitted by authorship alone",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an execution target stays closed until its reading falls back past the exit threshold",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
@@ -1209,6 +1230,13 @@
     "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
     "work_item": "livespec-dev-tooling-62zla3",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an exemption inherited from the base does not admit a workflow change",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1374,6 +1402,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: changing only an exemption file's mode does not author it",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: copying a base exemption file does not author it",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: deleting a base exemption file does not author it",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
     "work_item": "livespec-dev-tooling-zfgtin",
     "first_seen": "2026-11-01"
@@ -1440,6 +1489,13 @@
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
     "work_item": "livespec-dev-tooling-7upzav",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: renaming a base exemption file does not author it",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1535,6 +1591,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the legacy root exemption file authored in the change still admits during the transition",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
     "work_item": "livespec-dev-tooling-fgy4au",
     "first_seen": "2026-11-09"
@@ -1594,6 +1657,13 @@
     "heading": "## Scenario: two scale sets pinning different runner versions fail the check",
     "work_item": "livespec-dev-tooling-jkwzwv",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: two workflow changes that each add their own exemption file merge in either order",
+    "work_item": "livespec-dev-tooling-oim422",
+    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",

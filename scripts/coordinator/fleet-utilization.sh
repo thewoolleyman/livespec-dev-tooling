@@ -97,7 +97,10 @@ HOSTS = {
     "hp-xubuntu": ["cwoolley@hp-xubuntu", "hp-xubuntu"],
 }
 K3S_SERVER = "poweredge-xubuntu"
-CANARY = pathlib.Path("/data/projects/livespec-orchestrator-beads-fabro/tmp/petri-canary")
+# Checkouts live under ~/workspace on every seat host: a real directory on hetzner-xubuntu,
+# a symlink to /data/projects on the VPS. /data/projects does not exist on hetzner-xubuntu.
+PROJECTS = pathlib.Path.home() / "workspace"
+CANARY = PROJECTS / "livespec-orchestrator-beads-fabro" / "tmp" / "petri-canary"
 QUEUE_DIR = pathlib.Path("/run/user/1000/gmktec-launch-queue.d")
 SSH_CONNECT_TIMEOUT = 5
 SSH_OVERALL_TIMEOUT = 25
@@ -114,7 +117,6 @@ FLEET_STALE_AFTER_S = 2 * 60
 MIN_POD_COLS = 8
 QUOTA_COLS = 3
 SSH_BIN = shutil.which("ssh") or "ssh"
-PROJECTS = pathlib.Path("/data/projects")
 ENV_WRAPPER = "/usr/local/bin/with-livespec-env.sh"
 READY_SECTION_TIMEOUT_S = 60
 READY_STALE_S = 30 * 60
@@ -430,7 +432,7 @@ def recent_launches(now):
 
 
 def ready_tenants():
-    """Every livespec repo under /data/projects that carries a beads tenant pointer."""
+    """Every livespec repo under ~/workspace that carries a beads tenant pointer."""
     repos = [PROJECTS / "livespec", *sorted(PROJECTS.glob("livespec-*"))]
     return [r for r in repos if (r / ".beads" / "config.yaml").is_file()]
 
