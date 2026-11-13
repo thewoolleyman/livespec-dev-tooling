@@ -40,8 +40,11 @@
 # (`ci-runner-scheduler` in kube-system), spread across nodes. A runner pod
 # that names this scheduler while it has no ready replica is never bound;
 # reconcile-runner-scheduler-fail-open.sh hands such a pod to the default
-# scheduler, runner by runner. Until it is live, only ONE canary scale set names
-# this scheduler (legacy-coordinator-agent, R301, 2026-11-04).
+# scheduler, runner by runner. Until it was live only ONE canary scale set named
+# this scheduler (legacy-coordinator-agent, R301, 2026-11-04); its drill proved
+# it 2026-11-09, and since 2026-11-13 EVERY scale set whose runner pods request a
+# churn slot names it, so one scheduler binds all of them and two schedulers'
+# caches never race for a node's last free slot.
 #
 # REVERT. Remove `schedulerName` from the runner templates
 # (../arc/values-*.yaml) and converge; this Deployment can stay or be deleted.

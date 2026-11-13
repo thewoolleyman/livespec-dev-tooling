@@ -41,6 +41,16 @@ template:
       # rather than straight to the Kubernetes scheduler.
       kueue.x-k8s.io/queue-name: livespec-overseer-lq
   spec:
+    # Placed by `ci-runner-scheduler` (../runner-scheduler/runner-scheduler.yaml),
+    # like every scale set whose runner pods request a churn slot
+    # (livespec-dev-tooling-mtvxde, widened fleet-wide by legacy-coordinator-agent's
+    # ruling of 2026-11-13). It ranks nodes by the fraction of their churn slots in
+    # use, as the ratified clause "Runner placement follows admission capacity"
+    # requires, and ONE scheduler then binds every churn-slot pod: while two
+    # schedulers bound them from separate caches they raced for a node's last free
+    # slot and the kubelet refused the loser (OutOfci-runner.io/churn-slot).
+    # Revert: delete this line from every values file and converge.
+    schedulerName: ci-runner-scheduler
     # Tolerate the factory placement taint (orchestrator bd-ib-plon2p,
     # ../factory-pressure-placement/README.md): it exists to steer FACTORY
     # sandbox pods only, so runner pods ignore it and CI placement is unchanged.
