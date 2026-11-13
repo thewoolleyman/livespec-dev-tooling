@@ -3814,5 +3814,85 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier is owed for this scenario, driving a detached gate run whose command and a descendant that entered its own OS session stall past the stall window, and asserting that the run directory holds a stall-snapshot written before the first signal listing each attributed process, that the output.log stall-bound line and the FAILED state printed by gate-wait and gate-status name that file, and that the verdict is FAILED. livespec-dev-tooling-q4ahay owns it (plan dev-host-test-gate-load); the implementation PR that ships it replaces this row.",
     "work_item": "livespec-dev-tooling-q4ahay"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: two workflow changes that each add their own exemption file merge in either order",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow change with no exemption authored in it is refused by name",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an exemption inherited from the base does not admit a workflow change",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the legacy root exemption file authored in the change still admits during the transition",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: changing only an exemption file's mode does not author it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: renaming a base exemption file does not author it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: copying a base exemption file does not author it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: deleting a base exemption file does not author it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an authored exemption is judged by its work item's label, not admitted by authorship alone",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a change that authors two exemptions cannot be evaluated",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running the shipped workflow-edit guard `check-no-workflow-edits.sh` against a real git repository in the scenario's Given state and asserting its exit code and named output. livespec-dev-tooling-oim422 owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row.",
+    "work_item": "livespec-dev-tooling-oim422"
   }
 ]

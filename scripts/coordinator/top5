@@ -46,7 +46,10 @@ WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 HOMELAB_WRAPPER = ["/usr/local/bin/with-homelab-env.sh", "--"]
 # The hetzner-xubuntu-info tenant (prefix hxi) refuses both of the above (Error 1045 for user
 # 'hetzner-xubuntu-info'); it is read through the credential_wrapper its .livespec.jsonc declares.
-HXI_REPO = "/data/projects/hetzner-xubuntu-info"
+# Checkouts live under ~/workspace on every seat host: a real directory on hetzner-xubuntu,
+# a symlink to /data/projects on the VPS. /data/projects does not exist on hetzner-xubuntu.
+WORKSPACE = os.path.join(os.path.expanduser("~"), "workspace")
+HXI_REPO = os.path.join(WORKSPACE, "hetzner-xubuntu-info")
 HXI_WRAPPER = [HXI_REPO + "/with-hetzner-xubuntu-credentials.sh", "--"]
 STALE_MINUTES = 60
 NOW = dt.datetime.now(dt.timezone.utc)
@@ -74,7 +77,7 @@ def stranded_header():
     print()
 
 
-HOLD_DIR = "/data/projects/livespec-orchestrator-beads-fabro/tmp/petri-canary"
+HOLD_DIR = os.path.join(WORKSPACE, "livespec-orchestrator-beads-fabro", "tmp", "petri-canary")
 HOLD_SNIPPET = 160
 HOLD_RESOLVE = "<<< resolve THIS tick: each clause, its owner, its next action; drive the unmet one"
 
@@ -159,14 +162,14 @@ def run(args, cwd, wrapper):
 def repo_for(epic):
     """Return the (checkout, wrapper prefix) that reads this epic's tenant."""
     if epic.startswith("hl-"):
-        return "/data/projects/homelab", HOMELAB_WRAPPER
+        return os.path.join(WORKSPACE, "homelab"), HOMELAB_WRAPPER
     if epic.startswith("hxi-"):
         return HXI_REPO, HXI_WRAPPER
     if epic.startswith("bd-ib"):
-        return "/data/projects/livespec-orchestrator-beads-fabro", WRAPPER
+        return os.path.join(WORKSPACE, "livespec-orchestrator-beads-fabro"), WRAPPER
     if epic.startswith("overseer-"):
-        return "/data/projects/livespec-overseer", WRAPPER
-    return "/data/projects/livespec-dev-tooling", WRAPPER
+        return os.path.join(WORKSPACE, "livespec-overseer"), WRAPPER
+    return os.path.join(WORKSPACE, "livespec-dev-tooling"), WRAPPER
 
 
 for label, epic in TOP:
