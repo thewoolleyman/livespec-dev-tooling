@@ -322,8 +322,13 @@ finished is this rule at work: read the run's status, then remove the run.
 
 When no non-terminal run selects a retired id, the role authenticates with the
 same host-side `FABRO_DEV_TOKEN` request shape as the ordinary catalog converge
-and sends `DELETE /api/v1/environments/{id}`. A `204` reports a change; a `404`
-means a prior converge already removed the id and reports no change. An instance
+and first reads `GET /api/v1/environments/{id}`. A `404` there means a prior
+converge already removed the id: it reports no change and sends no DELETE. A
+`200` carries the entry's current `revision`, which the role sends as the
+`If-Match` header of `DELETE /api/v1/environments/{id}`, because Fabro refuses a
+DELETE without it as `428 Precondition Required`. A `204` reports a change. A
+`409` means the entry changed between the read and the delete, and fails the
+converge rather than reporting the id retired; so does any other answer. An instance
 mapping may never name the same id in both `environments` and
 `retired_environments`; the role refuses that contradictory declaration before
 it writes host or catalog state.
