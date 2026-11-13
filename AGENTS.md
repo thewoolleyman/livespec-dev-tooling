@@ -119,7 +119,9 @@ The files:
 - Read `.ai/gate-runtime-vs-harness-patience.md` before running `just check`,
   committing product `.py`, or diagnosing a gate command that produced no
   output — the commit aggregate can outlast the harness's 20-minute tool-call
-  ceiling, and a kill with no verdict is NOT a hook refusal.
+  ceiling, and a kill with no verdict is NOT a hook refusal. Read it also
+  before committing in a worktree whose push gate is still running: a moved
+  HEAD makes a PASSED push gate refuse the push (2026-11-13).
 - Read `.ai/factory-span-receiver.md` before diagnosing a factory
   `build.cargo-*` span that lacks an attribute the sandbox shim attaches, or
   before naming "the sandbox pin" as the gate for factory-telemetry evidence —
