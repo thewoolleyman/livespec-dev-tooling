@@ -26,12 +26,15 @@ covers nothing.
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from livespec_dev_tooling._incident_focused_scope import classify
+from livespec_dev_tooling._incident_inverse_git import IsolatedGit
 from livespec_dev_tooling.config import ConfigParseError, derive_source_prefixes, load_config
-from livespec_dev_tooling.incident_git import IncidentGitError, git_text, run_git
+from livespec_dev_tooling.incident_git import IncidentGitError, git_text
 
 __all__: list[str] = ["ChangedProductFiles", "changed_product_files"]
 
@@ -51,20 +54,20 @@ def _names(*, raw: bytes) -> list[str]:
     return [name for name in raw.decode().split("\0") if name]
 
 
-def _blobs(*, repo: Path, head: str, names: list[str]) -> dict[str, tuple[str, bytes]]:
+def _blobs(
+    *, run: Callable[..., bytes], head: str, names: list[str]
+) -> dict[str, tuple[str, bytes]]:
     """Each named path present at `head`, as its tree mode and exact blob bytes."""
-    listing = run_git(repo=repo, args=("ls-tree", "-r", "-z", head)).stdout
+    listing = run(args=("ls-tree", "-r", "-z", head))
     wanted = set(names)
     entries = [
         (meta.split()[0], meta.split()[2], name)
         for meta, _, name in (entry.partition("\t") for entry in _names(raw=listing))
         if name in wanted
     ]
-    batch = run_git(
-        repo=repo,
-        args=("cat-file", "--batch"),
-        data="".join(f"{sha}\n" for _, sha, _ in entries).encode(),
-    ).stdout
+    batch = run(
+        args=("cat-file", "--batch"), data="".join(f"{sha}\n" for _, sha, _ in entries).encode()
+    )
     blobs: dict[str, tuple[str, bytes]] = {}
     for mode, _, name in entries:
         header, _, rest = batch.partition(b"\n")
@@ -74,27 +77,25 @@ def _blobs(*, repo: Path, head: str, names: list[str]) -> dict[str, tuple[str, b
     return blobs
 
 
-def _committed_prefixes(*, repo: Path, refs: tuple[str, ...]) -> tuple[str, ...]:
+def _committed_prefixes(*, run: Callable[..., bytes], refs: tuple[str, ...]) -> tuple[str, ...]:
     """The union of the source prefixes each ref's committed configuration declares."""
     prefixes: list[str] = []
     with tempfile.TemporaryDirectory(prefix="incident-focused-config-") as scratch:
         root = Path(scratch)
         for ref in refs:
-            text = run_git(repo=repo, args=("show", f"{ref}:pyproject.toml")).stdout
+            text = run(args=("show", f"{ref}:pyproject.toml"))
             _ = (root / "pyproject.toml").write_bytes(text)
             prefixes.extend(derive_source_prefixes(config=load_config(repo_root=root)))
     return tuple(dict.fromkeys(prefixes))
 
 
 def _changed(
-    *, repo: Path, target_ref: str, head: str, prefixes: tuple[str, ...]
+    *, run: Callable[..., bytes], target_ref: str, head: str, prefixes: tuple[str, ...]
 ) -> ChangedProductFiles:
-    base = git_text(repo=repo, args=("merge-base", target_ref, head))
-    raw = run_git(
-        repo=repo, args=("diff-tree", "-r", "-z", "--no-renames", "--name-only", base, head)
-    )
-    product = sorted(name for name in _names(raw=raw.stdout) if name.startswith(prefixes))
-    blobs = _blobs(repo=repo, head=head, names=product)
+    base = run(args=("merge-base", target_ref, head)).decode().strip()
+    raw = run(args=("diff-tree", "-r", "-z", "--no-renames", "--name-only", base, head))
+    product = sorted(name for name in _names(raw=raw) if name.startswith(prefixes))
+    blobs = _blobs(run=run, head=head, names=product)
     with tempfile.TemporaryDirectory(prefix="incident-focused-changes-") as scratch:
         root = Path(scratch)
         for name, (mode, data) in blobs.items():
@@ -116,19 +117,25 @@ def changed_product_files(
     """The changed product files of `head` in the reference clone, or why they are unknown."""
     target_ref = f"refs/remotes/origin/{target_branch}"
     try:
-        present = run_git(repo=repo, args=("cat-file", "-e", f"{head}^{{commit}}"), check=False)
-        if present.returncode:
-            return (
-                f"the reference clone does not hold head {head}; its reference fetch has not"
-                " brought the head in yet"
+        target = git_text(repo=repo, args=("rev-parse", "--verify", target_ref))
+        with IsolatedGit.view(root=repo) as (administration, objects):
+            run = partial(
+                IsolatedGit.run, root=repo, administration=administration, objects=objects
             )
-        prefixes = _committed_prefixes(repo=repo, refs=(target_ref, head))
-        if not prefixes:
-            return (
-                "the committed configuration declares no source prefixes, so no product file"
-                " is knowable"
-            )
-        return _changed(repo=repo, target_ref=target_ref, head=head, prefixes=prefixes)
+            try:
+                _ = run(args=("cat-file", "-e", f"{head}^{{commit}}"))
+            except IncidentGitError:
+                return (
+                    f"the reference clone does not hold head {head}; its reference fetch has not"
+                    " brought the head in yet"
+                )
+            prefixes = _committed_prefixes(run=run, refs=(target, head))
+            if not prefixes:
+                return (
+                    "the committed configuration declares no source prefixes, so no product file"
+                    " is knowable"
+                )
+            return _changed(run=run, target_ref=target, head=head, prefixes=prefixes)
     except ConfigParseError as unreadable:
         return (
             f"the committed configuration at {target_branch} or head {head} is unreadable:"
