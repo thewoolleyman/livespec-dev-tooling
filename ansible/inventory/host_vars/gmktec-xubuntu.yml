@@ -380,8 +380,16 @@ fabro_server_instances:
         # killed wrapper leaves no orphan polling its stop file.
         # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
         # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
-        sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        # v0.8.4 (2026-11-13, orchestrator bd-ib-ko5kxf Phase B; coordinator
+        # legacy-coordinator-agent PASS on the candidate's one-pod canary, dispatch
+        # e02cfa454ed04a1394166d1a518c7377, run 01M79HH1CNVD, whose parity matched
+        # v0.8.3 apart from the dispatch-payload env names): a pod create refused
+        # for an exceeded namespace ResourceQuota (403) is reported as a retryable
+        # provider error with code quota-exceeded, not as a credential fault.
+        # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
         inherit_env:
           - HOME
           - PATH
@@ -415,8 +423,16 @@ fabro_server_instances:
         # killed wrapper leaves no orphan polling its stop file.
         # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
         # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
-        sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        # v0.8.4 (2026-11-13, orchestrator bd-ib-ko5kxf Phase B; coordinator
+        # legacy-coordinator-agent PASS on the candidate's one-pod canary, dispatch
+        # e02cfa454ed04a1394166d1a518c7377, run 01M79HH1CNVD, whose parity matched
+        # v0.8.3 apart from the dispatch-payload env names): a pod create refused
+        # for an exceeded namespace ResourceQuota (403) is reported as a retryable
+        # provider error with code quota-exceeded, not as a credential fault.
+        # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
         inherit_env:
           - HOME
           - PATH

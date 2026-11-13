@@ -956,10 +956,12 @@ Since 2026-11-11 that path is the versioned
 `/usr/local/bin/sandbox-driver-kubernetes-v0.8.3`, and the digest is the one
 `sandbox_driver_kubernetes_versioned_releases` declares for v0.8.3, on both the
 `kubernetes` and `kubernetes-rust` kinds (orchestrator bd-ib-u4fp5z; v0.8.2 from
-2026-11-05 is the REVERT target). The candidate's `kubernetes` kind pinned
-v0.8.3 first, for that release's one-pod canary, and since 2026-11-12 pins the
-versioned v0.8.4 for its own one-pod canary (orchestrator bd-ib-ko5kxf: a quota
-403 is retryable capacity), with v0.8.3 as its REVERT target. `fabro-server-mi-homelab` keeps
+2026-11-05 is the REVERT target). Since 2026-11-13 both kinds pin the versioned
+`/usr/local/bin/sandbox-driver-kubernetes-v0.8.4` at the digest that list declares
+for v0.8.4 (orchestrator bd-ib-ko5kxf: a quota 403 is retryable capacity), with
+v0.8.3 as the REVERT target, after the candidate's one-pod canary passed its
+environment-parity read. The candidate's `kubernetes` kind pinned each of v0.8.3
+(2026-11-11) and v0.8.4 (2026-11-12) first, for that release's one-pod canary. `fabro-server-mi-homelab` keeps
 the shared `/usr/local/bin/sandbox-driver-kubernetes` at the role's default
 release. Either
 way the pin and the binary the role stages at that path move together, so the
