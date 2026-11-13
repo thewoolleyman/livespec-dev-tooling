@@ -31,6 +31,8 @@ Why the default is not-always-on. A node whose profile says nothing must never b
 
 Not established: whether the ARC chart version in use re-creates a running listener pod when its `listenerTemplate` changes, and how long a listener takes to appear on another node after one is deleted. Neither has been measured.
 
+Grade, 2026-11-13. legacy-coordinator-agent graded this proposal PASS-WITH-FIXES on head 5baa55a4b. This text carries its fixes: the ordering rule binds every procedure that installs or upgrades a scale set and not the boot converge alone; the boot stop's scope is stated (the scale sets only); the scenarios' tiers are named in the co-edit note; and the read-back's exit statuses 1 and 2 are named.
+
 In-flight survey, 2026-11-13. The pending proposal `k3s-window-drain-committed-evacuate` changes §"Consent-gated pool-node disruption" and not this section; it is compatible, and the two do not touch the same paragraph. No other pending proposal changes "**One profile per node.**" or the factory-posture paragraph.
 
 ### Proposed Changes
@@ -39,7 +41,7 @@ In `SPECIFICATION/non-functional-requirements.md`, section "Runner-pool node reb
 
 In the same section, insert the following paragraph immediately after the paragraph that begins "**Factory posture from the profile, surviving registration.**". No heading is added, removed or renamed in that file.
 
-**Always-on posture from the profile, and listener placement by it.** A pool node's profile MUST declare whether the node is always on in its `ALWAYS_ON_NODE` key, as `true` or `false`. The profile parser MUST refuse any other value, naming the key, and a profile that does not carry the key MUST be read as `false`, so that a node nobody has declared is never treated as always on. A node whose profile declares `ALWAYS_ON_NODE=true` MUST carry the node label `ci-runner.io/always-on=true`. Every other node MUST NOT carry it: that covers a node whose profile declares `false` and a node that has no profile (a homelab container worker). The label MUST NOT be set or removed by hand. It MUST be re-established at node registration or by a mechanism that runs unattended at control-plane boot, with no playbook applied and no command run on any host, exactly as the factory label is; a reconcile that runs only when a playbook is applied MAY also correct it but MUST NOT be the only mechanism that sets it. Every runner scale set's values MUST place its Actions Runner Controller listener pod only on nodes that carry that label, by a node selector or a required node affinity on the listener's pod template, and the repository's check suite MUST refuse a scale set values file that lacks that placement, naming the file. The procedure that installs the scale sets at control-plane boot MUST establish the label before it installs them, and MUST stop without installing them, saying why, when no node carries the label or when it cannot read which nodes do: a scale set installed then would have a listener that can be placed nowhere, and it would take no jobs. The repository MUST carry a committed, read-only read-back that lists each scale set's listener pod with the node it runs on. It MUST exit non-zero when a scale set has no listener pod, when a listener pod is not Running, or when one runs on a node that does not carry the label, and it MUST exit non-zero, distinguishably, when a read of the cluster fails. A failed read MUST NOT be reported as a correct placement.
+**Always-on posture from the profile, and listener placement by it.** A pool node's profile MUST declare whether the node is always on in its `ALWAYS_ON_NODE` key, as `true` or `false`. The profile parser MUST refuse any other value, naming the key, and a profile that does not carry the key MUST be read as `false`, so that a node nobody has declared is never treated as always on. A node whose profile declares `ALWAYS_ON_NODE=true` MUST carry the node label `ci-runner.io/always-on=true`. Every other node MUST NOT carry it: that covers a node whose profile declares `false` and a node that has no profile (a homelab container worker). The label MUST NOT be set or removed by hand. It MUST be re-established at node registration or by a mechanism that runs unattended at control-plane boot, with no playbook applied and no command run on any host, exactly as the factory label is; a reconcile that runs only when a playbook is applied MAY also correct it but MUST NOT be the only mechanism that sets it. Every runner scale set's values MUST place its Actions Runner Controller listener pod only on nodes that carry that label, by a node selector or a required node affinity on the listener's pod template, and the repository's check suite MUST refuse a scale set values file that lacks that placement, naming the file. Any procedure that installs or upgrades a runner scale set (the unattended converge at control-plane boot, a playbook apply, and a first install run by hand) MUST establish the label on the always-on nodes before it applies values that carry the placement. It MUST install or upgrade no scale set, saying why, when no node carries the label or when it cannot read which nodes do: a scale set installed then would have a listener that can be placed nowhere, and it would take no jobs. At control-plane boot that stop MUST be scoped to the scale sets: every other step of the converge (the controller, the node-status credentials, the factory namespace and the label reconciles among them) MUST still run, because a factory run or a delegated gate needs no CI listener, and the converge MUST then end with a failure that names the scale sets it did not install. The repository MUST carry a committed, read-only read-back that lists each scale set's listener pod with the node it runs on. It MUST read the installed scale sets themselves, so that a scale set with no listener object at all is reported and not merely absent from the list. It MUST exit with status 1 when no scale set is installed, when a scale set has no listener or no listener pod, when a listener pod is not Running, or when one runs on a node that does not carry the label. It MUST exit with status 2 when a read of the cluster fails. A failed read MUST NOT be reported as a correct placement.
 
 In `SPECIFICATION/scenarios.md`, insert the following two scenarios immediately after the scenario "a factory node keeps its factory label across a control-plane reboot".
 
@@ -55,16 +57,25 @@ Then each scale set's listener pod MUST be Running on a node that carries `ci-ru
 
 And a listener pod MUST NOT run on a node whose profile declares `ALWAYS_ON_NODE=false` or on a homelab container worker
 
-And the committed read-back MUST list each scale set's listener pod with its node and MUST exit zero
+And the committed read-back MUST list each scale set's listener pod with its node and MUST exit with status 0
 
 ## Scenario: the listener read-back fails when a listener is on a node that is not always on
 
 Given a scale set's listener pod runs on a node that does not carry `ci-runner.io/always-on=true`
 
+And another installed scale set has no listener at all
+
 When an operator runs the committed listener read-back
 
-Then the read-back MUST name that scale set, its listener pod and the node
+Then the read-back MUST name the first scale set, its listener pod and the node
 
-And the read-back MUST exit non-zero
+And the read-back MUST name the second scale set as having no listener
 
-**Co-edit owed at revise.** This proposal adds two `## ` headings to `scenarios.md` and none to `non-functional-requirements.md`. The revise that accepts it MUST add one `tests/heading-coverage.json` entry per new scenario heading in the same commit. A spec-first `"test": "TODO"` row MUST carry a `reason` that names the tier the owed test runs at and the owning work item, and a `work_item` key naming that open item (livespec-dev-tooling-crvvxt while it is open); the revise MUST then run `just generate-heading-coverage-debt-register` and stage `tests/heading-coverage-debt.json`.
+And the read-back MUST exit with status 1
+
+**Co-edit owed at revise.** This proposal adds two `## ` headings to `scenarios.md` and none to `non-functional-requirements.md`. The revise that accepts it MUST add one `tests/heading-coverage.json` entry per new scenario heading in the same commit, at these tiers:
+
+- "every scale set's listener pod runs on an always-on node" needs the live production cluster, so its proof is host-captured. Its row is a spec-first `"test": "TODO"` row whose `reason` names the host-captured tier and the owning work item, with a `work_item` key naming livespec-dev-tooling-crvvxt while that item is open.
+- "the listener read-back fails when a listener is on a node that is not always on" is covered at the unit tier by `tests/livespec_dev_tooling/test_always_on_node_label.py`, tests `test_the_read_back_fails_naming_a_listener_on_a_node_without_the_label` and `test_the_read_back_fails_naming_a_scale_set_that_has_no_listener_object` (livespec-dev-tooling#4414). Its row points at that test and is not a TODO row, provided #4414 has merged before the revise.
+
+The revise MUST then run `just generate-heading-coverage-debt-register` and stage `tests/heading-coverage-debt.json`.
