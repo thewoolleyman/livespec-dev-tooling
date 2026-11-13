@@ -341,7 +341,12 @@
   become: true
   no_log: true
   register: otel_collector_otlp_pods_endpoint_written
-  notify: Restart the collector onto its managed configuration
+  # Both processes read the endpoint from this EnvironmentFile. The pod-span unit
+  # is the one that binds it, so without its own restart it would keep a stale
+  # gateway after a subnet change; its handler skips a host with no pod unit.
+  notify:
+    - Restart the collector onto its managed configuration
+    - Restart the pod-span collector onto its managed configuration
   when: "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys"
 
 - name: Look for the collector's ingest-key environment file
