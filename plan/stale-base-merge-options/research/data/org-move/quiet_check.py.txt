@@ -1,0 +1,164 @@
+"""The org move's quiet check: is the fleet drained enough to start the cutover? (note 005 §2)
+
+Run:  python3 quiet_check.py.txt [--owner thewoolleyman] [--org <org> --image <name>:<tag> ...] [--json]
+
+Every condition is read LIVE, from GitHub through `gh` and from the gate cluster through
+`with-gates-kubeconfig kubectl`. A condition this script cannot observe counts as NOT quiet: it fails
+closed, so an outage can never read as a quiet fleet. The fleet is the `fleet` list in livespec's
+`.livespec-fleet-manifest.jsonc`, read from `--clones`. The conditions, per repository:
+
+  open-prs       every open PR carries `do-not-merge` and has auto-merge OFF
+                 (`disarm-on-hold-label.yml` turns auto-merge off when the label is added)
+  master-ci      the latest `ci.yml` run on master has completed, and its conclusion is success
+  runs           no workflow run of any kind is `in_progress`, `queued`, `waiting` or `pending`
+  release        no merged PR still carries `autorelease: pending` (Release Please has not tagged it)
+  gate-jobs      no active gate Job for the repository in the cluster's `gates` namespace
+
+and, once per invocation, for each `--image`:
+
+  image          `ghcr.io/<org>/<name>` has a version tagged `<tag>` (note 005 §3 Phase 1 step 4)
+
+Exit status: 0 when quiet, 1 when anything is not quiet or cannot be observed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ACTIVE_RUN_STATES = ("in_progress", "queued", "waiting", "pending", "requested")
+
+
+class Unobservable(Exception):
+    pass
+
+
+def run_json(argv: list[str]) -> object:
+    proc = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise Unobservable(f"{' '.join(argv[:4])}...: {(proc.stderr or proc.stdout).strip()[:200]}")
+    try:
+        return json.loads(proc.stdout or "null")
+    except json.JSONDecodeError as err:
+        raise Unobservable(f"{' '.join(argv[:4])}...: unparseable output ({err})") from err
+
+
+def fleet(clones: Path) -> list[str]:
+    text = re.sub(r"^\s*//.*$", "", (clones / "livespec" / ".livespec-fleet-manifest.jsonc").read_text(), flags=re.M)
+    return [entry["repo"] for entry in json.loads(text)["fleet"]]
+
+
+def check_repo(slug: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+
+    def guard(name: str, fn) -> None:
+        try:
+            out[name] = fn()
+        except Unobservable as err:
+            out[name] = f"UNOBSERVABLE {err}"
+
+    def open_prs() -> str:
+        prs = run_json(["gh", "pr", "list", "-R", slug, "--state", "open", "--limit", "200",
+                        "--json", "number,labels,autoMergeRequest"])
+        bad = [f"#{p['number']}" + ("" if any(l["name"] == "do-not-merge" for l in p["labels"]) else "(unlabelled)")
+               + ("(auto-merge on)" if p["autoMergeRequest"] else "")
+               for p in prs
+               if p["autoMergeRequest"] or not any(l["name"] == "do-not-merge" for l in p["labels"])]
+        return "ok" if not bad else "NOT QUIET " + " ".join(bad)
+
+    def master_ci() -> str:
+        runs = run_json(["gh", "run", "list", "-R", slug, "--workflow", "ci.yml", "--branch", "master",
+                         "--limit", "1", "--json", "databaseId,status,conclusion,headSha"])
+        if not runs:
+            return "UNOBSERVABLE no ci.yml run on master"
+        r = runs[0]
+        if r["status"] != "completed" or r["conclusion"] != "success":
+            return f"NOT QUIET run {r['databaseId']} {r['status']}/{r['conclusion'] or '-'} @ {r['headSha'][:9]}"
+        return f"ok {r['headSha'][:9]}"
+
+    def runs() -> str:
+        active = []
+        for state in ACTIVE_RUN_STATES:
+            rows = run_json(["gh", "run", "list", "-R", slug, "--status", state, "--limit", "50",
+                             "--json", "databaseId,workflowName"])
+            active += [f"{r['databaseId']}:{r['workflowName']}:{state}" for r in rows]
+        return "ok" if not active else "NOT QUIET " + " ".join(active)
+
+    def release() -> str:
+        prs = run_json(["gh", "pr", "list", "-R", slug, "--state", "merged", "--label", "autorelease: pending",
+                        "--limit", "20", "--json", "number"])
+        return "ok" if not prs else "NOT QUIET release pending on " + " ".join(f"#{p['number']}" for p in prs)
+
+    guard("open-prs", open_prs)
+    guard("master-ci", master_ci)
+    guard("runs", runs)
+    guard("release", release)
+    return out
+
+
+def gate_jobs(repos: list[str]) -> dict[str, str]:
+    try:
+        data = run_json(["with-gates-kubeconfig", "kubectl", "get", "jobs", "-n", "gates", "-o", "json"])
+    except Unobservable as err:
+        return {repo: f"UNOBSERVABLE {err}" for repo in repos}
+    active: dict[str, list[str]] = {repo: [] for repo in repos}
+    for job in data["items"]:
+        if (job.get("status", {}).get("active") or 0) <= 0:
+            continue
+        name = job["metadata"]["name"]
+        # Job names are gate-<repo>-<suffix>; take the longest fleet name that matches.
+        match = max((r for r in repos if name.startswith(f"gate-{r}-")), key=len, default=None)
+        if match:
+            active[match].append(name)
+    return {repo: "ok" if not names else "NOT QUIET " + " ".join(names) for repo, names in active.items()}
+
+
+def image_present(org: str, image: str) -> str:
+    name, _, tag = image.partition(":")
+    if not tag:
+        return f"UNOBSERVABLE {image}: no :tag given"
+    try:
+        versions = run_json(["gh", "api", "--paginate", f"/orgs/{org}/packages/container/{name}/versions"])
+    except Unobservable as err:
+        return f"UNOBSERVABLE {err}"
+    tags = {t for v in versions for t in v.get("metadata", {}).get("container", {}).get("tags", [])}
+    return "ok" if tag in tags else f"NOT QUIET ghcr.io/{org}/{name}:{tag} absent"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--owner", default="thewoolleyman")
+    parser.add_argument("--clones", default="/data/projects", type=Path)
+    parser.add_argument("--org")
+    parser.add_argument("--image", action="append", default=[])
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    if args.image and not args.org:
+        parser.error("--image needs --org")
+
+    repos = fleet(args.clones)
+    results = {repo: check_repo(f"{args.owner}/{repo}") for repo in repos}
+    for repo, verdict in gate_jobs(repos).items():
+        results[repo]["gate-jobs"] = verdict
+    images = {image: image_present(args.org, image) for image in args.image}
+
+    quiet = all(v.startswith("ok") for row in results.values() for v in row.values()) and all(
+        v == "ok" for v in images.values())
+    if args.json:
+        print(json.dumps({"quiet": quiet, "repos": results, "images": images}, indent=2))
+    else:
+        for repo, row in results.items():
+            for name, verdict in row.items():
+                print(f"{repo:36} {name:10} {verdict}")
+        for image, verdict in images.items():
+            print(f"{'image':36} {image:10} {verdict}")
+        print("QUIET" if quiet else "NOT QUIET")
+    return 0 if quiet else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

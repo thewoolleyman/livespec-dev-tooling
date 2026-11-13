@@ -1,0 +1,76 @@
+{
+  "quiet": false,
+  "repos": {
+    "livespec": {
+      "open-prs": "NOT QUIET #3191(unlabelled) #3190(unlabelled) #3180(unlabelled) #2324(unlabelled)(auto-merge on) #2285(unlabelled)(auto-merge on) #2069(unlabelled)(auto-merge on)",
+      "master-ci": "ok f2acd1716",
+      "runs": "NOT QUIET 43098213314:Master health reconcile:queued 43098212993:CI:queued 43098213040:Auto-enable merge:queued 43097108868:Master health reconcile:queued",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-dev-tooling": {
+      "open-prs": "NOT QUIET #4412(unlabelled) #4411(unlabelled)(auto-merge on) #4409(unlabelled) #4408(unlabelled) #4406(unlabelled) #4405(unlabelled) #4404(unlabelled) #4403(unlabelled) #4402(unlabelled) #4391(unlabelled) #4388(unlabelled)(auto-merge on) #4387(unlabelled) #4383(unlabelled) #4381(unlabelled) #4379(unlabelled) #4374(unlabelled) #4373(unlabelled) #4369(unlabelled) #4365(unlabelled)(auto-merge on) #4349(unlabelled) #4347(unlabelled) #4345(unlabelled) #4344(unlabelled) #4343(unlabelled)(auto-merge on) #4340(unlabelled) #4329(unlabelled) #4326(unlabelled) #4323(unlabelled)(auto-merge on) #4291(unlabelled) #4268(unlabelled) #4249(unlabelled) #4247(unlabelled) #4234(unlabelled) #4229(unlabelled) #4227(unlabelled) #4216(unlabelled) #4212(unlabelled) #4207(unlabelled) #4185(unlabelled) #4173(unlabelled) #4119(unlabelled) #4092(unlabelled) #4089(unlabelled) #4077(unlabelled) #4034(unlabelled) #4011(unlabelled) #3804(unlabelled) #3797(unlabelled) #3790(unlabelled) #3788(unlabelled) #3785(unlabelled) #3781(unlabelled) #3516(unlabelled) #3421(unlabelled) #3299(unlabelled) #3285(unlabelled) #2315(unlabelled) #1399(unlabelled) #1373(unlabelled) #1299(unlabelled) #285(unlabelled)",
+      "master-ci": "NOT QUIET run 43337065373 in_progress/- @ 2d7639478",
+      "runs": "NOT QUIET 43337065373:CI:in_progress 43336831601:CI:in_progress 43336738212:CI:in_progress 43336045394:CI:in_progress 43335884457:CI:in_progress 43335870153:CI:in_progress 43335113948:CI:in_progress 43334856769:CI:in_progress 43334528081:CI:in_progress 43334466020:CI:in_progress 43333276326:CI:in_progress 43333180745:CI:in_progress 43332970747:CI:in_progress 43098538005:CI:queued 43098492109:CI:queued 43098492039:Auto-enable merge:queued 43097608655:Auto-enable merge:queued 43097271107:Auto-enable merge:queued 43097271092:CI:queued 43095998342:Auto-enable merge:queued 43095223177:Auto-enable merge:queued 43095223156:CI:queued",
+      "release": "ok",
+      "gate-jobs": "NOT QUIET gate-livespec-dev-tooling-6wzjp gate-livespec-dev-tooling-8bflk gate-livespec-dev-tooling-bfjs4 gate-livespec-dev-tooling-cf8zw gate-livespec-dev-tooling-wvt7d"
+    },
+    "livespec-driver-claude": {
+      "open-prs": "NOT QUIET #1068(unlabelled)",
+      "master-ci": "ok b34d0907d",
+      "runs": "NOT QUIET 43098216612:Auto-enable merge:queued 43098216627:CI:queued 32220378930:Bump pin from sibling dispatch:queued",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-driver-codex": {
+      "open-prs": "ok",
+      "master-ci": "ok 69262952f",
+      "runs": "NOT QUIET 43098219806:CI:queued 43098219835:Auto-enable merge:queued 32220385015:Bump pin from sibling dispatch:queued",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-driver-pi": {
+      "open-prs": "NOT QUIET #541(unlabelled)(auto-merge on)",
+      "master-ci": "ok cf6375ba0",
+      "runs": "ok",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-orchestrator-beads-fabro": {
+      "open-prs": "NOT QUIET #5106(unlabelled) #5105(unlabelled) #5101(unlabelled) #5099(unlabelled)(auto-merge on) #5093(unlabelled) #5086(unlabelled)(auto-merge on) #5084(unlabelled) #5077(unlabelled)(auto-merge on) #5076(unlabelled)(auto-merge on) #5070(unlabelled)(auto-merge on) #5061(unlabelled) #5050(unlabelled) #5044(unlabelled) #5043(unlabelled) #5008(unlabelled)(auto-merge on) #5005(unlabelled) #4991(unlabelled) #4986(unlabelled) #4972(unlabelled) #4967(unlabelled) #4959(unlabelled) #4947(unlabelled) #4937(unlabelled)(auto-merge on) #4934(unlabelled) #4888(unlabelled) #4869(unlabelled) #4859(unlabelled) #4853(unlabelled) #4841(unlabelled) #4831(unlabelled)(auto-merge on) #4829(unlabelled) #4822(unlabelled) #4617(unlabelled)(auto-merge on) #4433(unlabelled) #4411(unlabelled) #4405(unlabelled) #4403(unlabelled) #4370(unlabelled) #4341(unlabelled)(auto-merge on) #4339(unlabelled) #4337(unlabelled)(auto-merge on) #4319(unlabelled) #4218(unlabelled) #4035(unlabelled) #3789(unlabelled) #3788(unlabelled) #3775(unlabelled) #3771(unlabelled) #3748(unlabelled) #3719(unlabelled) #3642(unlabelled) #3596(unlabelled) #3593(unlabelled) #3380(unlabelled) #3311(unlabelled) #2902(unlabelled) #2866(unlabelled) #2687(unlabelled) #2557(unlabelled)(auto-merge on)",
+      "master-ci": "NOT QUIET run 43338820362 in_progress/- @ f8a1626e7",
+      "runs": "NOT QUIET 43338991415:CI root uid (scheduled):in_progress 43338848999:Release dispatch (fan-out to siblings):in_progress 43338820362:CI:in_progress 43337940144:CI:in_progress 43098120324:CI:queued 43098120453:Auto-enable merge:queued 43096118628:CI:queued 43096118547:Auto-enable merge:queued",
+      "release": "ok",
+      "gate-jobs": "NOT QUIET gate-livespec-orchestrator-beads-fabro-9k7bw gate-livespec-orchestrator-beads-fabro-frs8w gate-livespec-orchestrator-beads-fabro-fx4ck"
+    },
+    "livespec-orchestrator-git-jsonl": {
+      "open-prs": "NOT QUIET #1166(unlabelled)(auto-merge on)",
+      "master-ci": "ok eff70c183",
+      "runs": "ok",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-runtime": {
+      "open-prs": "ok",
+      "master-ci": "ok a2cb52766",
+      "runs": "NOT QUIET 32215471962:Bump pin from sibling dispatch:queued",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-console-beads-fabro": {
+      "open-prs": "NOT QUIET #1358(unlabelled)(auto-merge on) #1355(unlabelled) #1319(unlabelled)(auto-merge on) #1275(unlabelled) #1239(unlabelled)(auto-merge on)",
+      "master-ci": "ok 60b3887dd",
+      "runs": "NOT QUIET 43338019749:CI:in_progress",
+      "release": "ok",
+      "gate-jobs": "ok"
+    },
+    "livespec-overseer": {
+      "open-prs": "NOT QUIET #2967(unlabelled)(auto-merge on) #2962(unlabelled)(auto-merge on) #2961(unlabelled) #2960(unlabelled) #2954(unlabelled) #2953(unlabelled) #2948(unlabelled)(auto-merge on) #2791(unlabelled) #2699(unlabelled) #2437(unlabelled) #1797(unlabelled) #1006(unlabelled)(auto-merge on) #799(unlabelled)(auto-merge on)",
+      "master-ci": "NOT QUIET run 43333510978 completed/failure @ 882212205",
+      "runs": "NOT QUIET 43337846117:CI:in_progress 43098223192:CI:queued 43098223232:Auto-enable merge:queued 43096449597:Auto-enable merge:queued 43096449753:CI:queued 43096207354:Auto-enable merge:queued 43095814145:Auto-enable merge:queued 43095814063:CI:queued",
+      "release": "ok",
+      "gate-jobs": "NOT QUIET gate-livespec-overseer-qztxd"
+    }
+  },
+  "images": {}
+}

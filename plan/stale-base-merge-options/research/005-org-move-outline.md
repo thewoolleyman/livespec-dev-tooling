@@ -78,12 +78,28 @@ The coordinator announces it. These are the contents. Order: freeze inflow, drai
 - Every open PR in the 10 repositories is either merged green or parked with `do-not-merge` and a ledger note.
 - Master CI is green, with a completed verdict, in all 10 repositories.
 - No workflow run is in progress or queued in the 10 repositories (`gh run list --status in_progress` / `queued` empty).
+  **Orphaned queued runs must be CANCELLED; they never drain.** Measured 2026-11-13 ~01:3xZ: 31 runs had sat in `queued`
+  for more than 24 hours. Four are `Bump pin from sibling dispatch` runs from 2026-08-19, in livespec-driver-claude,
+  livespec-driver-codex and livespec-runtime. The other 27 are CI, Auto-enable merge and Master health reconcile runs
+  from a 2026-11-11 20:18Z-20:52Z burst, in seven of the 10 repositories. Waiting does not clear them, so the drain
+  cancels every queued run older than the halt announcement (`gh run cancel <id> -R <repo>`) and records each id.
 - No gate Job is on the ARC runners.
 - No release is mid-flight.
 - Every image the held PRs pin is present at `ghcr.io/<org>/<name>:<tag>` (Phase 1 step 4).
 
-**Quiet check (the gate to start the cutover):** all of the above read live by one script. The seat writes the script
-during preparation and reports its output to the coordinator.
+**Quiet check (the gate to start the cutover):** all of the above read live by one script,
+`plan/stale-base-merge-options/research/data/org-move/quiet_check.py.txt`. Run it as
+`python3 -I quiet_check.py.txt [--org <org> --image <name>:<tag> ...]`. For each fleet repository it checks five things:
+- every open PR carries `do-not-merge` with auto-merge off;
+- the latest `ci.yml` run on master completed with success;
+- no run is active;
+- no merged PR still carries `autorelease: pending`;
+- no gate Job is active in the cluster's `gates` namespace.
+
+It also checks that each `--image` is present under `ghcr.io/<org>`. Any read it cannot take counts as NOT quiet, and
+it exits 0 only when the fleet is quiet. The seat reports its output to the coordinator. A live run (2026-11-13
+~01:3xZ, the fleet working normally) read NOT QUIET in all 10 repositories, as expected. That run is saved beside
+the script.
 
 ## 3. Cutover outline
 
@@ -221,9 +237,13 @@ possible. After Phase 4, disable the merge-queue requirement; nothing else depen
   the `master-incident-recovery-bypass` ruleset. The commit lands. In the same drill the maintainer's own token is
   refused a direct push to master by the ruleset. The drill does not wait for a real incident.
 - In the committed tree of each of the 10 fleet repositories at master, one committed grep counts 0 occurrences of
-  `github.com/thewoolleyman/<fleet-repo>` and 0 of `ghcr.io/thewoolleyman`. That grep is a script the seat commits under
-  `plan/stale-base-merge-options/research/data/`, and it excludes spec `history/` trees, `plan/archive/` and
-  release-generated `CHANGELOG.md`. Any non-zero count means the move still depends on GitHub's redirects, which break
+  `github.com/thewoolleyman/<fleet-repo>` and 0 of `ghcr.io/thewoolleyman`. The grep is
+  `plan/stale-base-merge-options/research/data/org-move/old_owner_refs.py.txt`, run against each repository's
+  `origin/master` tree. It grades configuration only, so it excludes every `history/` and `archive/` tree, live `plan/`
+  research notes (counted separately as narrative links) and release-generated `CHANGELOG.md`. Baseline, 2026-11-13
+  ~01:2xZ: 698 graded occurrences in 289 files, beside 659 informational bare `thewoolleyman/<fleet-repo>` slugs
+  (`uses:` refs, marketplace `repo:` entries). Those slugs also lean on the redirect, and the maintainer may want them
+  graded too. Any non-zero count means the move still depends on GitHub's redirects, which break
   the day someone reuses the old name.
 - On every fleet host, Claude Code and Codex resolve the fleet marketplaces at the organization's names.
 - Merge-queue CI runs on the runners the maintainer chose, and the self-hosted routing check passes in all 10
