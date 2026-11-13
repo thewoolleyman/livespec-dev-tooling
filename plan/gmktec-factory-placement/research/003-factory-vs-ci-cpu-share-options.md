@@ -18,6 +18,25 @@ livespec-dev-tooling-6e5pyj):
 | gmktec-xubuntu | 32 | ~21.8 (6-8 petri pods) | ~10.5 | — |
 | hp-xubuntu | 16 | none | (CI only) | — |
 
+Corrected 2026-11-13 (kubernetes-observability, on legacy-coordinator-agent's direction). The per-class cores above
+summed the `k8s.pod.cpu.usage` gauge. In the livespec metrics dataset each series contributes one late value per
+bucket, so a pod alive for part of a bucket is credited for the whole bucket, which over-weights short-lived CI pods.
+Measured over 24 h on 2026-11-13, the gauge sum reads about 10 % high for workflow pods, about 2.7x for runner pods,
+about 3 % for gates and about 0 % for factory pods (Honeycomb queries 6CvZPvuEeCY, c4Ncd6rTno6, gn9avisWD4j and
+AGHintE43Ym against aYYXAQE8FcA). The `k8s.pod.cpu.time` counter for the same window, `SUM(k8s.pod.cpu.time) / 7200 s`
+(Honeycomb DQ8unCSohs9, CI = namespace `arc-runners`), gives:
+
+| node | factory | CI | gates |
+| --- | --- | --- | --- |
+| poweredge-xubuntu | 35.85 | 27.83 | 2.53 |
+| gmktec-xubuntu | 21.47 | 8.76 | 0.25 |
+| hp-xubuntu | none | 9.19 | 2.95 |
+
+The factory figures above stand to within about 2 %. CI read about 15 to 17 % high on poweredge and gmktec, and hp
+carried about 3 cores of gate load the table omits. The counter drops each pod's CPU from before its first report, so
+the true CI figure lies slightly above the counter value, between the two methods. The `mpstat` reading below is
+unaffected. The same gauge-sum flaw on the board panel is filed as livespec-dev-tooling-ja7bv4.
+
 The churn-slot cap `C` meters CI pods only, so the factory is the unmetered half. On the same day, cutting gmktec's CI
 slots (livespec-dev-tooling#3777) only pushed CI shards onto poweredge. Should the factory's share of each node's CPU be
 budgeted explicitly, and how?
