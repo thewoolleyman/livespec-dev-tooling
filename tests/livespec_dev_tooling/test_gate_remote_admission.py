@@ -51,3 +51,81 @@ def test_an_admitted_job_without_a_terminal_state_uses_its_terminal_bound() -> N
         outcome.failure().detail
         == "gate-widget-7f2qd was admitted but reached no terminal condition within 20s"
     )
+
+
+def test_admission_reads_carry_a_request_timeout() -> None:
+    """A stuck admission read cannot silence the detached runner indefinitely."""
+    request = GateRunRequest(
+        repo_root=Path("/repo"),
+        mirror_url="ssh://mirror/repo.git",
+        manifest="apiVersion: batch/v1\nkind: Job\n",
+        gate_ref="refs/gates/tree-run",
+        admission_timeout_seconds=10.0,
+    )
+    queued = json.dumps({"spec": {"suspend": True}, "status": {}})
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        _ = cwd, stdin, stream
+        calls.append(tuple(argv))
+        return Success(GateCommandResult(returncode=0, stdout=queued, stderr=""))
+
+    def sleeper(*, seconds: float) -> None:
+        _ = seconds
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name="gate-widget-7f2qd",
+    )
+
+    assert isinstance(outcome, Failure)
+    assert calls[0][:3] == ("with-gates-kubeconfig", "sh", "-ceu")
+    assert "--request-timeout=240s" in calls[0][3]
+    assert "progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}" in calls[0][3]
+    assert "sleep 30" in calls[0][3]
+    assert ': >"$progress_stamp"' in calls[0][3]
+
+
+def test_an_admitted_job_uses_a_bounded_terminal_condition_watch() -> None:
+    """A running Job waits in one 240-second watch instead of ten-second polls."""
+    request = GateRunRequest(
+        repo_root=Path("/repo"),
+        mirror_url="ssh://mirror/repo.git",
+        manifest="apiVersion: batch/v1\nkind: Job\n",
+        gate_ref="refs/gates/tree-run",
+        poll_timeout_seconds=600.0,
+    )
+    active = json.dumps({"spec": {"suspend": False}, "status": {}})
+    complete = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        *, argv: list[str], cwd: Path, stdin: str | None = None, stream: bool = False
+    ) -> GateCommandOutcome:
+        _ = cwd, stdin, stream
+        calls.append(tuple(argv))
+        payload = active if len(calls) == 1 else complete
+        return Success(GateCommandResult(returncode=0, stdout=payload, stderr=""))
+
+    def sleeper(*, seconds: float) -> None:
+        _ = seconds
+
+    outcome = await_terminal_state(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        job_name="gate-widget-7f2qd",
+    )
+
+    assert isinstance(outcome, Success)
+    assert calls[1][:3] == ("with-gates-kubeconfig", "sh", "-ceu")
+    assert "--watch" in calls[1][3]
+    assert '--request-timeout="$timeout"' in calls[1][3]
+    assert "progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}" in calls[1][3]
+    assert "sleep 30" in calls[1][3]
+    assert ': >"$progress_stamp"' in calls[1][3]
+    assert calls[1][-1] == "240s"
