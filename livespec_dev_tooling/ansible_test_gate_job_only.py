@@ -21,9 +21,10 @@ _MARKER = "ansible-playbook"
 
 
 def _matching_test_modules(*, repo_root: Path) -> tuple[Path, ...]:
+    tests = repo_root / "tests"
     return tuple(
         path
-        for path in sorted((repo_root / "tests").rglob("test_*.py"))
+        for path in sorted({*tests.rglob("test_*.py"), *tests.rglob("*_test.py")})
         if _MARKER in path.read_text(encoding="utf-8")
     )
 
