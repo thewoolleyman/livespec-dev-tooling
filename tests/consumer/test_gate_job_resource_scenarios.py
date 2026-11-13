@@ -15,6 +15,7 @@ import yaml
 from returns.result import Success
 
 from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, run_delegated_gate
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
 from livespec_dev_tooling.gate_remote_verdict import (
@@ -44,6 +45,14 @@ _NON_POSITIVE_HEADING = (
     "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted"
 )
 _MALFORMED_HEADING = "## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally"
+_LANE_CAPACITY_HEADING = (
+    "## Scenario: a declared gate resource that no single gate lane can admit is refused naming "
+    "the largest lane's quotas"
+)
+_UNREADABLE_QUEUE_HEADING = (
+    "## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable "
+    "gates queue file"
+)
 _REPLAY_SIZE_HEADING = "## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares"
 _REPLAY_OOM_HEADING = (
     "## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red"
@@ -238,6 +247,114 @@ def test_malformed_memory_refuses_a_delegated_commit_without_local_fallback(
     assert "pyproject.toml" in verdict.reason and "gate_memory" in verdict.reason
     assert _registered_test(heading=_MALFORMED_HEADING).endswith(
         ".test_malformed_memory_refuses_a_delegated_commit_without_local_fallback"
+    )
+
+
+def test_declared_cpu_above_the_largest_lane_refuses_before_submitting_a_gate_job(
+    *, tmp_path: Path
+) -> None:
+    """The pre-push client derives an unadmittable CPU declaration from the committed queue."""
+    queue = next(
+        document
+        for document in yaml.safe_load_all(_QUEUE.read_text(encoding="utf-8"))
+        if document["kind"] == "ClusterQueue" and document["metadata"]["name"] == "gates-cq"
+    )
+    lanes = queue["spec"]["resourceGroups"][0]["flavors"]
+    largest = max(
+        lanes,
+        key=lambda lane: next(
+            int(resource["nominalQuota"])
+            for resource in lane["resources"]
+            if resource["name"] == "cpu"
+        ),
+    )
+    largest_cpu = next(
+        int(resource["nominalQuota"])
+        for resource in largest["resources"]
+        if resource["name"] == "cpu"
+    )
+    largest_memory = next(
+        str(resource["nominalQuota"])
+        for resource in largest["resources"]
+        if resource["name"] == "memory"
+    )
+    declared = largest_cpu + 1
+    root = _consumer(
+        tmp_path=tmp_path,
+        declaration=f"delegated_gate = true\ngate_cpu = {declared}\n",
+    )
+    world = _World()
+
+    verdict = run_delegated_gate(
+        repo_root=root,
+        renderer=_RENDERER,
+        runner=world,
+        sleeper=lambda **_kwargs: None,
+        emit=lambda **_kwargs: None,
+    )
+
+    # Rendering, mirror publication and Job creation are all downstream of the
+    # capacity validation, so none can happen when it refuses the push.
+    assert not any(argv[0] == str(_RENDERER) for argv in world.calls)
+    assert not any(argv[0] == "kubectl" or "push" in argv for argv in world.calls)
+    assert verdict.refuses_push is True
+    assert f"gate_cpu = {declared}" in verdict.detail
+    assert largest["name"] in verdict.detail
+    assert f"{largest_cpu} CPU" in verdict.detail
+    assert largest_memory in verdict.detail
+    assert _registered_test(heading=_LANE_CAPACITY_HEADING).endswith(
+        ".test_declared_cpu_above_the_largest_lane_refuses_before_submitting_a_gate_job"
+    )
+
+
+def test_an_unreadable_queue_does_not_block_a_gate_with_no_cpu_or_memory_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent then unparseable queue is irrelevant when the Job uses renderer defaults."""
+    delegate = importlib.import_module("livespec_dev_tooling.gate_remote_delegate")
+    submitted: list[GateRunRequest] = []
+
+    def submit(*, request: GateRunRequest, **_kwargs: object) -> GateVerdict:
+        submitted.append(request)
+        return GateVerdict(state=GATE_PASSED, detail="passed", token_written=True)
+
+    monkeypatch.setattr(delegate, "run_gated_push", submit)
+    monkeypatch.setattr(delegate, "run_host_authority_members", lambda **_kwargs: ())
+
+    for index, queue_text in enumerate((None, "kind: [unclosed\n")):
+        case_root = tmp_path / str(index)
+        case_root.mkdir()
+        root = _consumer(tmp_path=case_root, declaration="delegated_gate = true\n")
+        queue = root / "ci-runner" / "k3s" / "phase2" / "kueue" / "cluster-queue-gates.yaml"
+        if queue_text is None:
+            queue.unlink()
+        else:
+            _ = queue.write_text(queue_text, encoding="utf-8")
+
+        verdict = run_delegated_gate(
+            repo_root=root,
+            renderer=_RENDERER,
+            runner=_World(),
+            sleeper=lambda **_kwargs: None,
+            emit=lambda **_kwargs: None,
+        )
+
+        assert verdict.refuses_push is False
+        assert len(submitted) == 1
+        job = next(
+            document for document in yaml.safe_load_all(submitted.pop().manifest) if document
+        )
+        gate = next(
+            container
+            for container in job["spec"]["template"]["spec"]["containers"]
+            if container["name"] == "gate"
+        )
+        assert gate["resources"] == {
+            "requests": {"cpu": "5", "memory": "6Gi"},
+            "limits": {"memory": "6Gi"},
+        }
+    assert _registered_test(heading=_UNREADABLE_QUEUE_HEADING).endswith(
+        ".test_an_unreadable_queue_does_not_block_a_gate_with_no_cpu_or_memory_declaration"
     )
 
 
