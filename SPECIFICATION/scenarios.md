@@ -668,6 +668,78 @@ Then once every node is Ready again, each node whose profile declares `FACTORY_N
 
 And that MUST hold with no playbook applied and no command run on any host between the reboot and that observation
 
+## Scenario: every scale set's listener pod runs on an always-on node
+
+Given every pool node's committed profile declares `ALWAYS_ON_NODE`
+
+And each node whose profile declares `ALWAYS_ON_NODE=true` carries the `ci-runner.io/always-on=true` label, and no other node carries it
+
+When the runner scale sets are converged from their committed values
+
+Then each scale set's listener pod MUST be Running on a node that carries `ci-runner.io/always-on=true`
+
+And a listener pod MUST NOT run on a node whose profile declares `ALWAYS_ON_NODE=false` or on a homelab container worker
+
+And the committed read-back MUST list each scale set's listener pod with its node and MUST exit with status 0
+
+## Scenario: the listener read-back fails when a listener is on a node that is not always on
+
+Given a scale set's listener pod runs on a node that does not carry `ci-runner.io/always-on=true`
+
+And another installed scale set has no listener at all
+
+When an operator runs the committed listener read-back
+
+Then the read-back MUST name the first scale set, its listener pod and the node
+
+And the read-back MUST name the second scale set as having no listener
+
+And the read-back MUST exit with status 1
+
+## Scenario: the listener pods of the scale sets are spread across the always-on nodes
+
+Given two or more nodes carry the `ci-runner.io/always-on=true` label and each of them is Ready
+
+And at least one of those nodes carries the `livespec.io/factory-pressure` taint
+
+And each scale set's running listener pod was created before that scale set's committed listener placement last changed
+
+When the runner scale sets are converged from their committed values
+
+Then every scale set's listener pod MUST have been created after that converge applied its values
+
+And listener pods MUST be Running on at least two of those nodes
+
+And a single node MUST NOT run more than half of the listener pods, rounded up
+
+And every listener pod MUST run on a node that carries `ci-runner.io/always-on=true`
+
+## Scenario: the listener read-back counts the listener pods on each always-on node
+
+Given three nodes carry the `ci-runner.io/always-on=true` label
+
+And every scale set's listener pod is Running on one of those three nodes, with all of them on the same node
+
+When an operator runs the committed listener read-back
+
+Then the read-back MUST print one line for each of the three nodes with the number of listener pods Running on it
+
+And the two nodes that run no listener pod MUST each be printed with a count of zero
+
+And the read-back MUST exit with status 0
+
+## Scenario: the listener read-back prints no count when the read of the always-on nodes fails
+
+Given every scale set's listener pod is Running
+
+And the read of the nodes that carry `ci-runner.io/always-on=true` fails
+
+When an operator runs the committed listener read-back
+
+Then the read-back MUST exit with status 2
+
+And the read-back MUST NOT print a per-node count of listener pods
+
 ## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads
 
 Given an agent node that is neither the control-plane node nor a Fabro factory host
@@ -683,6 +755,24 @@ And the API MUST report the node NotReady for the configured hold, after which t
 And the drill MUST NOT have cordoned, drained, evicted or deleted the factory sandbox pod
 
 And the drill MUST report the times the node went NotReady and became Ready again, and MUST fail unless the node's taints, factory label and admission capacity are unchanged
+
+## Scenario: an agent restart is not refused for an ARC listener pod and is refused for workload
+
+Given an agent node whose only pods are DaemonSet pods and one Actions Runner Controller AutoscalingListener pod in the `arc-systems` namespace
+
+When an operator applies the agent restart play with its confirmation naming that node
+
+Then the play MUST restart the node's k3s agent without cordoning, draining, evicting or deleting any pod
+
+And the play MUST fail unless the node returns Ready
+
+Given the same node also runs a CI runner pod, a gate Job pod or a Fabro factory sandbox pod
+
+When an operator applies the agent restart play with its confirmation naming that node
+
+Then the play MUST restart nothing and MUST fail, naming that pod
+
+And its failure message MUST NOT name the AutoscalingListener pod among the pods that held it
 
 ## Scenario: a container-termination drill produces a crash-looping and an OOM-killed container in a throwaway namespace and deletes it
 
@@ -711,6 +801,64 @@ And the drill MUST print the run id, the pod's name and UID, the UTC time it iss
 And applying the drill without its confirmation or its run id MUST read nothing and exit 0, while a confirmed application whose namespace is not `factory` or `factory-mi-homelab`, or whose run id resolves to no pod, to more than one pod, or to a pod without the `sandbox-driver-kubernetes/sandbox` label, MUST exit non-zero before any cluster write
 
 And applying the drill for a run whose committed tree is not preserved on an origin ref with a non-empty diff against its merge-base with the default branch MUST exit non-zero before any cluster write
+
+## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods
+
+Given a cluster node that is cordoned and Ready
+
+And an ARC listener pod, a DaemonSet's pod, a Job's pod and a factory sandbox pod run on that node
+
+When an operator applies the evacuation play with its confirmation naming the evacuation and that node
+
+Then the play MUST delete the listener pod gracefully
+
+And the play MUST NOT delete the DaemonSet's pod, the Job's pod or the factory sandbox pod
+
+And the play MUST report the listener pod as deleted and each of the other pods as left
+
+And the play MUST succeed only after it reads that scale set's listener pod Running on another Ready node, and MUST otherwise fail naming the listener
+
+## Scenario: clearing a lost node is refused for a node that reads Ready
+
+Given a cluster node whose Ready condition is True
+
+And an ARC listener pod runs on that node
+
+When an operator applies the lost-node play with its confirmation naming the clearing and that node
+
+Then the play MUST refuse and MUST report that the node reads Ready
+
+And the play MUST NOT delete any pod
+
+## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared
+
+Given a cluster node whose Ready condition is False or Unknown
+
+And ARC listener pods bound to that node are marked for deletion and still listed by the API server
+
+And a gate Job's pod bound to that node is marked for deletion, and another gate Job's pod bound to it is not
+
+And a DaemonSet's pod is bound to that node
+
+When an operator applies the lost-node play with its confirmation naming the clearing and that node
+
+Then the play MUST force-delete each of those listener pods and the marked gate Job's pod
+
+And the play MUST NOT delete the DaemonSet's pod or the gate Job's pod that is not marked
+
+And the play MUST report each pod it cleared and each pod it left
+
+## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing
+
+Given a cluster node that is cordoned
+
+When an operator applies the uncordon action with its confirmation naming the uncordon, and its node confirmation absent or naming another node
+
+Then the play MUST NOT uncordon any node
+
+And the play MUST say that the node confirmation is absent or names another node, and that nothing was changed
+
+And a cordon of a schedulable node, applied with only its confirmation naming the cordon, MUST mark that node unschedulable
 
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
@@ -4157,6 +4305,18 @@ When the worker leaves the cluster without warning and its host later returns
 Then the CI job and the gate job MUST be retried or re-queued onto another node, and the factory run MUST resume or be re-dispatched with its work preserved
 
 And the worker MUST rejoin and re-enroll in the same classes with no operator step
+
+## Scenario: a worker's networking agents do not restart while it carries load
+
+Given an enrolled worker whose Node is Ready and which takes CI jobs, gate jobs and factory runs from the fleet's queues
+
+And the restart count of each of its networking agent pods is read at the start of a stated live-load window with a recorded start and end, during which the worker completes at least one job of each workload class it is enrolled in
+
+When the window ends with the Node having stayed Ready throughout and no networking agent pod replaced
+
+Then each networking agent pod's restart count MUST equal its count at the start of the window
+
+And the record of the window MUST name each agent pod, its creation time and both counts
 
 ## Scenario: a host declaring no home-LAN address is refused before the VM starts
 
