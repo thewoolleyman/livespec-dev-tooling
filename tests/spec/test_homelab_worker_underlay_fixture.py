@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "homelab-worker" / "fixture" / "underlay-fixture.sh"
@@ -124,7 +126,7 @@ def vm(tmp_path: Path) -> _Vm:
 
 
 def _run(*, vm: _Vm, action: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), action],
         capture_output=True,
         text=True,
@@ -135,7 +137,6 @@ def _run(*, vm: _Vm, action: str) -> subprocess.CompletedProcess[str]:
             "POLL_SECONDS": "1",
         },
         check=False,
-        timeout=60,
     )
 
 

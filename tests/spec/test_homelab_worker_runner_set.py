@@ -21,12 +21,13 @@ No assertion restates a production value.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
+
+from tests.hang_guard import run_under_hang_guard
 
 __all__: list[str] = []
 
@@ -174,13 +175,12 @@ def _run_converge_scale_set_step(
             step,
         ]
     )
-    _ = subprocess.run(
+    _ = run_under_hang_guard(
         ["/bin/bash", "-c", program],
         check=True,
         capture_output=True,
         text=True,
         env={"PATH": f"{stubs}:/usr/bin:/bin"},
-        timeout=60,
     )
     return calls.read_text(encoding="utf-8").splitlines() if calls.is_file() else []
 

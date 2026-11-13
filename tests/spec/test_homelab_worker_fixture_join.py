@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 
@@ -109,7 +111,7 @@ def mac(tmp_path: Path) -> _Mac:
 def _run(
     *, mac: _Mac, host: str = _HOST, mode: tuple[str, ...] = ()
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), host, *mode],
         capture_output=True,
         text=True,
@@ -123,7 +125,6 @@ def _run(
             "HOMELAB_WORKER_ENROLL": str(mac.bin_dir / "enroll"),
         },
         check=False,
-        timeout=120,
     )
 
 

@@ -31,6 +31,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -201,7 +203,7 @@ def _run(
         "--state-root",
         str(env.root),
     ]
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *(default if args is None else args)],
         capture_output=True,
         text=True,
@@ -217,7 +219,6 @@ def _run(
             **({} if stub_env is None else stub_env),
         },
         check=False,
-        timeout=60,
     )
 
 

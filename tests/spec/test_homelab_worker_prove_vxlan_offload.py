@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against a stub kubectl.
@@ -34,7 +36,6 @@ _SCRIPT = Path(__file__).resolve().parents[2] / "homelab-worker" / "prove-vxlan-
 _HOST = "alpha"
 _WORKER = f"{_HOST}-homelab-worker"
 _PEER = "peer-node-1"
-_HANG_GUARD_SECONDS = 900
 
 _INITIAL = {
     "lima0/rx-checksumming": "on",
@@ -155,7 +156,7 @@ def _run(
     hosts = tmp_path / "hosts"
     hosts.mkdir(exist_ok=True)
     (hosts / f"{_HOST}.env").write_text("WORKER_HOST_OS=Darwin\n", encoding="utf-8")
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *(args if args is not None else [_HOST, "--peer-node", _PEER])],
         capture_output=True,
         text=True,
@@ -168,9 +169,6 @@ def _run(
             "HOMELAB_WORKER_HOSTS_DIR": str(hosts),
         },
         check=False,
-        # A HANG guard, not a speed bound: the run is a fixed number of process
-        # starts with no sleep and no network, so only a wedged script reaches it.
-        timeout=_HANG_GUARD_SECONDS,
     )
     return result, state
 
