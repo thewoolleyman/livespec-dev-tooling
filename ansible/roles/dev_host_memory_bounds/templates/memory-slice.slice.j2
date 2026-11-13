@@ -1,0 +1,11 @@
+# {{ ansible_managed }} — role dev_host_memory_bounds.
+# {{ item.description }}
+# Launch into it with:
+#   systemd-run --user --scope --slice={{ item.name }} -- <command>
+[Unit]
+Description={{ item.description }}
+
+[Slice]
+MemoryAccounting=yes
+MemoryHigh={{ item.memory_high }}
+MemoryMax={{ item.memory_max }}

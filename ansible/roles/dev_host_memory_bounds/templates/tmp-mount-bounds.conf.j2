@@ -1,0 +1,5 @@
+# {{ ansible_managed }} — role dev_host_memory_bounds.
+# Caps the RAM-backed /tmp. Sorts after the host's hand-made override.conf so
+# its Options= wins; removing this file restores that one exactly.
+[Mount]
+Options=mode=1777,strictatime,nosuid,nodev,size={{ dev_host_memory_bounds_tmp_size }},nr_inodes={{ dev_host_memory_bounds_tmp_nr_inodes }}

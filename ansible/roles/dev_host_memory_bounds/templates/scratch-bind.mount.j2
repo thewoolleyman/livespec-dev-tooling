@@ -1,0 +1,17 @@
+# {{ ansible_managed }} — role dev_host_memory_bounds.
+# Claude Code session scratchpads for {{ dev_host_memory_bounds_user }} live on
+# disk, under the same path they always had.
+[Unit]
+Description=Session scratchpads of {{ dev_host_memory_bounds_user }} on disk ({{ dev_host_memory_bounds_rt_scratch_disk_dir }})
+RequiresMountsFor={{ dev_host_memory_bounds_rt_scratch_disk_dir }}
+After=tmp.mount
+Before=local-fs.target
+
+[Mount]
+What={{ dev_host_memory_bounds_rt_scratch_disk_dir }}
+Where={{ dev_host_memory_bounds_rt_scratch_ram_dir }}
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target
