@@ -66,8 +66,9 @@ while IFS=' ' read -r local_ref local_oid remote_ref remote_oid trailing; do
     ref_updates=$((ref_updates + 1))
     case "${local_oid}" in
         "" | *[!0]*)
-            if [ -z "${remote_ref}" ] || [ -z "${remote_oid}" ] || [ -n "${trailing}" ] \
-                || [[ ! "${local_oid}" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]; then
+            if [ -z "${remote_ref}" ] || [ -n "${trailing}" ] \
+                || [[ ! "${local_oid}" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]] \
+                || [[ ! "${remote_oid}" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]; then
                 seed_or_preserve_only=0
                 continue
             fi
@@ -77,7 +78,15 @@ while IFS=' ' read -r local_ref local_oid remote_ref remote_oid trailing; do
                 *) seed_or_preserve_only=0 ;;
             esac
             ;;
-        *) deleted_refs=$((deleted_refs + 1)) ;;
+        *)
+            deleted_refs=$((deleted_refs + 1))
+            # A deleted ref outside the seed and preserve namespaces is an
+            # update to a non-seed ref, so the push is not seed-or-preserve-only.
+            case "${remote_ref}" in
+                refs/heads/needs-human/* | refs/heads/preserve/*) ;;
+                *) seed_or_preserve_only=0 ;;
+            esac
+            ;;
     esac
 done <<<"${push_refs}"
 
