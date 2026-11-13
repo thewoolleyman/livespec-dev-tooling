@@ -954,7 +954,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job retries a forge read the forge refuses transiently",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that answers the first fetch with an anonymous 401 and a later one with the ref, and the test shows a second attempt after a wait, the consumer's recipe running, and one log line per attempt naming its number and class. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -962,7 +962,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job fails a forge read of a missing ref at once",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer's rendered gate Job runs its fetch-livespec-core script against a git double that reports the pinned ref not found, and the test shows exactly one fetch, a FATAL line naming the ref, and no recipe run. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -970,7 +970,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
+    "reason": "A real test at the consumer tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`) is owed for this heading: a fixture consumer naming a private sibling drives the shipped gate client's mint through a forge double that answers the token request with HTTP 500 and then with a token, and the test shows a second request after a wait, the minted token reaching the gate Job's private clone, and per-attempt status lines that never contain the token. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-yjcyay on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -1613,7 +1613,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ovnrsv on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding a dead session's aged scratch directory and an equally aged one whose session id a real live child process carries; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ovnrsv on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2210,7 +2210,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a re-run test's record and summary carry each failed attempt's failure text",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-b7l6it on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, running a pytest session in which an untouched test's first attempt fails with a failure text over 4000 characters and its second passes, then reading its tmp/flake-retries/ record and FLAKE-RETRIED block; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-b7l6it on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2381,7 +2381,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an expedited PR defers coverage and spec work while master runs normally",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-6xyc42 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-egy3ri on 2026-11-11.)",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-k1iz4 owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-egy3ri on 2026-11-11.) (Re-owned from closed livespec-dev-tooling-6xyc42 on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-k1iz4"
   },
   {
@@ -2397,7 +2397,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident revert preserves later changes without waiting for CI",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-fdquen on 2026-11-13.)",
+    "reason": "A real test at the integration tier or above is owed for this heading: the normally shipped incident capability must exercise this contract with ordinary-path controls; livespec-dev-tooling-zfgtin owns the implementation and scenario evidence under plan livespec-dev-tooling-bqnzcm. (Re-owned from closed livespec-dev-tooling-fdquen on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2677,7 +2677,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a joined worker is enrolled in every workload class its architecture can run",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ko26ez.7 on 2026-11-13.)",
+    "reason": "A real test at the integration tier or above is owed for this heading: it exercises the production join's per-class enrollment against a mocked cluster and mocked node resources, and a host-captured rejoin. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ko26ez.7 on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2707,7 +2707,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a worker that leaves mid-run loses no work and rejoins on its own",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ko26ez.8 on 2026-11-13.)",
+    "reason": "A real test at the integration tier or above is owed for this heading: it exercises a measured departure of the real worker during live load, plus a stub test of the rejoin path. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-ko26ez.8 on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -2799,7 +2799,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a held service converges installed and disabled",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-fmbnyd on 2026-11-13.)",
+    "reason": "A real test at the integration tier or above is owed for this scenario: the held editor-stack role converged with its enable variable at the held value, asserting its units are installed, disabled and inactive, a second converge changes nothing, and a hand-enabled unit reads as drift. livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-fmbnyd on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -3087,7 +3087,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer that did not reuse reaches the maintainer",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a mandatory coverage consumer outcome other than reused and asserting a maintainer notification naming repository, run, job and outcome. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -3095,7 +3095,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a coverage consumer with no recorded outcome reaches the maintainer",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a master run whose mandatory coverage consumer job recorded no outcome and asserting a notification naming repository and job. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -3103,7 +3103,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI duration step change reaches the maintainer, and a runner-lane move does not",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, feeding the scheduled detector a same-label duration step change and a label-change-only move and asserting only the first notifies. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -3111,7 +3111,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale detector reaches the maintainer",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, evaluating staleness with the detector's last success older than twice its interval and asserting a notification naming it. livespec-dev-tooling-zfgtin owns it (plan ci-runtime-and-cost); the implementation PR that ships it replaces this row. (Re-owned from closed livespec-dev-tooling-akljpy on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -3523,7 +3523,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-7uae5p on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-7uae5p on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
@@ -3531,7 +3531,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-7uae5p on 2026-11-13.)",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-push gate's confirmation of reused delegated pre-commit evidence against the cluster's record of its gate Job (a missing record and a disagreeing record each fall back to submitting a gate Job); livespec-dev-tooling-zfgtin owns it. (Re-owned from closed livespec-dev-tooling-7uae5p on 2026-11-13.)",
     "work_item": "livespec-dev-tooling-zfgtin"
   },
   {
