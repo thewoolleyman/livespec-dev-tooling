@@ -290,10 +290,20 @@ listed id, it first reads every non-terminal run from that instance's own
 selected environment. If any run selects a listed id, the converge fails naming
 both the run and the id, and sends no DELETE at all. This all-runs read happens
 before any listed id is deleted, so a later id cannot be removed while an earlier
-one is found unsafe. "Non-terminal" means every run status that can still
-progress or resume: `pending`, `runnable`, `initializing`, `starting`,
-`running`, `paused`, `blocked` and `removing`. A `paused` or `starting` run
-counts, because it still holds its selected environment.
+one is found unsafe.
+
+The read pages through EVERY run, 100 at a time, and sends no server-side
+status filter. It decides which runs are non-terminal itself: every status
+other than `succeeded`, `failed` and `archived` counts, including a status this
+role has never seen. That covers `pending`, `runnable`, `initializing`,
+`starting`, `running`, `paused`, `blocked` and `removing`. A `paused` or
+`starting` run counts, because it still holds its selected environment. The
+filter is client-side because each Fabro build refuses, with HTTP 400, a status
+filter its own enum does not name. The gmktec server refused `starting` and
+`paused` on 2026-11-13, which made every retirement converge fail before it had
+read a single run (livespec-dev-tooling-lmuhvi). A listing longer than the page
+bound (200 pages; the read honours a `FABRO_SERVER_RUNS_MAX_PAGES` override)
+fails the converge rather than retiring on a partial read.
 
 When no non-terminal run selects a retired id, the role authenticates with the
 same host-side `FABRO_DEV_TOKEN` request shape as the ordinary catalog converge
