@@ -1,0 +1,245 @@
+{
+ "since": "2026-11-06T22:05:04Z",
+ "until": "2026-11-13T22:05:04Z",
+ "hours": 168,
+ "repos": {
+  "livespec-dev-tooling": {
+   "master_commits": 1289,
+   "merged_prs": 745,
+   "strict": {
+    "SUCCESS": 345,
+    "FAILURE": 37,
+    "CANCELLED": 362,
+    "QUEUED": 1
+   },
+   "covered": {
+    "SUCCESS": 637,
+    "FAILURE": 102,
+    "UNVERIFIED_YET": 6
+   },
+   "merged_per_h": 4.435,
+   "strict_green_per_h": 2.054,
+   "covered_green_per_h": 3.792,
+   "gql_cost": 26
+  },
+  "livespec-orchestrator-beads-fabro": {
+   "master_commits": 739,
+   "merged_prs": 492,
+   "strict": {
+    "SUCCESS": 367,
+    "FAILURE": 11,
+    "CANCELLED": 111,
+    "IN_PROGRESS": 1,
+    "QUEUED": 1,
+    "PENDING": 1
+   },
+   "covered": {
+    "SUCCESS": 474,
+    "FAILURE": 13,
+    "UNVERIFIED_YET": 5
+   },
+   "merged_per_h": 2.929,
+   "strict_green_per_h": 2.185,
+   "covered_green_per_h": 2.821,
+   "gql_cost": 16
+  },
+  "livespec-overseer": {
+   "master_commits": 149,
+   "merged_prs": 111,
+   "strict": {
+    "SUCCESS": 102,
+    "FAILURE": 6,
+    "QUEUED": 3
+   },
+   "covered": {
+    "SUCCESS": 102,
+    "FAILURE": 6,
+    "UNVERIFIED_YET": 3
+   },
+   "merged_per_h": 0.661,
+   "strict_green_per_h": 0.607,
+   "covered_green_per_h": 0.607,
+   "gql_cost": 4
+  },
+  "livespec": {
+   "master_commits": 82,
+   "merged_prs": 72,
+   "strict": {
+    "SUCCESS": 70,
+    "FAILURE": 2
+   },
+   "covered": {
+    "SUCCESS": 70,
+    "FAILURE": 2
+   },
+   "merged_per_h": 0.429,
+   "strict_green_per_h": 0.417,
+   "covered_green_per_h": 0.417,
+   "gql_cost": 2
+  },
+  "livespec-console-beads-fabro": {
+   "master_commits": 32,
+   "merged_prs": 25,
+   "strict": {
+    "SUCCESS": 23,
+    "FAILURE": 2
+   },
+   "covered": {
+    "SUCCESS": 23,
+    "FAILURE": 2
+   },
+   "merged_per_h": 0.149,
+   "strict_green_per_h": 0.137,
+   "covered_green_per_h": 0.137,
+   "gql_cost": 2
+  },
+  "livespec-driver-claude": {
+   "master_commits": 45,
+   "merged_prs": 41,
+   "strict": {
+    "SUCCESS": 41
+   },
+   "covered": {
+    "SUCCESS": 41
+   },
+   "merged_per_h": 0.244,
+   "strict_green_per_h": 0.244,
+   "covered_green_per_h": 0.244,
+   "gql_cost": 2
+  },
+  "livespec-driver-codex": {
+   "master_commits": 70,
+   "merged_prs": 57,
+   "strict": {
+    "SUCCESS": 55,
+    "FAILURE": 2
+   },
+   "covered": {
+    "SUCCESS": 55,
+    "FAILURE": 2
+   },
+   "merged_per_h": 0.339,
+   "strict_green_per_h": 0.327,
+   "covered_green_per_h": 0.327,
+   "gql_cost": 2
+  },
+  "livespec-driver-pi": {
+   "master_commits": 38,
+   "merged_prs": 37,
+   "strict": {
+    "SUCCESS": 36,
+    "FAILURE": 1
+   },
+   "covered": {
+    "SUCCESS": 36,
+    "FAILURE": 1
+   },
+   "merged_per_h": 0.22,
+   "strict_green_per_h": 0.214,
+   "covered_green_per_h": 0.214,
+   "gql_cost": 2
+  },
+  "livespec-orchestrator-git-jsonl": {
+   "master_commits": 41,
+   "merged_prs": 37,
+   "strict": {
+    "SUCCESS": 36,
+    "FAILURE": 1
+   },
+   "covered": {
+    "SUCCESS": 36,
+    "FAILURE": 1
+   },
+   "merged_per_h": 0.22,
+   "strict_green_per_h": 0.214,
+   "covered_green_per_h": 0.214,
+   "gql_cost": 2
+  },
+  "livespec-runtime": {
+   "master_commits": 45,
+   "merged_prs": 44,
+   "strict": {
+    "SUCCESS": 43,
+    "FAILURE": 1
+   },
+   "covered": {
+    "SUCCESS": 43,
+    "FAILURE": 1
+   },
+   "merged_per_h": 0.262,
+   "strict_green_per_h": 0.256,
+   "covered_green_per_h": 0.256,
+   "gql_cost": 2
+  },
+  "dolt-server": {
+   "master_commits": 11,
+   "merged_prs": 7,
+   "strict": {
+    "SUCCESS": 7
+   },
+   "covered": {
+    "SUCCESS": 7
+   },
+   "merged_per_h": 0.042,
+   "strict_green_per_h": 0.042,
+   "covered_green_per_h": 0.042,
+   "gql_cost": 2
+  },
+  "homelab": {
+   "master_commits": 22,
+   "merged_prs": 22,
+   "strict": {
+    "SUCCESS": 22
+   },
+   "covered": {
+    "SUCCESS": 22
+   },
+   "merged_per_h": 0.131,
+   "strict_green_per_h": 0.131,
+   "covered_green_per_h": 0.131,
+   "gql_cost": 2
+  },
+  "hetzner-xubuntu-info": {
+   "master_commits": 74,
+   "merged_prs": 71,
+   "strict": {
+    "SUCCESS": 71
+   },
+   "covered": {
+    "SUCCESS": 71
+   },
+   "merged_per_h": 0.423,
+   "strict_green_per_h": 0.423,
+   "covered_green_per_h": 0.423,
+   "gql_cost": 2
+  },
+  "1password-env-wrapper": {
+   "master_commits": 2,
+   "merged_prs": 2,
+   "strict": {
+    "NO_RUN": 2
+   },
+   "covered": {
+    "UNVERIFIED_YET": 2
+   },
+   "merged_per_h": 0.012,
+   "strict_green_per_h": 0.0,
+   "covered_green_per_h": 0.0,
+   "gql_cost": 2
+  },
+  "openbrain": {
+   "master_commits": 19,
+   "merged_prs": 3,
+   "strict": {
+    "SUCCESS": 3
+   },
+   "covered": {
+    "SUCCESS": 3
+   },
+   "merged_per_h": 0.018,
+   "strict_green_per_h": 0.018,
+   "covered_green_per_h": 0.018,
+   "gql_cost": 2
+  }
+ }
+}
