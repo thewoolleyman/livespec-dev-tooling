@@ -14,12 +14,16 @@ coverage-touching target runs alike whichever path selected it
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal, TypeGuard
 
 from livespec_dev_tooling._check_target_isolation import termination_raises
 
@@ -28,8 +32,15 @@ __all__: list[str] = [
     "COVERAGE_NAMESPACES",
     "build_namespace_dirs",
     "isolated_environments",
+    "process_start_time",
+    "reclaim_abandoned_namespace_dirs",
     "target_env",
 ]
+
+_CREATOR_RECORD_NAME = ".livespec-coverage-creator.json"
+_UNRECORDED_NAMESPACE_MAX_AGE_SECONDS = 24 * 60 * 60
+_PROC_STAT_START_TIME_INDEX = 19
+_LOGGER = logging.getLogger(__name__)
 
 COVERAGE_NAMESPACES: dict[str, str] = {
     # The full-tree coverage pair shares one data file: per-file-coverage
@@ -55,6 +66,126 @@ COVERAGE_CONSUMERS: dict[str, str] = {
 }
 
 
+def _parse_start_time(*, stat: str) -> str | None:
+    closing_parenthesis = stat.rfind(")")
+    fields = stat[closing_parenthesis + 1 :].split()
+    if closing_parenthesis < 0 or len(fields) <= _PROC_STAT_START_TIME_INDEX:
+        return None
+    return fields[_PROC_STAT_START_TIME_INDEX]
+
+
+def process_start_time(*, pid: int) -> str | None:
+    """Return Linux's immutable start-time tick for `pid`, if it is observable."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return _parse_start_time(stat=stat)
+
+
+def _is_string_keyed_dict(*, value: object) -> TypeGuard[dict[str, object]]:
+    return isinstance(value, dict)
+
+
+def _creator_identity(
+    *, namespace_dir: Path
+) -> tuple[Literal["absent", "unreadable", "malformed", "valid"], tuple[int, str] | None]:
+    record = namespace_dir / _CREATOR_RECORD_NAME
+    try:
+        loaded: object = json.loads(record.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "absent", None
+    except OSError as error:
+        _LOGGER.warning("could not read creator record %s: %s", record, error)
+        return "unreadable", None
+    except json.JSONDecodeError as error:
+        _LOGGER.warning("malformed creator record %s: %s", record, error)
+        return "malformed", None
+    if not _is_string_keyed_dict(value=loaded):
+        _LOGGER.warning("malformed creator record %s: expected an object", record)
+        return "malformed", None
+    pid = loaded.get("pid")
+    start_time = loaded.get("start_time")
+    if (
+        not isinstance(pid, int)
+        or isinstance(pid, bool)
+        or pid <= 0
+        or not isinstance(start_time, str)
+        or not start_time
+    ):
+        _LOGGER.warning("malformed creator record %s: invalid pid or start time", record)
+        return "malformed", None
+    return "valid", (pid, start_time)
+
+
+def _creator_is_gone(*, pid: int, start_time: str) -> bool:
+    proc_stat = Path(f"/proc/{pid}/stat")
+    try:
+        observed = proc_stat.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return True
+    except OSError as error:
+        _LOGGER.warning("could not observe coverage creator %s: %s", proc_stat, error)
+        return False
+    observed_start_time = _parse_start_time(stat=observed)
+    if observed_start_time is None:
+        _LOGGER.warning("could not observe coverage creator %s: invalid stat data", proc_stat)
+        return False
+    return observed_start_time != start_time
+
+
+def _remove_abandoned_namespace(*, namespace_dir: Path) -> None:
+    try:
+        shutil.rmtree(namespace_dir)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        _LOGGER.warning(
+            "could not remove abandoned coverage namespace %s: %s", namespace_dir, error
+        )
+
+
+def reclaim_abandoned_namespace_dirs(*, root: Path) -> None:
+    """Best-effort reclaim dead-recorded and old-unrecorded coverage namespaces."""
+    for namespace_dir in root.glob("covns-*"):
+        state, creator = _creator_identity(namespace_dir=namespace_dir)
+        try:
+            metadata = namespace_dir.stat()
+        except OSError as error:
+            if isinstance(error, FileNotFoundError):
+                continue
+            _LOGGER.warning("could not stat coverage namespace %s: %s", namespace_dir, error)
+            continue
+        if not namespace_dir.is_dir():
+            continue
+        if state == "absent":
+            if time.time() - metadata.st_mtime > _UNRECORDED_NAMESPACE_MAX_AGE_SECONDS:
+                _remove_abandoned_namespace(namespace_dir=namespace_dir)
+            continue
+        if (
+            state == "valid"
+            and creator is not None
+            and _creator_is_gone(pid=creator[0], start_time=creator[1])
+        ):
+            _remove_abandoned_namespace(namespace_dir=namespace_dir)
+
+
+def _record_creator(*, namespace_dir: Path) -> None:
+    pid = os.getpid()
+    start_time = process_start_time(pid=pid)
+    if pid <= 0 or start_time is None:
+        _LOGGER.warning(
+            "could not observe this runner's start time; %s records no creator", namespace_dir
+        )
+        return
+    try:
+        _ = (namespace_dir / _CREATOR_RECORD_NAME).write_text(
+            json.dumps({"pid": pid, "start_time": start_time}), encoding="utf-8"
+        )
+    except OSError as error:
+        _LOGGER.warning("could not record coverage creator %s: %s", namespace_dir, error)
+
+
 def build_namespace_dirs(
     *, targets: list[str], skip_set: frozenset[str], root: Path
 ) -> dict[str, Path]:
@@ -74,6 +205,7 @@ def build_namespace_dirs(
     fixture derives from TMPDIR — a TMPDIR inside the repo's git worktree
     breaks tests that assume `tmp_path` is not within any git repo.
     """
+    reclaim_abandoned_namespace_dirs(root=root)
     keys = {
         COVERAGE_NAMESPACES[name]
         for name in targets
@@ -82,6 +214,7 @@ def build_namespace_dirs(
     dirs: dict[str, Path] = {}
     for key in sorted(keys):
         ns_dir = Path(tempfile.mkdtemp(prefix=f"covns-{key}-", dir=str(root)))
+        _record_creator(namespace_dir=ns_dir)
         (ns_dir / "tmp").mkdir(exist_ok=True)
         dirs[key] = ns_dir
     return dirs
