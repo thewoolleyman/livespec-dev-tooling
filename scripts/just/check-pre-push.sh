@@ -59,17 +59,57 @@ fi
 
 ref_updates=0
 deleted_refs=0
-while IFS=' ' read -r local_ref local_oid _; do
+seed_or_preserve_only=1
+seed_or_preserve_refs=()
+while IFS=' ' read -r local_ref local_oid remote_ref remote_oid trailing; do
     [ -n "${local_ref}" ] || continue
     ref_updates=$((ref_updates + 1))
     case "${local_oid}" in
-        "" | *[!0]*) ;;
+        "" | *[!0]*)
+            if [ -z "${remote_ref}" ] || [ -z "${remote_oid}" ] || [ -n "${trailing}" ] \
+                || [[ ! "${local_oid}" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]; then
+                seed_or_preserve_only=0
+                continue
+            fi
+            case "${remote_ref}" in
+                refs/heads/needs-human/* | refs/heads/preserve/*)
+                    seed_or_preserve_refs+=("${remote_ref}") ;;
+                *) seed_or_preserve_only=0 ;;
+            esac
+            ;;
         *) deleted_refs=$((deleted_refs + 1)) ;;
     esac
 done <<<"${push_refs}"
 
 if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; then
     echo ":: pre-push: skipping the gate - this push only deletes refs (${deleted_refs}), and a deletion publishes no tree to check"
+    exit 0
+fi
+
+# Seed and preserve refs are not merge candidates, but their declarations may
+# still require host-held authorization. A malformed ref list remains fully
+# gated; every declared authorization member runs before this path succeeds.
+if [ "${ref_updates}" -gt 0 ] && [ "${deleted_refs}" -lt "${ref_updates}" ] \
+    && [ "${seed_or_preserve_only}" -eq 1 ]; then
+    if ! authority_members="$(uv run python -m livespec_dev_tooling.check_authority members)"; then
+        echo "ERROR: pre-push could not resolve authorization-reading members for seed or preserve refs; refusing without the test aggregate" >&2
+        exit 1
+    fi
+    authority_status=0
+    while IFS= read -r authority_member; do
+        [ -n "${authority_member}" ] || continue
+        echo ":: pre-push: running authorization-reading member ${authority_member} on the pushing host for seed or preserve refs"
+        member_status=0
+        just "${authority_member}" || member_status=$?
+        if [ "${member_status}" -ne 0 ] && [ "${authority_status}" -eq 0 ]; then
+            authority_status="${member_status}"
+        fi
+    done <<<"${authority_members}"
+    if [ "${authority_status}" -ne 0 ]; then
+        echo ":: pre-push: refusing seed or preserve refs (${seed_or_preserve_refs[*]}) because an authorization-reading member failed; the test aggregate was not run" >&2
+        exit "${authority_status}"
+    fi
+    echo ":: pre-push: pushed only seed or preserve refs (${seed_or_preserve_refs[*]}); authorization-reading members passed and the test aggregate was not run"
     exit 0
 fi
 
