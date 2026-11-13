@@ -31,6 +31,7 @@ from livespec_dev_tooling._check_target_runner import (
     NOT_LAUNCHED,
     TIMED_OUT,
     TargetRun,
+    _renew_progress_stamp,
     run_targets,
 )
 
@@ -348,3 +349,31 @@ def test_a_member_run_without_a_progress_stamp_touches_nothing(
 
     assert outcome.status == COMPLETED
     assert list(tmp_path.iterdir()) == []
+
+
+def test_renewing_the_progress_stamp_with_no_stamp_configured_touches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that no gate started has no stamp to renew, and renewing is a no-op.
+
+    The runner renews the stamp only when a member's spool grows across a
+    progress tick, so whether a suite run reaches this branch depends on member
+    timing; this test reaches it on every run (livespec-dev-tooling#4472's PR
+    run 43388745962 missed it and failed per-file coverage).
+    """
+    monkeypatch.delenv(_STAMP_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    _renew_progress_stamp()
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_renewing_the_progress_stamp_touches_the_configured_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = _stamped(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    _renew_progress_stamp()
+
+    assert stamp.stat().st_mtime_ns > 0
