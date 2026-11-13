@@ -16,6 +16,7 @@ _UNPARSEABLE_SHELL = re.compile(r"""["'\\]|(?:^|\s)#.*$""")
 _QUOTED = re.compile(r"""^(?P<quote>["'])(?P<body>.*?)(?P=quote)""")
 _TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 _SHELL_C_ARGUMENT_COUNT = 2
+_HERE_DOCUMENT = re.compile(r"""<<-?[ \t]*["']?(?P<delimiter>[A-Za-z_][A-Za-z0-9_]*)["']?""")
 _TRANSPARENT_PREFIXES = {
     ("command",): 1,
     ("exec",): 1,
@@ -61,7 +62,23 @@ def _run_commands(*, lines: list[str]) -> list[str]:
         elif block.group("style") == ">":
             commands.append(" ".join(part for part in body if part))
         else:
-            commands.extend(re.sub(r"\\\n", " ", "\n".join(body)).splitlines())
+            commands.extend(_literal_commands(lines=body))
+    return commands
+
+
+def _literal_commands(*, lines: list[str]) -> list[str]:
+    """Return literal-block commands, excluding here-document contents."""
+    commands: list[str] = []
+    delimiter: str | None = None
+    for command in re.sub(r"\\\n", " ", "\n".join(lines)).splitlines():
+        if delimiter is not None:
+            if command == delimiter:
+                delimiter = None
+            continue
+        commands.append(command)
+        match = _HERE_DOCUMENT.search(command)
+        if match is not None:
+            delimiter = match.group("delimiter")
     return commands
 
 
