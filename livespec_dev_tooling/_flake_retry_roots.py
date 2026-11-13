@@ -275,7 +275,11 @@ def _spread(
     own: Callable[[RootTerm], frozenset[Span]],
     step: _Step,
 ) -> dict[Key, frozenset[Span]]:
-    """Carry each walked key's own values to every key that goes through it."""
+    """Carry each walked key's own values to every key that goes through it.
+
+    A key passes on only what it newly gained, so a cycle of bindings ends
+    once no key on it gains anything.
+    """
     seeds, dependents = walked
     pending = [(key, own(term)) for key in seeds for term in terms[key]]
     found: dict[Key, set[Span]] = {}
@@ -283,6 +287,8 @@ def _spread(
         key, carried = pending.pop()
         known = found.setdefault(key, set())
         added = frozenset(carried - known)
+        if not added:
+            continue
         known.update(added)
         pending.extend(
             (dependent, step(key, term, added)) for dependent, term in dependents.get(key, ())
