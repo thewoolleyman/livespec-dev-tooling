@@ -77,7 +77,12 @@ spec:
               # the cohort stays 30. See DERIVATION.md.
               # 9 -> 8 on 2026-11-12: the dedicated orchestrator master-push
               # lane receives the other slot, leaving dev-tooling master intact.
-              nominalQuota: 8
+              # 8 -> 7 on 2026-11-13: the per-node CPU budget cuts gmktec 8 -> 6 and
+              # hp 5 -> 4 and raises gamingpc 1 -> 3, so the cohort falls 31 -> 30.
+              # legacy-coordinator-agent ruled the unit leaves this queue, with
+              # dev-tooling-cq kept at 10; maxRunners unchanged. See DERIVATION.md
+              # "Per-node CPU budget cut: cohort 30 (2026-11-13)".
+              nominalQuota: 7
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed
