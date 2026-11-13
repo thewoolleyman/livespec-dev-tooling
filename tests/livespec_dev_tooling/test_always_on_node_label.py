@@ -4,7 +4,7 @@ THE DEFECT. On 2026-11-12 `gamingpc-xubuntu` was powered off for a RAM upgrade.
 Eight ARC AutoscalingListener pods were on it and sat Terminating with no
 replacement for about 45 minutes. A scale set with no listener takes no jobs.
 
-THE RULE, AND ITS FOUR HALVES. Each is asserted here from the committed files.
+THE RULE, AND ITS FIVE PARTS. Each is asserted here from the committed files.
 
 1. Every runner scale set values file gives its listener pod a placement that
    admits only nodes carrying `ci-runner.io/always-on=true`. A values file that
@@ -19,8 +19,11 @@ THE RULE, AND ITS FOUR HALVES. Each is asserted here from the committed files.
 4. A read-only read-back lists each scale set's listener pod with its node and
    exits non-zero when one is on a node without the label.
 
-The shell scripts are run for real, against a stand-in `kubectl` on a scratch
-PATH. Nothing here contacts a cluster.
+5. Each install route (the boot converge and the first-install script) installs
+   no scale set when no node carries the label or when that cannot be read.
+
+The shell scripts are run for real, against a stand-in `kubectl` (and `helm`) on
+a scratch PATH. Nothing here contacts a cluster.
 """
 
 from __future__ import annotations
@@ -368,11 +371,19 @@ exit 0
 _SLEEP_SHIM = 'printf \'sleep %s\\n\' "$*" >> "$ARGV_LOG"\n'
 
 
-def _scratch_path(*, tmp_path: Path, kubectl: str) -> tuple[dict[str, str], Path]:
-    """An environment whose PATH resolves `kubectl` and `sleep` to stand-ins."""
+_HELM_SHIM = 'printf \'helm %s\\n\' "$*" >> "$ARGV_LOG"\n'
+
+
+def _scratch_path(
+    *, tmp_path: Path, kubectl: str, helm: bool = False
+) -> tuple[dict[str, str], Path]:
+    """An environment whose PATH resolves `kubectl` and `sleep` (and `helm`) to stand-ins."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name, body in (("kubectl", kubectl), ("sleep", _SLEEP_SHIM)):
+    shims = [("kubectl", kubectl), ("sleep", _SLEEP_SHIM)]
+    if helm:
+        shims.append(("helm", _HELM_SHIM))
+    for name, body in shims:
         shim = bin_dir / name
         _ = shim.write_text(f"#!/usr/bin/env bash\n{body}", encoding="utf-8")
         shim.chmod(0o755)
@@ -475,6 +486,57 @@ def test_a_profile_without_the_key_is_never_labelled_and_a_typo_is_skipped_not_u
     assert _asserted(invoked=invoked) == {"on"}
     assert _removed(invoked=invoked) == {"silent"}
     assert "ALWAYS_ON_NODE='ture'" in output
+
+
+def test_the_boot_converge_unlabels_a_labelled_node_that_has_no_profile(*, tmp_path: Path) -> None:
+    """Every other node must not carry it: a homelab worker labelled by hand is unlabelled."""
+    profiles = _scratch_profiles(
+        tmp_path=tmp_path, declared={"on": "true", "off": "false", "typo": "ture"}
+    )
+    code, output, invoked = _run_label_converge(
+        tmp_path=tmp_path,
+        profiles_dir=profiles,
+        registered=("on", "off", "typo"),
+        labelled=("on", "off", "typo", "homelab-worker"),
+    )
+    assert _asserted(invoked=invoked) == {"on"}
+    # `typo` is skipped, not unlabelled: its profile could not be read.
+    assert _removed(invoked=invoked) == {"off", "homelab-worker"}, output
+    assert f"homelab-worker: {_LABEL_KEY} removed (it has no committed profile)" in output
+    assert f"typo: {_LABEL_KEY} left as it is" in output
+    assert code != 0, f"the unreadable profile must still fail the step:\n{output}"
+
+
+def test_a_node_with_no_profile_is_unlabelled_and_the_step_passes_when_every_profile_reads(
+    *, tmp_path: Path
+) -> None:
+    """The removal alone is not a failure: with readable profiles the reconcile exits 0."""
+    profiles = _scratch_profiles(tmp_path=tmp_path, declared={"on": "true"})
+    code, output, invoked = _run_label_converge(
+        tmp_path=tmp_path,
+        profiles_dir=profiles,
+        registered=("on",),
+        labelled=("on", "homelab-worker"),
+    )
+    assert code == 0, output
+    assert _removed(invoked=invoked) == {"homelab-worker"}
+
+
+def test_a_profile_that_names_no_node_stops_the_removal_from_nodes_no_profile_names(
+    *, tmp_path: Path
+) -> None:
+    """The nameless profile may be that node's, so its label is not removed on a guess."""
+    profiles = _scratch_profiles(tmp_path=tmp_path, declared={"on": "true", "off": "false"})
+    _ = (profiles / "nameless.env").write_text(f"{_PROFILE_KEY}=true\n", encoding="utf-8")
+    code, output, invoked = _run_label_converge(
+        tmp_path=tmp_path,
+        profiles_dir=profiles,
+        registered=("on", "off"),
+        labelled=("on", "off", "unnamed-node"),
+    )
+    assert code != 0, output
+    assert _removed(invoked=invoked) == {"off"}, output
+    assert f"WARN: unnamed-node carries {_LABEL_KEY} and no readable profile names it" in output
 
 
 def test_the_early_pass_labels_what_is_registered_without_waiting(*, tmp_path: Path) -> None:
@@ -771,64 +833,237 @@ def test_the_read_back_fails_loudly_when_a_kubectl_read_fails(*, tmp_path: Path,
     assert "OK:" not in output
 
 
-def _converge_text() -> str:
-    return (
-        Path(__file__).resolve().parents[2]
-        / "ci-runner"
-        / "k3s"
-        / "phase2"
-        / "reconstruct"
-        / "converge-ci-stack.sh"
-    ).read_text(encoding="utf-8")
+# --- 5. the install routes refuse when no node can host a listener -----------
+
+_DECISION_START = "arc_listeners_placeable=true"
+_STEP_5B = 'log "5b. Assert the ALWAYS-ON label'
+_STEP_6 = 'log "6. Install/upgrade the ARC controller'
+_END_START = 'if [ "${arc_listeners_placeable}" != true ]; then'
+_DONE = 'log "DONE. CI cluster stack converged:'
+_BETWEEN = "BETWEEN: the steps after the decision still run"
+_BOOT_SCALE_SETS = ("alpha-k3s", "beta-homelab-worker-k3s", "gamma-k3s")
 
 
-def test_the_boot_converge_installs_no_scale_set_when_no_node_carries_the_label() -> None:
-    """The stop is scoped to step 7's installs, decided after 5b and before step 6."""
-    text = _converge_text()
-    decided = text.index('if ! always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true')
-    assert text.index('log "5b. Assert the ALWAYS-ON label') < decided
-    assert decided < text.index('log "6. Install/upgrade the ARC controller')
-    for refusal in (
-        "could not read which nodes carry ci-runner.io/always-on=true",
-        "no node carries ci-runner.io/always-on=true",
-    ):
-        assert f'arc_listeners_refusal="{refusal}' in text, refusal
-    loop = text.index("for release in $(printf")
-    skip = text.index('if [ "${arc_listeners_placeable}" != true ]; then', loop)
-    install = text.index('helm upgrade --install "$release"', loop)
-    assert loop < skip < install
-    assert "continue" in text[skip:install]
+def _line_index(*, lines: list[str], wanted: str, exact: bool = False) -> int:
+    """The index of the ONE line that is (or starts with) `wanted`."""
+    found = [
+        index
+        for index, line in enumerate(lines)
+        if (line == wanted if exact else line.startswith(wanted))
+    ]
+    assert len(found) == 1, f"expected exactly one line for {wanted!r}, found {found}"
+    return found[0]
 
 
-def test_the_boot_converge_still_runs_every_other_step_and_then_exits_non_zero() -> None:
-    """No `exit` between the decision and the end: the credential re-mint and factory converge."""
-    text = _converge_text()
-    decided = text.index("arc_listeners_placeable=true")
-    step_six = text.index('log "6. Install/upgrade the ARC controller')
-    assert "exit 1" not in text[decided:step_six]
-    final = text.index("FATAL: the runner scale sets were NOT installed or upgraded")
+def _boot_converge_blocks() -> tuple[str, str]:
+    """Step 5b's decision block and the converge's end block, cut out by their own words."""
+    lines = _BOOT_CONVERGE.read_text(encoding="utf-8").splitlines()
+    step_5b = _line_index(lines=lines, wanted=_STEP_5B)
+    decided = _line_index(lines=lines, wanted=_DECISION_START, exact=True)
+    step_6 = _line_index(lines=lines, wanted=_STEP_6)
+    # Unindented: the same test inside step 7's loop is indented and is not this line.
+    end = _line_index(lines=lines, wanted=_END_START, exact=True)
+    done = _line_index(lines=lines, wanted=_DONE)
+    assert step_5b < decided < step_6 < end < done
+    # The steps the stop must NOT skip sit between the decision and the end block.
     for step in (
         "log \"10d. Re-mint every AGENT node's node-status credential",
         'log "10e. Re-apply the factory namespace',
         "log \"10h. Reconcile every ci_pool node's ALWAYS-ON label",
     ):
-        assert step_six < text.index(step) < final, step
-    done = text.index('log "DONE. CI cluster stack converged:')
-    assert final < done
-    assert "exit 1" in text[final:done]
-    assert "Every other step of this converge ran." in text[final:done]
+        assert step_6 < _line_index(lines=lines, wanted=step) < end, step
+    return "\n".join(lines[decided:step_6]), "\n".join(lines[end : done + 1])
 
 
-def test_the_first_install_script_refuses_the_scale_set_when_no_node_carries_the_label() -> None:
-    """install-arc.sh installs the host-unique set by hand, so it carries the same guard."""
-    text = (Path(__file__).resolve().parents[2] / "ci-runner" / "k3s" / "install-arc.sh").read_text(
-        encoding="utf-8"
+def _run_boot_decision(
+    *, tmp_path: Path, labelled: tuple[str, ...] = (), selector_fails: bool = False
+) -> tuple[int, str, str]:
+    """RUN the decision block, a marker, then the end block; return code, stdout, stderr."""
+    decision, end = _boot_converge_blocks()
+    env, _ = _scratch_path(tmp_path=tmp_path, kubectl=_LABEL_KUBECTL)
+    env.update({"LABELLED": " ".join(labelled), "SELECTOR_FAILS": "1" if selector_fails else ""})
+    declared = " ".join(f"[{name}]=values.yaml" for name in _BOOT_SCALE_SETS)
+    program = "\n".join(
+        [
+            "set -euo pipefail",
+            "log() { printf '== %s ==\\n' \"$*\"; }",
+            f"declare -A SCALE_SETS=({declared})",
+            decision,
+            "printf 'PLACEABLE=%s\\n' \"${arc_listeners_placeable}\"",
+            "printf 'REFUSAL=%s\\n' \"${arc_listeners_refusal}\"",
+            f"echo '{_BETWEEN}'",
+            end,
+        ]
     )
-    read = text.index(
-        'always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true -o name)"'
+    completed = subprocess.run(
+        ["bash", "-c", program],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
     )
-    failed = text.index("FATAL: could not read which nodes carry ci-runner.io/always-on=true", read)
-    empty = text.index("FATAL: no node carries ci-runner.io/always-on=true", failed)
-    install = text.index("helm upgrade --install poweredge-xubuntu-k3s")
-    assert read < failed < empty < install
-    assert text[read:install].count("exit 1") == 2
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+_NO_NODE = "no node carries ci-runner.io/always-on=true"
+_FAILED_READ = "could not read which nodes carry ci-runner.io/always-on=true"
+
+
+@pytest.mark.parametrize(
+    ("selector_fails", "refusal"),
+    [(False, _NO_NODE), (True, _FAILED_READ)],
+    ids=["empty-read", "failed-read"],
+)
+def test_the_boot_converge_decides_no_scale_set_runs_the_rest_and_exits_one_naming_the_sets(
+    *, tmp_path: Path, selector_fails: bool, refusal: str
+) -> None:
+    """Run for real: not placeable, the later steps still run, exit 1 naming every scale set."""
+    code, stdout, stderr = _run_boot_decision(tmp_path=tmp_path, selector_fails=selector_fails)
+    assert "PLACEABLE=false" in stdout, stdout + stderr
+    refusal_line = next(line for line in stdout.splitlines() if line.startswith("REFUSAL="))
+    assert refusal_line.startswith(f"REFUSAL={refusal}"), refusal_line
+    # A failed read is not an empty answer: each case carries its own refusal.
+    other = _FAILED_READ if refusal == _NO_NODE else _NO_NODE
+    assert other not in stdout + stderr
+    deferred = next(line for line in stderr.splitlines() if line.startswith("FATAL (deferred): "))
+    assert refusal in deferred
+    assert "Step 7 will NOT install or upgrade any runner scale set" in deferred
+    # The decision block did not exit: what follows it ran.
+    assert _BETWEEN in stdout
+    assert code == 1, stdout + stderr
+    final = next(
+        line
+        for line in stderr.splitlines()
+        if line.startswith("FATAL: the runner scale sets were NOT installed or upgraded: ")
+    )
+    assert refusal in final
+    assert f"The {len(_BOOT_SCALE_SETS)} scale sets not installed or upgraded: " in final
+    assert " ".join(sorted(_BOOT_SCALE_SETS)) + "." in final, final
+    assert "Every other step of this converge ran." in final
+    assert "DONE. CI cluster stack converged" not in stdout
+
+
+def test_the_boot_converge_decides_the_scale_sets_install_when_a_node_carries_the_label(
+    *, tmp_path: Path
+) -> None:
+    """The control arm, run for real: placeable, the nodes are printed, and the converge ends 0."""
+    code, stdout, stderr = _run_boot_decision(
+        tmp_path=tmp_path, labelled=("poweredge-xubuntu", "hp-xubuntu")
+    )
+    assert code == 0, stdout + stderr
+    assert "PLACEABLE=true" in stdout
+    assert "REFUSAL=\n" in stdout
+    assert (
+        "nodes that can host an ARC listener pod: node/poweredge-xubuntu node/hp-xubuntu" in stdout
+    )
+    assert "FATAL" not in stderr
+    assert _BETWEEN in stdout
+    assert "DONE. CI cluster stack converged: " in stdout
+    assert f"{len(_BOOT_SCALE_SETS)} scale sets" in stdout
+
+
+_INSTALL_ARC = _K3S / "install-arc.sh"
+_SCALE_SET_HELM_CALL = "helm upgrade --install poweredge-xubuntu-k3s "
+_CONTROLLER_HELM_CALL = "helm upgrade --install arc "
+
+
+def _run_install_arc(
+    *, tmp_path: Path, labelled: tuple[str, ...] = (), selector_fails: bool = False
+) -> tuple[int, str, list[str]]:
+    """Run the shipped install-arc.sh against stand-in `kubectl` and `helm`."""
+    env, log = _scratch_path(tmp_path=tmp_path, kubectl=_LABEL_KUBECTL, helm=True)
+    env.update(
+        {
+            "LABELLED": " ".join(labelled),
+            "SELECTOR_FAILS": "1" if selector_fails else "",
+            "KUBECONFIG": str(tmp_path / "no-such-kubeconfig"),
+        }
+    )
+    completed = subprocess.run(
+        ["bash", str(_INSTALL_ARC)],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    invoked = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+    return completed.returncode, completed.stdout + completed.stderr, invoked
+
+
+@pytest.mark.parametrize(
+    ("selector_fails", "refusal"),
+    [(False, f"FATAL: {_NO_NODE}"), (True, f"FATAL: {_FAILED_READ}")],
+    ids=["empty-read", "failed-read"],
+)
+def test_the_first_install_script_makes_no_scale_set_helm_call_when_no_node_can_host_a_listener(
+    *, tmp_path: Path, selector_fails: bool, refusal: str
+) -> None:
+    """Run for real: the controller installs, the read is made, and the scale set never is."""
+    code, output, invoked = _run_install_arc(tmp_path=tmp_path, selector_fails=selector_fails)
+    assert code == 1, output
+    assert refusal in output
+    assert "Not installing the scale set." in output
+    assert f"kubectl get nodes -l {_LABEL} -o name" in invoked
+    helm_calls = [line for line in invoked if line.startswith("helm ")]
+    # The script got as far as the guard: the controller call before it was made.
+    assert [line for line in helm_calls if line.startswith(_CONTROLLER_HELM_CALL)], invoked
+    assert not [line for line in helm_calls if "poweredge-xubuntu-k3s" in line], helm_calls
+    assert not [line for line in helm_calls if "gha-runner-scale-set " in f"{line} "], helm_calls
+
+
+def test_the_first_install_script_installs_the_scale_set_when_a_node_carries_the_label(
+    *, tmp_path: Path
+) -> None:
+    """The control arm: the same run with a labelled node reaches the scale set's helm call."""
+    code, output, invoked = _run_install_arc(tmp_path=tmp_path, labelled=("poweredge-xubuntu",))
+    assert code == 0, output
+    read = invoked.index(f"kubectl get nodes -l {_LABEL} -o name")
+    install = next(
+        index for index, line in enumerate(invoked) if line.startswith(_SCALE_SET_HELM_CALL)
+    )
+    assert read < install, invoked
+
+
+# --- 6. the read-back scenario, whole ---------------------------------------
+
+
+def test_the_read_back_names_a_misplaced_listener_and_a_scale_set_with_no_listener_in_one_run(
+    *, tmp_path: Path
+) -> None:
+    """Scenario "the listener read-back fails when a listener is on a node that is not always on".
+
+    Its whole setup in ONE run: a scale set's listener pod on a node without the
+    label, AND another installed scale set with no listener at all. The read-back
+    names the first set with its listener pod and node, names the second as having
+    no listener, and exits 1.
+    """
+    misplaced_pod = "overseer-k3s-listener-7c9d4"
+    code, output, invoked = _run_read_back(
+        tmp_path=tmp_path,
+        pods=(
+            _pod(listener="livespec-k3s-listener", node="poweredge-xubuntu"),
+            f"{misplaced_pod}|AutoscalingListener|overseer-k3s-listener|gamingpc-xubuntu|Running|",
+        ),
+        runner_sets=("livespec-local-ci-k3s", "livespec-overseer-k3s", "livespec-runtime-k3s"),
+    )
+    assert code == 1, output
+    rows = output.splitlines()
+    first = next(line for line in rows if line.startswith("livespec-overseer-k3s"))
+    assert first.split()[:4] == [
+        "livespec-overseer-k3s",
+        misplaced_pod,
+        "gamingpc-xubuntu",
+        "Running",
+    ], first
+    assert first.endswith(f"FAIL: node does not carry {_LABEL}"), first
+    second = next(line for line in rows if line.startswith("livespec-runtime-k3s"))
+    assert second.endswith("FAIL: the scale set has no AutoscalingListener"), second
+    healthy = next(line for line in rows if line.startswith("livespec-local-ci-k3s"))
+    assert healthy.rstrip().endswith("ok"), healthy
+    assert "FAIL: 2 of 2 scale set listener(s)" in output
+    assert "OK:" not in output
+    assert all(" get " in f" {line} " for line in invoked), invoked

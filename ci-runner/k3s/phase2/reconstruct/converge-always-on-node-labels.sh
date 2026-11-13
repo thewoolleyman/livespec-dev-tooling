@@ -30,7 +30,9 @@
 #
 # THE REMOVAL HALF keeps a profile edit takeable: ../../provision-k3s.sh writes
 # the label into an always-on node's install command, so a node retired by a
-# profile edit registers with it again. Removing the label does NOT move a
+# profile edit registers with it again. It removes the label from EVERY
+# labelled node that no profile declares always-on, a node with no profile
+# included; only a node whose profile could not be read is left as it is. Removing the label does NOT move a
 # listener already running there (a nodeSelector is checked at scheduling
 # only); ../arc/read-listener-placement.sh reads that back.
 #
@@ -109,6 +111,11 @@ wait_for_registration() {  # wait_for_registration NODE
 
 declared_always_on=()
 declared_plain=()
+# Nodes whose profile names them but whose ALWAYS_ON_NODE could not be read,
+# and the count of profiles that name no node. Step 3 removes no label on
+# either account.
+skipped_unreadable=()
+nameless_profiles=0
 unreadable=0
 unreconciled=0
 
@@ -121,6 +128,7 @@ for profile in "${PROFILES_DIR}"/*.env; do
   if [ -z "$node" ]; then
     echo "WARN: ${profile} declares no NODE_NAME — skipping it. The label is reconciled by NODE name and this converge must not guess one from a filename"
     unreadable=1
+    nameless_profiles=$(( nameless_profiles + 1 ))
     continue
   fi
   always_on="$(profile_value "$profile" ALWAYS_ON_NODE)"
@@ -133,6 +141,7 @@ for profile in "${PROFILES_DIR}"/*.env; do
     *)
       # A typo must not read as "not true" and silently REMOVE a live label.
       echo "WARN: ${profile} declares ALWAYS_ON_NODE='${always_on}', which is neither 'true' nor 'false' — skipping ${node} rather than reading the typo as 'not true' and removing a live always-on label"
+      skipped_unreadable+=("$node")
       unreadable=1
       ;;
   esac
@@ -161,23 +170,51 @@ for node in ${declared_always_on[@]+"${declared_always_on[@]}"}; do
 done
 
 # ---------------------------------------------------------------------------
-log "always-on-node-labels 3. Remove the label from every node whose profile does not declare it"
+log "always-on-node-labels 3. Remove the label from every labelled node that no profile declares always-on"
+# EVERY OTHER NODE MUST NOT CARRY IT, so the walk is over the nodes that carry
+# the label, not over the profiles that say `false`: a labelled node with NO
+# committed profile (a homelab container worker, or a node labelled by hand)
+# is unlabelled too. Two kinds of node are left as they are and reported,
+# because an unreadable profile is not a declaration of `false`:
+#   - a node whose profile was skipped at step 1 for a value that is neither
+#     `true` nor `false`;
+#   - while a profile at step 1 declared no NODE_NAME, any labelled node that
+#     no readable profile names: it may be that profile's node.
+#
 # A FAILED READ IS NOT AN EMPTY LIST: reading "kubectl failed" as "no node
 # carries the label" would skip every removal and report success.
 if labelled="$(kubectl get nodes -l "$ALWAYS_ON_LABEL" -o name)"; then
-  for node in ${declared_plain[@]+"${declared_plain[@]}"}; do
-    case $'\n'"${labelled}"$'\n' in
-      *$'\n'"node/${node}"$'\n'*) ;;
-      *) continue ;;
+  while IFS= read -r labelled_node; do
+    [ -n "$labelled_node" ] || continue
+    node="${labelled_node#node/}"
+    case " ${declared_always_on[*]:-} " in
+      *" ${node} "*) continue ;;
+    esac
+    case " ${skipped_unreadable[*]:-} " in
+      *" ${node} "*)
+        printf '  %s: %s left as it is (its profile could not be read; see step 1)\n' "$node" "$ALWAYS_ON_LABEL_KEY"
+        continue
+        ;;
+    esac
+    case " ${declared_plain[*]:-} " in
+      *" ${node} "*) why="its profile does not declare ALWAYS_ON_NODE=true" ;;
+      *)
+        if [ "$nameless_profiles" -ne 0 ]; then
+          echo "WARN: ${node} carries ${ALWAYS_ON_LABEL_KEY} and no readable profile names it, but ${nameless_profiles} profile(s) declare no NODE_NAME (see step 1) and one may be this node's — leaving its label as it is rather than removing it on a guess"
+          unreconciled=1
+          continue
+        fi
+        why="it has no committed profile"
+        ;;
     esac
     # The trailing `-` is kubectl's remove syntax.
     if kubectl label node "$node" "${ALWAYS_ON_LABEL_KEY}-" >/dev/null; then
-      printf '  %s: %s removed (its profile does not declare ALWAYS_ON_NODE=true)\n' "$node" "$ALWAYS_ON_LABEL_KEY"
+      printf '  %s: %s removed (%s)\n' "$node" "$ALWAYS_ON_LABEL_KEY" "$why"
     else
-      echo "WARN: could not remove ${ALWAYS_ON_LABEL_KEY} from ${node}, whose profile does not declare it — a listener pod can still be placed on a node that is powered off at will"
+      echo "WARN: could not remove ${ALWAYS_ON_LABEL_KEY} from ${node} (${why}) — a listener pod can still be placed on a node that is powered off at will"
       unreconciled=1
     fi
-  done
+  done <<< "$labelled"
 else
   echo "WARN: could not read which nodes carry ${ALWAYS_ON_LABEL}, so no stale label was removed this pass"
   unreconciled=1

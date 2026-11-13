@@ -313,7 +313,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `runner-pod-lifecycle/scan-runner-pod-lifecycle.service` + `.timer` | Every-5-minute lifecycle-stall sweep, report-only: `systemctl is-failed scan-runner-pod-lifecycle.service` and its journal are the signal, exactly as the wedge sweep's report mode. `OnBootSec=4min` sits after the boot converge so the first sweep after a reboot reads a converged cluster rather than one still being built. |
 | `arc/recycle-scale-set-runners.sh` | Deletes a scale set's IDLE runner pods after a `helm upgrade`, skipping any pod with a live `-workflow` companion. Run it at the end of every apply: `helm upgrade` replaces the listener but leaves existing runner pods on the old pod template and the old listener session. Closes the re-cut path into the wedged state; see "Recycle the runner pods after every upgrade" below for why that is a partial fix. |
 | `arc/read-listener-placement.sh` | READ-ONLY read-back of listener placement (livespec-dev-tooling-crvvxt). Every `arc/values-*.yaml` and `arc/worker/values-*.yaml` gives its listener pod a `listenerTemplate` nodeSelector on `ci-runner.io/always-on=true`, the label a node carries only when its phase0 profile declares `ALWAYS_ON_NODE=true`. The script prints each scale set's listener pod with the node it runs on and exits `1` when a listener is on a node without the label or a scale set has no Running listener pod, `2` when a kubectl read fails. Run it after a converge and before powering a node off. |
-| `reconstruct/converge-always-on-node-labels.sh` | Reconciles every ci_pool node's `ci-runner.io/always-on` label to its profile's `ALWAYS_ON_NODE` at boot: `converge-ci-stack.sh` step 5b (before the ARC controller, no registration wait) and step 10h (with the bounded wait). The apply-time twin is `ansible/roles/node_labels`; the join-time one is `provision-k3s.sh`. |
+| `reconstruct/converge-always-on-node-labels.sh` | Reconciles every ci_pool node's `ci-runner.io/always-on` label to its profile's `ALWAYS_ON_NODE` at boot: `converge-ci-stack.sh` step 5b (before the ARC controller, no registration wait) and step 10h (with the bounded wait). It also removes the label from every labelled node that no profile declares always-on, a node with no profile included; a node whose profile cannot be read is left as it is and reported. The apply-time twin is `ansible/roles/node_labels`; the join-time one is `provision-k3s.sh`. See "Rollout order: the always-on label before any scale set's values" below. |
 | `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 CONFIRMED (2026-08-16); item 6 decided and item 4 superseded (2026-08-19, `kueue/DERIVATION.md`); only item 2 remains open. |
 | `apparmor/ci-runner-workflow` | The AppArmor profile hook-generated WORKFLOW pods run under. Reproduces containerd's default deny set verbatim and widens only the `ptrace`/`signal` peer expressions — see "The workflow pod is not the runner pod" below. |
 | `apparmor/cri-containerd.apparmor.d` | containerd's own default AppArmor profile, held at NODE level by the `apparmor_profile` role, with the same two peer expressions widened. Every pod that names no profile runs under it. Kernel 7.0.0-43 stacks every non-privileged container's label, so the built-in profile denied a container's processes signalling each other (livespec-dev-tooling-ddy5xu). The header names the containerd tag and source path the base text came from; re-diff it when k3s is upgraded. |
@@ -1344,6 +1344,39 @@ helm get values <scale-set-name> -n arc-runners | tail -n +2 > /tmp/live.yaml
 diff <(yq -P 'sort_keys(..)' /tmp/live.yaml) \
      <(yq -P 'sort_keys(..)' ci-runner/k3s/phase2/arc/values-<repo>.yaml)
 ```
+
+### Rollout order: the always-on label before any scale set's values
+
+Every values file here gives its listener pod a `listenerTemplate`
+nodeSelector on `ci-runner.io/always-on=true` (livespec-dev-tooling-crvvxt).
+A listener is only ever placed on a node that carries that label, so the
+order of a rollout is fixed:
+
+1. **The label first.** `ci-runner.io/always-on=true` MUST be on the
+   always-on nodes (the nodes whose phase0 profile declares
+   `ALWAYS_ON_NODE=true`) BEFORE any scale set is installed or upgraded with
+   these values. From the control node:
+   `just ansible-apply ansible/ci-pool.yml --tags node_labels`. Confirm it
+   with `kubectl get nodes -L ci-runner.io/always-on`.
+2. **The scale sets second.** Only then upgrade a scale set, by hand as
+   above or through `reconstruct/converge-ci-stack.sh`.
+3. **Read it back.** `arc/read-listener-placement.sh` lists each scale set's
+   listener pod with its node and exits non-zero when one is misplaced,
+   missing or not Running.
+
+Done in the other order, every upgraded scale set's listener stays
+`Pending`, and a scale set with no listener takes no jobs while its idle
+runners keep holding Kueue cohort quota.
+
+The boot converge keeps this order itself: step 5b re-asserts the label from
+the committed profiles before step 7 installs any scale set. Both install
+routes refuse instead of installing blind. `converge-ci-stack.sh` installs
+no scale set when no node carries the label or when it cannot read which
+nodes do; it still runs every other step, then exits non-zero naming the
+scale sets it did not install. `../install-arc.sh` stops before its scale
+set under the same two conditions. Neither sets the label on a node no
+profile declares, and a failed read is never taken as "no node" or as "some
+node".
 
 ### Recycle the runner pods after every upgrade
 
