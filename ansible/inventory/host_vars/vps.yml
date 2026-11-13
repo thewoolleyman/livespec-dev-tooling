@@ -193,9 +193,13 @@ authorized_keys_managed_entries:
   - name: hetzner-xubuntu-dolt-tunnel
     public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 hetzner-xubuntu dolt-tunnel
     permitopen: 127.0.0.1:3307
-# The debug tunnel's exact existing public-key blob is deliberately required
-# here before apply: retirement matches it rather than its mutable options.
-authorized_keys_managed_retired_keys: []
+# Retired by key blob (type + base64), never by its options or comment: the
+# hand-placed `homelab-debug-tunnel` entry (permitlisten 127.0.0.1:2223), the
+# landing for homelab's archived nixos-era hardware-capture debug-tunnel.sh.
+# Coordinator ruling on homelab hl-rz6pdp (2026-11-12): RETIRE. Reopen only if
+# that channel is revived, as a managed entry with permitopen="invalid.invalid:1".
+authorized_keys_managed_retired_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB2ePKejdt1cOuPPNnb6IlyV6U2Pja9wgI8JbJUY7yJO
 
 # --- storage_reclaim ---
 storage_reclaim_canonical_host: vps.perch-rudd.ts.net
