@@ -153,9 +153,12 @@ def _aggregate_plan_valid(*, plan: CiPlan, event: CiEvent, targets: tuple[CiTarg
         plan.authority is None or not _authority_matches(event=event, authority=plan.authority)
     ):
         return False
-    # An inventory with no valid execution view yields an empty selection, which can
-    # never equal a plan select_ci_plan issued (it refuses an empty view), so it fails.
-    execution = (_execution_view(targets=targets) or ((), (), ()))[0]
+    # The same admission select_ci_plan applies: an inventory with no valid execution
+    # view, or one that runs nothing, validates no plan, whatever its callers recheck.
+    view = None if any(not t.name for t in targets) else _execution_view(targets=targets)
+    if view is None or not view[0]:
+        return False
+    execution = view[0]
     selection = _incident_selection(targets=execution) if requested else (execution, ())
     expected = _plan(
         event=event,
