@@ -263,19 +263,32 @@ out_of_group_descendants() {
     done < <(descendant_pids "$root"; stamped_pids "$stamp")
 }
 
-record_and_term_out_of_group_descendants() {
-    local dir="$1" group="$2" pid
-    local -a escapees=()
+# Every pid this stall has signalled, in first-seen order, and the same set as
+# a lookup. A descendant can answer TERM by starting another process in a
+# session of its own, so the set is refreshed by each rescan.
+declare -a ESCAPED=()
+declare -A ESCAPEE_SEEN=()
+
+# Signal every runnable out-of-group descendant and record each one the first
+# time it is seen. Succeeds when at least one was found, so a caller can loop
+# until a scan finds nothing left.
+end_out_of_group_descendants() {
+    local dir="$1" group="$2" sig="$3" pid found=1
     while IFS= read -r pid; do
-        read_proc_cmdline "$pid"
-        printf 'gate-run: ending out-of-group descendant pid=%s cmdline=%s\n' \
-            "$pid" "${PROC_CMDLINE:-<exited>}" >>"$dir/output.log"
-        escapees+=("$pid")
+        any_pids_alive "$pid" || continue
+        found=0
+        if [[ -z "${ESCAPEE_SEEN[$pid]:-}" ]]; then
+            ESCAPEE_SEEN[$pid]=1
+            ESCAPED+=("$pid")
+            read_proc_cmdline "$pid"
+            printf 'gate-run: ending out-of-group descendant pid=%s cmdline=%s\n' \
+                "$pid" "${PROC_CMDLINE:-<exited>}" >>"$dir/output.log"
+        elif [[ "$sig" != KILL ]]; then
+            continue
+        fi
+        kill -"$sig" "$pid" 2>/dev/null || true
     done < <(out_of_group_descendants "$group" "$group" "$dir/progress.stamp")
-    for pid in "${escapees[@]}"; do
-        kill -TERM "$pid" 2>/dev/null || true
-    done
-    printf '%s\n' "${escapees[@]}"
+    return "$found"
 }
 
 any_pids_alive() {
@@ -313,7 +326,9 @@ run_gate_with_stall_bound() {
     # Opened after the gate launches, so the gate inherits nothing of ours.
     open_idle_fd || true
     local quiet_since=$SECONDS ended
-    local -a escaped=()
+    local round
+    ESCAPED=()
+    ESCAPEE_SEEN=()
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ "$dir/output.log" -nt "$observed" || "$stamp" -nt "$observed" ]]; then
             : >"$observed"
@@ -321,18 +336,22 @@ run_gate_with_stall_bound() {
         elif (( SECONDS - quiet_since >= stall )); then
             printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
                 "$stall" >>"$dir/output.log"
-            mapfile -t escaped < <(record_and_term_out_of_group_descendants "$dir" "$gate_pid")
+            end_out_of_group_descendants "$dir" "$gate_pid" TERM || true
             kill -TERM -- "-$gate_pid" 2>/dev/null || true
             ended=$SECONDS
             # Wait for the whole GROUP and its session-escaping descendants,
             # not just the leader: each TERM handler gets its grace period.
-            while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive "${escaped[@]}"; } \
+            while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive "${ESCAPED[@]}"; } \
                 && (( SECONDS - ended < grace )); do
                 idle_sleep 1
+                end_out_of_group_descendants "$dir" "$gate_pid" TERM || true
             done
             kill -KILL -- "-$gate_pid" 2>/dev/null || true
-            for pid in "${escaped[@]}"; do
-                kill -KILL "$pid" 2>/dev/null || true
+            # A descendant can have started another during the grace period, so
+            # rescan until a scan finds no runnable one left (bounded).
+            for (( round = 0; round < 50; round++ )); do
+                end_out_of_group_descendants "$dir" "$gate_pid" KILL || break
+                idle_sleep 0.2
             done
             wait "$gate_pid" 2>/dev/null || true
             close_idle_fd || true

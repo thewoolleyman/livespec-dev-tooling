@@ -169,33 +169,59 @@ def is_alive(*, pid: int) -> bool:
     return state != "Z"
 
 
+def _live_escapees(*, proc: subprocess.Popen[bytes], mark: str) -> dict[int, str]:
+    """Return the run's runnable processes that sit outside the suite's own group."""
+    return {
+        pid: command
+        for pid, command in out_of_group_descendants(root_pid=proc.pid, mark=mark)
+        if is_alive(pid=pid)
+    }
+
+
 def end_stalled_suite(
     *,
     proc: subprocess.Popen[bytes],
     mark: str,
     report: Callable[[str], None] | None = None,
 ) -> tuple[tuple[int, str], ...]:
-    """End a stalled suite group and every process of the run outside it."""
-    escapees = out_of_group_descendants(root_pid=proc.pid, mark=mark)
-    for pid, command in escapees:
-        if report is not None:
-            report(f"suite-green: ending out-of-group descendant pid={pid} cmdline={command}\n")
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGTERM)
+    """End a stalled suite group and every process of the run outside it.
+
+    An escapee can answer TERM by starting another process in a session of its
+    own, so the run is rescanned until a scan finds nothing runnable left.
+    """
+    ended: dict[int, str] = {}
+
+    def end_escapees(*, sig: signal.Signals) -> None:
+        for pid, command in _live_escapees(proc=proc, mark=mark).items():
+            first_sight = pid not in ended
+            if first_sight:
+                ended[pid] = command
+                if report is not None:
+                    report(
+                        f"suite-green: ending out-of-group descendant pid={pid} cmdline={command}\n"
+                    )
+            if first_sight or sig is signal.SIGKILL:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, sig)
+
+    end_escapees(sig=signal.SIGTERM)
     with contextlib.suppress(ProcessLookupError):
         os.killpg(proc.pid, signal.SIGTERM)
     deadline = time.monotonic() + _KILL_GRACE_SECONDS
-    while (proc.poll() is None or any(is_alive(pid=pid) for pid, _ in escapees)) and (
-        time.monotonic() < deadline
+    while time.monotonic() < deadline and (
+        proc.poll() is None or any(is_alive(pid=pid) for pid in ended)
     ):
         time.sleep(0.1)
+        end_escapees(sig=signal.SIGTERM)
     with contextlib.suppress(ProcessLookupError):
         os.killpg(proc.pid, signal.SIGKILL)
-    for pid, _ in escapees:
-        if is_alive(pid=pid):
-            with contextlib.suppress(ProcessLookupError):
-                os.kill(pid, signal.SIGKILL)
-    return escapees
+    deadline = time.monotonic() + _KILL_GRACE_SECONDS
+    while True:
+        end_escapees(sig=signal.SIGKILL)
+        time.sleep(0.1)
+        if not _live_escapees(proc=proc, mark=mark) or time.monotonic() >= deadline:
+            break
+    return tuple(ended.items())
 
 
 def run_suite(
