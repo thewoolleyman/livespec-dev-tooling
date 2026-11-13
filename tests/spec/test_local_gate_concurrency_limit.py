@@ -44,10 +44,12 @@ _DEV_HOSTS_GROUP_VARS = _ANSIBLE / "inventory" / "group_vars" / "dev_hosts.yml"
 _ROLE_NAME = "local_gate_slots"
 _LIMIT_VAR = f"{_ROLE_NAME}_limit"
 
-# The measured limit for this group, per the sizing recorded in the role's
-# HOST_VARS.md: 18 cores, about four cores per gate aggregate, about six cores
-# left for sessions and the Fabro servers.
-_DEV_HOST_LIMIT = 3
+# The committed limit for this group. It was 3 from the CPU sizing recorded in
+# the role's HOST_VARS.md (18 cores, about four per gate aggregate). It has been
+# 1 since the dev host's 2026-11-13 MEMORY exhaustion: local full-suite gates
+# were one of the uncapped Python consumers, so one runs at a time, inside the
+# local-gate.slice of role dev_host_memory_bounds.
+_DEV_HOST_LIMIT = 1
 
 # Read as TEXT rather than parsed: stdlib `tomllib` lands in 3.11 and PyYAML is
 # not a dependency of this library, which is deliberately dependency-free. Every
@@ -91,8 +93,7 @@ def test_the_limit_is_declared_by_a_committed_converge_the_dev_host_play_runs() 
     )
     assert _declared(path=_DEV_HOSTS_GROUP_VARS, name=_LIMIT_VAR) == str(_DEV_HOST_LIMIT), (
         f"the dev_hosts group must declare {_LIMIT_VAR}: {_DEV_HOST_LIMIT}, "
-        f"which is the measured limit for an 18-core host running gate "
-        f"aggregates of about four cores each"
+        f"one full-suite gate at a time since the 2026-11-13 memory exhaustion"
     )
 
 
