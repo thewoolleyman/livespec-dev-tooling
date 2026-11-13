@@ -54,7 +54,10 @@ default is an ungated push, and only one of the two is recoverable.
 
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +84,7 @@ __all__: list[str] = [
     "GATE_NO_VERDICT",
     "GATE_PASSED",
     "GateVerdict",
+    "ignore_job_name",
     "run_gated_push",
 ]
 
@@ -106,6 +110,30 @@ _TOKEN_STEP = "write-green-token"  # noqa: S105
 # rather than a bare `python`: the token must be written by the environment the
 # client is already running in, which is the one that resolves the package.
 _GREEN_TOKEN_WRITE_ARGV = (sys.executable, "-m", "livespec_dev_tooling.green_token", "write")
+
+
+def ignore_job_name(*, name: str) -> None:
+    """Keep ordinary delegated gate callers independent of a shell run record."""
+    _ = name
+
+
+def _record_gate_run_field(*, field: str, value: str) -> None:
+    """Persist one coordinate when a delegated client inherited a detached-run record."""
+    run_dir = os.environ.get("LIVESPEC_GATE_RUN_DIR")
+    if run_dir is None:
+        return
+    with suppress(OSError):
+        _ = (Path(run_dir) / field).write_text(f"{value}\n", encoding="utf-8")
+
+
+def _record_hook_job(*, name: str) -> None:
+    """Make a hook-run delegated Job visible to the runner that launched its hook."""
+    _record_gate_run_field(field="job_name", value=name)
+
+
+def _record_hook_namespace(*, name: str) -> None:
+    """Keep the Job namespace beside its name for the later stop confirmation."""
+    _record_gate_run_field(field="namespace", value=name)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -179,6 +207,8 @@ def run_gated_push(
     request: GateRunRequest,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
+    record_job: Callable[..., None] = _record_hook_job,
+    record_namespace: Callable[..., None] = _record_hook_namespace,
 ) -> GateVerdict:
     """Gate the current HEAD tree on the cluster and decide whether to push.
 
@@ -189,7 +219,8 @@ def run_gated_push(
     re-discriminated. Which fault it was belongs in the `detail` an operator
     reads; what the client does about it is identical either way.
     """
-    gated = run_gate(request=request, runner=runner, sleeper=sleeper)
+    record_namespace(name=request.namespace)
+    gated = run_gate(request=request, runner=runner, sleeper=sleeper, record_job=record_job)
     if isinstance(gated, Failure):
         return _no_verdict(failure=gated.failure())
     return _adjudicate(outcome=gated.unwrap(), request=request, runner=runner)

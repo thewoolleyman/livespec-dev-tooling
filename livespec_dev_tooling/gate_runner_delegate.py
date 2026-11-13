@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from livespec_dev_tooling._gate_remote_assembly import (
     declared_gate_check_suite,
     refuses_declaration,
 )
+from livespec_dev_tooling._gate_runner_record import run_cluster_gate_cli
 from livespec_dev_tooling.gate_command import is_full_suite_command, pytest_command
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import (
@@ -28,6 +30,7 @@ from livespec_dev_tooling.gate_remote_invocation import default_gate_command_run
 from livespec_dev_tooling.gate_remote_verdict import (
     GATE_NO_VERDICT,
     GATE_PASSED,
+    ignore_job_name,
     run_gated_push,
 )
 from livespec_dev_tooling.incident_gate_entry import entrance_refusal, resolve_entrance
@@ -63,6 +66,7 @@ class ClusterGateResult:
     exit_status: int
     tree_hash: str
     job_name: str
+    namespace: str = ""
     detail: str = ""
 
 
@@ -169,7 +173,13 @@ def _remote_command(
     return pytest_argv, ()
 
 
-def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGateResult:
+def run_cluster_gate(
+    *,
+    repo_root: Path,
+    command: tuple[str, ...],
+    record_job: Callable[..., None] = ignore_job_name,
+    record_namespace: Callable[..., None] = ignore_job_name,
+) -> ClusterGateResult:
     """Publish and run the current worktree tree without falling back to the host."""
     source = _working_tree_source(repo_root=repo_root)
     if source is None:
@@ -209,7 +219,14 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         tree_hash=tree_hash,
         capture_output=False,
     )
-    verdict = run_gated_push(request=request, runner=default_gate_command_runner)
+
+    def record_submitted_job(*names: str, name: str = "") -> None:
+        """Persist both coordinates before the client starts waiting on its Job."""
+        job_name = next(iter(names), name)
+        record_job(name=job_name)
+        record_namespace(name=request.namespace)
+
+    verdict = run_gated_push(request=request, record_job=record_submitted_job)
     if verdict.state == GATE_PASSED:
         verdict = host_authority_decision(
             verdict=verdict,
@@ -224,6 +241,7 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         exit_status=status,
         tree_hash=tree_hash,
         job_name=verdict.job_name or "",
+        namespace=verdict.namespace or "",
         detail=verdict.detail,
     )
 
@@ -236,26 +254,9 @@ def _arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _run_arguments() -> argparse.Namespace:
-    """Parse the detached runner's cluster execution request."""
-    parser = argparse.ArgumentParser(prog="gate-runner-venue run")
-    _ = parser.add_argument("--run-dir", type=Path, required=True)
-    _ = parser.add_argument("command", nargs=argparse.REMAINDER)
-    return parser.parse_args(sys.argv[2:])
-
-
 def _run_main() -> int:
-    """Persist remote evidence beside the shell runner's durable run record."""
-    arguments = _run_arguments()
-    command = tuple(arguments.command[1:]) if arguments.command[:1] == ["--"] else ()
-    result = run_cluster_gate(repo_root=Path.cwd(), command=command)
-    if result.tree_hash:
-        _ = (arguments.run_dir / "tree_hash").write_text(f"{result.tree_hash}\n", encoding="utf-8")
-    if result.job_name:
-        _ = (arguments.run_dir / "job_name").write_text(f"{result.job_name}\n", encoding="utf-8")
-    if result.detail:
-        _ = sys.stderr.write(f"{result.detail}\n")
-    return result.exit_status
+    """Run the cluster CLI surface while retaining its monkeypatchable gate seam."""
+    return run_cluster_gate_cli(argv=sys.argv, repo_root=Path.cwd(), runner=run_cluster_gate)
 
 
 def main() -> int:

@@ -258,6 +258,81 @@ def _start(*, cwd: Path, env: dict[str, str], command: list[str]) -> str:
     return started.stdout.strip()
 
 
+def _stop_if_needed(*, cwd: Path, env: dict[str, str], run_dir: Path, run_id: str) -> None:
+    """Stop a still-running fixture gate, preserving the original test failure."""
+    if run_dir.is_dir() and not (run_dir / "stopped").is_file():
+        _ = _gate(cwd=cwd, env=env, args=["stop", run_id])
+
+
+def test_fixture_cleanup_stops_a_gate_that_did_not_reach_its_assertions(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Fixture cleanup cannot leave a detached local gate alive after a test aborts."""
+    primary, worktree, env = fixture_repo
+    run_id = _start(cwd=worktree, env=env, command=["bash", "-c", "while :; do sleep 1; done"])
+    run_dir = primary / _STORE / run_id
+
+    try:
+        _stop_if_needed(cwd=worktree, env=env, run_dir=run_dir, run_id=run_id)
+        assert (run_dir / "stopped").is_file()
+    finally:
+        _stop_if_needed(cwd=worktree, env=env, run_dir=run_dir, run_id=run_id)
+
+
+@pytest.mark.integration
+def test_gate_stop_ends_a_push_hook_client_in_its_own_session_before_the_push(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A stopped push cannot outlive its separately-sessioned hook client."""
+    primary, worktree, env = fixture_repo
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    _run_git(args=["init", "--bare", "--quiet"], cwd=remote, env=env)
+    _run_git(args=["remote", "add", "origin", str(remote)], cwd=worktree, env=env)
+    _write(
+        path=primary / ".git" / "hooks" / "pre-push",
+        text="""#!/usr/bin/env bash
+set -eu
+setsid bash -c '
+    trap "exit 0" TERM INT
+    : > "$LIVESPEC_GATE_RUN_DIR/hook-client-started"
+    while :; do sleep 1; done
+' &
+wait "$!"
+""",
+    )
+    (primary / ".git" / "hooks" / "pre-push").chmod(0o755)
+
+    run_id = _start(
+        cwd=worktree,
+        env=env,
+        command=["git", "push", "origin", "HEAD:refs/heads/feature/wip"],
+    )
+    run_dir = primary / _STORE / run_id
+    deadline = time.monotonic() + 10
+    while not (run_dir / "hook-client-started").is_file() and time.monotonic() < deadline:
+        time.sleep(_POLL_INTERVAL_S)
+
+    try:
+        assert (run_dir / "hook-client-started").is_file()
+        stopped = _gate(cwd=worktree, env=env, args=["stop", run_id])
+        assert stopped.returncode == 0, stopped.stderr
+
+        status = _gate(cwd=worktree, env=env, args=["status", run_id])
+        assert status.returncode == 75
+        assert "STOPPED" in status.stdout
+        assert "Re-run the gate" not in status.stdout
+        absent = subprocess.run(
+            ["git", "--git-dir", str(remote), "show-ref", "--verify", "refs/heads/feature/wip"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert absent.returncode != 0
+    finally:
+        _stop_if_needed(cwd=worktree, env=env, run_dir=run_dir, run_id=run_id)
+
+
 def _wait_for_file(
     *,
     path: Path,
