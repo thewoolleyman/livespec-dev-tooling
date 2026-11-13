@@ -499,6 +499,13 @@ def _split_job_blocks(*, body: list[str], job_indent: int) -> list[tuple[str, li
     return blocks
 
 
+def job_blocks(*, source: str) -> list[tuple[str, list[str]]]:
+    """The ci.yml's top-level (job name, body lines) blocks, as `parse_ci_jobs` splits them."""
+    body = _find_jobs_body(lines=source.splitlines()) or []
+    job_indent = _detect_job_indent(lines=body)
+    return [] if job_indent is None else _split_job_blocks(body=body, job_indent=job_indent)
+
+
 def parse_ci_jobs(*, source: str) -> list[CiJob]:
     """Split a ci.yml into its top-level jobs (name, needs, contributed slugs)."""
     body = _find_jobs_body(lines=source.splitlines())
