@@ -28,6 +28,7 @@ from livespec_dev_tooling._incident_enablement_reading import (
     EnablementReader,
     fence_refusal,
 )
+from livespec_dev_tooling._pyright_warmup import warm_locked_pyright
 from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count
 from livespec_dev_tooling.incident_ci_authority import CiAuthorityBoundary
 from livespec_dev_tooling.incident_ci_payload import decode_authority, decode_outcome, query_for
@@ -170,6 +171,16 @@ class CiEntry:
         )
         if not admit():
             return 2
+        # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-xdt4ue
+        # Members fan out in parallel, so locked pyright is provisioned serially
+        # first, exactly as the normal parallel dispatcher does before it fans out:
+        # two pyright members started on a cold cache type-check against a
+        # half-written typeshed. A failed provisioning launches no member.
+        warmed = environ.get("LIVESPEC_PYRIGHT_WARMED") == "1"
+        if warm_locked_pyright(cwd=self.repo, already_warmed=warmed) != 0:
+            if echo is not None:
+                echo(text="::: pyright provisioning failed; no selected member launched\n")
+            return 1
 
         def echo_completed(*, outcome: TargetOutcome) -> None:
             code = _member_code(outcome=outcome)
