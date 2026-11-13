@@ -710,7 +710,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods",
-    "work_item": "livespec-dev-tooling-acgcwp",
+    "work_item": "livespec-dev-tooling-pojsfk",
     "first_seen": "2026-11-14"
   },
   {
@@ -1319,7 +1319,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing",
-    "work_item": "livespec-dev-tooling-acgcwp",
+    "work_item": "livespec-dev-tooling-pojsfk",
     "first_seen": "2026-11-14"
   },
   {
@@ -1403,14 +1403,14 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
-    "work_item": "livespec-dev-tooling-acgcwp",
+    "work_item": "livespec-dev-tooling-pojsfk",
     "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
-    "work_item": "livespec-dev-tooling-acgcwp",
+    "work_item": "livespec-dev-tooling-pojsfk",
     "first_seen": "2026-11-14"
   },
   {
