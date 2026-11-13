@@ -40,6 +40,7 @@ from livespec_dev_tooling.mutation_kill_matrix_cache_store import (
     load_cache,
     save_cache,
 )
+from livespec_dev_tooling.mutation_kill_matrix_engine_identity import source_digest
 from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
     MutantSpan,
@@ -51,6 +52,7 @@ __all__: list[str] = [
     "CACHE_SCHEMA",
     "CacheKeys",
     "CachedOutcome",
+    "engine_source_digest",
     "load_cache",
     "save_cache",
     "tree_files",
@@ -144,6 +146,11 @@ def _import_time_units(
             if _OUTSIDE_ANY_TEST in tests
         }
     )
+
+
+def engine_source_digest() -> str:
+    """Identify the actual source on PYTHONPATH even after the venv is re-synced."""
+    return source_digest(root=Path(__file__).parent)
 
 
 def _dependency_set() -> list[str]:
@@ -245,6 +252,7 @@ class CacheKeys:
         self._environment = _digest(
             CACHE_SCHEMA,
             engine_version,
+            engine_source_digest(),
             platform.python_version(),
             repr(timeout),
             *_dependency_set(),

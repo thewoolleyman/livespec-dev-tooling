@@ -35,7 +35,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import Protocol, cast
 
-from livespec_dev_tooling.mutation_kill_matrix_cache import tree_files
+from livespec_dev_tooling.mutation_kill_matrix_cache import engine_source_digest, tree_files
 from livespec_dev_tooling.mutation_kill_matrix_cache_store import write_whole
 from livespec_dev_tooling.mutation_kill_matrix_execution import (
     CommandExecutor,
@@ -88,6 +88,7 @@ def measurement_key(
     parts = [
         MEASUREMENT_SCHEMA,
         engine_version,
+        engine_source_digest(),
         platform.python_version(),
         repr(timeout),
         *sorted({f"{dist.metadata['Name']}=={dist.version}" for dist in metadata.distributions()}),
