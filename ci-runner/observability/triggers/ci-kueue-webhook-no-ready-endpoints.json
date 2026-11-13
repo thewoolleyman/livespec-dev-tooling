@@ -13,6 +13,10 @@
         "column": "host.name",
         "op": "=",
         "value": "poweredge-xubuntu"
+      },
+      {
+        "column": "livespec.ci_kueue.webhook_ready_endpoints",
+        "op": "exists"
       }
     ],
     "time_range": 600

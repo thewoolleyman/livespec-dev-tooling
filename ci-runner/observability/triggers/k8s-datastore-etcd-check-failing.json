@@ -16,6 +16,10 @@
           "etcd",
           "etcd-readiness"
         ]
+      },
+      {
+        "column": "livespec.ci_k3s.readiness_check",
+        "op": "exists"
       }
     ],
     "time_range": 120

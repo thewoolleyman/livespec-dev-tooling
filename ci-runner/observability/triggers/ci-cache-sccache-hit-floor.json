@@ -13,6 +13,10 @@
         "column": "host.name",
         "op": "=",
         "value": "poweredge-xubuntu"
+      },
+      {
+        "column": "livespec.ci_cache.sccache.hit_ratio_5m",
+        "op": "exists"
       }
     ],
     "time_range": 14400
