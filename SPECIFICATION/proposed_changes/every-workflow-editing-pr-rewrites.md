@@ -16,16 +16,25 @@ created_at: 2026-11-13T09:00:11Z
 ADDS one paragraph, "Workflow edits are admitted only by a per-change exemption.", under "## Hooks and CI". It states the workflow-edit guard this repository ships in its worktree-discipline pack (`check-no-workflow-edits.sh`), which the live specification does not yet state.
 
 - A workflow change is admitted from an exemption file that the change itself authors, in a directory of per-change files. Two changes that each add their own file therefore do not textually conflict.
-- "Authored" is defined by content against the base. A mode-only change, a rename or copy of a base exemption, and a deletion never author one.
-- During a transition the guard also reads the legacy single root file, under the same authored-in-this-change rule. The ci-runtime-and-cost plan seat owns the revision that ends the transition, and a filed item checks each repository's pin.
+- "Authored" is defined by content against the base, for both forms. A mode-only change, a rename or copy that brings a base exemption's content, and a deletion never author one, and the refusal reports the first two as inherited. An authored exemption is evaluated under the unchanged work_item, reason, tier and label rules.
+- During a transition the guard also reads the legacy single root file, under the same authored-in-this-change rule. The ci-runtime-and-cost plan seat owns the revision that ends the transition, and livespec-dev-tooling-hnbn7z checks each repository's pin.
 - A workflow change with no exemption authored in it is still refused, naming each workflow path.
 - The declaration's keys, its two label tiers, the false-additive and missing-label refusals, the fail-closed ledger read and the absence of any environment escape are stated as the guard implements them.
 
-ADDS nine scenarios after "## Scenario: a workflow GitHub cannot parse is refused at every gate".
+ADDS ten scenarios after "## Scenario: a workflow GitHub cannot parse is refused at every gate".
 
 ### Motivation
 
-Work item livespec-dev-tooling-oim422 was filed by the expedited-incident-response-flag plan seat at legacy-coordinator-agent's direction on 2026-11-13. It is a child of ci-runtime-and-cost (livespec-dev-tooling-ib3oe3). The guard admits a change under `.github/workflows/` only when the repository's single root file `.livespec-workflow-edit-exemption` names it, and only when this change authored that file. Every pull request that edits a workflow therefore rewrites that one file, and any two such pull requests in flight conflict on it.
+Work item livespec-dev-tooling-oim422 was filed by the expedited-incident-response-flag plan seat at legacy-coordinator-agent's direction on 2026-11-13. It is a child of ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).
+
+This topic also carries the tier hold of livespec-dev-tooling-hyeteu, which legacy-coordinator-agent relinked to it on 2026-11-13, so one ratification releases both items. hyeteu is the bug that the guard admits an inherited exemption whose only change is a mode bit or a rename. Its four assertions are stated below, each with its own scenario, for both the root file and the directory:
+
+- a mode-only change to the inherited exemption exits 1 and is reported as inherited;
+- a rename or copy bringing content identical to the base's exits 1 as inherited;
+- differing or newly added content is evaluated under the existing rules;
+- deleting the inherited exemption exits 1 naming each workflow path.
+
+The guard admits a change under `.github/workflows/` only when the repository's single root file `.livespec-workflow-edit-exemption` names it, and only when this change authored that file. Every pull request that edits a workflow therefore rewrites that one file, and any two such pull requests in flight conflict on it.
 
 Measured 2026-11-13: livespec-dev-tooling#4462 (bqnzcm.4 slice 2a) passed CI on head 85d16269a. pwabtl's merge 838a4e545 then rewrote the exemption file, and #4462's workflow commit, which replaces the same file, could no longer rebase-merge. The slice had to be re-cut and its workflow commit re-authored. That needed a fresh byte diff by legacy-coordinator-agent before it could merge.
 
@@ -63,7 +72,11 @@ A change authors an exemption file when that file is tracked and present in the 
 - a rename or a copy whose resulting content matches an exemption file present in the base;
 - a deletion.
 
-An exemption present in the base that this change did not author MUST NOT admit, in either form. That includes a file an in-progress merge brings in from the base.
+These rules apply to both the root file and the directory. An exemption present in the base that this change did not author MUST NOT admit, in either form. That includes a file an in-progress merge brings in from the base.
+
+When the guard refuses a change whose only change to an exemption file is a mode change, or a rename or copy, its output MUST report that exemption as inherited from the base, not authored by this change.
+
+An exemption this change authored, whether its path is absent on the base or its content differs from the base's content at that path, MUST be evaluated under the work_item, reason, tier and label rules below. Authorship admits nothing by itself.
 
 An exemption MUST carry exactly one `work_item=` line whose value is one ledger id token, and exactly one non-empty `reason=` line. It MAY carry at most one `change=` line, whose only valid value is `additive`, and at most one `ci_runtime=` line. A change is in the ADDITIVE tier only when its exemption carries both `change=additive` and `ci_runtime=no-significant-increase`. An exemption carrying `change=additive` with any other `ci_runtime=` value, or none, is in the MAINTAINER tier, as is every other change.
 
@@ -92,9 +105,9 @@ The guard MUST exit `2`, naming the cause, when the change cannot be evaluated:
 
 The guard MUST exit `0` otherwise. No environment variable changes the verdict.
 
-The transition ends only by a later revision that retires the legacy root file. The ci-runtime-and-cost plan seat, which owns livespec-dev-tooling-oim422, owns that revision. That revision MUST name a filed work item that lists each fleet repository that tracks the root file together with the livespec-dev-tooling release it pins, and checks that each pins a release whose guard reads the directory. The revision MUST NOT land before that check passes for every listed repository.
+The transition ends only by a later revision that retires the legacy root file. The ci-runtime-and-cost plan seat, which owns livespec-dev-tooling-oim422, owns that revision. That revision MUST name livespec-dev-tooling-hnbn7z, the filed work item that lists each fleet repository that tracks the root file together with the livespec-dev-tooling release it pins, and checks that each pins a release whose guard reads the directory. hnbn7z's green run on a fleet host triggers the retiring revision, and the revision MUST NOT land before that check passes for every listed repository.
 
-In SPECIFICATION/scenarios.md, insert the following nine scenarios immediately after "## Scenario: a workflow GitHub cannot parse is refused at every gate" and before "## Scenario: a new runner release opens one bump across every scale set":
+In SPECIFICATION/scenarios.md, insert the following ten scenarios immediately after "## Scenario: a workflow GitHub cannot parse is refused at every gate" and before "## Scenario: a new runner release opens one bump across every scale set":
 
 ## Scenario: two workflow changes that each add their own exemption file merge in either order
 
@@ -138,43 +151,57 @@ Then it MUST exit 0
 
 ## Scenario: changing only an exemption file's mode does not author it
 
-Given a base whose root `.livespec-workflow-edit-exemption` file holds a well-formed exemption naming a labelled work item
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
 And a change from that base that edits a file under `.github/workflows/` and changes only that exemption file's mode
 
 When the workflow-edit guard runs
 
 Then it MUST exit 1
 And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
 
 ## Scenario: renaming a base exemption file does not author it
 
-Given a base whose `.livespec-workflow-edit-exemptions/` directory holds a well-formed exemption file naming a labelled work item
-And a change from that base that edits a file under `.github/workflows/` and renames that exemption file to a new name, leaving its content unchanged
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and renames that exemption file to another exemption path in either form, leaving its content identical
 
 When the workflow-edit guard runs
 
 Then it MUST exit 1
 And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
 
 ## Scenario: copying a base exemption file does not author it
 
-Given a base whose `.livespec-workflow-edit-exemptions/` directory holds a well-formed exemption file naming a labelled work item
-And a change from that base that edits a file under `.github/workflows/` and adds a copy of that exemption file under a new name with identical content
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and adds a copy of that exemption file at another exemption path in either form, with identical content
 
 When the workflow-edit guard runs
 
 Then it MUST exit 1
 And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
 
 ## Scenario: deleting a base exemption file does not author it
 
-Given a base whose `.livespec-workflow-edit-exemptions/` directory holds a well-formed exemption file naming a labelled work item
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
 And a change from that base that edits a file under `.github/workflows/`, deletes that exemption file and authors no other exemption
 
 When the workflow-edit guard runs
 
 Then it MUST exit 1
 And its output MUST name each workflow path the change touches
+
+## Scenario: an authored exemption is judged by its work item's label, not admitted by authorship alone
+
+Given a change that edits a file under `.github/workflows/`
+And the change authors one well-formed exemption, either as a new file under `.livespec-workflow-edit-exemptions/` or as root `.livespec-workflow-edit-exemption` content that differs from the base's content at that path
+And the exemption names a work item that carries no label admitting its tier
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches, the work item and the label it needs
 
 ## Scenario: a change that authors two exemptions cannot be evaluated
 
@@ -186,4 +213,4 @@ When the workflow-edit guard runs
 Then it MUST exit 2
 And its output MUST name each authored exemption file
 
-The revise that accepts this MUST add a tests/heading-coverage.json row for each of the nine new scenario headings at the CONSUMER tier, the tier `scenario_tiers = ["tests.consumer"]` in pyproject.toml declares, so each row's test resolves under `tests.consumer`. Each row MUST carry the literal key `"work_item": "livespec-dev-tooling-oim422"` and a reason naming the consumer tier and that item. The revise MUST regenerate tests/heading-coverage-debt.json with `just generate-heading-coverage-debt-register` and stage it in the same commit. "## Hooks and CI" keeps its existing row.
+The revise that accepts this MUST add a tests/heading-coverage.json row for each of the ten new scenario headings at the CONSUMER tier, the tier `scenario_tiers = ["tests.consumer"]` in pyproject.toml declares, so each row's test resolves under `tests.consumer`. Each row MUST carry the literal key `"work_item": "livespec-dev-tooling-oim422"` and a reason naming the consumer tier and that item. The revise MUST regenerate tests/heading-coverage-debt.json with `just generate-heading-coverage-debt-register` and stage it in the same commit. "## Hooks and CI" keeps its existing row.
