@@ -30,6 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from posixpath import normpath
 
 from livespec_dev_tooling._incident_focused_scope import classify
 from livespec_dev_tooling._incident_inverse_git import IsolatedGit
@@ -54,17 +55,23 @@ def _names(*, raw: bytes) -> list[str]:
     return [name for name in raw.decode().split("\0") if name]
 
 
+def _unclassifiable(*, name: str, kind: str) -> ValueError:
+    return ValueError(f"{kind} {name} cannot be classified as a file")
+
+
 def _blobs(
     *, run: Callable[..., bytes], head: str, names: list[str]
 ) -> dict[str, tuple[str, bytes]]:
     """Each named path present at `head`, as its tree mode and exact blob bytes."""
     listing = run(args=("ls-tree", "-r", "-z", head))
-    wanted = set(names)
-    entries = [
-        (meta.split()[0], meta.split()[2], name)
+    tree = {
+        name: (meta.split()[0], meta.split()[2])
         for meta, _, name in (entry.partition("\t") for entry in _names(raw=listing))
-        if name in wanted
-    ]
+    }
+    entries = [(mode, sha, name) for name, (mode, sha) in tree.items() if name in set(names)]
+    for mode, _, name in entries:
+        if mode == "160000":
+            raise _unclassifiable(name=name, kind="submodule gitlink at")
     batch = run(
         args=("cat-file", "--batch"), data="".join(f"{sha}\n" for _, sha, _ in entries).encode()
     )
@@ -74,6 +81,14 @@ def _blobs(
         size = int(header.split()[2])
         blobs[name] = (mode, rest[:size])
         batch = rest[size + 1 :]
+    for name, (mode, data) in tuple(blobs.items()):
+        if mode != "120000":
+            continue
+        target = normpath(str(Path(name).parent / data.decode("utf-8")))
+        if target not in tree:
+            raise _unclassifiable(name=name, kind="symbolic link outside the head tree at")
+        target_mode, target_sha = tree[target]
+        blobs[target] = (target_mode, run(args=("cat-file", "blob", target_sha)))
     return blobs
 
 
@@ -99,10 +114,18 @@ def _changed(
     with tempfile.TemporaryDirectory(prefix="incident-focused-changes-") as scratch:
         root = Path(scratch)
         for name, (mode, data) in blobs.items():
+            if mode == "120000":
+                continue
             target = root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             _ = target.write_bytes(data)
             target.chmod(0o755 if mode == _EXECUTABLE_MODE else 0o644)
+        for name, (mode, data) in blobs.items():
+            if mode != "120000":
+                continue
+            target = root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(data.decode("utf-8"))
         executable = [
             name
             for name in product
