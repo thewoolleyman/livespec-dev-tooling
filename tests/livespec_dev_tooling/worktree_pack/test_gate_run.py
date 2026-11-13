@@ -1153,16 +1153,14 @@ _RENEWAL_WINDOW_S = "30"
 _RENEWAL_ROUNDS = 3
 # The output renewal test's window. The runner checks the window only on a
 # tick that sees no new progress, so that test first makes renewed rounds
-# until its own $SECONDS passes the window, then stays silent across at least
-# one whole runner tick. A runner that did not restart the window on each
-# renewal ends the gate on that quiet tick. The real runner would need
-# `_SHORT_WINDOW_S` seconds of silence, at least five of them real, against
-# the pause.
+# until its own $SECONDS passes the window, then waits for the runner to
+# record a quiet tick. A runner that did not restart the window on each
+# renewal ends the gate on that quiet tick.
 _SHORT_WINDOW_S = 6
-_QUIET_PAUSE_S = 2
 # The runner touches this file in the run directory each time it takes new
 # output or a refreshed stamp as progress, and nowhere else.
 _OBSERVED = "progress.observed"
+_QUIET_TICKS = "quiet.ticks"
 _NO_STAMP_EXIT = 3
 
 
@@ -1179,6 +1177,16 @@ def _renewed_round(*, progress: str) -> str:
         'while ! [ "$marker" -nt "$observed" ]; do sleep 0.01; touch "$marker"; done; '
         f"{progress}; "
         'while [ "$marker" -nt "$observed" ]; do sleep 0.05; done; '
+    )
+
+
+def _renewed_round_after_quiet_tick(*, progress: str) -> str:
+    """Wait for a new runner quiet tick, then make and renew one final round."""
+    return (
+        f'quiet="${{stamp%/*}}/{_QUIET_TICKS}"; '
+        'quiet_tick=0; [ ! -s "$quiet" ] || quiet_tick="$(<"$quiet")"; '
+        'while [ ! -s "$quiet" ] || [ "$(<"$quiet")" = "$quiet_tick" ]; do sleep 0.01; done; '
+        f"{_renewed_round(progress=progress)}"
     )
 
 
@@ -1211,7 +1219,7 @@ def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
 
     Each line of output is written only after the runner renewed the window
     for the line before it, until the gate has lived longer than the whole
-    window. The gate then stays silent across at least one runner tick before
+    window. The gate then waits for the runner's next quiet-tick record before
     a last renewed line. The runner checks the window only on such a quiet
     tick, so the gate ends with 0 only if each renewal restarted the window.
     """
@@ -1220,7 +1228,7 @@ def test_a_gate_that_keeps_making_progress_is_not_ended_by_the_stall_window(
         marker=tmp_path / "round.marker",
         progress='echo "tick $i"',
         more=f"[ $i -lt {_RENEWAL_ROUNDS} ] || [ $SECONDS -le {_SHORT_WINDOW_S} ]",
-        then=f"sleep {_QUIET_PAUSE_S}; {_renewed_round(progress='echo after-quiet-tick')}",
+        then=_renewed_round_after_quiet_tick(progress="echo after-quiet-tick"),
     )
     run_id = _start(
         cwd=worktree,
