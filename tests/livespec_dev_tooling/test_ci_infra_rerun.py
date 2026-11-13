@@ -156,6 +156,37 @@ def test_a_setup_job_429_is_rerun_with_growing_waits_up_to_three_attempts(
     ]
 
 
+@pytest.mark.integration
+def test_a_recorded_429_names_its_run_job_and_matched_line_in_one_rerun(
+    tmp_path: Path,
+) -> None:
+    """The recorded 429 job plans exactly one re-run, summarized with run id, job id and line."""
+    recorded_job_id = 125948122947
+    code, payload, summary = _run_plan(
+        tmp_path=tmp_path,
+        jobs=[
+            _job(attempt=1, job_id=recorded_job_id, name="check-types (root)", failed_step=_SETUP)
+        ],
+        run_attempt=1,
+        logs={recorded_job_id: _RECORDED_429_LOG},
+    )
+
+    assert code == 0
+    reruns = cast("list[dict[str, object]]", payload["reruns"])
+    assert [rerun["job_id"] for rerun in reruns] == [recorded_job_id]
+    assert summary.splitlines()[:2] == [
+        "CI infrastructure re-run reconciler: thewoolleyman/livespec-dev-tooling run 41645065357",
+        (
+            "- re-run job 'check-types (root)' (id 125948122947): attempt 1 of 3 after a 120s"
+            " wait, cause set-up-job action download, signature action-download-429:"
+            " 2026-11-03T13:33:36.5865050Z ##[warning]Failed to download action"
+            " 'https://codeload.github.com/actions/checkout/tar.gz/"
+            "11d5960a326750d5838078e36cf38b85af677262'. Error: Response status code does not"
+            " indicate success: 429 (Too Many Requests). C963:3D0D66:246F4:473A7:6AE9E2A6"
+        ),
+    ]
+
+
 def test_an_action_not_found_at_set_up_job_is_rerun() -> None:
     jobs = parse_jobs(payload=[_job(attempt=1, job_id=7, name="check-e2e", failed_step=_SETUP)])
     assert jobs is not None
