@@ -79,9 +79,9 @@
     # concurrency limit".
     - role: local_gate_slots
       tags: [local_gate_slots]
-    # The RAM-backed /tmp capped and the session scratchpads moved to disk,
-    # memory slices for dispatcher loops and local gates, and a bound on
-    # reconcile-runs (the 2026-11-13 memory overload). A plain converge changes
+    # The RAM-backed /tmp capped and Claude Code's per-session temp trees moved
+    # to disk, memory slices for dispatcher loops and local gates, and a bound
+    # on reconcile-runs (the 2026-11-13 memory overload). A plain converge changes
     # nothing running; the live move is the never-tagged
     # `dev_host_memory_bounds_cutover`. See the role's HOST_VARS.md.
     - role: dev_host_memory_bounds
