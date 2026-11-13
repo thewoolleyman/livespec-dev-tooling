@@ -152,15 +152,9 @@ def is_config_value_fast_path(*, cwd: Path) -> bool:
     return True
 
 
-def _staged_text(*, cwd: Path, path: str) -> str:
-    """Read one changed file exactly as the commit would store it."""
-    result = _git(cwd=cwd, args=["show", f":{path}"])
-    return result.stdout if result.returncode == 0 else ""
-
-
-def _head_text(*, cwd: Path, path: str) -> str:
-    """Read one changed file from the committed tree before the staged edit."""
-    result = _git(cwd=cwd, args=["show", f"HEAD:{path}"])
+def _staged_text(*, cwd: Path, path: str, revision: str = "") -> str:
+    """Read one changed file as the commit would store it, or from `revision` when given."""
+    result = _git(cwd=cwd, args=["show", f"{revision}:{path}"])
     return result.stdout if result.returncode == 0 else ""
 
 
@@ -192,10 +186,14 @@ def _value_at_path(*, document: object, key_path: str) -> object | None:
 def _jsonc_rule_changed(*, cwd: Path, path: str, rule: ConfigValueFastPathRule) -> bool:
     """Prove that a JSONC replacement changed the exact declared nested key."""
     try:
-        before: object = jsoncomment.loads(_head_text(cwd=cwd, path=path))
-        after: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path))
+        before: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path, revision="HEAD"))
     except ValueError:
         return False
+    try:
+        after: object = jsoncomment.loads(_staged_text(cwd=cwd, path=path))
+    except ValueError:
+        # A value-only replacement that breaks parsing is validation's refusal to name.
+        return True
     before_value = _value_at_path(document=before, key_path=rule.key_path)
     after_value = _value_at_path(document=after, key_path=rule.key_path)
     return before_value is not None and after_value is not None and before_value != after_value
