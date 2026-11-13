@@ -77,20 +77,55 @@
     key: "{{ dev_host_memory_bounds_user }}"
   tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
 
-- name: Name the scratchpad directories and the bind mount unit
-  # systemd names a mount unit after its escaped mount point: `/tmp/claude-1000`
-  # is `tmp-claude\x2d1000.mount`. The escape is computed rather than written
-  # down so a different uid cannot leave a unit systemd refuses to load.
+- name: Name the scratchpad directories
   ansible.builtin.set_fact:
     dev_host_memory_bounds_rt_uid: "{{ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1] }}"
     dev_host_memory_bounds_rt_scratch_ram_dir: >-
       {{ dev_host_memory_bounds_scratch_ram_root }}/claude-{{ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1] }}
     dev_host_memory_bounds_rt_scratch_disk_dir: >-
       {{ dev_host_memory_bounds_scratch_disk_root }}/claude-{{ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1] }}
-    dev_host_memory_bounds_rt_mount_unit: >-
-      {{ (dev_host_memory_bounds_scratch_ram_root ~ '/claude-' ~ ansible_facts.getent_passwd[dev_host_memory_bounds_user][1])[1:]
-         | replace('-', '\\x2d') | replace('/', '-') }}.mount
   tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+- name: Ask systemd for the bind mount unit's name
+  # systemd names a mount unit after its escaped mount point: `/tmp/claude-1000`
+  # is `tmp-claude\x2d1000.mount`. systemd-escape computes it, because an
+  # escape spelled in Jinja is re-escaped by the templating layer: the first
+  # converge (2026-11-13) wrote `tmp-claude\\x2d1000.mount`, with a doubled
+  # backslash, which systemd refused as a bad unit file setting.
+  ansible.builtin.command:
+    argv: [systemd-escape, --path, --suffix=mount, "{{ dev_host_memory_bounds_rt_scratch_ram_dir }}"]
+  register: dev_host_memory_bounds_rt_mount_unit_name
+  changed_when: false
+  check_mode: false  # read-only; every later task needs the real name
+  tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+- name: Record the bind mount unit's name
+  ansible.builtin.set_fact:
+    dev_host_memory_bounds_rt_mount_unit: "{{ dev_host_memory_bounds_rt_mount_unit_name.stdout | trim }}"
+  tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
+
+- name: Find scratchpad mount unit files under any other name
+  # The first converge (2026-11-13) wrote the unit under a doubled escape (two
+  # literal backslashes), which never loaded. A glob finds every such file
+  # without spelling a backslash anywhere in this role.
+  ansible.builtin.find:
+    paths: "{{ dev_host_memory_bounds_system_unit_dir }}"
+    patterns: "{{ dev_host_memory_bounds_scratch_ram_root[1:] }}-claude*.mount"
+    file_type: file
+  register: dev_host_memory_bounds_rt_unit_files
+
+- name: Remove every scratchpad mount unit file that is not the correctly named one
+  # Such a file never loaded, so nothing was enabled from it and removing it
+  # changes nothing running.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  become: true
+  loop: "{{ dev_host_memory_bounds_rt_unit_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: dev_host_memory_bounds_rt_stray_unit
+  when: item.path | basename != dev_host_memory_bounds_rt_mount_unit
 
 # --- install ----------------------------------------------------------------
 
@@ -158,6 +193,7 @@
     - dev_host_memory_bounds_state == 'present'
     - >-
       dev_host_memory_bounds_rt_tmp_dropin is changed
+      or dev_host_memory_bounds_rt_stray_unit is changed
       or dev_host_memory_bounds_rt_mount_file is changed
       or dev_host_memory_bounds_rt_reconcile_dropin is changed
 
