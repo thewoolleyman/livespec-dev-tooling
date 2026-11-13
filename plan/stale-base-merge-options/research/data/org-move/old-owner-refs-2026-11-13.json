@@ -1,97 +1,107 @@
 {
-  "owner": "thewoolleyman",
+  "old_owner": "thewoolleyman",
   "rows": [
     {
       "repo": "livespec",
       "ref": "origin/master@f2acd171",
       "url": 73,
+      "raw": 2,
       "ghcr": 8,
       "slug": 103,
-      "prose": 40,
-      "graded_files": 18
+      "graded_files": 49,
+      "prose": 40
     },
     {
       "repo": "livespec-dev-tooling",
-      "ref": "origin/master@2d7639478",
-      "url": 66,
+      "ref": "origin/master@6d6969845",
+      "url": 67,
+      "raw": 4,
       "ghcr": 98,
-      "slug": 275,
-      "prose": 129,
-      "graded_files": 93
+      "slug": 285,
+      "graded_files": 182,
+      "prose": 129
     },
     {
       "repo": "livespec-driver-claude",
-      "ref": "origin/master@b34d090",
+      "ref": "origin/master@52c2e35",
       "url": 8,
+      "raw": 0,
       "ghcr": 8,
       "slug": 32,
-      "prose": 2,
-      "graded_files": 7
+      "graded_files": 26,
+      "prose": 2
     },
     {
       "repo": "livespec-driver-codex",
-      "ref": "origin/master@6926295",
+      "ref": "origin/master@52f445f",
       "url": 8,
+      "raw": 0,
       "ghcr": 8,
       "slug": 38,
-      "prose": 0,
-      "graded_files": 5
+      "graded_files": 23,
+      "prose": 0
     },
     {
       "repo": "livespec-driver-pi",
-      "ref": "origin/master@cf6375b",
+      "ref": "origin/master@92f0dd0",
       "url": 40,
+      "raw": 0,
       "ghcr": 9,
       "slug": 22,
-      "prose": 2,
-      "graded_files": 18
+      "graded_files": 26,
+      "prose": 2
     },
     {
       "repo": "livespec-orchestrator-beads-fabro",
-      "ref": "origin/master@f8a1626e7",
+      "ref": "origin/master@05255839e",
       "url": 164,
+      "raw": 0,
       "ghcr": 34,
       "slug": 91,
-      "prose": 51,
-      "graded_files": 94
+      "graded_files": 134,
+      "prose": 348
     },
     {
       "repo": "livespec-orchestrator-git-jsonl",
       "ref": "origin/master@eff70c1",
       "url": 17,
+      "raw": 0,
       "ghcr": 9,
       "slug": 22,
-      "prose": 0,
-      "graded_files": 8
+      "graded_files": 19,
+      "prose": 0
     },
     {
       "repo": "livespec-runtime",
-      "ref": "origin/master@a2cb527",
+      "ref": "origin/master@b684686",
       "url": 56,
+      "raw": 0,
       "ghcr": 7,
       "slug": 17,
-      "prose": 0,
-      "graded_files": 15
+      "graded_files": 23,
+      "prose": 0
     },
     {
       "repo": "livespec-console-beads-fabro",
-      "ref": "origin/master@60b3887",
+      "ref": "origin/master@99a21cc",
       "url": 22,
+      "raw": 0,
       "ghcr": 27,
       "slug": 38,
-      "prose": 2,
-      "graded_files": 15
+      "graded_files": 30,
+      "prose": 2
     },
     {
       "repo": "livespec-overseer",
-      "ref": "origin/master@88221220",
+      "ref": "origin/master@65dce2d8",
       "url": 25,
+      "raw": 0,
       "ghcr": 11,
       "slug": 21,
-      "prose": 0,
-      "graded_files": 16
+      "graded_files": 29,
+      "prose": 0
     }
   ],
   "unreadable": [],
-  "graded_total": 698
+  "graded_total": 1374
 }
