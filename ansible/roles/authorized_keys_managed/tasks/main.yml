@@ -1,0 +1,64 @@
+---
+- name: Require the authorized_keys account and file path
+  ansible.builtin.assert:
+    that:
+      - authorized_keys_managed_user | length > 0
+      - authorized_keys_managed_group | length > 0
+      - authorized_keys_managed_path | length > 0
+    fail_msg: >-
+      authorized_keys_managed_user, authorized_keys_managed_group and
+      authorized_keys_managed_path must be declared in host_vars. Nothing has
+      been changed.
+    quiet: true
+
+- name: Refuse a public key declared as both managed and retired
+  ansible.builtin.assert:
+    that:
+      - >-
+        item not in (
+          authorized_keys_managed_entries
+          | map(attribute='public_key')
+          | map('regex_replace', '^(\\S+\\s+\\S+).*$','\\1')
+          | list
+        )
+    fail_msg: >-
+      {{ item }} is declared as both a managed authorized_keys entry and a
+      retired key. Refusing before writing {{ authorized_keys_managed_path }}.
+    quiet: true
+  loop: "{{ authorized_keys_managed_retired_keys }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Retire each hand-placed key by its public key blob
+  ansible.builtin.lineinfile:
+    path: "{{ authorized_keys_managed_path }}"
+    regexp: '^(?:\S+\s+)?{{ item | regex_escape }}(?:\s+.*)?$'
+    state: absent
+  become: true
+  loop: "{{ authorized_keys_managed_retired_keys }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Place each declared forward-only key after unmarked keys
+  ansible.builtin.blockinfile:
+    path: "{{ authorized_keys_managed_path }}"
+    create: true
+    owner: "{{ authorized_keys_managed_user }}"
+    group: "{{ authorized_keys_managed_group }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED authorized_keys_managed: {{ item.name }}"
+    block: >-
+      restrict,port-forwarding,permitopen="{{ item.permitopen }}",permitlisten="invalid.invalid:1",command="/bin/false" {{ item.public_key }}
+  become: true
+  loop: "{{ authorized_keys_managed_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Leave the shared authorized_keys file owned by its account with mode 0600
+  ansible.builtin.file:
+    path: "{{ authorized_keys_managed_path }}"
+    state: file
+    owner: "{{ authorized_keys_managed_user }}"
+    group: "{{ authorized_keys_managed_group }}"
+    mode: "0600"
+  become: true

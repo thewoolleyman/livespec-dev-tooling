@@ -716,13 +716,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a key both managed and retired refuses the converge",
-    "work_item": "livespec-dev-tooling-sr46h2",
-    "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -754,20 +747,6 @@
     "heading": "## Scenario: a lower-ordered target does not backfill an execution target a higher-ordered waiting target could use",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a managed authorized_keys role retires a hand-placed key by its key blob",
-    "work_item": "livespec-dev-tooling-sr46h2",
-    "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a managed forward-only authorized_keys entry leaves every other key untouched",
-    "work_item": "livespec-dev-tooling-sr46h2",
-    "first_seen": "2026-11-13"
   },
   {
     "spec_root": "SPECIFICATION",
