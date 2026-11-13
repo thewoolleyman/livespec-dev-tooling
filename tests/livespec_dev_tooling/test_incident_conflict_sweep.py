@@ -210,10 +210,10 @@ def test_a_callback_arriving_mid_sweep_gets_the_fence_within_its_wait(failing, m
     thread = Thread(target=_sweep(world).sweep, daemon=True)
     thread.start()
     busy = chain.directory / "busy"
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + HANG_GUARD_SECONDS
     while not busy.exists() and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert busy.exists()
+    assert busy.exists(), "HANG: waiting for the conflict sweep to reach its busy authority call"
     started = time.monotonic()
     with repository_lock(
         directory=world.installation.state,

@@ -251,12 +251,13 @@ def test_the_started_watcher_collects_in_the_background_and_survives_a_failed_ti
     exits: list[int] = []
     running = watcher(world, ports=flaky)
     thread = running.start(on_exit=lambda: exits.append(1))
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + HANG_GUARD_SECONDS
     while time.monotonic() < deadline and not world.comments:
         time.sleep(0.01)
     running.stop.set()
     thread.join(timeout=HANG_GUARD_SECONDS)
     assert thread.daemon
+    assert world.comments, "HANG: waiting for the started watcher to post its comment"
     assert not thread.is_alive(), "HANG: waiting for the original-run watcher to stop"
     assert len(world.comments) == 1
     assert len(calls) >= 2
