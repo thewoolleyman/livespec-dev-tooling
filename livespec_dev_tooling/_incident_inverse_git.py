@@ -12,9 +12,11 @@ from functools import partial
 from pathlib import Path
 
 from livespec_dev_tooling._incident_inverse_types import InversePlan, LandedIncident
-from livespec_dev_tooling.incident_git import run_git
+from livespec_dev_tooling.incident_git import INCIDENT_GIT_TIMEOUT_SECONDS, run_git
 
 __all__: list[str] = ["IsolatedGit", "build_inverse", "scope_matches_git"]
+
+_INVERSE_GIT_TIMEOUT_SECONDS = INCIDENT_GIT_TIMEOUT_SECONDS
 
 
 def _git(
@@ -35,7 +37,13 @@ def _git(
         environment["GIT_DIR"] = str(administration)
     if objects is not None:
         environment["GIT_OBJECT_DIRECTORY"] = objects
-    return run_git(repo=root, args=args, data=data, env=environment).stdout
+    return run_git(
+        repo=root,
+        args=args,
+        data=data,
+        env=environment,
+        timeout_seconds=_INVERSE_GIT_TIMEOUT_SECONDS,
+    ).stdout
 
 
 def _sha(*, value: str) -> bool:
