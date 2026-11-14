@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import subprocess
 import time
 from pathlib import Path
 
@@ -115,6 +117,68 @@ def test_completed_wait_commands_release_the_captured_runner_promptly(
     assert isinstance(outcome, Success)
     assert outcome.unwrap().returncode == 0
     assert elapsed < 10.0
+
+
+@pytest.mark.parametrize(
+    ("argv", "kubectl_output"),
+    [
+        (
+            admission_read_argv(namespace="gates", job_name="gate-widget-7f2qd"),
+            '{"spec":{"suspend":false},"status":{}}',
+        ),
+        (
+            terminal_watch_argv(
+                namespace="gates", job_name="gate-widget-7f2qd", remaining_seconds=999.0
+            ),
+            '{"status":{"conditions":[{"type":"Complete","status":"True"}]}}',
+        ),
+    ],
+)
+def test_completed_wait_commands_do_not_depend_on_signal_delivery_to_stop_their_heartbeat(
+    *,
+    argv: list[str],
+    kubectl_output: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A lost or ignored TERM must not keep a finished wait command alive.
+
+    A shell heartbeat stopped by `kill` + `wait` can lose the TERM while it sits
+    in `wait`, and a TERM ignored on entry cannot be trapped at all. The command
+    then blocks on its heartbeat for the whole sleep, or forever.
+    """
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    wrapper = stub_dir / "with-gates-kubeconfig"
+    _ = wrapper.write_text('#!/bin/sh\nexec "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    kubectl = stub_dir / "kubectl"
+    _ = kubectl.write_text(
+        f"#!/bin/sh\nprintf '%s\\n' '{kubectl_output}'\n",
+        encoding="utf-8",
+    )
+    kubectl.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{stub_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("LIVESPEC_GATE_RUN_PROGRESS_STAMP", str(tmp_path / "stamp"))
+
+    previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+    finally:
+        _ = signal.signal(signal.SIGTERM, previous)
+    try:
+        _ = process.communicate(timeout=10.0)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        _ = process.communicate()
+        pytest.fail("the wait command was still blocked on its heartbeat after its Job answered")
+    assert process.returncode == 0
 
 
 def test_terminal_wait_stops_when_its_deadline_elapses_between_watch_windows() -> None:
