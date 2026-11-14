@@ -260,8 +260,13 @@ out_of_group_descendants() {
     while IFS= read -r pid; do
         [[ -z "${seen[$pid]:-}" ]] || continue
         seen[$pid]=1
+        # The gate leader is the group, not an escapee of it. A pid whose stat
+        # is unreadable has exited, so it is neither named nor signalled: its
+        # number could already belong to an unrelated process.
+        [[ "$pid" != "$root" ]] || continue
         read_proc_identity "$pid"
-        [[ "$PROC_PGRP" == "$group" ]] || printf '%s\n' "$pid"
+        [[ "$PROC_PGRP" != "?" && "$PROC_PGRP" != "$group" ]] || continue
+        printf '%s\n' "$pid"
     done < <(descendant_pids "$root"; stamped_pids "$stamp")
 }
 
@@ -274,10 +279,10 @@ record_and_term_out_of_group_descendants() {
             "$pid" "${PROC_CMDLINE:-<exited>}" >>"$dir/output.log"
         escapees+=("$pid")
     done < <(out_of_group_descendants "$group" "$group" "$dir/progress.stamp")
-    for pid in "${escapees[@]}"; do
+    for pid in ${escapees[@]+"${escapees[@]}"}; do
         kill -TERM "$pid" 2>/dev/null || true
     done
-    printf '%s\n' "${escapees[@]}"
+    (( ${#escapees[@]} == 0 )) || printf '%s\n' ${escapees[@]+"${escapees[@]}"}
 }
 
 any_pids_alive() {
@@ -331,7 +336,7 @@ run_gate_with_stall_bound() {
                 mapfile -t escaped < <(record_and_term_out_of_group_descendants "$dir" "$gate_pid")
                 kill -TERM -- "-$gate_pid" 2>/dev/null || true
                 ended=$SECONDS
-                while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive "${escaped[@]}"; } \
+                while { kill -0 -- "-$gate_pid" 2>/dev/null || any_pids_alive ${escaped[@]+"${escaped[@]}"}; } \
                     && (( SECONDS - ended < grace )); do
                     idle_sleep 1
                 done
@@ -341,8 +346,8 @@ run_gate_with_stall_bound() {
                 # later pass instead of skipping straight to KILL.
                 mapfile -t verified < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
                 kill -KILL -- "-$gate_pid" 2>/dev/null || true
-                for pid in "${escaped[@]}"; do
-                    if still_attributed "$pid" "${verified[@]}" && kill -0 "$pid" 2>/dev/null; then
+                for pid in ${escaped[@]+"${escaped[@]}"}; do
+                    if still_attributed "$pid" ${verified[@]+"${verified[@]}"} && kill -0 "$pid" 2>/dev/null; then
                         kill -KILL "$pid" 2>/dev/null || true
                     fi
                 done
@@ -353,7 +358,7 @@ run_gate_with_stall_bound() {
                 idle_sleep 1
                 mapfile -t survivors < <(out_of_group_descendants "$gate_pid" "$gate_pid" "$stamp")
             done
-            for pid in "${survivors[@]}"; do
+            for pid in ${survivors[@]+"${survivors[@]}"}; do
                 if kill -0 "$pid" 2>/dev/null; then
                     read_proc_cmdline "$pid"
                     printf 'gate-run: unended out-of-group descendant pid=%s cmdline=%s after 3 signalling passes\n' \
