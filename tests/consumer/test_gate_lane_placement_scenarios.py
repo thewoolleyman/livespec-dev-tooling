@@ -68,6 +68,13 @@ def _committed_lane_order() -> list[str]:
 
 _STATIC = _committed_lane_order()
 assert sorted(_STATIC) == sorted(_FLAVOR), _STATIC
+
+
+def _static_of(*nodes: str) -> list[str]:
+    """The flavors of these lanes in the committed static order."""
+    return [_FLAVOR[node] for node in _STATIC if node in nodes]
+
+
 _GATE_CPU = 5
 
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
@@ -268,7 +275,8 @@ def test_a_gate_job_submitted_while_every_lane_is_saturated_is_still_admitted(
     assert run.returncode == 0, run.stderr
     assert not cluster.patched()
     assert cluster.order == [_FLAVOR[n] for n in _STATIC]
-    assert cluster.admit() == _HP
+    # The first lane in the static order is full, so the next one with room admits.
+    assert cluster.admit() == next(n for n in _STATIC if n != _GMK)
     assert "all-lanes-saturated:static-order" in run.stdout
 
 
@@ -302,8 +310,8 @@ def test_a_lane_whose_idle_share_cannot_be_read_falls_back_to_the_static_order(
     cluster.used_cpu = {_FLAVOR[_GMK]: 0, _FLAVOR[_PE]: 0}
     run = cluster.reconcile()
     assert run.returncode == 3, run.stderr
-    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE]]
-    assert cluster.admit() == _GMK
+    assert cluster.order == _static_of(_GMK, _PE)
+    assert _FLAVOR[cluster.admit()] == _static_of(_GMK, _PE)[0]
     assert f"UNREAD node={_PE} reading=cpu.idle60 why=reading is unreadable" in run.stdout
     assert "reading-unread:static-order" in run.stdout
 
@@ -324,7 +332,7 @@ def test_every_unread_reading_is_logged_by_node_and_never_taken_as_saturated_or_
     cluster = _pool(tmp_path, [_saturated(_GMK), broken], lanes=[_PE, _GMK])
     run = cluster.reconcile()
     assert run.returncode == 3, run.stderr
-    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE]]  # the static order, not "PE is free"
+    assert cluster.order == _static_of(_GMK, _PE)  # the static order, not "PE is free"
     assert f"UNREAD node={_PE} reading={reading} why=" in run.stdout
 
 
@@ -342,7 +350,7 @@ def test_an_unread_gate_lane_raises_one_named_alarm_and_fails_the_pass(
     cluster.write_queue([_FLAVOR[_PE], _FLAVOR[_GMK]])  # a previously steered order
     run = cluster.reconcile()
     assert run.returncode == 3, run.stderr
-    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE]]
+    assert cluster.order == _static_of(_GMK, _PE)
     alarm_lines = [line for line in run.stderr.splitlines() if "ALARM" in line]
     assert len(alarm_lines) == 1
     assert _PE in alarm_lines[0]
