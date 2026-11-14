@@ -4,4 +4,5 @@
 # livespec-orchestrator-beads-fabro's install.sh; this drop-in adds only what
 # that unit does not set. Takes effect at the next timer pass.
 [Service]
+MemorySwapMax={{ dev_host_memory_bounds_memory_swap_max }}
 OOMScoreAdjust={{ dev_host_memory_bounds_reconcile_oom_score_adjust }}

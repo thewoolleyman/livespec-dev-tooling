@@ -116,9 +116,11 @@ dev_host_memory_bounds_gate_memory_max: 10G
 # measurements). It was re-converged on vmi3006760 from orchestrator master on
 # 2026-11-14 02:27Z. This drop-in used to set MemoryHigh 5G / MemoryMax 6G as
 # well, which overrode the unit's 8G, so it was a second source for one number
-# (coordinator ruling, 2026-11-14). It now carries only the one value the unit
-# does not set, the OOM-killer preference below. When the orchestrator unit
-# carries OOMScoreAdjust itself, remove this drop-in in a follow-up change.
+# (coordinator ruling, 2026-11-14). It now carries only the two values the unit
+# does not set: MemorySwapMax (so a pass never spills its working set into swap
+# on a host that has some) and the OOM-killer preference below. When the
+# orchestrator unit carries both itself (bd-ib-cwuxfi's rider), remove this
+# drop-in in a follow-up change.
 dev_host_memory_bounds_reconcile_unit: reconcile-runs.service
 
 # The OOM-killer preference for reconcile-runs. Restartable work goes first,

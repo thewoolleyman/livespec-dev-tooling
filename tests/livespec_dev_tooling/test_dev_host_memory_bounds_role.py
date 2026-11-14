@@ -207,8 +207,9 @@ def test_the_reconcile_dropin_sets_only_what_the_orchestrator_unit_does_not(
         for line in rendered["reconcile_dropin"].splitlines()
         if "=" in line and not line.startswith("#")
     ]
-    assert directives == ["OOMScoreAdjust"]
+    assert directives == ["MemorySwapMax", "OOMScoreAdjust"]
+    lines = rendered["reconcile_dropin"].splitlines()
+    assert f"MemorySwapMax={defaults['dev_host_memory_bounds_memory_swap_max']}" in lines
     assert (
-        f"OOMScoreAdjust={defaults['dev_host_memory_bounds_reconcile_oom_score_adjust']}"
-        in rendered["reconcile_dropin"].splitlines()
+        f"OOMScoreAdjust={defaults['dev_host_memory_bounds_reconcile_oom_score_adjust']}" in lines
     )
