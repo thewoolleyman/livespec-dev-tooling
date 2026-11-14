@@ -107,6 +107,33 @@ def test_a_commit_the_chain_records_is_admitted_with_no_label_or_flag(
     }
 
 
+def test_a_live_pull_request_body_admits_a_label_rerun_with_a_stale_event_payload(
+    tmp_path: Path, observer: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environ = _environ(tmp_path=tmp_path, body="before the incident block") | {
+        "GITHUB_REPOSITORY": "owner/repo"
+    }
+    live = {
+        "number": 7,
+        "base": {"sha": _BASE},
+        "head": {"sha": _HEAD},
+        "body": _body(),
+    }
+    forge_read = Mock(
+        return_value=SimpleNamespace(outcome="answer", body=json.dumps(live), lines=())
+    )
+    monkeypatch.setattr(module, "forge_call", forge_read, raising=False)
+
+    admitted = module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+
+    assert admitted is True
+    assert forge_read.call_args.kwargs == {
+        "name": "red-green-replay-pull-request-body-read",
+        "endpoint": "repos/owner/repo/pulls/7",
+    }
+    assert observer.call_count == 1
+
+
 def test_the_trailer_alone_is_not_provenance_when_the_observer_does_not_record_it(
     tmp_path: Path, observer: Mock, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -211,13 +238,35 @@ def test_an_unconfigured_observer_fails_closed(
 
 
 @pytest.mark.parametrize("body", [None, "no block here"])
-def test_a_pull_request_with_no_block_makes_no_request(
+def test_a_pull_request_with_no_block_names_the_event_payload_and_makes_no_request(
     tmp_path: Path, observer: Mock, capsys: pytest.CaptureFixture[str], body: str | None
 ) -> None:
     environ = _environ(tmp_path=tmp_path, body=body)
     assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
-    assert capsys.readouterr().err == ""
+    assert (
+        "incident admission skipped: no livespec-incident-ci block in pull request body"
+        in capsys.readouterr().err
+    )
     assert observer.call_count == 0
+
+
+def test_an_unanswered_live_pull_request_read_names_its_retry_and_is_not_used(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    environ = _environ(tmp_path=tmp_path) | {"GITHUB_REPOSITORY": "owner/repo"}
+    forge_read = Mock(
+        return_value=SimpleNamespace(outcome="failed", body="", lines=("forge-read: retrying",))
+    )
+    monkeypatch.setattr(module, "forge_call", forge_read, raising=False)
+
+    assert module._pull_request(environ=environ) == {}  # noqa: SLF001
+    assert capsys.readouterr().err == "forge-read: retrying\n"
+    assert forge_read.call_args.kwargs == {
+        "name": "red-green-replay-pull-request-body-read",
+        "endpoint": "repos/owner/repo/pulls/7",
+    }
 
 
 @pytest.mark.parametrize("event_name", ["push", None])
