@@ -608,10 +608,22 @@ fabro_server_instances:
     # The candidate goes FIRST with one canary and environment parity; the
     # fleet instance, mi-homelab and homelab-worker follow together. The store
     # written by 85071c828 opened and listed cleanly under d22808f8e on vps
-    # (bd-ib-tcdmkr store-compat read). ROLLBACK: v0408-85071c828/fabro and
-    # e5c98af4bd1db97253cb7a51bef0a61f3a37e0d05341183a07bcdaeeb5d04d04.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
-    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
+    # (bd-ib-tcdmkr store-compat read).
+    # 2026-11-14: the candidate ALONE moves to c04730194 (fabro 0.408.0-nightly.0),
+    # d22808f8e plus a CI-only sccache edit (b79173c51) and ONE engine change:
+    # a factory run whose sandbox is lost mid-stage is interrupted and resumed
+    # onto a re-acquired sandbox (worker exit 69, server resume_after_sandbox_loss,
+    # at most 3 per run on its own counter), not finished as a deterministic
+    # workflow_error (livespec-orchestrator-beads-fabro bd-ib-gngz5d, plan
+    # fabro-currency). Fork PR #41: targeted Red/Green on fabro-k3s, full
+    # workspace 4436/4439 with the 3 failures tracked and outside the diff;
+    # built on fabro-k3s by carrier-build run 43560696657. No store schema change
+    # (the new counter is in-memory). The candidate goes FIRST for
+    # kubernetes-sandbox-backend's lost-sandbox re-drill; the other instances stay
+    # on d22808f8e. ROLLBACK: v0408-d22808f8e/fabro and
+    # f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-c04730194/fabro
+    binary_sha256: 22e4723a2c6448793a6f0c485cca1a0158d4562068bf0dc38278ae7984bd55d2
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     # The three python entries on the `kubernetes` provider take the fleet's
