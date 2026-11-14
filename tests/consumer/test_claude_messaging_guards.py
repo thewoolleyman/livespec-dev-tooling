@@ -58,3 +58,24 @@ def test_the_managed_memory_prefers_sendmessage_and_allows_pane_typing() -> None
     assert "prefer SendMessage" in memory
     assert "Typing into a pane is still ALLOWED and nothing blocks it." in memory
     assert "Never type" not in memory
+
+
+def test_every_seat_shell_exports_the_dangerous_rm_no_prompt_variable() -> None:
+    # Measured 2026-11-14 (livespec-dev-tooling-6tgd2z): only the PROCESS
+    # environment suppresses Claude Code's built-in dangerous-rm prompt in
+    # bypass mode, so the role must export it where a seat's shell reads it.
+    defaults = yaml.safe_load(_DEFAULTS.read_text(encoding="utf-8"))
+    assert defaults["claude_distributed_sendmessage_seat_env"] == {
+        "CLAUDE_CODE_EVEN_MORE_DANGEROUSLY_SKIP_PERMISSIONS": "1"
+    }
+    assert set(defaults["claude_distributed_sendmessage_shell_rcs"]) >= {
+        "/etc/bash.bashrc",
+        "/etc/zsh/zshenv",
+    }
+    tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+    for key in (
+        "claude_distributed_sendmessage_profile_snippet",
+        "claude_distributed_sendmessage_shell_rcs",
+        "claude_distributed_sendmessage_environment_d",
+    ):
+        assert key in tasks
