@@ -111,9 +111,33 @@ led to a relaunch, and the replay ran twice and posted a duplicate record.
 
 The reliable signal is the record itself: watch the item's pull request for a
 `Proof of Done — host_verified` (or `host_not_reproduced`) comment, and the
-item's status. If you want a completion notice instead, start the same
-`env -u … codex exec …` command as a harness background task, without
-`setsid nohup … &`, and wait for its notification.
+item's status. Keep the `setsid nohup … &` form. Do not run the replayer as
+a harness background task to get a completion notice, for the reason below.
+
+### The replayer's exit can kill the acceptance pass its post started
+
+A `host_verified` post starts `reconcile-merged`, a post-merge janitor that
+runs for about an hour. That pass runs as a child of the replayer's process
+tree. Measured 2026-11-13 on livespec-dev-tooling-yyadq6: the replayer ran as a
+harness background task (`env -u … codex exec …` without `setsid nohup`) and
+posted `host_verified` at 23:33:27Z. When codex exited, the janitor died about
+20 s into provisioning. It left
+`~/.worktrees/<repo>/janitor-reconcile-<item>.lock` holding a dead pid, a
+half-provisioned janitor worktree, and the item still at `pending-approval`.
+Nothing errored. The replayer's own last line even said the acceptance pass
+"is still running".
+
+After any replay posts, check that the item moved. If it did not and the lock's
+pid is dead (`ps -p <pid>`), take a load-guard GO and re-run the pass detached:
+
+```bash
+just gate-start -- /usr/local/bin/with-livespec-env.sh -- \
+  python3 <registered plugin root>/scripts/bin/dispatcher.py reconcile-merged \
+  --repo <primary> --item <id> --pr <n> --invoker <role:name>
+```
+
+It reclaims the stale lock itself. On yyadq6 it ended green and closed the
+item.
 
 ## The fourth trap: the primary checkout moves under a replay
 
