@@ -196,3 +196,23 @@ def test_no_role_or_host_var_routes_a_failure_to_the_dolt_backup_alert() -> None
         if "dolt-backup-alert@" in line and not line.lstrip().startswith("#")
     ]
     assert offending == []
+
+
+def test_the_role_refuses_a_host_with_no_alert_channel_before_changing_it() -> None:
+    tasks = yaml.safe_load((_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8"))
+    assert isinstance(tasks, list)
+    probe, refusal = tasks[0], tasks[1]
+    argv = probe["ansible.builtin.command"]["argv"]
+    assert argv[-1] == "{{ host_unit_alert_env_file }}"
+    assert "HONEYCOMB_INGEST_KEY" in argv[-2]
+    assert "ALERT_NTFY_TOPIC" in argv[-2]
+    assert probe["check_mode"] is False
+    assert refusal["ansible.builtin.assert"]["that"] == ["host_unit_alert_env_probe.rc == 0"]
+    assert "{{ host_unit_alert_env_file }}" in refusal["ansible.builtin.assert"]["fail_msg"]
+    # Nothing that writes to the host comes before the refusal.
+    writes = [
+        i
+        for i, task in enumerate(tasks)
+        if {"ansible.builtin.copy", "ansible.builtin.template"} & task.keys()
+    ]
+    assert min(writes) > 1

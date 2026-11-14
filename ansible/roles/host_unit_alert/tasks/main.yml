@@ -1,4 +1,35 @@
 ---
+# Out-of-band precondition: the channel configuration in host_unit_alert_env_file
+# (on the dev host, dolt-server's alert file). The role cannot create it, and
+# without it every alert exits 1 and reaches nobody, so the apply fails here,
+# before any task changes the host, naming the file.
+- name: Look for a channel in the host-unit alert configuration
+  # Counts the channel keys only; no value is read into the play.
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -c
+      - -E
+      - "^(HONEYCOMB_INGEST_KEY|ALERT_NTFY_TOPIC)=."
+      - "{{ host_unit_alert_env_file }}"
+  register: host_unit_alert_env_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+
+- name: Refuse a host whose alert configuration names no channel
+  ansible.builtin.assert:
+    that:
+      - host_unit_alert_env_probe.rc == 0
+    fail_msg: >-
+      {{ host_unit_alert_env_file }} is missing, unreadable, or sets neither
+      HONEYCOMB_INGEST_KEY nor ALERT_NTFY_TOPIC, so every host-unit alert would
+      exit 1 and reach nobody. Install it (on the dev host it is dolt-server's
+      alert file, from scripts/setup-backup-alerts.sh) or point
+      host_unit_alert_env_file at a file that configures a channel.
+    success_msg: the host-unit alert configuration names a channel
+
 - name: Install the host-unit alert script
   ansible.builtin.copy:
     src: host-unit-alert

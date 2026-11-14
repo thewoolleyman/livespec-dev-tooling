@@ -30,6 +30,16 @@ share. That handler reports every failure as a dolt backup failure. On
 `dev-host.yml` runs this role before `honeycomb_trigger_recipients_check` and
 `reconcile_runs`. Both check that their alert unit is installed.
 
+## Preconditions
+
+`host_unit_alert_env_file` MUST exist, and it MUST set `HONEYCOMB_INGEST_KEY` or
+`ALERT_NTFY_TOPIC`. On the dev host it is dolt-server's
+`/etc/doltdb/alert.env.local`, which that repository's
+`scripts/setup-backup-alerts.sh` installs. The role cannot create it. Without
+it every alert would exit 1 and reach nobody, so the role's first task checks
+it. The check counts only the key names and reads no value. When it fails, the
+apply stops naming the file, before any task changes the host.
+
 ## The Honeycomb trigger
 
 Created 2026-11-14 through the v1 triggers API, in the dataset
