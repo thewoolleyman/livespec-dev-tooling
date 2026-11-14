@@ -818,6 +818,20 @@ And the play MUST report the listener pod as deleted and each of the other pods 
 
 And the play MUST succeed only after it reads that scale set's listener pod Running on another Ready node, and MUST otherwise fail naming the listener
 
+## Scenario: a planned power-off evacuation refuses when no other always-on node can take the listener pods
+
+Given a cluster node that is cordoned and Ready
+
+And an ARC listener pod and a ReplicaSet's pod run on that node
+
+And another node is Ready, but no other node that carries `ci-runner.io/always-on=true` is both Ready and not cordoned
+
+When an operator applies the evacuation play with its confirmation naming the evacuation and that node
+
+Then the play MUST refuse and MUST name the listener pod
+
+And the play MUST NOT delete any pod
+
 ## Scenario: clearing a lost node is refused for a node that reads Ready
 
 Given a cluster node whose Ready condition is True
@@ -4305,6 +4319,56 @@ When the worker leaves the cluster without warning and its host later returns
 Then the CI job and the gate job MUST be retried or re-queued onto another node, and the factory run MUST resume or be re-dispatched with its work preserved
 
 And the worker MUST rejoin and re-enroll in the same classes with no operator step
+
+## Scenario: a worker that is not Ready offers no quota, and a gate lost to its failure is retried
+
+Given an enrolled worker whose Node stops being Ready while a gate Job's pod runs on it
+
+When a new gate workload, a new CI runner workload and a new factory run are created while the Node is still not Ready
+
+Then each of them MUST NOT be admitted on that worker's flavor or placed on that worker, and each that another flavor fits MUST be admitted on that flavor
+
+And the gate Job whose pod was lost with the `DisruptionTarget` condition MUST be retried and MUST reach its verdict, and its client MUST NOT be refused for the node loss
+
+And when the Node is Ready again the worker's derived quota MUST be offered again in every class it is enrolled in, with no operator step
+
+And the record of each change MUST name the worker and whether it read Ready
+
+## Scenario: a worker that leaves a workload class keeps nothing that class's enrollment wrote
+
+Given a worker enrolled in the CI, gate and factory classes
+
+When the worker's enrollment in those classes ends without the worker being removed from the fleet
+
+Then the Node MUST carry none of those classes' enrollment labels and no `ci-runner.io/churn-slot` capacity, and it MUST NOT carry `ci-runner.io/factory-admit` with the value `true`
+
+And the worker churn-slot flavor's quota and the gate queue's worker flavor MUST no longer include that worker's contribution
+
+And a CI runner pod that tolerates the worker class taint and matches the worker's architecture MUST NOT be placed on that worker
+
+## Scenario: a removed worker rejoins only after its old pods are gone, and the join proves its pod subnet
+
+Given a worker whose Node has just been deleted by the removal path while pods bound to that Node name still exist in the cluster
+
+When the removal path waits and a read of the cluster then shows no pod bound to that name
+
+Then the removal path MUST exit zero only after that read
+
+And a join started while such a pod still exists and no Node of that name does MUST refuse before it issues a bootstrap credential, naming each such pod
+
+And a join whose registered Node's pod CIDR still differs from the subnet the worker's pod-network agent holds after a bounded wait MUST exit non-zero naming both values
+
+## Scenario: a worker's pod-span endpoint follows its pod subnet on a join and on a return
+
+Given a worker whose bridge interface still carries an address from its previous pod subnet
+
+When the worker joins and its Node receives a different pod CIDR, with no start task or converge run after the join
+
+Then the recorded pod-span endpoint MUST be the first usable address of the new pod subnet on the collector's port, and the join's output MUST name it
+
+And once the bridge carries that address the collector MUST listen there with no operator step
+
+And when the worker's pod subnet changes on a return from a departure, the recorded endpoint MUST come to name the new subnet's first usable address with no operator step
 
 ## Scenario: a worker's networking agents do not restart while it carries load
 
