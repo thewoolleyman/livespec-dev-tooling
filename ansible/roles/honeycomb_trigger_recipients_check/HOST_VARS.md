@@ -8,12 +8,12 @@ long after any playbook has exited. Merge the block below into that host's
 
 ```yaml
 # vps
-honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
+honeycomb_trigger_recipients_check_checkout: /home/ubuntu/workspace/vps-info
 ```
 
-Write the real path, not `~/ubuntu/workspace/vps-info`. `/home/ubuntu/workspace`
-is a symlink to `/data/projects`, and a unit file resolved through a symlink is
-one more thing that can be replaced underneath it.
+Write the explicit `/home/ubuntu/workspace/vps-info`, not `~` or `%h`: this is a
+system unit, where both name root's home. Canonical clones live under
+`~/workspace` on every host; on the VPS it is a symlink to the data disk.
 
 `honeycomb_trigger_recipients_check_service_user` is `ubuntu` here, which is
 also the account that owns the checkout and that the 1Password wrapper serves.

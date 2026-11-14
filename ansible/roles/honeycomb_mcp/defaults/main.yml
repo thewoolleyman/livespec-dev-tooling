@@ -17,11 +17,11 @@ honeycomb_mcp_home: "{{ ansible_facts['user_dir'] }}"
 # otherwise. Moving or removing the checkout breaks the MCP connection with no
 # other signal.
 #
-# The literal /data/projects path, not ~/workspace: the installer resolved the
-# symlink with `pwd -P` before writing it, because Claude Code exec's the string
-# and a path through a symlink is one more thing that can be replaced underneath
-# it.
-honeycomb_mcp_checkout: /data/projects/vps-info
+# The explicit /home/ubuntu/workspace path: canonical clones live under
+# ~/workspace on every host (maintainer ruling, 2026-11-14), and on a host whose
+# data disk lives elsewhere ~/workspace is a symlink to it. Claude Code exec's
+# the string without shell expansion, so it is spelled out rather than `~`.
+honeycomb_mcp_checkout: /home/ubuntu/workspace/vps-info
 honeycomb_mcp_wrapper: "{{ honeycomb_mcp_checkout }}/services/honeycomb-mcp/honeycomb-mcp.sh"
 
 # The 1Password service-account wrapper that injects HONEYCOMB_MGMT_API_KEY into

@@ -200,7 +200,7 @@ exception.
 **Operator notes.** The parent directory of `fabro_server_host_checkout` must
 exist and be writable by `fabro_server_host_user`, or the clone fails naming it;
 the role deliberately does not create or re-own it, because that path is shared
-(`/data/projects` on `vps`) and re-owning a shared parent is a bigger change than
+(`/home/ubuntu/workspace` on `vps`) and re-owning a shared parent is a bigger change than
 the clone it would enable. Under `--check` the clone is **reported and not
 performed** — `just ansible-drift ansible/fabro-hosts.yml` against a host with no
 checkout names the clone it would make and changes nothing, and the checkout
@@ -622,7 +622,7 @@ fabro_server_instances:
 fabro_server_host_user: ubuntu
 fabro_server_host_group: ubuntu
 fabro_server_host_home: /home/ubuntu
-fabro_server_host_checkout: /data/projects/livespec-orchestrator-beads-fabro
+fabro_server_host_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
 # vps declares what gmktec-xubuntu declares (plan ci-pool-provisioning-leftovers,
 # ruling 2026-11-05): the role writes each instance's settings.toml, which was
 # hand-maintained here until livespec-dev-tooling-jxw2ve.

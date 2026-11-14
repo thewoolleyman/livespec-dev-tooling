@@ -46,7 +46,7 @@ dev_host_retention_capacity_check_state_dir: /var/lib/livespec-dev-host-capacity
 # worktree's gate runs are written to its PRIMARY checkout's store, which is
 # the whole reason a run outlives the worktree that started it.
 dev_host_retention_checkout_roots:
-  - /data/projects
+  - /home/ubuntu/workspace
 
 # The filesystem whose free space each run reports before and after. The dev
 # host's root filesystem holds every governed checkout, the uv cache and the

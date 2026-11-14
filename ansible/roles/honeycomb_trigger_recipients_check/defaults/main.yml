@@ -3,7 +3,7 @@
 #
 # ROOT SCOPE. This is the one root-scope role in this group. vps-info's
 # AGENTS.md installs it as
-# `sudo /data/projects/vps-info/services/honeycomb-trigger-recipients-check/install.sh`,
+# `sudo ~/workspace/vps-info/services/honeycomb-trigger-recipients-check/install.sh`,
 # and the installer refuses outright unless `id -u` is 0, because it writes
 # system systemd units. Every task below that touches /etc/systemd/system or
 # the system systemd instance carries `become: true`.
@@ -14,7 +14,7 @@
 # does not own the checkout. It asserts the script is there and refuses
 # otherwise. Moving the checkout silently breaks the timer: the unit still
 # exists, still fires daily, and fails at exec with no recipient to tell.
-honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
+honeycomb_trigger_recipients_check_checkout: /home/ubuntu/workspace/vps-info
 honeycomb_trigger_recipients_check_script: >-
   {{ honeycomb_trigger_recipients_check_checkout }}/services/honeycomb-trigger-recipients-check/check-trigger-recipients.sh
 

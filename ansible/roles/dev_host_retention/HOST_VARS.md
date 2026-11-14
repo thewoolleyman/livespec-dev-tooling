@@ -80,7 +80,7 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_user` | `root` | the login the retention runs as; see below, it is the one value the dev host must set |
 | `dev_host_retention_uv_bin` | `/usr/bin/uv` | absolute path to the uv executable the retention invokes while pruning that user's cache |
 | `dev_host_retention_uv_installs_dir` | `/home/<user>/.local/share/mise/installs/uv` | read only to list the installed mise uv versions when the converge refuses a missing `dev_host_retention_uv_bin` |
-| `dev_host_retention_checkout_roots` | `[/data/projects]` | the directories the governed checkouts sit directly inside; the sweep descends one level and takes every entry carrying a `.git` |
+| `dev_host_retention_checkout_roots` | `[/home/ubuntu/workspace]` | the directories the governed checkouts sit directly inside; the sweep descends one level and takes every entry carrying a `.git` |
 | `dev_host_retention_filesystem` | `/` | the filesystem whose free space each run reports before and after |
 | `dev_host_retention_bin` | `/usr/local/sbin/livespec-dev-host-retention` | where the retention script is installed |
 | `dev_host_retention_unit_dir` | `/etc/systemd/system` | where the two units are installed |

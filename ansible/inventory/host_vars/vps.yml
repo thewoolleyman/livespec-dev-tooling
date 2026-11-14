@@ -51,7 +51,7 @@ dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/installs/uv/0.11.10/uv
 fabro_server_host_user: ubuntu
 fabro_server_host_group: ubuntu
 fabro_server_host_home: /home/ubuntu
-fabro_server_host_checkout: /data/projects/livespec-orchestrator-beads-fabro
+fabro_server_host_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
 # vps declares what gmktec-xubuntu declares (plan ci-pool-provisioning-leftovers,
 # ruling 2026-11-05): the role writes each instance's settings.toml, which was
 # hand-maintained here until livespec-dev-tooling-jxw2ve.
@@ -161,10 +161,10 @@ gha_runner_labels: self-hosted,livespec-orchestrator
 gha_runner_job_path: /home/ubuntu/.local/share/mise/shims:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # --- honeycomb_mcp ---
-honeycomb_mcp_checkout: /data/projects/vps-info
+honeycomb_mcp_checkout: /home/ubuntu/workspace/vps-info
 
 # --- honeycomb_trigger_recipients_check ---
-honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
+honeycomb_trigger_recipients_check_checkout: /home/ubuntu/workspace/vps-info
 
 # --- incident_observer ---
 # The account this host's candidates run as; controller.json carries its uid as
@@ -257,7 +257,7 @@ reconcile_runs_tenants:
   - name: openbrain
     enabled: false
     repo: /home/ubuntu/workspace/openbrain
-    credential_wrapper: [/data/projects/1password-env-wrapper/with-openbrain-env.sh, "--"]
+    credential_wrapper: [/usr/local/bin/with-openbrain-env.sh, "--"]
 # One enabled tenant: its pass (at most the 1800 s bound), the 10 min interval
 # and one more pass. Raise it with each tenant the sweep gains.
 reconcile_runs_stale_after_seconds: 5400
@@ -306,7 +306,7 @@ storage_reclaim_home: /home/ubuntu
 # A wrong value here does not fail — it reports live worktrees as orphans,
 # because orphan detection differences the on-disk worktrees against the
 # worktrees registered by the clones under these roots.
-storage_reclaim_checkout_roots: /data/projects
+storage_reclaim_checkout_roots: /home/ubuntu/workspace
 
 # --- tailscale_serve ---
 # The tailnet TLS front of the incident observer's loopback listener
