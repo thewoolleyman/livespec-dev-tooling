@@ -8,12 +8,12 @@ that host's `host_vars` in `ansible/inventory/legacy.yml`.
 
 ```yaml
 # vps
-honeycomb_mcp_checkout: /data/projects/vps-info
+honeycomb_mcp_checkout: /home/ubuntu/workspace/vps-info
 ```
 
-Write the real path, not `~/workspace/vps-info`. `/home/ubuntu/workspace` is a
-symlink to `/data/projects`, and the installer this role replaces resolved it
-with `pwd -P` before writing it into the config for exactly that reason.
+Write the explicit `/home/ubuntu/workspace/vps-info`, not `~/workspace/vps-info`:
+Claude Code exec's the string without shell expansion. Canonical clones live
+under `~/workspace` on every host; on the VPS it is a symlink to the data disk.
 
 ## Out-of-band, not provisioned here
 

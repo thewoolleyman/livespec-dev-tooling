@@ -1669,16 +1669,48 @@
     - not (fabro_server_main_pid.skipped | default(false))
     - fabro_server_main_pid.stdout | default('') | trim not in ['', '0']
 
+- name: Read the directory the running instance's working directory resolves to
+  # /proc/<pid>/cwd always names the RESOLVED directory, so a declared checkout
+  # reached through a symlinked parent (vps: ~/workspace -> its data disk) never
+  # equals it textually. Both sides are therefore compared as directories, by
+  # device and inode, never as strings.
+  ansible.builtin.stat:
+    path: "/proc/{{ fabro_server_main_pid.stdout | trim }}/cwd"
+    follow: true
+    get_checksum: false
+  become: true
+  register: fabro_server_running_cwd_dir
+  when:
+    - not ansible_check_mode
+    - not (fabro_server_running_cwd.skipped | default(false))
+
+- name: Read the directory the declared checkout resolves to
+  ansible.builtin.stat:
+    path: "{{ fabro_server_host_checkout }}"
+    follow: true
+    get_checksum: false
+  become: true
+  register: fabro_server_host_checkout_dir
+  when:
+    - not ansible_check_mode
+    - not (fabro_server_running_cwd.skipped | default(false))
+
 - name: Refuse an instance running from anywhere but its declared checkout
   # install.sh's exit 7. The failure it catches is a server started from a
   # disposable worktree, which works until the worktree is reaped.
   ansible.builtin.assert:
     that:
-      - fabro_server_running_cwd.stat.lnk_source == fabro_server_host_checkout
+      - fabro_server_host_checkout_dir.stat.exists | default(false)
+      - fabro_server_running_cwd_dir.stat.dev | default(-1) == fabro_server_host_checkout_dir.stat.dev | default(-2)
+      - fabro_server_running_cwd_dir.stat.inode | default(-1) == fabro_server_host_checkout_dir.stat.inode | default(-2)
     fail_msg: >-
-      {{ fabro_server_unit_name }} is running in
-      {{ fabro_server_running_cwd.stat.lnk_source | default('an unreadable directory') }},
-      not {{ fabro_server_host_checkout }}. The server must run from the
+      {{ fabro_server_unit_name }} is running in a directory with device
+      {{ fabro_server_running_cwd_dir.stat.dev | default('unreadable') }} and inode
+      {{ fabro_server_running_cwd_dir.stat.inode | default('unreadable') }}, not in
+      {{ fabro_server_host_checkout }} (device
+      {{ fabro_server_host_checkout_dir.stat.dev | default('missing') }}, inode
+      {{ fabro_server_host_checkout_dir.stat.inode | default('missing') }}); both are
+      compared after following symlinks. The server must run from the
       stable primary checkout; a disposable worktree disappears underneath it.
     success_msg: this instance is running in its declared checkout
   when:

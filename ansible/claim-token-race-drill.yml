@@ -86,7 +86,7 @@
     # The control node's orchestrator checkout supplies the gitignored
     # `.beads/metadata.json` a clone lacks (its project_id is server-stable,
     # so a copy equals a regeneration) and is read for nothing else.
-    claim_token_race_drill_control_checkout: /data/projects/livespec-orchestrator-beads-fabro
+    claim_token_race_drill_control_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
     # The fleet's pinned `bd` on the control node: the lifecycle guard in front
     # of `bd-real`. The target gets the same release behind the same guard.
     claim_token_race_drill_control_bd: /usr/local/bin/bd

@@ -6,12 +6,12 @@ installed `livespec-dev-tooling` virtual environment through
 credential; it does not add a CI credential.
 
 The defaults target the dev host's canonical checkout at
-`/data/projects/livespec-dev-tooling` and its `ubuntu` service account. A host
+`/home/ubuntu/workspace/livespec-dev-tooling` and its `ubuntu` service account. A host
 that relocates that checkout or uses another account overrides these values:
 
 ```yaml
-flake_retry_filer_repo_root: /data/projects/livespec-dev-tooling
-flake_retry_filer_python: /data/projects/livespec-dev-tooling/.venv/bin/python
+flake_retry_filer_repo_root: /home/ubuntu/workspace/livespec-dev-tooling
+flake_retry_filer_python: /home/ubuntu/workspace/livespec-dev-tooling/.venv/bin/python
 flake_retry_filer_user: ubuntu
 flake_retry_filer_group: ubuntu
 ```

@@ -55,7 +55,7 @@ storage_reclaim_home: /home/ubuntu
 # A wrong value here does not fail — it reports live worktrees as orphans,
 # because orphan detection differences the on-disk worktrees against the
 # worktrees registered by the clones under these roots.
-storage_reclaim_checkout_roots: /data/projects
+storage_reclaim_checkout_roots: /home/ubuntu/workspace
 ```
 
 ## hp's storage problem is not this service's
