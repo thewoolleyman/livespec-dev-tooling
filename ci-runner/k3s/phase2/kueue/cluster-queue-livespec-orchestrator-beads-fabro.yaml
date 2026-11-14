@@ -14,7 +14,7 @@
 # DERIVATION.md "Recomputation on the tenth repository (2026-09-04)" for the
 # full arithmetic; the summary is below.
 #
-# nominalQuota for THIS repo: 7, the churn-slot-flavor value below, which is
+# nominalQuota for THIS repo: 4, the churn-slot-flavor value below, which is
 # the authority. The cohort's churn-slot-flavor quotas sum to 30, equal to the
 # pool's registered churn-slot capacity: poweredge 17 + gmktec 6 + hp 4 +
 # gamingpc 3 (DERIVATION.md "Per-node CPU budget cut: cohort 30 (2026-11-13)").
@@ -83,7 +83,7 @@ spec:
               # dev-tooling-cq kept at 10. Its scale set's maxRunners follows the
               # bounded-multiple rule to max(2 x 7, 6) = 14 (was 16). See DERIVATION.md
               # "Per-node CPU budget cut: cohort 30 (2026-11-13)".
-              nominalQuota: 7
+              nominalQuota: 4
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed

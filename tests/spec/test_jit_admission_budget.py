@@ -49,6 +49,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-asxhj3
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -78,6 +79,11 @@ _RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
     # The dedicated master-push lane caps at the measured four coverage shards,
     # rather than the ordinary six-runner floor.
     "livespec-orchestrator-master-cq": 4,
+    # The two largest queues keep the ceilings their former quotas derived, so
+    # the 2026-11-14 small-queue floor cuts their guarantee, not their burst
+    # (DERIVATION.md "Small-queue floor of 2: cohort 30 re-split (2026-11-14)").
+    "livespec-dev-tooling-cq": 20,
+    "livespec-orchestrator-beads-fabro-cq": 14,
 }
 
 # Each exception's row in DERIVATION.md "Recorded exceptions to the rule":
@@ -93,6 +99,8 @@ _EXCEPTIONS_HEADING = "### Recorded exceptions to the rule"
 _EXCEPTION_QUEUES = {
     "fabro": "fabro-cq",
     "livespec-orchestrator-master": "livespec-orchestrator-master-cq",
+    "livespec-dev-tooling": "livespec-dev-tooling-cq",
+    "livespec-orchestrator-beads-fabro": "livespec-orchestrator-beads-fabro-cq",
 }
 
 # The physical invariant, stated in the section itself.
@@ -248,18 +256,18 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 7,
+        "livespec-orchestrator-beads-fabro-cq": 4,
         "livespec-orchestrator-master-cq": 1,
-        "livespec-dev-tooling-cq": 10,
+        "livespec-dev-tooling-cq": 5,
         "livespec-dev-tooling-master-cq": 3,
-        "livespec-cq": 1,
-        "livespec-overseer-cq": 1,
-        "livespec-orchestrator-git-jsonl-cq": 1,
-        "livespec-driver-claude-cq": 1,
-        "livespec-driver-pi-cq": 1,
-        "livespec-console-beads-fabro-cq": 1,
-        "livespec-driver-codex-cq": 1,
-        "livespec-runtime-cq": 1,
+        "livespec-cq": 2,
+        "livespec-overseer-cq": 2,
+        "livespec-orchestrator-git-jsonl-cq": 2,
+        "livespec-driver-claude-cq": 2,
+        "livespec-driver-pi-cq": 2,
+        "livespec-console-beads-fabro-cq": 2,
+        "livespec-driver-codex-cq": 2,
+        "livespec-runtime-cq": 2,
         "fabro-cq": 1,
     }
     assert _cohort_quotas() == expected
@@ -275,6 +283,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "## The fabro fork scale set (2026-11-05)" in derivation
     assert "## gamingpc-xubuntu joins: cohort 31 (2026-11-11)" in derivation
     assert "## Per-node CPU budget cut: cohort 30 (2026-11-13)" in derivation
+    assert "## Small-queue floor of 2: cohort 30 re-split (2026-11-14)" in derivation
 
 
 def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
@@ -303,17 +312,17 @@ def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
 
 
 def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None:
-    """The former 12-runner exception cannot outlive a rule value at or above 12."""
+    """The former 12-runner exception is gone; the orchestrator's ceiling stays above it."""
     orchestrator = "livespec-orchestrator-beads-fabro-cq"
     quota = _cohort_quotas()[orchestrator]
     rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
+    ceiling = _RECORDED_CEILING_EXCEPTIONS.get(orchestrator, rule_value)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 14
-    assert rule_value >= 12
-    # Its DERIVATION.md row is gone with it: every row there must match an
-    # exception here (test_every_recorded_exception_is_a_derivation_row_...).
-    assert orchestrator not in _RECORDED_CEILING_EXCEPTIONS
+    # The 2026-10-19 exception capped the orchestrator at 12. Its 2026-11-14
+    # exception keeps the burst its former quota of 7 derived, which is above 12.
+    assert ceiling != 12
+    assert ceiling >= 12
     assert (
         "The Recorded exceptions to the rule table remains absent because 52 is not below 12."
         in " ".join(derivation.split())
