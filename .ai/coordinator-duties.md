@@ -656,6 +656,22 @@ make sure the plan has a rollback plan". A seat whose own standing rule needs th
 (caam-anthropic-loop-runner's credential rule) still gets that word there; the coordinator tells the maintainer which
 tab.
 
+**Rule SLASH: a seat slash command is never a maintainer ask.** `/remote-control`, `/reload-plugins`, `/mcp` reconnects
+and similar seat-side slash commands never go under `FOR THE MAINTAINER`. The maintainer, 2026-11-14 ~19:1xZ, recorded
+on epic `livespec-dev-tooling-6tgd2z` at 19:01:43Z: "You are asking me things that do not deserve my attention. You
+have control of the Herder API. You can type things into panes. Any of these slash commands, you should tell the
+sessions to do themselves or do for them." Mechanism: seats send `/reload-plugins` to each other directly (the
+central-credential-service scope event on overseer-iyfjbo, 19:24:10Z). Otherwise the seat writes its handoff and the
+coordinator relaunches it in a fresh pane with `claude -n <slug> --remote-control <slug> "<brief>"`, because the
+managed pane-input guard refuses `send-text` into a live Claude pane. A fresh launch registers Remote Control, loads
+the current plugins and connects its MCP servers. Credential and secret creation or deletion, OAuth re-authorization
+the coordinator cannot complete, and caam reserve settings stay the maintainer's.
+
+**Rule AWS: never hand the maintainer an AWS act the API can do.** An AWS act the API can do (SSM writes, bindings) is
+done by the owning seat through its credential wrapper, and any binding lands by PR. The maintainer, 2026-11-14 ~19:20Z,
+recorded on overseer-iyfjbo at 19:24:10Z and on `livespec-dev-tooling-6tgd2z` at 19:24:52Z: "DO NOT MAKE ME MANUALLY DO
+THINGS ON AWS THAT ARE POSSIBLE VIA THE API."
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
@@ -730,6 +746,17 @@ machine ROLE that runs caam. Currently the VPS is this role. It may move in the 
 The coordinator reads it as covering every provisioning surface for role-bound seats and the
 central-credential-service host. Naming a host to the maintainer still follows the real-hostname rule above.
 
+**Rule WHERE: every `FOR THE MAINTAINER` line says where the act is done.** Each line names the plan slug (epic id),
+the MACHINE, the herdr WORKSPACE LABEL and the TAB LABEL, never ids, or, for a web-UI act, the exact URL. An item with
+no seat names the UI page where it is done. The maintainer, 2026-11-14 ~19:1xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 19:02:00Z: "Write this to your plan and your loop so you don't fucking forget it."
+and "You're also forgetting to tell me what workspace and pane my action items are in. That is in your reminders."
+
+**Re-verify a carried maintainer ask with its owning seat before re-printing it.** Measured 2026-11-14 ~19:3xZ: the
+"delete __ANTHROPIC_0 before about Nov 20" ask was a stale carry with no owning seat behind it. The maintainer: "I just
+asked central-credential-service what it needed, and it said nothing about __ANTHROPIC_0". Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 19:24:52Z. The ask was dropped.
+
 Measured 2026-11-01: the coordinator copied an ask about a "closed" seat forward, although the maintainer had reopened
 it. It also called a plan by its repository's name.
 
@@ -758,6 +785,10 @@ resume via `/livespec-orchestrator-beads-fabro:plan <slug>`. Read `.ai/herdr-tab
 - Close the old session only after its owner, or the maintainer, is done in it.
 - Shutting a seat down means closing its pane AND its tab, and checking that its process exited. Close the tabs of
   sessions that already exited back to a shell prompt, too.
+
+**Kept seats during the 2026-11-14 drain.** The kept infrastructure seats are legacy-dispatcher-agent,
+caam-anthropic-loop-runner, overseerd, token-spend-analysis and throughput-plans-coordinator (scope events on epic
+`livespec-dev-tooling-6tgd2z` at 17:46:04Z and 18:24:20Z). A kept seat's plan is not a ranked priority.
 
 Measured 2026-11-01: the coordinator assigned gmktec-factory-placement and a dev-host-disk-retention host apply to the
 gitops-fleet-capacity-monitoring seat. The maintainer: "You're in the wrong named session and tab." The maintainer also
@@ -955,6 +986,16 @@ the serializer that tick, name its mechanism, and route the fix as a stop-the-li
 hold as the constraint before checking that it binds. Also check every tick that the queue head follows the
 priorities record: an arrival-ordered queue buries top-priority work. Read `.ai/ci-node-capacity-reads.md` before
 any cap, hold or throttle call.
+
+**Factory throughput is delegated to throughput-plans-coordinator.** The maintainer, 2026-11-14 ~18:2xZ, recorded on
+epic `livespec-dev-tooling-6tgd2z` at 18:24:20Z: "Re-steering.  You need to keep the coordinator track in the hetzner
+throughput-improvement track open.  It needs to be able to keep working on high priority throughput improvements, and
+you should delegate anything related to throughput problems in the factory to it." The coordinator's read above still
+runs every tick, as the trigger. Every factory throughput problem (serializers, stranded capacity, caps, yield, CI or
+merge latency on the factory path) is routed to throughput-plans-coordinator (livespec-dev-tooling-r7iuj6;
+hetzner-xubuntu, workspace throughput-improvements) by SendMessage, or by a ledger comment on r7iuj6 when SendMessage
+cannot reach it. The coordinator does not work them itself. That seat moves one high-priority throughput problem at a
+time during the token crunch.
 
 **Rule STRANDED-CAPACITY: a binding cap beside an idle node is a stall (coordinator's reading).** A cap or quota binds
 when its use is at its limit while launchable work waits. When it binds while a node it covers sits idle, that is a
@@ -1444,6 +1485,13 @@ on epic `livespec-dev-tooling-6tgd2z` at 2026-11-09T07:48:20Z, from the maintain
 quoted under rule P1 (§3). Measured cost of breaking it: expedited-incident-response-flag sat at a
 coordinator-answerable picker for about 10.5 h, from 2026-11-08 20:46Z to 2026-11-09 07:13Z, under an unsourced "NEVER
 press it". The 07:48:20Z pointer correction on the epic replaced the `next_action` that carried it.
+
+**Lesson P2 (coordinator's reading): before releasing a hand-land hold under P2, check whether the work already
+landed.** Run `git log origin/master --oneline --grep=<item-id>`. A hold that cites no maintainer words can still have a
+live basis, namely work already on master. Measured 2026-11-14: livespec-dev-tooling-lqp2qx was released although its
+work was already on master (dd0654163, a6b2230f7, 2d7639478). Its factory run died as DEAD_IMPLEMENTER after about 4
+min, and it was closed out of band. bqnzcm.4 had five hand-landed commits and a run already in flight. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-14T19:18:51Z.
 
 **Before carrying "X is the maintainer's" forward, find the maintainer's own words for it on the ledger (coordinator's
 reading).** If there are none, it is the coordinator's to decide that tick. Recorded on epic
