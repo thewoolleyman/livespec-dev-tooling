@@ -91,6 +91,10 @@ The files:
   Read it also before writing ledger or file text through a heredoc: an
   unquoted `<<EOF` runs every backticked phrase and the write succeeds with
   words missing (two sweep items, 2026-11-13).
+  Read it also before committing a YAML, shell or justfile implementation
+  beside a new test: it lands as ONE commit, not a Red and a Green amend,
+  and each later test-only edit is its own one-file `chore(test):` commit
+  (three wasted gate cycles on fy6ip4, 2026-11-14).
 - Read `.ai/fleet-and-secrets.md` before pushing any change under
   `.github/workflows/` (it needs an exemption, a label and the wrapper), before
   changing fleet coordination workflows,
