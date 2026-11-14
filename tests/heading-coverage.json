@@ -1605,16 +1605,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a real commit-msg replay gate run on a fixture repository that does not delegate replay runs, for a test-only commit with no Red intent whose staged module passes, shows the staged module run exactly once and TDD-Suite-Green-Scope: staged-tests recorded. livespec-dev-tooling-fjpqqq owns it.",
-    "work_item": "livespec-dev-tooling-fjpqqq"
+    "reason": "A real test at the integration tier or above is owed for this heading: a real commit-msg replay gate run on a fixture repository that does not delegate replay runs, for a test-only commit with no Red intent whose staged module passes, shows the staged module run exactly once and TDD-Suite-Green-Scope: staged-tests recorded. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a real commit-msg replay gate run in a delegating fixture repository against a fake gates cluster shows the staged modules run exactly once in one gate Job, no pytest started on the committing host, and TDD-Suite-Green-* trailers naming that Job. livespec-dev-tooling-fjpqqq owns it.",
-    "work_item": "livespec-dev-tooling-fjpqqq"
+    "reason": "A real test at the integration tier or above is owed for this heading: a real commit-msg replay gate run in a delegating fixture repository against a fake gates cluster shows the staged modules run exactly once in one gate Job, no pytest started on the committing host, and TDD-Suite-Green-* trailers naming that Job. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3730,48 +3730,48 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose test file imports a livespec_dev_tooling function its fixture installed build neither declares nor makes public runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS set, and shows it exits 4 naming the import's file and line and the missing declaration. livespec-dev-tooling-vobfwi owns it.",
-    "work_item": "livespec-dev-tooling-vobfwi"
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose test file imports a livespec_dev_tooling function its fixture installed build neither declares nor makes public runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS set, and shows it exits 4 naming the import's file and line and the missing declaration. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository reaching one declared function, one locally public undeclared function and one `_`-prefixed function runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 0 naming no offender. livespec-dev-tooling-vobfwi owns it.",
-    "work_item": "livespec-dev-tooling-vobfwi"
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository reaching one declared function, one locally public undeclared function and one `_`-prefixed function runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 0 naming no offender. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose fixture installed build lacks a declaration that a newer default-branch tree carries runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 4 naming that import as undeclared. livespec-dev-tooling-vobfwi owns it.",
-    "work_item": "livespec-dev-tooling-vobfwi"
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository whose fixture installed build lacks a declaration that a newer default-branch tree carries runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 4 naming that import as undeclared. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository with one undeclared, non-public import runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS unset, and shows it exits 0 while reporting that import as a warning. livespec-dev-tooling-vobfwi owns it.",
-    "work_item": "livespec-dev-tooling-vobfwi"
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository with one undeclared, non-public import runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS unset, and shows it exits 0 while reporting that import as a warning. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository that calls an undeclared, non-public function as an attribute of an imported livespec_dev_tooling module runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 4 naming the attribute reach. livespec-dev-tooling-vobfwi owns it.",
-    "work_item": "livespec-dev-tooling-vobfwi"
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture consuming repository that calls an undeclared, non-public function as an attribute of an imported livespec_dev_tooling module runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared` with the fail variable set, and shows it exits 4 naming the attribute reach. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a fixture livespec-dev-tooling tree whose committed cross_repo_public_api package-data file lacks one pyproject.toml entry is run through the aggregate member that compares them, and the test shows it fails naming that entry. livespec-dev-tooling-vobfwi owns it.",
-    "work_item": "livespec-dev-tooling-vobfwi"
+    "reason": "A real test at the integration tier or above is owed for this heading: a fixture livespec-dev-tooling tree whose committed cross_repo_public_api package-data file lacks one pyproject.toml entry is run through the aggregate member that compares them, and the test shows it fails naming that entry. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -3816,16 +3816,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident-ci select step and ci-green reader step run under bash with the forge-read Action's command against a stub gh that answers non-JSON, 502, 429 and 5xx sequences, and the retries, waits, printed lines and failures match. livespec-dev-tooling-levu6j owns it.",
-    "work_item": "livespec-dev-tooling-levu6j"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident-ci select step and ci-green reader step run under bash with the forge-read Action's command against a stub gh that answers non-JSON, 502, 429 and 5xx sequences, and the retries, waits, printed lines and failures match. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident label event's forge writes repeat only what did not take effect",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident label workflow script runs under bash with the forge-read Action's command against a stub gh, and the hold create, cancel and re-run are repeated only as the scenario states. livespec-dev-tooling-levu6j owns it.",
-    "work_item": "livespec-dev-tooling-levu6j"
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident label workflow script runs under bash with the forge-read Action's command against a stub gh, and the hold create, cancel and re-run are repeated only as the scenario states. livespec-dev-tooling-7vtgis owns it.",
+    "work_item": "livespec-dev-tooling-7vtgis"
   },
   {
     "spec_root": "SPECIFICATION",
