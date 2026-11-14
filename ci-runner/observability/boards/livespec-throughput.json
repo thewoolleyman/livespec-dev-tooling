@@ -1,0 +1,1206 @@
+{
+  "name": "livespec throughput",
+  "description": "Throughput of non-docs, non-release pull requests across the livespec fleet, one repository per chart: M1 merged green per hour, M2 lead time, M3 stage split. Defined as code in livespec-dev-tooling ci-runner/observability/boards/livespec-throughput.json and converged by apply-boards.sh; edit the definition, never this board. Deliverer: plan kubernetes-observability; owner: plan throughput-metric (livespec-dev-tooling-oe7cfw).",
+  "type": "flexible",
+  "layout_generation": "manual",
+  "tags": [
+    {
+      "key": "service",
+      "value": "pr-throughput"
+    },
+    {
+      "key": "component",
+      "value": "throughput"
+    },
+    {
+      "key": "kind",
+      "value": "board"
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 0,
+        "height": 4,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "# livespec throughput\n\n**Every panel counts non-docs, non-release pull requests.** A pull request is *docs-only* when every changed path ends in `.md`; a *release* pull request is a release-please one (maintainer direction, 2026-11-14).\n\n**One repository per chart, never stacked or overlaid**, because repositories have different build times. Each chart has its own y-axis. The FLEET is its own line. Low-volume repositories are in tables at the bottom, not in charts.\n\n- **M1 throughput**: merged *green* per hour. Green means the first default-branch `CI` push run at or after the merge head that reached a verdict concluded success. Read it against the repository's 7-day floor, which is stated in the panel name.\n- **M2 lead time**: start to merged green, median and p90, never the mean. Start is the first commit's author date (stamped when `git commit` starts, before its gate) for a seat PR, and the dispatch time for a factory PR.\n- **M3 stage split**: one repository's median minutes per stage: start to opened, opened to PR CI green, PR CI green to merged, merged to master green.\n\nThe headline stays first on [livespec family — all activity](https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS/livespec-family-all-activity). Defined as code in livespec-dev-tooling `ci-runner/observability/boards/livespec-throughput.json`, converged by `apply-boards.sh`; edit the definition, never the board."
+      }
+    },
+    {
+      "type": "query",
+      "key": "fleet-m1",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 4,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "FLEET — M1 non-docs PRs merged green per hour (7 d)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests across every repository, one line, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "fleet-m2",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 4,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "FLEET — M2 lead time to merged green, median and p90 (min)",
+        "description": "P50 and P90 of pr.lead_time_minutes across every repository, in 6-hour buckets over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.lead_time_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 10,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## livespec-dev-tooling"
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-dev-tooling-m1",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 11,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-dev-tooling — M1 merged green per hour (7 d)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec-dev-tooling only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-dev-tooling"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-dev-tooling-m2",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 11,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-dev-tooling — M2 lead time median and p90 (min)",
+        "description": "P50 and P90 of pr.lead_time_minutes in livespec-dev-tooling only, in 6-hour buckets over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-dev-tooling"
+          },
+          {
+            "column": "pr.lead_time_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-dev-tooling-m3",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 11,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-dev-tooling — M3 stage split, median minutes per stage",
+        "description": "P50 of each stage in livespec-dev-tooling only, in 6-hour buckets over 7 days. Stages may be read stacked: each is this repository's own time. A stage is absent from an event when either end is unknown, never sent as 0. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.stage_start_to_open_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_open_to_ci_green_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_ci_green_to_merge_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_merge_to_green_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-dev-tooling"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 17,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## livespec-orchestrator-beads-fabro"
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-orchestrator-beads-fabro-m1",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 18,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-orchestrator-beads-fabro — M1 merged green per hour (7 d)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec-orchestrator-beads-fabro only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-orchestrator-beads-fabro"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-orchestrator-beads-fabro-m2",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 18,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-orchestrator-beads-fabro — M2 lead time median and p90 (min)",
+        "description": "P50 and P90 of pr.lead_time_minutes in livespec-orchestrator-beads-fabro only, in 6-hour buckets over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-orchestrator-beads-fabro"
+          },
+          {
+            "column": "pr.lead_time_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-orchestrator-beads-fabro-m3",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 18,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-orchestrator-beads-fabro — M3 stage split, median minutes per stage",
+        "description": "P50 of each stage in livespec-orchestrator-beads-fabro only, in 6-hour buckets over 7 days. Stages may be read stacked: each is this repository's own time. A stage is absent from an event when either end is unknown, never sent as 0. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.stage_start_to_open_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_open_to_ci_green_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_ci_green_to_merge_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_merge_to_green_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-orchestrator-beads-fabro"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 24,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## livespec-overseer"
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-overseer-m1",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 25,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-overseer — M1 merged green per hour (7 d)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec-overseer only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-overseer"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-overseer-m2",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 25,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-overseer — M2 lead time median and p90 (min)",
+        "description": "P50 and P90 of pr.lead_time_minutes in livespec-overseer only, in 6-hour buckets over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-overseer"
+          },
+          {
+            "column": "pr.lead_time_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-overseer-m3",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 25,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec-overseer — M3 stage split, median minutes per stage",
+        "description": "P50 of each stage in livespec-overseer only, in 6-hour buckets over 7 days. Stages may be read stacked: each is this repository's own time. A stage is absent from an event when either end is unknown, never sent as 0. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.stage_start_to_open_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_open_to_ci_green_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_ci_green_to_merge_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_merge_to_green_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec-overseer"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 31,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## livespec"
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-m1",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 32,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec — M1 merged green per hour (7 d)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-m2",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 32,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec — M2 lead time median and p90 (min)",
+        "description": "P50 and P90 of pr.lead_time_minutes in livespec only, in 6-hour buckets over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec"
+          },
+          {
+            "column": "pr.lead_time_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "livespec-m3",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 32,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "livespec — M3 stage split, median minutes per stage",
+        "description": "P50 of each stage in livespec only, in 6-hour buckets over 7 days. Stages may be read stacked: each is this repository's own time. A stage is absent from an event when either end is unknown, never sent as 0. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.stage_start_to_open_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_open_to_ci_green_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_ci_green_to_merge_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_merge_to_green_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "livespec"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 38,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## hetzner-xubuntu-info"
+      }
+    },
+    {
+      "type": "query",
+      "key": "hetzner-xubuntu-info-m1",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 39,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "hetzner-xubuntu-info — M1 merged green per hour (7 d)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests in hetzner-xubuntu-info only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "hetzner-xubuntu-info"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 3600
+      }
+    },
+    {
+      "type": "query",
+      "key": "hetzner-xubuntu-info-m2",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 39,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "hetzner-xubuntu-info — M2 lead time median and p90 (min)",
+        "description": "P50 and P90 of pr.lead_time_minutes in hetzner-xubuntu-info only, in 6-hour buckets over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "hetzner-xubuntu-info"
+          },
+          {
+            "column": "pr.lead_time_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "hetzner-xubuntu-info-m3",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 39,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "hetzner-xubuntu-info — M3 stage split, median minutes per stage",
+        "description": "P50 of each stage in hetzner-xubuntu-info only, in 6-hour buckets over 7 days. Stages may be read stacked: each is this repository's own time. A stage is absent from an event when either end is unknown, never sent as 0. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.stage_start_to_open_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_open_to_ci_green_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_ci_green_to_merge_minutes"
+          },
+          {
+            "op": "P50",
+            "column": "pr.stage_merge_to_green_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "=",
+            "value": "hetzner-xubuntu-info"
+          }
+        ],
+        "breakdowns": [],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 45,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## Low-volume repositories (tables) and exclusions"
+      }
+    },
+    {
+      "type": "query",
+      "key": "low-volume-24h",
+      "dataset": "pr-throughput",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 46,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Low-volume repositories — non-docs PRs merged green, 24 h (table)",
+        "description": "COUNT and median lead time per repository outside the five charted ones, over 24 hours. A table, not a trend chart: under about 0.3 per hour a trend is noise. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          },
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "not-in",
+            "value": [
+              "livespec-dev-tooling",
+              "livespec-orchestrator-beads-fabro",
+              "livespec-overseer",
+              "livespec",
+              "hetzner-xubuntu-info"
+            ]
+          }
+        ],
+        "breakdowns": [
+          "repo"
+        ],
+        "time_range": 86400,
+        "granularity": 3600,
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ]
+      }
+    },
+    {
+      "type": "query",
+      "key": "low-volume-7d",
+      "dataset": "pr-throughput",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 46,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Low-volume repositories — non-docs PRs merged green, 7 d (table)",
+        "description": "COUNT and median lead time per repository outside the five charted ones, over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          },
+          {
+            "op": "P50",
+            "column": "pr.lead_time_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "repo",
+            "op": "not-in",
+            "value": [
+              "livespec-dev-tooling",
+              "livespec-orchestrator-beads-fabro",
+              "livespec-overseer",
+              "livespec",
+              "hetzner-xubuntu-info"
+            ]
+          }
+        ],
+        "breakdowns": [
+          "repo"
+        ],
+        "time_range": 604800,
+        "granularity": 3600,
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ]
+      }
+    },
+    {
+      "type": "query",
+      "key": "excluded-and-not-green-24h",
+      "dataset": "pr-throughput",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 46,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Excluded and NOT green — counts by repository, 24 h (table)",
+        "description": "COUNT of every classified merged pull request over 24 hours by repo, pr.docs_only, pr.is_release and pr.merged_green, so exclusions and red merges stay visible. The exists filter drops copies that predate the classification. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.docs_only",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "repo",
+          "pr.docs_only",
+          "pr.is_release",
+          "pr.merged_green"
+        ],
+        "time_range": 86400,
+        "granularity": 3600,
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ]
+      }
+    }
+  ]
+}
