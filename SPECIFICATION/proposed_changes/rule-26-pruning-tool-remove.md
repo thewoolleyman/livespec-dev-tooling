@@ -21,6 +21,10 @@ The maintainer required all pruning safeguards before anything is deleted, recor
 
 ### Proposed Changes
 
+Revise this proposal with or after `rule-26-bounded-diagnostic-sampling.md`, which defines diagnostic scope and complete/interrupted evidence. Its ratification is a dependency, not permission to implement or execute diagnostic sampling.
+
+Amend contracts.md under the existing "Rule-26 mutation kill matrix" heading, in "Report format", to require the exhaustive-report producer to emit a contemporaneous machine-readable run record. The record MUST bind the report's content digest to the exact collected tests and their source bytes, first-party source, configuration and dependency content digests, the executing engine's source digest, the source revision and the invocation's successful terminal disposition. The producer MUST emit it only after a complete successful exhaustive invocation; a missing record, a failed/interrupted invocation or a diagnostic report MUST NOT be eligible for pruning. The record MUST be captured with that invocation and MUST NOT be manufactured retrospectively from a later tree. This producer obligation is part of this proposal; the pruning tool MUST remain held until the engine actually supplies the record. Implementation and acceptance must exercise a producer-generated record rather than only hand-made report fixtures.
+
 Add the following separate contract to contracts.md, without changing the kill-matrix engine and recipe's advisory-only rule.
 
 ## Rule-26 pruning safeguards
@@ -30,7 +34,7 @@ livespec-dev-tooling MUST provide a separate pruning tool that proposes one test
 - **Evidence prerequisite.** The tool MUST accept only a complete exhaustive kill-matrix report for the target's current test collection, first-party source, configuration, dependencies and executing engine. A report's provenance MUST be established by a record captured with its run that binds the report's content digest to those inputs' content digests, the executing engine's source identity and the invocation's successful completion. The tool MUST refuse missing, stale, interrupted, diagnostic or provenance-unknown evidence with a finding naming the invalid input; it MUST NOT create a retrospective run record from the current tree for an unbound old report. The tool MUST NOT use a diagnostic report to propose or validate a removal. It MUST leave the kill-matrix engine and recipe's prohibition on deleting, skipping or rewriting tests intact.
 - **One candidate.** Given at least one eligible candidate with a supplied review reason, the tool MUST propose exactly one node id from the report's redundancy candidates; when none is eligible it MUST emit a no-removal result naming the disqualifying inputs. It MUST NOT propose a test listed under baseline failures or unapplied-coverage tests. Before proposing another removal, it MUST require a complete incremental kill-matrix report taken after the previous removal. Relative to that removal's before report, the after collection MUST remove exactly the proposed node id; changing other test bodies, first-party source, configuration, dependencies or the executing engine makes the evidence non-comparable and MUST be refused rather than credited as a safe removal. Repointing the coverage registry as specified below is allowed in the same change.
 - **Preserved kills.** For each mutant killed in the before report, the tool MUST require the same mutant, with the same enclosing-function digest, to remain applied and killed in the after report. A missing, surviving, unapplied or incomparable formerly killed mutant MUST make verification exit nonzero, name that mutant and prohibit a subsequent proposal. Incremental verification MUST use the engine's normal cache-validity rules; it MUST NOT merely subtract the removed test from the old matrix.
-- **Spec coverage.** The tool MUST read tests/heading-coverage.json, or an explicitly supplied equivalent registry. It MUST refuse a candidate cited by a row and name that row unless the same change repoints the row to another real collected test. An absent or unreadable required registry MUST be refused. A TODO or nonexistent replacement MUST NOT satisfy this exception.
+- **Spec coverage.** The tool MUST read tests/heading-coverage.json, or an explicitly supplied equivalent registry. It MUST refuse a candidate cited by a row and name that row unless the same change repoints the row to another real collected test. The tool MUST also refuse a candidate cited by tests/heading-coverage-debt.json, or whose node id or test-file path is cited by a repository justfile recipe, naming the citing entry or recipe. An absent or unreadable required registry or debt register MUST be refused. A TODO or nonexistent replacement MUST NOT satisfy the registry exception; repointing a registry row MUST NOT bypass debt-register or recipe citations.
 - **Intent review.** Before a proposed removal is accepted, its reviewer MUST record a per-test reason explaining why ordering, concurrency, messages, formatting, performance, tool integration and regression intent remain covered where relevant. The tool MUST require that reason to accompany the proposal and its verification record; it MUST NOT infer intent equivalence solely from the matrix. The removal PR MUST carry that reason.
 - **Recorded result.** The tool MUST emit a machine-readable proposal or refusal naming the candidate, the before report, any citing registry rows and the review reason. Verification MUST name the before and after report identities and every failed preservation check. Only a successful verification permits another proposal. Invoking the tool MUST NOT add a mutation run to just check, a commit or push hook, or a required per-PR job.
 
@@ -50,11 +54,11 @@ And it MUST refuse another proposal until a complete post-removal incremental re
 
 ## Scenario: pruning refuses unmeasured or spec-cited candidates
 
-Given a report with candidates A, B and C where A is listed under unapplied-coverage tests, B is a baseline failure and a coverage-registry row cites C
+Given a report with candidates A, B, C, D and E where A is listed under unapplied-coverage tests, B is a baseline failure, a coverage-registry row cites C, the heading-coverage debt register cites D and a justfile recipe cites E's test-file path
 
 When the pruning tool considers those candidates
 
-Then it MUST propose no removal and MUST name the disqualifying entries and citing row
+Then it MUST propose no removal and MUST name the disqualifying entries, citing row, debt entry and recipe
 
 And replacing the citing row with TODO or a nonexistent test MUST NOT permit C
 
@@ -102,3 +106,9 @@ And an invocation with a reason MUST preserve that reason in the proposal and ve
 
 And invoking the tool MUST NOT add mutation execution to just check, commit or push hooks, or a required per-PR job
 
+
+### Owed at revise and implementation
+
+Amend both the existing Rule-26 mutation kill matrix report-format clause and the new pruning contract. Co-edit tests/heading-coverage.json for the new contract H2 and all six scenario H2s, and regenerate tests/heading-coverage-debt.json with `just generate-heading-coverage-debt-register` for any TODO rows. The new producer-record obligation must have exercising coverage; register any deferred proof as debt tied to its owning implementation item.
+
+Before approving livespec-dev-tooling-46y4en, align its Definition of Done with all S1-S5 safeguards, including required intent reasons, spec/debt/recipe citation refusals and the producer-record prerequisite. No implementation or removal is authorized by this proposal-only update.
