@@ -2547,8 +2547,16 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: incident focused verification reads its changed set through the isolated object view and disposes symlinked and submodule paths explicitly",
     "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier is owed for this scenario, driving the controller's per-pull-request arm against a reference clone whose configured target branch is a scratch branch other than master and which holds a replace ref and a graft, and asserting that the changed set equals the set read against the merge base with that branch with replace refs, grafts and clone configuration ignored, that an in-tree symbolically linked .py is disposed as the module its target names, and that an escaping link and a submodule gitlink under a source prefix are each refused with a reason naming its path. livespec-dev-tooling-rgiufy owns it (plan expedited-incident-hardening); the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-rgiufy"
+    "reason": "Spec-first (v221): a real test at the integration tier is owed for this scenario. It drives the controller's per-pull-request arm against a reference clone whose configured target branch is a scratch branch other than master, and which holds a replace ref, a graft and a forged commit-graph file. It asserts that the changed set equals the set read against the merge base with the configured scratch branch with replace refs, grafts, the commit-graph and clone configuration ignored. It asserts the in-tree symbolic-link module is disposed as its target, and that the escaping link and the submodule gitlink are each refused naming their path. It also asserts that a clone whose object store carries an objects/info/alternates file naming another store is refused before any object is read, with a reason that names that file. livespec-dev-tooling-a3xotn owns it.",
+    "work_item": "livespec-dev-tooling-a3xotn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident test world raises the product child-process bounds it reaches to the hang guard",
+    "test": "TODO",
+    "reason": "Spec-first (v221): a real test at the integration tier is owed for this scenario, building an incident test world through the shared world fixture on a CPU-saturated host and asserting the raised inverse forge, cap, incident git and recovery principal timeouts, their orderings, unchanged product defaults outside the world, a named refusal code, and a test-set bound that still expires; livespec-dev-tooling-vm4vcn owns it.",
+    "work_item": "livespec-dev-tooling-vm4vcn"
   },
   {
     "spec_root": "SPECIFICATION",
