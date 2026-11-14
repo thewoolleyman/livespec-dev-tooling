@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -200,7 +202,7 @@ def _run(
         capture_output=True,
         text=True,
         check=False,
-        timeout=180,
+        timeout=HANG_GUARD_SECONDS,
     )
     return completed.returncode, completed.stdout + completed.stderr
 
