@@ -189,10 +189,10 @@ aggregate only from a job whose forge-issued OIDC identity token verifies
 against a protected CI identity policy (`docs/incident-ci-identity.md`). The
 role provisions that policy for each installation, but only once
 `incident_observer_ci_publisher_shas` lists at least one approved commit of
-`.github/workflows/reusable-incident-ci-publish.yml`. With the list empty, which
-is the default, the role installs no policy and removes one an earlier apply
-left. The controller then answers every publication `identity-not-provisioned`,
-and the run is recorded on the incident item as unpublished.
+`.github/workflows/reusable-incident-ci-publish.yml`. An explicitly empty list
+installs no policy and removes one an earlier apply left. The controller then
+answers every publication `identity-not-provisioned`, and the run is recorded on
+the incident item as unpublished.
 
 When the list is set, each apply:
 
