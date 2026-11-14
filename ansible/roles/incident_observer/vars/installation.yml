@@ -33,6 +33,8 @@ incident_observer_installation_root: "{{ incident_observer_home }}/installation-
 incident_observer_config_path: "{{ incident_observer_etc_dir }}/controller-{{ incident_observer_installation_name }}.json"
 incident_observer_manifest_path: "{{ incident_observer_etc_dir }}/released-installation-{{ incident_observer_installation_name }}.json"
 incident_observer_reader_env_path: "{{ incident_observer_etc_dir }}/reader-{{ incident_observer_installation_name }}.env"
+incident_observer_ci_identity_policy_path: "{{ incident_observer_etc_dir }}/ci-identity-{{ incident_observer_installation_name }}.json"
+incident_observer_ci_jwks_path: "{{ incident_observer_etc_dir }}/ci-issuer-jwks-{{ incident_observer_installation_name }}.json"
 incident_observer_state_dir: "{{ incident_observer_installation_root }}/receipts"
 incident_observer_reference_dir: "{{ incident_observer_installation_root }}/reference"
 # The reference clone is of the SERVED repository, on its default branch: the

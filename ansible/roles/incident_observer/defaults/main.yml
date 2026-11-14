@@ -122,6 +122,41 @@ incident_observer_recovery_app_key_env: LIVESPEC_RECOVERY_APP_PRIVATE_KEY
 incident_observer_reader_env_path: /etc/livespec-incident/reader.env
 incident_observer_reader_env_var: BEADS_DOLT_PASSWORD
 incident_observer_tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544
+# --- CI identity policy (livespec-dev-tooling-bqnzcm.4) ----------------------
+# The protected policy POST /ci/publish verifies a publishing job against
+# (docs/incident-ci-identity.md). The role renders it per installation with
+# files/render_ci_identity_policy.py from that installation's inventory entry
+# (repository, repository_id, owner_id), so no owner is spelled here, and binds
+# it into the released-installation manifest by path and digest.
+#
+# The approved commits of the incident CI publisher,
+# .github/workflows/reusable-incident-ci-publish.yml in the publisher
+# repository. EMPTY provisions no policy, and removes one an earlier apply
+# installed: the controller then answers every publication with
+# identity-not-provisioned and the run is recorded unpublished. A commit is
+# listed only once it is on that repository's master, because the token's
+# job_workflow_sha names it and a pull request's own commit is rewritten by
+# rebase-merge. Rolling the publisher: list the old and the new commit, move the
+# callers' pin, then drop the old one.
+incident_observer_ci_publisher_shas: []
+# The repository that ships the publisher is the first inventory entry, whose
+# installation every variable above describes; the stable repository and owner
+# ids are this installation's own inventory entry. Both are read where the policy
+# is rendered (tasks/converge.yml), never spelled here.
+# The OIDC audience the publisher requests and this installation pins. The
+# caller sets the same value as its LIVESPEC_INCIDENT_CI_AUDIENCE variable.
+incident_observer_ci_audience: "livespec-incident-observer:{{ incident_observer_repository }}"
+incident_observer_ci_identity_policy_path: /etc/livespec-incident/ci-identity.json
+# The forge's signing keys, fetched at every apply. A forge key rotation is
+# remedied by re-applying the role (README, "Rotating the CI issuer keys").
+incident_observer_ci_jwks_url: https://token.actions.githubusercontent.com/.well-known/jwks
+incident_observer_ci_jwks_path: /etc/livespec-incident/ci-issuer-jwks.json
+# The crypto executable the controller verifies signatures with, pinned by digest.
+incident_observer_ci_crypto_path: /usr/bin/openssl
+incident_observer_ci_identity_enabled: >-
+  {{ (incident_observer_ci_publisher_shas | length > 0)
+     and not (incident_observer_scratch | bool)
+     and incident_observer_scratch_name is not defined }}
 # The controller account's home. The private state directory (0700) and the
 # independent reference clone are siblings beneath it; the loader refuses a
 # state directory inside the clone and a package inside the clone.
@@ -143,12 +178,20 @@ incident_observer_port: 8765
 #     token is checked before the body is read, and a missing or wrong token
 #     gets 403 (maintainer ruling, option A, livespec-dev-tooling-jpfdcx,
 #     2026-11-10).
+#   - POST /ci/publish: the incident CI publisher runs on GitHub-hosted runners
+#     and publishes an expedited pull request's PASSED aggregate. Its guard is
+#     the job's forge-signed OIDC identity token, verified against the pinned
+#     CI identity policy before any state is read or written; an unverified
+#     publication is refused with no side effect (legacy-coordinator-agent's
+#     ruling on livespec-dev-tooling-bqnzcm.4, 2026-11-13). Exactly this path:
+#     no prefix and no wildcard.
 # An apply refuses when any declared path is left unpublished after it
 # publishes, and whenever the funnel port publishes a path not in this list.
 incident_observer_funnel_https_port: 10000
 incident_observer_funnel_paths:
   - /callback
   - /ordinary-action
+  - /ci/publish
 
 # --- the production installation inventory --------------------------------------
 # One entry per repository a production observer installation serves
@@ -285,6 +328,7 @@ incident_observer_installations:
 incident_observer_installation_routes:
   - /callback
   - /ordinary-action
+  - /ci/publish
 
 # --- units ------------------------------------------------------------------
 incident_observer_unit_name: livespec-incident-observer

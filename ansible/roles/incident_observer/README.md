@@ -182,6 +182,64 @@ from outside itself (`typing-extensions` and `anyio`), so the release is
 installed with its declared dependencies. The incident CI job installs it the
 same way.
 
+## The CI identity policy (livespec-dev-tooling-bqnzcm.4)
+
+`POST /ci/publish` accepts an expedited pull request's PASSED incident CI
+aggregate only from a job whose forge-issued OIDC identity token verifies
+against a protected CI identity policy (`docs/incident-ci-identity.md`). The
+role provisions that policy for each installation, but only once
+`incident_observer_ci_publisher_shas` lists at least one approved commit of
+`.github/workflows/reusable-incident-ci-publish.yml`. With the list empty, which
+is the default, the role installs no policy and removes one an earlier apply
+left. The controller then answers every publication `identity-not-provisioned`,
+and the run is recorded on the incident item as unpublished.
+
+When the list is set, each apply:
+
+1. reads the forge's signing keys
+   (`https://token.actions.githubusercontent.com/.well-known/jwks`) and keeps
+   them beside the policy;
+2. runs `files/render_ci_identity_policy.py` with the serving interpreter,
+   isolated. It takes the installation's repository and its stable
+   `repository_id` and `owner_id` from that installation's inventory entry,
+   the publisher repository from the first inventory entry, the audience
+   `livespec-incident-observer:<repository>`, the approved commits, and
+   openssl pinned by digest. No owner is spelled in the role;
+3. installs the policy at `incident_observer_ci_identity_policy_path` (a
+   further installation's carries its name), owned by the controller account,
+   `0600`;
+4. binds it into the released-installation manifest by path and digest
+   (`--ci-identity-policy`), and restarts the observer onto it.
+
+List a publisher commit only once it is on that repository's master: the
+token's `job_workflow_sha` names it, and a pull request's own commit is
+rewritten by rebase-merge. To roll the publisher, list the old and the new
+commit, move every caller's pin, then drop the old one. Each caller sets its
+`LIVESPEC_INCIDENT_CI_AUDIENCE` repository variable to its installation's
+audience.
+
+**Trust basis.** The keys come from a TLS read of the forge's fixed issuer
+host, verified against the host's system CA store and nothing else. No
+certificate or key is pinned, and every apply replaces the pinned keys with
+what that read returns. `files/render_ci_identity_policy.py` drops, with its
+kid and the reason, any JWKS row the controller's loader would refuse. It
+refuses outright when no key survives or more than 16 do. With a publisher
+commit approved, the apply's load check fails unless the installation loads
+its policy. A dry run reports a key change on "Keep the fetched signing keys
+beside the policy they feed". The re-rendered policy is shown only by the
+real apply.
+
+### Rotating the CI issuer keys
+
+The issuer keys are pinned in the policy; the controller never fetches them on
+a request. When the forge rotates its signing key, a publication signed under
+the new key is refused by name, `identity-key-unknown: kid <k>`, and the
+publisher fails the incident CI job with that reason. The remedy is to re-apply
+the role through the committed route. That re-reads the forge's keys,
+re-renders the policy and its digest in the manifest, and restarts the
+observer. Nothing else changes. Until then, a publication under a pinned key
+still verifies.
+
 ## Maintainer-only steps
 
 Each is outside what a committed, reversible change can do; the reason follows.

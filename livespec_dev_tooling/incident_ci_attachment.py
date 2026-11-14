@@ -26,7 +26,12 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
     CiIdentityPolicy,
     identity_policy_intact,
 )
-from livespec_dev_tooling.incident_ci_oidc import OidcIdentity, oidc_current, verify_oidc
+from livespec_dev_tooling.incident_ci_oidc import (
+    OidcIdentity,
+    oidc_current,
+    unverified_reason,
+    verify_oidc,
+)
 from livespec_dev_tooling.incident_observer_admission import arm_record_matches
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError
 
@@ -81,11 +86,10 @@ class CiJobAttachment:
                 or not authorization.startswith("Bearer ")
             ):
                 return _refused(reason="exact CI attachment query required")
-            identity = verify_oidc(
-                token=authorization.removeprefix("Bearer "), policy=policy, now=time.time()
-            )
+            token = authorization.removeprefix("Bearer ")
+            identity = verify_oidc(token=token, policy=policy, now=time.time())
             if identity is None:
-                return _refused(reason="CI issuer identity unverifiable or unsupported")
+                return _refused(reason=unverified_reason(token=token, policy=policy))
             return self._attach(identity=identity, query=query, policy=policy)
         except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError, RecursionError):
             return _refused(reason="CI attachment state or observations unavailable")

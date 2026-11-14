@@ -448,6 +448,20 @@
     and incident_observer_target_branch | default('', true) | length == 0
     and incident_observer_installation_name is not defined
 
+- name: Install the CI identity policy renderer beside the manifest renderer
+  ansible.builtin.copy:
+    src: render_ci_identity_policy.py
+    dest: "{{ incident_observer_bin_dir }}/render_ci_identity_policy.py"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
 - name: Name the installation and the account this apply has just created
   # Both facts were read before this run wrote anything, so on a FIRST apply
   # they are still false here although the venv, the release and the account
@@ -595,6 +609,87 @@
   check_mode: false
   when: incident_observer_installed and incident_observer_reference_ready
 
+- name: Read the forge's OIDC signing keys for the CI identity policy
+  # Fetched at every apply, so re-applying the role is the remedy for a forge key
+  # rotation; a token under a key not yet pinned is refused by its key id.
+  ansible.builtin.uri:
+    url: "{{ incident_observer_ci_jwks_url }}"
+    return_content: true
+    status_code: 200
+  register: incident_observer_ci_jwks
+  check_mode: false
+  when: incident_observer_ci_identity_enabled | bool and incident_observer_installed
+
+- name: Keep the fetched signing keys beside the policy they feed
+  # Runs in check mode too, writing nothing there: a dry run reports `changed`
+  # here when the forge's keys differ from the ones last pinned. The policy
+  # render and install below need the written file, so they run on apply only.
+  ansible.builtin.copy:
+    content: "{{ incident_observer_ci_jwks.content }}"
+    dest: "{{ incident_observer_ci_jwks_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: incident_observer_ci_identity_enabled | bool and incident_observer_installed
+
+- name: Render this installation's CI identity policy from its inventory entry
+  # Every value is this installation's: its repository and stable repository and
+  # owner ids from the inventory, its audience, and the approved publisher
+  # commits. The serving interpreter, isolated, hashes the crypto executable.
+  ansible.builtin.command:
+    argv: >-
+      {{ [
+           incident_observer_venv ~ '/bin/python',
+           '-I',
+           incident_observer_bin_dir ~ '/render_ci_identity_policy.py',
+           '--repository', incident_observer_repository,
+           '--repository-id', incident_observer_ci_entry.repository_id | string,
+           '--owner-id', incident_observer_ci_entry.owner_id | string,
+           '--audience', incident_observer_ci_audience,
+           '--publisher-repository', incident_observer_installations[0].repository,
+           '--jwks', incident_observer_ci_jwks_path,
+           '--crypto', incident_observer_ci_crypto_path,
+         ]
+         + (incident_observer_ci_publisher_shas | map('regex_replace', '^', '--publisher-sha=') | list) }}
+  vars:
+    incident_observer_ci_entry: >-
+      {{ incident_observer_installations
+         | selectattr('repository', 'equalto', incident_observer_repository) | first }}
+  become: true
+  register: incident_observer_rendered_ci_policy
+  changed_when: false
+  check_mode: false
+  when: >-
+    incident_observer_ci_identity_enabled | bool and incident_observer_installed
+    and not ansible_check_mode
+
+- name: Install the CI identity policy, private to the controller account
+  ansible.builtin.copy:
+    content: "{{ incident_observer_rendered_ci_policy.stdout }}\n"
+    dest: "{{ incident_observer_ci_identity_policy_path }}"
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0600"
+  become: true
+  when: >-
+    incident_observer_ci_identity_enabled | bool and incident_observer_installed
+    and not ansible_check_mode
+  notify: Restart the incident observer onto its installation
+
+- name: Remove a CI identity policy no approved publisher commit supports
+  # With no approved commit there is no policy: the controller answers
+  # identity-not-provisioned, which the publisher reports without failing.
+  ansible.builtin.file:
+    path: "{{ incident_observer_ci_identity_policy_path }}"
+    state: absent
+  become: true
+  when: >-
+    not (incident_observer_ci_identity_enabled | bool)
+    and not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+  notify: Restart the incident observer onto its installation
+
 - name: Render the released-installation manifest with the serving interpreter
   # The digest the service recomputes at start is a fact of THIS interpreter
   # and THIS site-packages, so it is rendered here, isolated, and only
@@ -612,7 +707,9 @@
            incident_observer_reader_dir ~ '/' ~ incident_observer_reader_script_relative,
            '--config', incident_observer_config_path,
          ]
-         + (incident_observer_required_jobs | map('regex_replace', '^', '--required-job=') | list) }}
+         + (incident_observer_required_jobs | map('regex_replace', '^', '--required-job=') | list)
+         + (['--ci-identity-policy', incident_observer_ci_identity_policy_path]
+            if incident_observer_ci_identity_enabled | bool else []) }}
   become: true
   register: incident_observer_rendered_manifest
   changed_when: false
@@ -632,7 +729,10 @@
 
 - name: Load the whole installation as the controller account before serving it
   # The same loader the service runs at start, under the same euid: a refusal
-  # here names the apply as the failure instead of a unit that exits 2.
+  # here names the apply as the failure instead of a unit that exits 2. With an
+  # approved publisher commit the CI identity policy is REQUIRED: the loader
+  # treats an unusable optional policy as absent, so without this the apply
+  # would pass while every publication answers identity-not-provisioned.
   ansible.builtin.command:
     argv:
       - "{{ incident_observer_venv }}/bin/python"
@@ -641,8 +741,11 @@
       - >-
         import sys; from pathlib import Path;
         from livespec_dev_tooling.incident_controller_installation import ControllerInstallation;
-        sys.exit(0 if ControllerInstallation.load(config=Path(sys.argv[1])) is not None else 1)
+        loaded = ControllerInstallation.load(config=Path(sys.argv[1]));
+        sys.exit(0 if loaded is not None and (sys.argv[2] != 'required'
+        or loaded.ci_identity_policy is not None) else 1)
       - "{{ incident_observer_config_path }}"
+      - "{{ 'required' if incident_observer_ci_identity_enabled | bool else 'optional' }}"
   become: true
   become_user: "{{ incident_observer_user }}"
   changed_when: false
@@ -932,7 +1035,8 @@
       tailscale funnel exited 0 but {{ incident_observer_funnel_pending | join(', ') }}
       on port {{ incident_observer_funnel_https_port }} is not in this node's
       funnel status as a proxy to production's listener, so GitHub cannot
-      deliver callbacks or a hosted reconciler cannot ask who owns its step.
+      deliver callbacks, a hosted reconciler cannot ask who owns its step, or a
+      hosted incident CI publisher cannot publish its aggregate.
       Read `tailscale funnel status` and the tailnet policy's funnel grant for
       this node.
     success_msg: >-
