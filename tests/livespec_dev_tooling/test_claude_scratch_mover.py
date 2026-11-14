@@ -75,6 +75,7 @@ def _process(
     proc: Path,
     pid: int,
     environ: dict[str, str] | None = None,
+    readable_environ: bool = True,
     cmdline: list[str] | None = None,
     cwd: str | None = None,
     fds: list[str] | None = None,
@@ -82,8 +83,9 @@ def _process(
 ) -> None:
     entry = proc / str(pid)
     entry.mkdir(parents=True)
-    if environ is not None:
-        body = "".join(f"{key}={value}\x00" for key, value in environ.items())
+    if readable_environ:
+        merged = {"PATH": "/usr/bin", **(environ or {})}
+        body = "".join(f"{key}={value}\x00" for key, value in merged.items())
         _ = (entry / "environ").write_bytes(body.encode())
     if cmdline is not None:
         _ = (entry / "cmdline").write_bytes("\x00".join(cmdline).encode() + b"\x00")
@@ -380,3 +382,31 @@ def test_the_role_runs_the_installed_script_on_a_timer_with_its_kill_switch() ->
     assert f"Unit={defaults['dev_host_memory_bounds_scratch_mover_service']}" in timer
     tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
     assert "src: claude_scratch_mover.py" in tasks
+
+
+def test_a_scan_that_reads_no_process_environment_moves_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Processes exist but not one environment could be read, so no session can
+    # be proven dead: CLAUDE_CODE_SESSION_ID is invisible. Fail closed.
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    _process(proc=proc, pid=10, readable_environ=False)
+    _process(proc=proc, pid=11, readable_environ=False, cmdline=["sleep", "60"])
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 0
+    assert dead.exists()
+    assert {"event": "kept", "path": str(dead), "reason": "liveness-scan-failed"} in _events(capsys)
+
+
+def test_one_readable_environment_is_enough_to_trust_the_scan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    live = _session(ram=ram, sid=_LIVE)
+    dead = _session(ram=ram, sid=_DEAD)
+    _process(proc=proc, pid=10, environ={"CLAUDE_CODE_SESSION_ID": _LIVE})
+    _process(proc=proc, pid=11, readable_environ=False)
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 0
+    assert live.exists()
+    assert not dead.exists()
+    assert {"event": "kept", "path": str(live), "reason": "session-running"} in _events(capsys)
