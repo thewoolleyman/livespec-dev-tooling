@@ -28,6 +28,8 @@ from typing import Any
 
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -52,7 +54,7 @@ _LOGIN_TASKS = (
     "Log this host's Fabro client in to each registered factory",
 )
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _AD_HOC_RESULT = re.compile(
     r"^(?P<host>\S+) \| SUCCESS => (?P<result>\{.*?^\})", re.MULTILINE | re.DOTALL
 )

@@ -224,3 +224,36 @@ def _pinned_core() -> str:
     pin = re.search(r"ansible-core==[0-9][0-9A-Za-z.]*", recipe["body"])
     assert pin is not None
     return pin[0]
+
+
+def _modules_running_pinned_ansible() -> list[Path]:
+    """The test modules that start the pinned ansible-core through `uvx`, directly or by helper."""
+    this = Path(__file__).resolve()
+    return sorted(
+        path
+        for path in (_REPO_ROOT / "tests").rglob("test_*.py")
+        if path != this
+        and (
+            ("uvx" in (text := path.read_text(encoding="utf-8")) and "ansible-playbook" in text)
+            or "ansible_core_pin()" in text
+        )
+    )
+
+
+def test_no_module_cuts_an_ansible_run_off_before_the_hang_guard() -> None:
+    """A fixed run timeout under the guard ends a never-started RPC server as a bare `TimeoutExpired`.
+
+    The patient wait in the ansible interpreter reports a start that never happened
+    as a hang that names the wait, but only at `HANG_GUARD_SECONDS`; a module whose
+    subprocess timeout is a smaller literal kills the run first and the report
+    never comes (`test_fabro_client_role`, CI run 43573421425).
+    """
+    literal = re.compile(r"^_(?:PLAYBOOK_|ENGINE_|DRIFT_)?TIMEOUT_SECONDS = \d+$", re.MULTILINE)
+    modules = _modules_running_pinned_ansible()
+    assert len(modules) >= 30
+    cut_short = {
+        str(path.relative_to(_REPO_ROOT)): literal.findall(path.read_text(encoding="utf-8"))
+        for path in modules
+        if literal.search(path.read_text(encoding="utf-8"))
+    }
+    assert cut_short == {}

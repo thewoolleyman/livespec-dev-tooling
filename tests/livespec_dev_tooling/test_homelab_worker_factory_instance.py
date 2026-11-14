@@ -20,6 +20,8 @@ from typing import Any
 
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 if sys.version_info >= (3, 11):  # pragma: no cover — 3.11 path unused on the 3.10 floor.
     import tomllib as _toml
 else:
@@ -38,7 +40,7 @@ _WORKER = "homelab-worker-arm64"
 _UNIT = f"fabro-server-{_WORKER}"
 _TAINT = "homelab-worker.livespec.dev/class"
 _RENDERED = re.compile(r'^\s*"msg": (?P<msg>"RENDERED=.*")$', re.MULTILINE)
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 
 def _host_vars() -> dict[str, Any]:

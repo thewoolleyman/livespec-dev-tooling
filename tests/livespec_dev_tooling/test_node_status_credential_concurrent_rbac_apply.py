@@ -64,6 +64,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 # INTEGRATION TIER, declared statically and honestly: every assertion below is
@@ -144,7 +146,7 @@ _NO_PEER_TIMEOUT_SECONDS = 1
 
 # Bounded: a cold `uvx` resolves and caches ansible-core before the first play
 # runs. A hung play must fail this test rather than the suite's whole budget.
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 
