@@ -31,7 +31,7 @@ _CONVERGE = _ARC / "converge-hook-pod-template.sh"
 _STACK = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 _WARM_INSTALL = _PHASE2 / "warm-cache" / "install-warm-cache.sh"
 _PLACEHOLDER = "arc-hook-pod-template-@HOOK_REVISION@"
-_KEYS = ("hook-pod-template.yaml", "action-archive-entry.sh")
+_KEYS = ("hook-pod-template.yaml", "action-archive-entry.sh", "drill-hook-entry.js")
 
 # The stub answers each kubectl read from a file the test writes, logs every
 # call, and captures what `create -f -` was handed. A `get pods` exits 1 when
