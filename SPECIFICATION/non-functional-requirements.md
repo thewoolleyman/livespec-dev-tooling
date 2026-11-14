@@ -192,6 +192,16 @@ A pytest session started by another pytest session that already holds a slot MUS
 
 On a host with no slot limit set — a factory sandbox, a delegated gate pod, or any host never provisioned with one — pytest sessions MUST start exactly as they would without this section.
 
+**Gate memory slice.** A Linux host MAY provide a slice named `local-gate.slice` in the launching user's own service manager (the per-user manager, not the system manager). Two launches use it: a gate started through the detached gate runner's `gate-start`, and the check aggregate that `just check` runs. Subject to the conditions below, on a host that provides the slice each of those launches MUST run, together with every process it starts, inside a transient service-manager scope placed in `local-gate.slice`, with out-of-memory policy `continue`. The aggregate's scope covers its member targets. Setup steps that `just check` performs before the aggregate starts MAY run outside the scope. When `choom` is present, the scoped command's out-of-memory score adjustment MUST be raised to 500, so that under host memory pressure the kernel ends a gate before the ledger server or an agent session. A launch whose own control-group path already has `local-gate.slice` as an ancestor MUST NOT create a second scope; a `just check` started inside a gate that `gate-start` scoped is such a launch. A launch MUST use the scope only when all of the following hold:
+
+- the host is Linux;
+- a scope launcher (`systemd-run`) is present;
+- the launching user's service manager reports `local-gate.slice` as loaded;
+- the worktree pack's scope script is installed;
+- if the launch tries a probe scope in that slice first (a probe MAY be used), the probe succeeds.
+
+When any of these does not hold, the launch MUST proceed with the same command, and with an environment that differs at most by the marker variable `LIVESPEC_LOCAL_GATE_SCOPE` recording that the launch passed through this decision. It MUST NOT fail because the slice is absent, so macOS hosts, factory sandboxes and gate Jobs are unchanged. Out-of-memory policy `continue` keeps one child ended by the kernel from stopping the whole scope, so the gate can still end with a verdict as the gate-verdict requirement of §"Developer host platforms" requires. The slice and its memory bounds are host provisioning (`ansible/roles/dev_host_memory_bounds`); this paragraph governs only how a launch uses them, and it is a stopgap on the same terms as this section's slot limit.
+
 A host's limit MUST be provisioned through a committed converge, never set by hand, and removing that one committed setting MUST return the host to no limit.
 
 The limit is a STOPGAP for gates that still run on a shared host. Once the fleet's heavy gates run delegated, the limit SHOULD be removed.
