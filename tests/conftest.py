@@ -41,6 +41,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -53,6 +54,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+from tests import pinned_ansible  # noqa: E402  — after the vendor-path insert.
 
 
 @pytest.fixture(autouse=True)
@@ -148,6 +151,57 @@ def _caller_gate_variables_never_reach_a_test(monkeypatch: pytest.MonkeyPatch) -
     """
     for name in _CALLER_GATE_VARIABLES:
         monkeypatch.delenv(name, raising=False)
+
+
+_ANSIBLE_RPC_HANG_MARKER = pytest.StashKey[Path]()
+# What a test whose setup stopped before the fixture below ran is checked against.
+_NO_ANSIBLE_RPC_HANG_MARKER = Path("/nonexistent/ansible-rpc-start-hang")
+
+
+@pytest.fixture(autouse=True)
+def _pinned_ansible_rpc_start_waits_under_the_hang_guard(
+    *,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Make every ansible run a test starts wait for its RPC server under the hang guard.
+
+    ansible-core 2.21 waits a fixed five seconds for its in-process RPC server
+    (`_server_ready.wait(5)`, `ansible/_internal/_rpc_host.py`) and has no knob
+    for it, so a CPU-starved host failed `test_sandbox_role_retire` and
+    `test_fabro_hosts_target_units` with "Local RPC server did not start"
+    (master run 43543797308, livespec-dev-tooling-biq757). The `PYTHONPATH` this
+    fixture sets carries the `sitecustomize` that every ansible interpreter loads,
+    and that file makes the start wait for `tests/hang_guard.HANG_GUARD_SECONDS`.
+    A start that never happens fails the test as a hang that names that wait:
+    `pytest_runtest_teardown` below reads the marker the hook wrote.
+
+    AUTOUSE RATHER THAN PER-MODULE, because the failure mode is OMISSION, exactly
+    as for the fixtures above: thirty modules run `uvx --from ansible-core==<pin>
+    ansible-playbook` today, and the next one inherits this without asking. A
+    subprocess a test starts with `{**os.environ, ...}` or `os.environ | {...}`
+    inherits the variables; one that builds its environment from nothing does not.
+    """
+    marker = tmp_path_factory.getbasetemp() / f"ansible-rpc-start-hang-{uuid.uuid4().hex}"
+    request.node.stash[_ANSIBLE_RPC_HANG_MARKER] = marker
+    for name, value in pinned_ansible.rpc_start_environment(base=os.environ, marker=marker).items():
+        monkeypatch.setenv(name, value)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item: pytest.Item) -> Iterator[None]:
+    """Read the ansible RPC hang marker once every fixture is gone, `monkeypatch` included.
+
+    A fixture's own teardown runs while the test's `monkeypatch` is still in
+    force, and tests stub `Path.stat` and `Path.read_text` for the whole of their
+    body, so a marker check there raised their stubs' errors in four tests. Here
+    nothing a test patched is left.
+    """
+    yield
+    pinned_ansible.fail_if_rpc_start_hung(
+        marker=item.stash.get(_ANSIBLE_RPC_HANG_MARKER, _NO_ANSIBLE_RPC_HANG_MARKER)
+    )
 
 
 @pytest.fixture(autouse=True)
