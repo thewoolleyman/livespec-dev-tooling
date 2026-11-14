@@ -1,5 +1,7 @@
 # livespec-dev-tooling
 
+Built with [livespec](https://livespec-ai.org/)
+
 Shared enforcement-suite library for livespec-governed projects.
 
 Distributes the canonical ruff/pyright/coverage gates, AST checks,
