@@ -322,6 +322,8 @@ def test_the_host_cli_names_the_reader_and_age_when_its_pass_is_stale(
     assert (
         filer.main(
             argv=[
+                "--repo-root",
+                str(tmp_path),
                 "--state-dir",
                 str(state_dir),
                 "--interval-seconds",
