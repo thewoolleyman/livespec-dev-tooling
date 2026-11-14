@@ -114,6 +114,8 @@ _CEILING_FLOOR = 6
 _RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
     "fabro-cq": 2,
     "livespec-orchestrator-master-cq": 4,
+    "livespec-dev-tooling-cq": 20,
+    "livespec-orchestrator-beads-fabro-cq": 14,
 }
 
 _DOC_SEPARATOR = re.compile(r"^---$", re.MULTILINE)
