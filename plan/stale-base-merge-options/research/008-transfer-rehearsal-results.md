@@ -73,5 +73,17 @@ for the window to finish, and only on a repository whose recovery bypass has bee
 - **C's schedule:** workflow 418541851 (`call-rehearsal.yml`) is `disabled_manually`.
 - **Marketplace registrations on hetzner-xubuntu:** both point at the new name, and `rehearsal-noop` is installed. They
   are removed when R is archived.
-- **Repositories for the maintainer to delete:** the name-reuse stub, `thewoolleyman/livespec-transfer-rehearsal-namereuse-stub`
-  (id 1458264596), plus R and C, after this note merges. The seat's token has no `delete_repo` scope.
+- **Repository deletion, one batched step AFTER the cutover** (coordinator ruling, ~23:3xZ): the name-reuse stub
+  `https://github.com/thewoolleyman/livespec-transfer-rehearsal-namereuse-stub` (id 1458264596), R
+  `https://github.com/thewoolleyman/livespec-transfer-rehearsal` and C
+  `https://github.com/thewoolleyman/livespec-transfer-rehearsal-caller`. These are harmless leftovers, and the cleanup
+  blocks nothing. If the seat's token still lacks `delete_repo` then, the coordinator carries one ask with these URLs.
+
+## 6. Coordinator rulings on these results (legacy-coordinator-agent, 2026-11-14 ~23:3xZ)
+
+1. The cutover sequence gains a step immediately after each transfer and before that repository's held PR: add the
+   recovery twin as a bypass actor on EVERY master ruleset, and read each one back (§3, row 2).
+2. Condition B's pause-at-the-step-boundary design (§4) is accepted as written.
+3. The standing rule in §3 is ADOPTED: nobody creates a repository under any fleet repository's old
+   `thewoolleyman/<name>`. The coordinator records it on its epic and ports it to the fleet docs after the cutover.
+4. Deleting the stub, R and C is one cleanup step after the cutover, not a maintainer ask now (§5).
