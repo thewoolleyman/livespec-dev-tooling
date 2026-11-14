@@ -26,6 +26,7 @@ from livespec_dev_tooling.gate_remote_job_status import Terminal, terminal_condi
 from livespec_dev_tooling.gate_remote_request import GateRunRequest
 from livespec_dev_tooling.gate_remote_wait_commands import (
     WATCH_NO_TERMINAL_DETAIL,
+    WATCH_TIMED_OUT_DETAIL,
     admission_read_argv,
     terminal_watch_argv,
 )
@@ -155,9 +156,12 @@ def _await_terminal(
             argv=watch_argv,
             outcome=runner(argv=watch_argv, cwd=request.repo_root),
         )
+        window_spent = False
         if isinstance(read, Failure):
             refusal = read.failure()
-            if refusal.detail.strip() != WATCH_NO_TERMINAL_DETAIL:
+            detail = refusal.detail.strip()
+            window_spent = detail.startswith((WATCH_NO_TERMINAL_DETAIL, WATCH_TIMED_OUT_DETAIL))
+            if detail != WATCH_NO_TERMINAL_DETAIL:
                 last_refusal = refusal
         else:
             terminal = terminal_condition(
@@ -170,7 +174,7 @@ def _await_terminal(
             ended = terminal.unwrap()
             if ended is not None:
                 return Success(ended)
-        if attempt + 1 < attempts and deadline > clock():
+        if not window_spent and attempt + 1 < attempts and deadline > clock():
             sleeper(seconds=min(request.poll_interval_seconds, deadline - clock()))
     if last_refusal is not None:
         return Failure(last_refusal)

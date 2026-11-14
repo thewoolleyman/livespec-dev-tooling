@@ -8,11 +8,13 @@ from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 
 __all__: list[str] = [
     "WATCH_NO_TERMINAL_DETAIL",
+    "WATCH_TIMED_OUT_DETAIL",
     "admission_read_argv",
     "terminal_watch_argv",
 ]
 
 WATCH_NO_TERMINAL_DETAIL = "Job watch ended before a terminal condition was observed"
+WATCH_TIMED_OUT_DETAIL = "kubectl terminal-state watch timed out"
 _REQUEST_TIMEOUT_SECONDS = 240
 _WATCH_WINDOW_SECONDS = 240
 _PROCESS_TIMEOUT_SECONDS = 270
