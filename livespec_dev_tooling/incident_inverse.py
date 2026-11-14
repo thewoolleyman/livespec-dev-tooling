@@ -227,18 +227,24 @@ def _execute(
 def _conflict(
     *, intent: RecoveryIntent, scope: LandedIncident, head: str, reason: str, forge: InverseForge
 ) -> IOResult[RecoveryOutcome, InverseRefusal]:
+    expected_receipt = (
+        f"rollback-conflict:{intent.action_id}:owner:{intent.registration.owner}:head:{head}"
+    )
     receipt = forge.record_conflict(
         request=InverseConflictRequest(
             intent=intent,
             scope=scope,
             expected_head=head,
             reason=reason,
-            receipt=f"rollback-conflict:{intent.action_id}:owner:{intent.registration.owner}:head:{head}",
+            receipt=expected_receipt,
         )
     )
+    if receipt is None:
+        # The principal may have durably recorded the conflict before its response was lost.
+        receipt = forge.read_exact_receipt(intent=intent)
     return IOSuccess(
         RecoveryOutcome(
-            status="rollback-conflict" if receipt else "pending",
+            status="rollback-conflict" if receipt == expected_receipt else "pending",
             reason="overlapping later work requires identified owner resolution",
             receipt=receipt,
         )
