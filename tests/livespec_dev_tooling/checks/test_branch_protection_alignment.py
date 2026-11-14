@@ -36,13 +36,14 @@ import importlib.util
 import json
 import sys
 import textwrap
+from itertools import pairwise
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
 
 import pytest
 
-from livespec_dev_tooling.checks import _branch_protection_api
+from livespec_dev_tooling.checks import _branch_protection_api, _branch_protection_rulesets
 
 __all__: list[str] = []
 
@@ -1357,6 +1358,62 @@ def test_ruleset_bypass_read_retries_a_missing_list_before_using_an_app_only_ans
     )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert (tmp_path / "bin" / "gh.ruleset-count").read_text(encoding="utf-8").strip() == "2"
+
+
+def test_ruleset_bypass_reads_have_a_bounded_growing_retry_and_do_not_retry_a_denial(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Malformed bypass bodies get four bounded attempts, while a denial is definitive."""
+    delays: list[float] = []
+    monkeypatch.setattr(
+        _branch_protection_rulesets,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+    )
+    unreadable = _ruleset_run(
+        tmp_path=tmp_path / "unreadable",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        ruleset_api_replies=[('{"name": "incomplete"}', "", 0)] * 4,
+    )
+    assert unreadable.returncode == 4
+    count = tmp_path / "unreadable" / "bin" / "gh.ruleset-count"
+    assert count.read_text(encoding="utf-8").strip() == "4"
+    assert delays == [1.0, 2.0, 4.0]
+    assert all(later > earlier for earlier, later in pairwise(delays))
+    assert sum(delays) <= 30.0
+
+    denied = _ruleset_run(
+        tmp_path=tmp_path / "denied",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        ruleset_api_replies=[(_ROLE_BYPASS, "", 0), (_APP_BYPASS, "", 0)],
+    )
+    assert denied.returncode == 4
+    assert "ruleset_bypass_not_app" in denied.stderr
+    denied_count = tmp_path / "denied" / "bin" / "gh.ruleset-count"
+    assert denied_count.read_text(encoding="utf-8").strip() == "1"
+
+
+def test_exhausted_ruleset_bypass_read_names_the_endpoint_and_boundary_failures(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The unreadable finding preserves the endpoint plus its first and last failures."""
+    result = _ruleset_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        ruleset_api_replies=[
+            ("", "initial forge failure", 1),
+            ('{"name": "incomplete"}', "", 0),
+            ("[]", "", 0),
+            ("", "final forge failure", 1),
+        ],
+    )
+    assert result.returncode == 4
+    assert "repos/test-owner/test-repo/rulesets/26758787" in result.stderr
+    assert "first failed attempt: call exited 1: initial forge failure" in result.stderr
+    assert "last failed attempt: call exited 1: final forge failure" in result.stderr
 
 
 def test_an_absent_classic_status_check_object_is_an_empty_contribution_not_a_skip(

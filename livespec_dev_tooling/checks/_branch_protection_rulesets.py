@@ -31,7 +31,7 @@ __all__: list[str] = [
 # A ruleset bypass actor of this type is a GitHub App identity — the only bypass
 # the contract admits on a ruleset that holds a required check.
 _APP_ACTOR_TYPE = "Integration"
-_RULESET_READ_RETRY_DELAYS_SECONDS: tuple[float, ...] = (1.0,)
+_RULESET_READ_RETRY_DELAYS_SECONDS: tuple[float, ...] = (1.0, 2.0, 4.0)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -96,7 +96,10 @@ def _ruleset_status_rules(*, pages: object) -> dict[int, tuple[frozenset[str], b
 
 def _non_app_bypass(*, stdout: str) -> bool | None:
     """Whether a ruleset body lists a non-App bypass actor; None when it lists none at all."""
-    parsed = json.loads(stdout)
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
     body = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else {}
     actors = body.get("bypass_actors")
     if not isinstance(actors, list):
@@ -108,16 +111,38 @@ def _non_app_bypass(*, stdout: str) -> bool | None:
     )
 
 
-def _read_ruleset_bypass(*, path: str) -> bool | None:
-    """Read a ruleset bypass list again when an answer omits it."""
+def _ruleset_read_failure(*, stdout: str, stderr: str, returncode: int) -> str:
+    """Describe an unreadable ruleset response without accepting it as empty."""
+    if returncode != 0:
+        detail = stderr.strip()[:200]
+        return f"call exited {returncode}" if not detail else f"call exited {returncode}: {detail}"
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError:
+        return "body was not valid JSON"
+    if not isinstance(parsed, dict):
+        return "body was not an object"
+    return "body has no bypass_actors list"
+
+
+def _read_ruleset_bypass(*, path: str) -> tuple[bool | None, str | None]:
+    """Read a ruleset bypass list with bounded retries for incomplete forge answers."""
+    failures: list[str] = []
     for delay_seconds in (*_RULESET_READ_RETRY_DELAYS_SECONDS, None):
         body = gh_read(args=["api", path])
         verdict = _non_app_bypass(stdout=body.stdout) if body.returncode == 0 else None
         if verdict is not None:
-            return verdict
+            return verdict, None
+        failures.append(
+            _ruleset_read_failure(
+                stdout=body.stdout,
+                stderr=body.stderr,
+                returncode=body.returncode,
+            )
+        )
         if delay_seconds is not None:
             time.sleep(delay_seconds)
-    return None
+    return None, f"{path}; first failed attempt: {failures[0]}; last failed attempt: {failures[-1]}"
 
 
 def _fetch_ruleset_requirements(
@@ -141,9 +166,15 @@ def _fetch_ruleset_requirements(
         return _RulesetsUnreadable(detail="rules payload was not a list of rule pages")
     non_app: list[int] = []
     for ruleset_id in sorted(held):
-        verdict = _read_ruleset_bypass(path=f"{base}/rulesets/{ruleset_id}")
+        verdict, detail = _read_ruleset_bypass(path=f"{base}/rulesets/{ruleset_id}")
         if verdict is None:
-            return _RulesetsUnreadable(detail=f"ruleset {ruleset_id} has no readable bypass list")
+            return _RulesetsUnreadable(
+                detail=(
+                    f"ruleset {ruleset_id} has no readable bypass list; {detail}"
+                    if detail is not None
+                    else f"ruleset {ruleset_id} has no readable bypass list"
+                )
+            )
         if verdict:
             non_app.append(ruleset_id)
     return _RulesetRequirements(
