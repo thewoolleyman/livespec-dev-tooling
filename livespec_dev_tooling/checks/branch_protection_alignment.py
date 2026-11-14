@@ -114,7 +114,13 @@ Exit codes:
   required while NO required aggregate gate covers it (`failure_mode`
   `unrequired_leg_without_aggregate_gate`), or a contributing ruleset
   lists a non-App bypass actor (`failure_mode` `ruleset_bypass_not_app`)
-  or could not be read (`failure_mode` `ruleset_unreadable`).
+  or could not be read (`failure_mode` `ruleset_unreadable`), or, on an
+  organization-owned repository, one of the five merge-queue rules
+  `_branch_protection_merge_queue` grades fires (`merge_queue_absent`,
+  `merge_queue_concurrency_below_floor`, `merge_queue_method_not_rebase`,
+  `merge_queue_bypass_path`, `fork_approval_below_strictest`).
+- `1` also when the consumer's `[tool.livespec_dev_tooling]` block is
+  malformed (for example a non-integer `recovery_bypass_integration_id`).
 
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
@@ -139,6 +145,9 @@ from livespec_dev_tooling.checks._branch_protection_api import (  # noqa: E402
     _fetch_required_contexts,
     _ProtectionAbsent,
     _RequiredContexts,
+)
+from livespec_dev_tooling.checks._branch_protection_merge_queue import (  # noqa: E402
+    merge_queue_exit_code,
 )
 from livespec_dev_tooling.checks._branch_protection_rulesets import (  # noqa: E402
     _fetch_ruleset_requirements,
@@ -171,6 +180,14 @@ CHECK_AUTHORITY = "forge-admin"
 
 
 _CI_YML_PATH = Path(".github/workflows/ci.yml")
+
+# The repositories whose default branch MUST be reached only through the merge
+# queue when an organization owns them (livespec NFR "CI as a merge gate
+# (branch protection)"). Deliberately NOT consumer configuration: a repository
+# must not be able to opt itself out of the queue.
+QUEUE_REQUIRED_REPOSITORIES = frozenset(
+    {"livespec-dev-tooling", "livespec-orchestrator-beads-fabro"}
+)
 
 
 def _run_alignment_gate(
@@ -442,9 +459,8 @@ def main() -> int:
     # strict-on and admin-unenforced reports both findings; the operator then
     # fixes one protection page once rather than discovering the second defect
     # on the next run.
-    admins_code = _enforce_admins_exit_code(
-        log=log, admins=_fetch_admin_enforcement(log=log, protection=fetched)
-    )
+    admins = _fetch_admin_enforcement(log=log, protection=fetched)
+    admins_code = _enforce_admins_exit_code(log=log, admins=admins)
     if fetched.strict:
         log.error(
             "required_status_checks.strict is enabled; strict MUST be OFF",
@@ -463,9 +479,16 @@ def main() -> int:
     effective_code = _effective_set_exit_code(
         log=log, classic=fetched, matrix_targets=matrix_targets, job_names=job_names
     )
+    queue_code = merge_queue_exit_code(
+        log=log,
+        cwd=cwd,
+        protection=fetched,
+        admins_enabled=admins is not None and admins.enabled,
+        queue_required_names=QUEUE_REQUIRED_REPOSITORIES,
+    )
     # Every gate answers in the same two values (`4` or `0`) and each has
     # already emitted its findings, so the larger is the check's verdict.
-    return max(effective_code, admins_code)
+    return max(effective_code, admins_code, queue_code)
 
 
 if __name__ == "__main__":
