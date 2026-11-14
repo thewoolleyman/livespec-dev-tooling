@@ -1,0 +1,54 @@
+{
+  "dataset": "pr-throughput",
+  "name": "Merge without a master CI verdict past its repository's master-cycle threshold",
+  "description": "Fires when any repository's oldest merge without a default-branch CI verdict is older than that repository's threshold: MAX(awaiting.over_threshold_minutes) > 0 over merged-green.awaiting events, by repo. The emitter computes awaiting.threshold_minutes = min(max(60, 2 x ci.master_cycle_p50_minutes + 30), 180), because steady-state verdict latency is up to about two master cycles, and caps it at 180 so a stall that inflates its own cycle p50 still fires. On 2026-11-14 the oldest such merge reached 241 min unalarmed (CI-stall retro, guard G1). Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq); until it converges, ~/.local/share/pr-throughput/emit.py on hetzner-xubuntu (plan throughput-metric). Receiver: Honeycomb events API, dataset pr-throughput. Item: livespec-dev-tooling-754wgi. Runbook: open the repo's default-branch Actions runs; a queued or missing CI run means runner capacity (Kueue, ARC listener). A silent emitter is the merged-green.pass dead-man's job.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "awaiting.over_threshold_minutes"
+      }
+    ],
+    "filters": [
+      {
+        "column": "name",
+        "op": "=",
+        "value": "merged-green.awaiting"
+      },
+      {
+        "column": "awaiting.over_threshold_minutes",
+        "op": "exists"
+      }
+    ],
+    "breakdowns": [
+      "repo"
+    ],
+    "time_range": 1800
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "pr-throughput"
+    },
+    {
+      "key": "component",
+      "value": "merged-green"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
