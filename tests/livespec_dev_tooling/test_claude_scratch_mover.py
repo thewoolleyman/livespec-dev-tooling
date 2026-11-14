@@ -394,6 +394,9 @@ def test_the_role_runs_the_installed_script_on_a_timer_with_its_kill_switch() ->
     assert "src: claude_scratch_mover.py" in tasks
     # The project directories already on disk are given to the scratchpad login.
     assert "- name: Give every on-disk project directory to the scratchpad login" in tasks
+    # The ownership task never follows a symlink swapped in after the find.
+    give = tasks.split("- name: Give every on-disk project directory to the scratchpad login", 1)[1]
+    assert "follow: false" in give.split("\n- name:", 1)[0]
 
 
 def test_a_scan_that_reads_no_process_environment_moves_nothing(
@@ -616,3 +619,67 @@ def test_a_failed_copy_puts_the_session_back_when_it_can(
     assert dead.exists() is restored
     assert not (dead.parent / f".{_DEAD}.moving").exists()
     assert {"error": detail, "event": "move-failed", "path": str(dead)} in _events(capsys)
+
+
+def test_a_destination_swapped_for_a_symlink_after_its_check_is_never_written_through(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The destination project passes its lstat check, then is swapped for a
+    # symlink before its owner and mode are set: the no-follow open refuses it.
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    elsewhere.chmod(0o755)
+    (disk / _PROJECT).mkdir()
+    real_check = mover.real_dir
+
+    def check_then_swap(*, path: Path, uid: int | None) -> bool:
+        verdict = real_check(path=path, uid=uid)
+        if path == disk / _PROJECT and verdict:
+            path.rmdir()
+            path.symlink_to(elsewhere)
+        return verdict
+
+    monkeypatch.setattr(mover, "real_dir", check_then_swap)
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 1
+    assert dead.exists()
+    assert elsewhere.stat().st_mode & 0o7777 == 0o755
+    assert list(elsewhere.iterdir()) == []
+    assert {"error": "unsafe-destination", "event": "move-failed", "path": str(dead)} in _events(
+        capsys
+    )
+
+
+def test_a_destination_swapped_for_a_symlink_while_staged_puts_the_session_back(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The swap happens after staging, during the second /proc read: the
+    # destination is checked again before the copy, and the session goes back.
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    reads = 0
+
+    def references() -> object:
+        nonlocal reads
+        reads += 1
+        if reads == 3:
+            (disk / _PROJECT).rmdir()
+            (disk / _PROJECT).symlink_to(elsewhere)
+        return mover.References(sessions=frozenset(), paths=frozenset())
+
+    code = mover.run(
+        config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path),
+        references=references,
+        now=time.time,
+        is_mount=lambda _path: False,
+    )
+    assert code == 1
+    assert dead.is_dir()
+    assert not (dead.parent / f".{_DEAD}.moving").exists()
+    assert list(elsewhere.iterdir()) == []
+    assert {"error": "unsafe-destination", "event": "move-failed", "path": str(dead)} in _events(
+        capsys
+    )

@@ -96,11 +96,24 @@ class Config:
     apply: bool
 
 
-def _conform(*, directory: Path, like: Path) -> None:
-    """Give a real directory the owner and mode of another (both idempotent)."""
+def _conform(*, directory: Path, like: Path) -> bool:
+    """Give a directory the owner and mode of another, through a no-follow fd.
+
+    Opening with O_NOFOLLOW | O_DIRECTORY and changing the open fd means a
+    symlink swapped in after the lstat check is refused, never written through.
+    False when the directory could not be opened that way.
+    """
     want = like.lstat()
-    os.chown(directory, want.st_uid, want.st_gid, follow_symlinks=False)
-    directory.chmod(stat.S_IMODE(want.st_mode))
+    try:
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError:
+        return False
+    try:
+        os.fchown(fd, want.st_uid, want.st_gid)
+        os.fchmod(fd, stat.S_IMODE(want.st_mode))
+    finally:
+        os.close(fd)
+    return True
 
 
 def _refusal(*, source: Path, destination: Path, staging: Path, owner_uid: int) -> str | None:
@@ -112,7 +125,8 @@ def _refusal(*, source: Path, destination: Path, staging: Path, owner_uid: int) 
         destination.parent.mkdir()
     elif not real_dir(path=destination.parent, uid=None):
         return "unsafe-destination"
-    _conform(directory=destination.parent, like=project)
+    if not _conform(directory=destination.parent, like=project):
+        return "unsafe-destination"
     if os.path.lexists(destination):
         return "destination-exists"
     if os.path.lexists(staging):
@@ -143,6 +157,10 @@ def move(
     ):
         staging.rename(source)
         return "kept", "referenced-after-staging"
+    # Check the destination again right before the copy resolves it.
+    if not real_dir(path=destination.parent, uid=None):
+        staging.rename(source)
+        return "move-failed", "unsafe-destination"
     completed = subprocess.run(  # noqa: S603 -- fixed argv, no shell
         ["mv", "-n", "-T", "--", str(staging), str(destination)],  # noqa: S607 -- coreutils mv
         capture_output=True,

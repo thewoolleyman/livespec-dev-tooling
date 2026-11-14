@@ -168,6 +168,7 @@
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
+    follow: false
     owner: "{{ dev_host_memory_bounds_user }}"
     group: "{{ dev_host_memory_bounds_user }}"
     mode: "0700"
