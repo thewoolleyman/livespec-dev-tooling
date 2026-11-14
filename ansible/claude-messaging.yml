@@ -1,8 +1,8 @@
 ---
-# Force SendMessage over terminal-pane typing for every Claude Code session on
-# the maintainer's interactive hosts: Remote Control at startup, cross-session
-# inbound accepted, the pane-input guard as a managed PreToolUse hook, and the
-# rule in the managed CLAUDE.md. Plan distributed-sendmessage
+# Make SendMessage the default channel between Claude Code sessions on the
+# maintainer's interactive hosts: Remote Control at startup, cross-session
+# inbound accepted, and the guidance in the managed CLAUDE.md. Pane typing is
+# NOT blocked (the pane-input guard is retired and removed by the role). Plan distributed-sendmessage
 # (epic livespec-dev-tooling-rlwppp); protocol in
 # .ai/distributed-sendmessage-protocol.md.
 #

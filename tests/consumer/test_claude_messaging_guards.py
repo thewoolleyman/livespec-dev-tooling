@@ -98,13 +98,12 @@ def test_the_pane_guard_emits_a_pretooluse_deny_for_a_denied_command(
     assert decision["permissionDecision"] == "deny"
 
 
-def test_the_managed_dropin_forces_remote_control_and_wires_the_guard() -> None:
+def test_the_managed_dropin_forces_remote_control_and_blocks_no_pane_input() -> None:
     defaults = yaml.safe_load(_DEFAULTS.read_text(encoding="utf-8"))
     settings = defaults["claude_distributed_sendmessage_settings"]
 
     assert settings["remoteControlAtStartup"] is True
     assert settings["crossSessionInbound"] == "accept"
-    hook = settings["hooks"]["PreToolUse"][0]
-    assert hook["matcher"] == "Bash"
-    assert hook["hooks"][0]["command"] == "python3 {{ claude_distributed_sendmessage_guard_dest }}"
-    assert defaults["claude_distributed_sendmessage_guard_dest"].endswith("/pane-input-guard.py")
+    # Maintainer ruling 2026-11-14: SendMessage is guidance, never a block on
+    # typing into a pane, so the managed drop-in wires no hook at all.
+    assert "hooks" not in settings

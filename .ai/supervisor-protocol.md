@@ -137,11 +137,12 @@ tmux capture-pane -p -t "$WORKER_TARGET" -S -40
 pane. It is NOT "the last 40 lines." Do NOT pipe to `tail -N`; `-N` is a
 placeholder and `tail` rejects it.
 
-**Superseded for Claude Code workers (2026-11-14).** Message a Claude Code
-session with `SendMessage`, never by typing into its pane; the managed
-pane-input guard denies literal `tmux send-keys` text, and tmux is a retired
-transport here. See `.ai/distributed-sendmessage-protocol.md`. The procedure
-below is kept as history for non-Claude harnesses only.
+**Prefer SendMessage for Claude Code workers (2026-11-14).** Message a Claude
+Code session with `SendMessage` by default, because typed text can interrupt
+the maintainer. Typing into its pane is still allowed and nothing blocks it;
+when it is necessary (a slash command, a picker, a session SendMessage cannot
+reach, a Codex or pi worker), use the procedure below. See
+`.ai/distributed-sendmessage-protocol.md`.
 
 Short instruction: CLAUDE CODE-SPECIFIC: send the text, VERIFY it landed, then
 send Enter SEPARATELY. Before typing into any pane you do not own, identify the harness from its footer and confirm that harness's submit idiom:

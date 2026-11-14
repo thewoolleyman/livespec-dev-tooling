@@ -441,8 +441,8 @@ machine/workspace to your monitored list of plans. They are executing on that ma
 and/or the factory."
 
 **A word given to a seat reaches it at the moment it is given.** A Claude seat on vps, hetzner-xubuntu or
-gamingpc-xubuntu gets it by SendMessage (maintainer ruling 2026-11-14, plan `distributed-sendmessage`: pane typing
-interrupts the maintainer, and the managed pane-input guard refuses it). A Codex or pi seat gets it in its PANE with
+gamingpc-xubuntu gets it by SendMessage by default (maintainer ruling 2026-11-14, plan `distributed-sendmessage`: pane
+typing can interrupt the maintainer). Typing into its pane is still allowed and not blocked when the job needs it. A Codex or pi seat gets it in its PANE with
 `herdr --machine <m> pane send-text <pane> "<text>"`, then `herdr --machine <m> pane send-keys <pane> Enter`. A Claude
 seat on a Mac not yet on Remote Control gets a ledger comment and is named unreachable in the tick report. Never
 only a ledger comment where a live channel exists, and read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
