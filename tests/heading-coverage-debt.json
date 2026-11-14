@@ -702,6 +702,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a planned power-off evacuation refuses when no other always-on node can take the listener pods",
+    "work_item": "livespec-dev-tooling-w66r34",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a prepared incident recovery publication completes after the controller restarts",
     "work_item": "livespec-dev-tooling-52die6",
     "first_seen": "2026-11-11"
@@ -754,6 +761,13 @@
     "heading": "## Scenario: a related edge does not block a radar target",
     "work_item": "livespec-dev-tooling-62zla3",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a removed worker rejoins only after its old pods are gone, and the join proves its pod subnet",
+    "work_item": "livespec-dev-tooling-fvxlzc",
+    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1087,8 +1101,29 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker that is not Ready offers no quota, and a gate lost to its failure is retried",
+    "work_item": "livespec-dev-tooling-u45iv6",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker that leaves a workload class keeps nothing that class's enrollment wrote",
+    "work_item": "livespec-dev-tooling-ondpf6",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a worker's networking agents do not restart while it carries load",
     "work_item": "livespec-dev-tooling-p4cv4l",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's pod-span endpoint follows its pod subnet on a join and on a return",
+    "work_item": "livespec-dev-tooling-f2rft5",
     "first_seen": "2026-11-14"
   },
   {

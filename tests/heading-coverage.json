@@ -653,6 +653,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a planned power-off evacuation refuses when no other always-on node can take the listener pods",
+    "test": "TODO",
+    "reason": "Spec-first (v219): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml evacuate action against a stateful kubectl stand-in in which no other always-on node is Ready and not cordoned. The play does not yet carry this refusal. livespec-dev-tooling-w66r34 owns it.",
+    "work_item": "livespec-dev-tooling-w66r34"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
     "test": "TODO",
     "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a Ready node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
@@ -2795,6 +2803,38 @@
     "test": "tests.spec.test_homelab_worker_departure_drill.test_each_captured_pod_is_classified_from_the_read_back",
     "reason": "Integration-tier: the departure drill reads live workload replacements after the worker rejoins and reports their preservation state (livespec-dev-tooling-zfgtin).",
     "work_item": "livespec-dev-tooling-zfgtin"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker that is not Ready offers no quota, and a gate lost to its failure is retried",
+    "test": "TODO",
+    "reason": "Spec-first (v220): a real test at the integration tier or above is owed for this heading, driving the worker-lane admission path and a gate Job against a stand-in cluster in which an enrolled worker's Node stops being Ready. The behaviour is not yet implemented. livespec-dev-tooling-u45iv6 owns it.",
+    "work_item": "livespec-dev-tooling-u45iv6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker that leaves a workload class keeps nothing that class's enrollment wrote",
+    "test": "TODO",
+    "reason": "Spec-first (v220): a real test at the integration tier or above is owed for this heading, driving homelab-worker/enroll-workload-classes.sh and the worker-queue converge against a stateful kubectl stand-in for a worker that leaves its classes. The un-enrollment does not yet remove the churn-slot capacity, the queue quota or the factory-admit label, and placement does not yet depend on enrollment (livespec-dev-tooling-xgic4t and livespec-dev-tooling-qb3esy own those parts). livespec-dev-tooling-ondpf6 owns it.",
+    "work_item": "livespec-dev-tooling-ondpf6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a removed worker rejoins only after its old pods are gone, and the join proves its pod subnet",
+    "test": "TODO",
+    "reason": "Spec-first (v220): a real test at the integration tier or above is owed for this heading, driving homelab-worker/remove-worker.sh and join-worker.sh against a stateful kubectl stand-in that still lists the removed Node's pods. Neither script carries the wait, the refusal or the subnet comparison yet. livespec-dev-tooling-fvxlzc owns it.",
+    "work_item": "livespec-dev-tooling-fvxlzc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's pod-span endpoint follows its pod subnet on a join and on a return",
+    "test": "TODO",
+    "reason": "Spec-first (v220): a real test at the integration tier or above is owed for this heading, driving the join and the worker converge against a stub VM whose bridge address and pod subnet differ. The endpoint is read from the bridge address today. livespec-dev-tooling-f2rft5 owns it.",
+    "work_item": "livespec-dev-tooling-f2rft5"
   },
   {
     "spec_root": "SPECIFICATION",
