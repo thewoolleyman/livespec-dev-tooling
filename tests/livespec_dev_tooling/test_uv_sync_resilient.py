@@ -114,6 +114,17 @@ _GIT_PEER_FAILURE_BARE = (
     "  `-> fatal: Failure when receiving data from the peer\n"
 )
 
+# The same mid-transfer failure as uv prints it when it fails a CLONE: the
+# `failed to clone into` frame precedes git's own transport line, and the
+# frame appears on every uv git failure, so it must never name the error.
+_GIT_PEER_FAILURE_CLONE_FRAME = (
+    "  x Failed to download and build `livespec-runtime @ "
+    "git+https://github.com/thewoolleyman/livespec-runtime.git@0123abc`\n"
+    "  |-> Git operation failed\n"
+    "  |-> failed to clone into: /github/home/.cache/uv/git-v0/db/0123abc\n"
+    "  `-> fatal: Failure when receiving data from the peer\n"
+)
+
 _GIT_UNKNOWN_COMMIT = (
     "  x Failed to download and build `livespec-runtime @ "
     "git+https://github.com/thewoolleyman/livespec-runtime.git@deadbeef`\n"
@@ -290,3 +301,18 @@ def test_an_authentication_refusal_is_not_retried() -> None:
     rc = uv_sync_resilient.main(run=_scripted(outcomes=outcomes), sleep=sleep)
     assert rc == 2
     assert delays == []
+
+
+def test_an_exhausted_clone_failure_names_the_peer_error_not_the_clone_frame(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sleep, _delays = _recorder()
+    outcomes = [(2, _GIT_PEER_FAILURE_CLONE_FRAME)] * 3
+    rc = uv_sync_resilient.main(run=_scripted(outcomes=outcomes), sleep=sleep)
+    assert rc == 2
+    exhaustion = [
+        json.loads(line) for line in capsys.readouterr().err.splitlines() if "exhausted" in line
+    ]
+    assert len(exhaustion) == 1
+    assert "Failure when receiving data from the peer" in exhaustion[0]["transport_error"]
+    assert "Failure when receiving data from the peer" in exhaustion[0]["event"]

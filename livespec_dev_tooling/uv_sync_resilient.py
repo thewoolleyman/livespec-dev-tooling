@@ -175,7 +175,6 @@ _SIGNATURES = (
         family="git-fetch-transport",
         marker="Git operation failed",
         corroborators=(
-            "failed to clone into",
             "Failure when receiving data from the peer",
             "RPC failed",
             "early EOF",
@@ -185,6 +184,9 @@ _SIGNATURES = (
             "server certificate verification failed",
             "Could not resolve host",
             "unable to access",
+            # uv prints this frame on EVERY git failure, so it is tested last:
+            # a specific symptom above must name the transport error instead.
+            "failed to clone into",
         ),
     ),
 )
