@@ -2415,6 +2415,14 @@
     "reason": "Integration-tier: drives `ci_infra_rerun.main` through the same files that reusable-ci-infra-rerun.yml writes, with container-registry connection-reset, i/o-timeout, TLS-handshake-timeout, and 5xx logs. It proves every matching job re-runs after 120 seconds, records the run id, job id, and matched line in the run summary, leaves a later-started job and registry-free unhealthy pod to their owners, and leaves the matching second failure at its one-rerun cap (livespec-dev-tooling-khlrw3)."
   },
   {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job routed to self-hosted capacity runs uv sync with the self-hosted download cap",
+    "test": "TODO",
+    "reason": "Spec-first (v222): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, reading .github/workflows/ci.yml and asserting every uv-sync step sets UV_CONCURRENT_DOWNLOADS and UV_HTTP_TIMEOUT from runner.environment to one capped self-hosted pair and uv's defaults on hosted runners, with neither set at workflow or job level; livespec-dev-tooling-qeou2e owns it.",
+    "work_item": "livespec-dev-tooling-qeou2e"
+  },
+  {
     "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
