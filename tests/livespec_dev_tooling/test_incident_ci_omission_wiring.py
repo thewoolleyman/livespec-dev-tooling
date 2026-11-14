@@ -414,10 +414,22 @@ def test_the_guarded_members_are_the_ones_the_controller_defers_for_coverage_or_
     assert deferred == _OMITTED_BY_JOB
     # A not-applicable member is deferred by the incident job but NOT omitted:
     # its normal job still runs it.
-    assert {deferral["reason"] for deferral in aggregate["deferred"]} == _OMITTING_REASONS | {
-        "incident-policy:slow",
-        "incident-policy:not-applicable",
+    reasons = {deferral["reason"] for deferral in aggregate["deferred"]}
+    not_applicable = {
+        reason for reason in reasons if reason.startswith("incident-policy:not-applicable:")
     }
+    assert not_applicable == {
+        "incident-policy:not-applicable: a-staged-test-beside-each-staged-source-file",
+        "incident-policy:not-applicable: tdd-trailers-or-pull-request-event-admission",
+    }
+    assert (
+        reasons
+        == _OMITTING_REASONS
+        | {
+            "incident-policy:slow",
+        }
+        | not_applicable
+    )
 
 
 _GUARD_OF_PER_FILE_COVERAGE = _GUARD.format(member="'check-per-file-coverage'")

@@ -23,7 +23,7 @@ from typing import Any, cast
 from livespec_dev_tooling.checks._ci_job_if import event_bound_jobs
 from livespec_dev_tooling.checks._ci_matrix_parse import parse_ci_jobs
 from livespec_dev_tooling.incident_ci_policy import CiTarget
-from livespec_dev_tooling.incident_gate_inventory import timing_classes
+from livespec_dev_tooling.incident_gate_inventory import precondition_names, timing_classes
 from livespec_dev_tooling.incident_strict_json import strict_json
 
 __all__: list[str] = [
@@ -74,6 +74,7 @@ def render_inventory(
     from the tree it ships in.
     """
     timing = timing_classes(inventory=inventory)
+    preconditions = precondition_names(inventory=inventory)
     jobs = parse_ci_jobs(source=workflow)
     event_bound = event_bound_jobs(source=workflow)
     # The coverage producer/consumer pair is wired only where both members exist,
@@ -95,6 +96,7 @@ def render_inventory(
                     produces=("coverage-data",) if producer else (),
                     consumes=("coverage-data",) if consumer else (),
                     conditional=job.name in event_bound,
+                    precondition=preconditions.get(name, ""),
                 )
             )
     document: dict[str, Any] = dict(schema=1, targets=[_row(target=target) for target in targets])
@@ -115,6 +117,8 @@ def _row(*, target: CiTarget) -> dict[str, Any]:
     row = asdict(target)
     if not target.conditional:
         del row["conditional"]
+    if not target.precondition:
+        del row["precondition"]
     return row
 
 
@@ -141,9 +145,13 @@ def _decode(*, text: str) -> tuple[tuple[CiTarget, ...], InventorySource | None]
     for value in cast("list[object]", data["targets"]):
         row = cast("dict[str, Any]", value) if isinstance(value, dict) else {}
         if (
-            set(row) - {"conditional"}
+            set(row) - {"conditional", "precondition"}
             != {"name", "classification", "batch", "needs", "produces", "consumes"}
             or row.get("conditional", True) is not True
+            or (
+                "precondition" in row
+                and (not isinstance(row["precondition"], str) or not row["precondition"])
+            )
             or any(not isinstance(row[key], str) for key in ("name", "classification", "batch"))
             or not row["name"].startswith("check-")
             or _TEXT.fullmatch(row["name"]) is None

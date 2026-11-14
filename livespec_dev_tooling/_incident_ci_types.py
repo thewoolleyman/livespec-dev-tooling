@@ -50,6 +50,7 @@ class CiTarget:
     produces: tuple[str, ...] = ()
     consumes: tuple[str, ...] = ()
     conditional: bool = False
+    precondition: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
