@@ -4089,5 +4089,21 @@
     "heading": "## Scenario: a unit a role installs fails and the operator is told which unit failed, not that a backup failed",
     "test": "tests.livespec_dev_tooling.test_host_unit_alert.test_a_failed_unit_raises_one_event_and_one_push_naming_the_unit_and_host",
     "reason": "Integration-tier proof: role host_unit_alert's committed script runs against a fake curl, journalctl and hostname, and its event names the unit and host with source host-unit-alert, outside the dolt-backup failure trigger's sources. Sibling tests in the same module cover each channel-acceptance state (test_the_alert_fails_only_when_no_channel_accepted_it), the committed OnFailure wiring and role order (test_the_units_roles_install_route_their_failure_to_the_host_unit_alert) and the guard against dolt-backup-alert@ (test_no_role_or_host_var_routes_a_failure_to_the_dolt_backup_alert). The live read-back on vmi3006760 is host-captured on livespec-dev-tooling-l7f72q (DEV-HOST-UNIT-ALERT-LIVE-READBACK)."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: self_hosted_routing passes a guarded merge_group route and fails an unguarded one",
+    "test": "TODO",
+    "reason": "Spec-first (v225): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running self_hosted_routing over guarded and unguarded merge_group workflow fixtures; the proposal named the unit tier, but this repository's scenario rows run at the consumer tier. livespec-dev-tooling-mvqo6h owns it.",
+    "work_item": "livespec-dev-tooling-mvqo6h"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue",
+    "test": "TODO",
+    "reason": "Spec-first (v225): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running branch_protection_alignment against a recorded organization-owned rulesets answer with no merge_queue rule; the proposal named the unit tier, but this repository's scenario rows run at the consumer tier. livespec-dev-tooling-mvqo6h owns it.",
+    "work_item": "livespec-dev-tooling-mvqo6h"
   }
 ]
