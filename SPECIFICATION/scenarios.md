@@ -3801,6 +3801,7 @@ Then expedited commit and push select applicable local gates before staging prec
 And a known slow or unclassified gate is reported as deferred with its reason instead of launching the normal full aggregate.
 And an unknown selected gate that reaches sixty seconds terminates its owned process group and records deferred-timeout.
 And a selected fast gate failure refuses the repair with the actual failure while ordinary work retains normal gate selection.
+And a selected fast gate that declares a host precondition the incident host does not meet is recorded deferred naming that precondition, never run to an opaque failure.
 ```
 
 ## Scenario: focused incident verification cannot satisfy normal validation
