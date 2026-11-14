@@ -638,8 +638,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else",
-  "test": "tests.livespec_dev_tooling.test_factory_sandbox_loss_drill_playbook.test_deletes_exactly_one_uid_and_reports_the_api_observed_times",
-  "reason": "Integration-tier: the test drives the committed playbook through pinned ansible-core against a stateful kubectl stand-in and a real local Git origin. It proves the one UID-preconditioned sandbox-pod delete, UID disappearance wait and UTC report; siblings cover consent, validation, selection, preserved-ref and same-name replacement refusals. The live-cluster half is host-captured.",
+    "test": "tests.livespec_dev_tooling.test_factory_sandbox_loss_drill_playbook.test_deletes_exactly_one_uid_and_reports_the_api_observed_times",
+    "reason": "Integration-tier: the test drives the committed playbook through pinned ansible-core against a stateful kubectl stand-in and a real local Git origin. It proves the one UID-preconditioned sandbox-pod delete, UID disappearance wait and UTC report; siblings cover consent, validation, selection, preserved-ref and same-name replacement refusals. The live-cluster half is host-captured.",
     "work_item": "livespec-dev-tooling-5wybjq"
   },
   {
@@ -769,17 +769,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a delegated gate run through the real gate-run.sh, against a fake cluster whose gate Job stays running past a shortened stall window, shows the client renewing the progress stamp at least every 60 s, starting at most one kubectl per watch window, and the run recording the Job's own verdict rather than a stall FAILED or DIED_WITHOUT_VERDICT. livespec-dev-tooling-ie7fas owns it.",
-    "work_item": "livespec-dev-tooling-ie7fas"
+    "test": "tests.consumer.test_delegated_gate_wait_liveness_scenarios.test_a_job_that_outlives_the_stall_window_still_ends_with_its_own_verdict",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The real dev-tooling/gate-run.sh runs the real delegated gate client (run_gate and its default command runner) against a stub cluster on PATH: a kubectl that plays a Job which Completes 45 s after submit, with LIVESPEC_SUITE_GREEN_STALL_SECONDS shortened to 35 s. The run records exit 0, never the stall-bound 124; the stamp was renewed within 30 s when the Job completed; and the wait used one admission read and one watch."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: a delegated gate client driven against a kubectl stub that never returns shows the request ended before the stall window, the progress stamp still renewed, and the wait ending with the Job's verdict or a no-verdict state naming the timed-out call. livespec-dev-tooling-ie7fas owns it.",
-    "work_item": "livespec-dev-tooling-ie7fas"
+    "test": "tests.consumer.test_delegated_gate_wait_liveness_scenarios.test_a_hung_admission_read_is_timed_out_before_the_stall_window_and_the_stamp_stays_fresh",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). Two arms against the real delegated gate client and its real command runner, with a kubectl stub that never returns and a timeout shim that records the 270 s bound the client asked for and runs it shorter. The mapped arm covers the admission wait: the request is ended, the progress stamp aged by the test is renewed while the request hangs, and the wait ends naming the timed-out admission read. The sibling test test_a_hung_terminal_watch_is_timed_out_and_the_wait_ends_naming_the_timed_out_call covers the terminal-state wait: each hung watch is ended and re-armed until the poll budget is spent, the failure names the timed-out watch, and the abandoned Job is deleted."
   },
   {
     "spec_root": "SPECIFICATION",
