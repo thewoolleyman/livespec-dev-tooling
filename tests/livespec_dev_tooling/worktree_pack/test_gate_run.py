@@ -1310,7 +1310,7 @@ def test_a_stalled_gate_reaps_a_descendant_that_respawns_after_term(
     token = f"livespec-gate-term-respawn-{time.monotonic_ns()}"
     command = (
         "setsid bash -c 'trap '\"'\"'setsid python3 -c \"import time; time.sleep(300)\" "
-        f"{token} & exit 0'\"'\"' TERM; exec sleep 300' & echo collected; exec sleep 300"
+        f"{token} & exit 0'\"'\"' TERM; sleep 300 & wait' & echo collected; exec sleep 300"
     )
     try:
         run_id = _start(
@@ -1323,6 +1323,8 @@ def test_a_stalled_gate_reaps_a_descendant_that_respawns_after_term(
         )
         assert not _live_processes_carrying(token=token)
         assert output.count("ending out-of-group descendant pid=") >= 2
+        assert token in output
+        assert "<exited>" not in output
     finally:
         _end_processes_carrying(token=token)
 
