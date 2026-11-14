@@ -52,7 +52,6 @@
             "value": false
           }
         ],
-        "breakdowns": [],
         "time_range": 86400,
         "granularity": 3600
       }
