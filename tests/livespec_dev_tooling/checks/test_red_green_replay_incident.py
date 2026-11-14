@@ -107,6 +107,33 @@ def test_a_commit_the_chain_records_is_admitted_with_no_label_or_flag(
     }
 
 
+def test_a_live_pull_request_body_admits_a_label_rerun_with_a_stale_event_payload(
+    tmp_path: Path, observer: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environ = _environ(tmp_path=tmp_path, body="before the incident block") | {
+        "GITHUB_REPOSITORY": "owner/repo"
+    }
+    live = {
+        "number": 7,
+        "base": {"sha": _BASE},
+        "head": {"sha": _HEAD},
+        "body": _body(),
+    }
+    forge_read = Mock(
+        return_value=SimpleNamespace(outcome="answer", body=json.dumps(live), lines=())
+    )
+    monkeypatch.setattr(module, "forge_call", forge_read, raising=False)
+
+    admitted = module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
+
+    assert admitted is True
+    assert forge_read.call_args.kwargs == {
+        "name": "red-green-replay-pull-request-body-read",
+        "endpoint": "repos/owner/repo/pulls/7",
+    }
+    assert observer.call_count == 1
+
+
 def test_the_trailer_alone_is_not_provenance_when_the_observer_does_not_record_it(
     tmp_path: Path, observer: Mock, capsys: pytest.CaptureFixture[str]
 ) -> None:
