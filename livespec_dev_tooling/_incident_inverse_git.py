@@ -130,6 +130,13 @@ def _object_view(*, root: Path) -> Iterator[tuple[Path, str]]:
                 str(administration),
             ),
         )
+        # objects/info/commit-graph lives inside the shared objects directory, so the fresh
+        # administration cannot shut it out by itself: a forged graph would feed false
+        # parents to every walk. Git reads this switch from the administration's own config.
+        _ = _git(
+            root=root,
+            args=("config", "--file", str(administration / "config"), "core.commitGraph", "false"),
+        )
         (administration / "info").mkdir(exist_ok=True)
         _ = (administration / "info" / "attributes").write_text(
             "* merge=text !diff -filter -ident -text -eol -working-tree-encoding\n",
