@@ -22,8 +22,9 @@ identity is supplied through `control_node_identity_file`, the variable the
 guard reads its machine-id from (default `/etc/machine-id`), so the test is
 deterministic on every machine, the control node included.
 
-Governing clause: `SPECIFICATION/non-functional-requirements.md`
-§"Host provisioning tree" (a host is applied from the control node).
+Governing clause: the "Host provisioning tree" section of
+`SPECIFICATION/non-functional-requirements.md` (a host is applied from the
+control node).
 """
 
 from __future__ import annotations
