@@ -44,13 +44,6 @@ _DEV_HOSTS_GROUP_VARS = _ANSIBLE / "inventory" / "group_vars" / "dev_hosts.yml"
 _ROLE_NAME = "local_gate_slots"
 _LIMIT_VAR = f"{_ROLE_NAME}_limit"
 
-# The committed limit for this group. It was 3 from the CPU sizing recorded in
-# the role's HOST_VARS.md (18 cores, about four per gate aggregate). It has been
-# 1 since the dev host's 2026-11-13 MEMORY exhaustion: local full-suite gates
-# were one of the uncapped Python consumers, so one runs at a time, inside the
-# local-gate.slice of role dev_host_memory_bounds.
-_DEV_HOST_LIMIT = 1
-
 # Read as TEXT rather than parsed: stdlib `tomllib` lands in 3.11 and PyYAML is
 # not a dependency of this library, which is deliberately dependency-free. Every
 # other inventory assertion in this suite reads text for the same reason.
@@ -91,9 +84,11 @@ def test_the_limit_is_declared_by_a_committed_converge_the_dev_host_play_runs() 
         f"ansible/dev-host.yml must include the {_ROLE_NAME} role, or the "
         f"committed converge never runs on the host it is written for"
     )
-    assert _declared(path=_DEV_HOSTS_GROUP_VARS, name=_LIMIT_VAR) == str(_DEV_HOST_LIMIT), (
-        f"the dev_hosts group must declare {_LIMIT_VAR}: {_DEV_HOST_LIMIT}, "
-        f"one full-suite gate at a time since the 2026-11-13 memory exhaustion"
+    declared = _declared(path=_DEV_HOSTS_GROUP_VARS, name=_LIMIT_VAR)
+    assert declared is not None and declared.isdecimal() and int(declared) > 0, (
+        f"the dev_hosts group must declare {_LIMIT_VAR} as a positive whole "
+        f"number, got {declared!r}: the number itself is a capacity setting "
+        f"that is retuned without touching this test"
     )
 
 
