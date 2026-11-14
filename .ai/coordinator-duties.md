@@ -471,6 +471,13 @@ Measured 2026-11-02: priority 3, dev-host-test-gate-load, had its two main carri
 was awaiting a third item, its pane looked healthy, and the coordinator reported the priority as waiting. The
 maintainer had to ask why it was held. Ruling recorded on epic `livespec-dev-tooling-6tgd2z`, 2026-11-02T01:56:11Z.
 
+**Seats on another machine may not reach this session by SendMessage.** Until plan distributed-send-message
+(livespec-dev-tooling-rlwppp) lands, a seat on hetzner-xubuntu cannot SendMessage to the coordinator on vmi3006760; its
+asks arrive as TO COORDINATOR ledger comments on its plan epic, or relayed by the maintainer. Every tick reads those
+comments for every moved seat, and replies go through `herdr --machine <m> pane send-text <pane> "<text>"` then
+`send-keys <pane> Enter`. Never ask the maintainer to relay. Measured 2026-11-14 ~01:1xZ: gate-job-resources'
+successor relayed through the maintainer's paste.
+
 ## 4. The owning session decides first
 
 A plan-level question goes to the session that owns the plan, to DECIDE. That covers a deferred assertion, a
@@ -580,6 +587,11 @@ every PR it sends for grade with `gh pr create --draft`, and runs `gh pr ready` 
 armed". It merged at 10:31:04Z, before the fix its PASS-WITH-ONE-FIX grade required, so the fix had to land as a
 separate follow-up PR (livespec-dev-tooling#4157), and c3nd2h and livespec-dev-tooling-brggiu were held unaccepted
 until that follow-up merged.
+
+**"Send it for grade" is never a merge GO, and a handoff must not turn it into one.** A seat merges only after the
+coordinator's PASS on the PR in question; a successor reads the coordinator's own words, not the predecessor's
+paraphrase. Measured 2026-11-14 ~01:1xZ: sandbox-driver-kubernetes#21 merged before its grade because a handoff wrote
+"Merge #20 and #21 on green" from a coordinator message that only asked for #21 to be sent for grade.
 
 **Rule BYTE-CLAIMS-ARE-DIFFED: a "byte-identical" grade diffs the two files (coordinator's reading).** A grade that
 rests on "byte-identical" or "the same as" diffs the two files. It never compares names by grep. Recorded on epic
@@ -742,6 +754,14 @@ The maintainer, 2026-11-09 ~19:3xZ, recorded on epic `livespec-dev-tooling-6tgd2
 extremely closely, then make a new plan.  CI runtime and cost seem like they're turning into a dump truck, but we need
 to rearchitect all this anyway. I guess if that's easier, just get it done." d2tp5d went to ci-runtime-and-cost. That
 plan's scope creep is a known issue, pending the re-architecture the maintainer named.
+
+**A seat that declares MOVE-READY gets its successor opened at once.** When a seat writes its handoff and says it is
+moving to another machine (MOVE-READY), the coordinator opens the successor seat in the target herdr workspace in the
+same tick (`herdr --machine <m> tab create --workspace <ws> --cwd <repo> --label <plan-slug>`, then
+`claude -n <plan-slug>` with a resume brief naming the handoff), then exits the old session and closes its pane and
+tab, so messages sent by seat name reach the successor. Measured 2026-11-14: gate-job-resources, ci-runtime-and-cost
+and implement-test-performance moved to hetzner-xubuntu (workspace throughput-improvements); a coordinator grade sent
+by name reached the stopped old ci-runtime-and-cost session instead of its successor.
 
 ## 9. The tick report
 
@@ -1422,6 +1442,13 @@ homelab-k8s-worker-nodes. The failure is recorded on retro item livespec-dev-too
 inherits the seat, and to the seat whose run it was. Measured 2026-11-07: session 348c3d09's `gh run cancel` calls
 (16:06:58Z, 16:20:20Z) were missing from its handoff, and fleet-flaky-tests then had to ask who cancelled four master
 runs.
+
+**A maintainer ask carried from a handoff is re-decided by the coordinator, and a stale priority line is acted on, not
+noted.** When top5 marks a priority STALE, read what its seat waits on that tick; any decision it waits on that is not
+secret or credential creation is decided by the coordinator under R301, and a seat near its context limit is restarted
+before it stalls. Measured 2026-11-14: bootstrap-credentials-and-onboarding sat STALE (146 min, 8% context) through
+tick 1 while two of its gating decisions sat under FOR THE MAINTAINER from a prior handoff; the maintainer asked "Why
+did you let bootstrap-credentials-and-onboarding stall and block on getting done?"
 
 The maintainer, 2026-11-02: "Why are you paying attention to your handoffs rather than the directives encoded in your
 plan and in your loop?"
