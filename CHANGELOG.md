@@ -58,6 +58,25 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.210.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.209.0...v1.210.0) (2026-11-14)
+
+
+### Features
+
+* **ansible:** dev_host_memory_bounds moves dead Claude session scratch off the /tmp tmpfs until the bind (livespec-dev-tooling-qgwxo4) ([7c40915](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7c4091530ecba2c69405777b71c522d24399279e))
+* **gate-run:** stall bound snapshots the attributed processes before any signal ([84e0255](https://github.com/thewoolleyman/livespec-dev-tooling/commit/84e0255594419515dc1d90c3a5c17b386bbb2b62))
+
+
+### Bug Fixes
+
+* **ansible:** the Claude scratch mover keeps every session when no process environment can be read (livespec-dev-tooling-qgwxo4) ([e1ce1a5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e1ce1a5f812369646a908a18271413933e7405fe))
+* **ansible:** the Claude scratch mover never follows symlinks, stages before it copies, and matches the session id anywhere (livespec-dev-tooling-qgwxo4) ([b44313c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b44313cb9b92f65b82a2b4aa87891930dc78d04c))
+* **ansible:** the Claude scratch mover sets a destination's owner through a no-follow fd and re-checks it before the copy (livespec-dev-tooling-qgwxo4) ([5fbf6c0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5fbf6c0152a362068b8dc84cdf72cdb16eb43e9c))
+* **ansible:** the vps entry's local connection refuses on any controller but the control node (livespec-dev-tooling-fy6ip4) ([b7b1e34](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b7b1e3440128b673cdf9ed9762def73e3ac1710a))
+* attributed queue_quota gauge sums every churn-slot flavor of a ClusterQueue ([006200f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/006200f197e711f6587d086eea112a1df89f95b4))
+* **gate-run:** clear shellcheck SC2054 and SC2318 in the stall snapshot writer ([e507aa3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e507aa33062f02827bc623605902fac6faf122a3))
+* lifecycle sweep quota_sum adds every churn-slot flavor of every ClusterQueue ([c506bd9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c506bd93b63a969fa2ae9ef817002a2edd39b696))
+
 ## [1.209.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.208.0...v1.209.0) (2026-11-14)
 
 
