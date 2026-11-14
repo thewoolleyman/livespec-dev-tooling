@@ -184,6 +184,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a bump PR whose base gains a pin-bearing line at the old tag is refreshed so that line names the target tag",
+    "work_item": "livespec-dev-tooling-m5cpnl",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a canary clone adopts a release tag ahead of the release branch and the release branch does not move",
     "work_item": "livespec-dev-tooling-zpqvnr",
     "first_seen": "2026-11-10"
@@ -908,6 +915,13 @@
     "heading": "## Scenario: a runner-only profile with zero admission capacity is refused",
     "work_item": "livespec-dev-tooling-62zla3",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a scratch incident observer installs a release production does not serve yet",
+    "work_item": "livespec-dev-tooling-whzwtw",
+    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",

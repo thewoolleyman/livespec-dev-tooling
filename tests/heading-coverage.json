@@ -1478,6 +1478,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a bump PR whose base gains a pin-bearing line at the old tag is refreshed so that line names the target tag",
+    "test": "TODO",
+    "reason": "Spec-first (v224): a real test at the integration tier or above is owed for this scenario, driving reusable-bump-pin-from-dispatch.yml's stale-base refresh against a consumer whose default branch gains a discovered pin at the old tag while a bump PR is open, asserting the --force-with-lease push of a head where that pin names the target tag and that a current head with nothing to rewrite pushes no commit; livespec-dev-tooling-m5cpnl owns it.",
+    "work_item": "livespec-dev-tooling-m5cpnl"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Detached gate runner",
     "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer",
@@ -3840,6 +3848,14 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: the committed incident_observer role is rendered with an inventory declaring a second repository, and the second installation's configuration, units and funnel routes are read back while livespec-dev-tooling's bytes and running observer stay unchanged. livespec-dev-tooling-lqp2qx owns it.",
     "work_item": "livespec-dev-tooling-lqp2qx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a scratch incident observer installs a release production does not serve yet",
+    "test": "TODO",
+    "reason": "Spec-first (v224): a real test at the integration tier is owed for this scenario, converging the incident_observer role with a scratch installation whose release variable differs from production's, asserting the scratch Python environment serves that release at its own path while production's environment, release, configuration, manifest and units keep their bytes, that a scratch environment path set to production's is refused before the first write naming both paths, and that teardown removes only the scratch environment; livespec-dev-tooling-whzwtw owns it.",
+    "work_item": "livespec-dev-tooling-whzwtw"
   },
   {
     "spec_root": "SPECIFICATION",

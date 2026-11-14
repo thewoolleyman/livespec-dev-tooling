@@ -2194,6 +2194,20 @@ Then the pin autodiscovery walk MUST yield a fabro-sandbox docker image tag reco
 
 And the bump commit MUST rewrite both lines to `python-v1.134.5`
 
+## Scenario: a bump PR whose base gains a pin-bearing line at the old tag is refreshed so that line names the target tag
+
+Given a consumer bump PR `chore(deps): bump thewoolleyman/livespec-dev-tooling pin to v2` whose rewrite moved every pin §"Pin autodiscovery rules" discovers for that source on the default branch, as it stood when the PR opened, from v1 to v2
+
+And the default branch then gains a new such pin that names v1
+
+When the consumer's default branch advances while the bump PR is open
+
+Then the bump automation MUST push to the PR branch, with --force-with-lease, a head reset to the default branch's tip in which that new pin names v2
+
+And no pin §"Pin autodiscovery rules" discovers for that source on the refreshed PR head names v1
+
+And when a later refresh finds the PR head current and no discovered pin to rewrite, it MUST push no commit
+
 ## Scenario: a detached gate outlives the caller that launched it and reports its own exit code
 
 Given a checkout carrying the worktree-discipline pack
@@ -3809,6 +3823,8 @@ Then an expedited repair publishes the exact EXPEDITED_INCIDENT_RESPONSE flag ma
 And normal range and replay readers validate historical incident provenance against the recorded PR, head and landed commits after the label or environment has disappeared.
 And an expedited receipt records deferred replay honestly and remains distinct from normal TDD proof.
 And a workflow incident requires its scoped host authorization receipt through the credential boundary while the factory retains its existing workflow credential scope.
+And when the expedited-incident-response label is added to a pull request whose in-flight CI run's event predates its livespec-incident-ci block, the run that then executes the replay gate MUST read the current block and admit the expedited commit the chain records.
+And when the pull request carries no block, the replay gate MUST print a line naming the missing block and the source it read, and keep the commit convicted.
 ```
 
 ## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name
@@ -3853,6 +3869,12 @@ And every normal master push disables both incident flags and selects its comple
 And the reusable check matrix honours an incident-omitted list only on a pull_request that carries the trusted incident label and has a same-repository head, and each leg it omits reports omitted-by-incident-policy under its real check name.
 And that workflow runs every requested check on a master push or any other event whatever the input carries, and fails a leg closed on an input that is not a JSON array of strings.
 And a caller that wires incident-omitted from anything other than its incident-ci job's guarded output is refused by the repository conformance check on callers.
+And an adopter workflow that declares one check in two jobs MUST render and decode an inventory with one member per declaring job, and the entrance MUST run that check once and attribute its outcome to both jobs in its receipt.
+And a member whose job carries an if: condition MUST be listed in the receipt as a conditional job not run on this event, never dropped.
+And a render of an adopter's incident CI inventory that fails, or that is given a clone whose origin does not name the repository argument, MUST refuse by name and leave the committed entry byte-identical.
+And when an adopter's default branch adds a member its released incident CI inventory entry lacks, the pre-release freshness read MUST refuse the release naming the repository, the entry's source commit, the current head and the added member.
+And when the default branch advances by commits that keep the attempt's genesis base an ancestor of the new base tip within the freshness bound, the armed pull request's incident-ci admission MUST succeed with no corrected attempt and no merge hold.
+And when the genesis base is not an ancestor of the pull request's current base, or the bound is exceeded, incident-ci MUST refuse naming the genesis base, the event's base and the bound exceeded.
 ```
 
 ## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item
@@ -3867,6 +3889,7 @@ And a publication whose pull request, head or arm differs from the retained arm 
 And when the controller retained no publication for a completed incident CI job on an armed head, it MUST record from the job's completion delivery an unpublished record carrying exactly the run id, the run attempt, the job's conclusion and the code of any refusal it answered.
 And a controller whose manifest carries no CI identity policy MUST answer identity-not-provisioned, write that code onto the item's unpublished record for the run attempt and into the step summary, and MUST NOT fail the job, while any other refusal or an unreachable controller MUST fail the incident CI job naming its cause.
 And a run of the incident CI job on a head the controller has not armed, including one whose aggregate refused for want of a current arm, MUST receive no record.
+And the entrance's pyright warm-up and every member it ran MUST have received the repository root as their working directory and an environment with no LIVESPEC_INCIDENT_ variable, while the entrance's own environment carried the observer query credential.
 ```
 
 ## Scenario: the first required master leaf failure fences incident recovery
@@ -3944,6 +3967,17 @@ And removing the second repository's installation through the role MUST leave li
 And a role run whose inventory declares only livespec-dev-tooling MUST render that installation byte-identical to the role's output without the per-repository capability.
 ```
 
+## Scenario: a scratch incident observer installs a release production does not serve yet
+
+```gherkin
+Given a production incident observer installation serving release vA, whose Python environment, release, configuration, manifest and units are read back and whose observer is running
+When the committed observer role installs a scratch installation whose release variable names release vB
+Then the scratch installation MUST have its own Python environment, at a path distinct from production's, serving release vB
+And the apply MUST NOT require production to serve vB first
+And production's Python environment MUST still serve vA, and production's configuration, manifest and units MUST keep their bytes, and its running observer MUST NOT restart
+And when the scratch Python environment's path is set to production's Python environment under /opt/livespec-incident, the role MUST refuse before its first write, naming both paths and stating that nothing was written, stopped or removed
+And the committed teardown MUST remove the scratch installation's Python environment and units while production's Python environment and release keep their bytes.
+```
 
 ## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused
 
@@ -4071,6 +4105,7 @@ Then the step MUST write one enablement record through the controller's control-
 And the controller MUST confirm that identity with its own fresh read of livespec core's default branch before it retains the record, and an exact retry MUST answer the retained record without writing again
 And a later expedited commit in that repository MUST read the record through the installation this library's committed configuration names, compare the confirmed identity against the hook's own fresh read of core's default branch, and record `enabled` in its receipt
 And the incident CI entrance MUST record `enabled` in its plan from the controller's answer, and the controller MUST record `enabled` in its arm receipt
+And the incident-ci job MUST print `incident-ci: the released plan recorded enablement` followed by that reading's JSON to its step log, and no other field of the plan, so the reading can be read back from the run.
 And no dev-host file, repository file, repository variable, forge label, pull-request body or ledger record MAY be read as the enablement.
 ```
 
@@ -4486,7 +4521,9 @@ When branch_protection_alignment runs with an admin-scoped token
 Then the effective required-check set contains the all-green gate and the check exits 0.
 And the same configuration with a repository-role bypass actor added to that ruleset fails with failure_mode ruleset_bypass_not_app.
 And the same configuration with the ruleset's strict policy enabled fails with failure_mode strict_enabled.
-And a ruleset read that fails fails with failure_mode ruleset_unreadable rather than skipping.
+And a ruleset read that fails once and then returns the ruleset retries after a wait and the check exits 0.
+And a rules read of the default branch that fails once and then succeeds retries after a wait and the check completes its alignment verdict rather than reporting ruleset_unreadable.
+And a ruleset read that fails on every attempt of its bounded retry fails with failure_mode ruleset_unreadable rather than skipping, naming its first and last failed attempt.
 ```
 
 ## Scenario: a coverage-guided kill-matrix run skips tests that do not execute a mutant
