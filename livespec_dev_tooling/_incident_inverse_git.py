@@ -12,7 +12,7 @@ from functools import partial
 from pathlib import Path
 
 from livespec_dev_tooling._incident_inverse_types import InversePlan, LandedIncident
-from livespec_dev_tooling.incident_git import run_git
+from livespec_dev_tooling.incident_git import IncidentGitError, run_git
 
 __all__: list[str] = ["IsolatedGit", "build_inverse", "scope_matches_git"]
 
@@ -109,6 +109,22 @@ def _scope_matches_git(
     )
 
 
+def _refuse_borrowed_objects(*, objects: str) -> None:
+    """Refuse a clone whose object store names another store: its objects would stand in."""
+    for name in ("alternates", "http-alternates"):
+        named = Path(objects) / "info" / name
+        if os.path.lexists(named):
+            raise IncidentGitError(
+                reason=(
+                    f"incident object view refused: {named} names another object store, "
+                    "so objects outside this clone could reach the read"
+                ),
+                cmd=(),
+                returncode=None,
+                stderr=b"",
+            )
+
+
 @contextmanager
 def _object_view(*, root: Path) -> Iterator[tuple[Path, str]]:
     """Read immutable objects without the source checkout's configuration or attributes."""
@@ -120,6 +136,7 @@ def _object_view(*, root: Path) -> Iterator[tuple[Path, str]]:
             .decode()
             .strip()
         )
+        _refuse_borrowed_objects(objects=objects)
         _ = _git(
             root=root,
             args=(
