@@ -1,0 +1,520 @@
+[
+ {
+  "id": 42382775178,
+  "sha": "b795877a6787cb9528443aea6e861fe5290c08bb",
+  "created": "2026-11-07T14:41:27Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): propose fleet-orchestrator-build-record (livespec-dev-to\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 313086,
+  "failed_tests": []
+ },
+ {
+  "id": 42406524120,
+  "sha": "4e154e4935b68d5af75413508e97590ac741b19d",
+  "created": "2026-11-07T19:30:20Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: name delegated pre-commit fallback job",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 315472,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_node_status_credential_pull_on_rejection.py::test_a_missing_node_is_still_waited_for"
+  ]
+ },
+ {
+  "id": 42426481932,
+  "sha": "3e060c120e90a48f2cae6d3c9ec06b7d6c5a240e",
+  "created": "2026-11-07T23:42:45Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "docs(coordinator): record 2026-11-07 lessons and fix fleet-utilizatio\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 322081,
+  "failed_tests": [
+   "tests/consumer/test_delegated_gate_declared_recipe_scenarios.py::test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape[last-is-bash-stdout]"
+  ]
+ },
+ {
+  "id": 42445385824,
+  "sha": "63302bba5e00b422b5ba7fdcc369656c3e17aa73",
+  "created": "2026-11-08T04:05:39Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(ci): a hung self-hosted CI job is cancelled at a measured timeo\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 324188,
+  "failed_tests": [
+   "tests/consumer/test_delegated_gate_declared_recipe_scenarios.py::test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape[last-is-bash-stderr]"
+  ]
+ },
+ {
+  "id": 42456169283,
+  "sha": "75e99de9cc60136b48af5c329105db0d5f5ad131",
+  "created": "2026-11-08T06:47:28Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(master): release 1.188.1",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 323735,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/worktree_pack/test_gate_run.py::test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process"
+  ]
+ },
+ {
+  "id": 42458558770,
+  "sha": "8c0900840a4e3369d03feee2d075eb2dd81f2d54",
+  "created": "2026-11-08T07:22:53Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(ci): route master-push gating jobs through CI_RUNNER_LABELS_MAS\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 320173,
+  "failed_tests": []
+ },
+ {
+  "id": 42478571241,
+  "sha": "cccd2671dd06ebae7ffe0a88a95980dd35eddd5a",
+  "created": "2026-11-08T12:05:02Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: the per-target wall-time table shows minutes and seconds (livesp\u2026",
+  "failed_jobs": [
+   "check-metadata-batch",
+   "ci-green"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 42584235650,
+  "sha": "7e0e24acaeae0e2708cad4e040c8561cff457b16",
+  "created": "2026-11-09T08:12:14Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "docs(plan): note 003 adds the live CPU-share read and gmktec CI p95 b\u2026",
+  "failed_jobs": [
+   "check-fleet-conformance",
+   "ci-green"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43010508046,
+  "sha": "37f7caa7fc83629a0f1e72dce8dbc8f8714bfbb5",
+  "created": "2026-11-11T11:16:00Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(tests): a union key declared with two absence spellings is reje\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 372817,
+  "failed_tests": [
+   "tests/consumer/test_consumer_configuration_schema.py"
+  ]
+ },
+ {
+  "id": 43029995883,
+  "sha": "d8d23caec1ec979c16bc3c00f13046874f95d735",
+  "created": "2026-11-11T13:32:10Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix(fleet): a gh 5xx is a server error only when gh relays it as an H\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 372026,
+  "failed_tests": []
+ },
+ {
+  "id": 43133933158,
+  "sha": "7ce9ecf5f0297f1af8c85cf98539e0d310aed941",
+  "created": "2026-11-12T01:21:18Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): propose a 2-hourly dev host scratch pass and an authenti\u2026",
+  "failed_jobs": [
+   "check-fleet-conformance",
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 401827,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_gate_repro.py::test_a_job_that_ends_is_reported_by_name_and_condition_with_no_green_token",
+   "tests/livespec_dev_tooling/test_gate_repro.py::test_a_job_that_never_ends_is_reported_with_the_clients_reason_and_deleted",
+   "tests/livespec_dev_tooling/test_gate_repro.py::test_main_reports_the_ending_and_exits_by_it"
+  ]
+ },
+ {
+  "id": 43136586767,
+  "sha": "c3d4a34e1c3fed678aec0a621a32062300520948",
+  "created": "2026-11-12T01:44:37Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix(ansible): the converge unit installs the Fabro warm-cache manifes\u2026",
+  "failed_jobs": [
+   "check-fleet-conformance",
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 401339,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_gate_repro.py::test_a_job_that_ends_is_reported_by_name_and_condition_with_no_green_token",
+   "tests/livespec_dev_tooling/test_gate_repro.py::test_a_job_that_never_ends_is_reported_with_the_clients_reason_and_deleted",
+   "tests/livespec_dev_tooling/test_gate_repro.py::test_main_reports_the_ending_and_exits_by_it"
+  ]
+ },
+ {
+  "id": 43151602585,
+  "sha": "37850ee7d6801ac8479852191a3791e7adb50b1c",
+  "created": "2026-11-12T03:57:30Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(homelab-worker): the M4 declares en0 again; the maintainer retu\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 378888,
+  "failed_tests": []
+ },
+ {
+  "id": 43206308296,
+  "sha": "85a9fed1e955ee25112156e0194ebff7143a836f",
+  "created": "2026-11-12T11:06:54Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(ansible): raise gamingpc-xubuntu factory_pod_budget 1 -> 2",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43211672454,
+  "sha": "a87b63d36043530c059742c8b1ad01b005599d9e",
+  "created": "2026-11-12T11:44:04Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "test: cover rejected Fabro settings tokens",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43214453687,
+  "sha": "54f548627fb89b937b7bbd6b1ee2d3710d32c145",
+  "created": "2026-11-12T12:03:26Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(kueue): the hp-xubuntu gate lane admits one gate, not two (live\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43216508417,
+  "sha": "76c9f36d3901a747310a98b8943495841888c2ac",
+  "created": "2026-11-12T12:17:11Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "feat(homelab-worker): a committed removal route and a committed admis\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43217957159,
+  "sha": "00f64ebac7fd9062a750299e9f0a6e5dcec94832",
+  "created": "2026-11-12T12:26:49Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): v204 dev-host-test-gate-load: gate client watch, one sta\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43257840402,
+  "sha": "6201dcdb2eee44f4def76ec749ee46a988550c1f",
+  "created": "2026-11-12T16:21:54Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "docs(plan): research note 008 measures the homelab egress's anonymous\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 417361,
+  "failed_tests": [
+   "tests/spec/test_homelab_worker_runner_set.py::test_the_ci_stack_converge_runs_unchanged_with_no_worker_set",
+   "tests/spec/test_homelab_worker_runner_set.py::test_the_ci_stack_converge_upgrades_each_worker_set_on_the_published_hook_revision"
+  ]
+ },
+ {
+  "id": 43311276679,
+  "sha": "b082d9a871e41a7676fafee57651eefbefac90c6",
+  "created": "2026-11-12T21:32:40Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(kueue): a second gate lane on gamingpc (10 cpu / 16Gi) for prio\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 391177,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_incident_recovery_principal_target_branch.py::test_moved_scratch_head_without_overlap_is_recomputed_and_preserves_later_work"
+  ]
+ },
+ {
+  "id": 43372854805,
+  "sha": "da0264acee6b49bb737cd3aef885c1362783ec55",
+  "created": "2026-11-13T05:34:02Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix(incident): the CI entrance selects from the adopter's own release\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 397231,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_incident_enablement_readers.py::test_the_ci_plan_output_carries_the_plan_time_reading"
+  ]
+ },
+ {
+  "id": 43374192853,
+  "sha": "01a87e860a83f29c3ddbb0fecc7304c63ca1af90",
+  "created": "2026-11-13T05:46:22Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(master): release 1.204.0",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 398807,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_incident_enablement_readers.py::test_the_ci_plan_output_carries_the_plan_time_reading"
+  ]
+ },
+ {
+  "id": 43380242721,
+  "sha": "517f396ffef7e46f013e86a794bdc0185f1cd03a",
+  "created": "2026-11-13T06:39:43Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: reuse test-only suite probe",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 397419,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_incident_enablement_readers.py::test_the_ci_plan_output_carries_the_plan_time_reading"
+  ]
+ },
+ {
+  "id": 43438119082,
+  "sha": "71220a770cca6beb0fb945545b90da2a67c45be8",
+  "created": "2026-11-13T13:56:46Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: run the Python telemetry exporter so the coverage reuse outcome \u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43443559259,
+  "sha": "caad2984433d24c321500e7889377f6970cf2a68",
+  "created": "2026-11-13T14:31:44Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): propose the-bump-pin-reconcile-inserts (livespec-dev-too\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43447438661,
+  "sha": "585bd30922f8a00440b4423f2760d63a7147c23e",
+  "created": "2026-11-13T14:55:46Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(tests): drive the pre-push hook with the real evidence reader a\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43449972390,
+  "sha": "b528c0533abef2efc98b98f5a72c849a6c20ec9e",
+  "created": "2026-11-13T15:10:51Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "feat: declare consumed config API",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43452777337,
+  "sha": "61920e47b2f75b4a9a19fe4a754164b1991a31da",
+  "created": "2026-11-13T15:27:23Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "test(otel-collector): cover conditional endpoint restart queue",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43460830437,
+  "sha": "705cd88dc5951827dd1e1b862bf9502fe9b210b6",
+  "created": "2026-11-13T16:15:12Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(ansible): gmktec's candidate catalog moves to the python-agent \u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43463209699,
+  "sha": "d3c96d3953ada8e8dea9c0b4ae0c60467a4fe350",
+  "created": "2026-11-13T16:29:25Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "docs(ci-runner): ClusterQueue headers state the live cohort of 31, no\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43469645719,
+  "sha": "d273b7a9dfecd49de35b5f97a863ba701aefa41a",
+  "created": "2026-11-13T17:07:37Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(master): release 1.207.0",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green",
+   "export-telemetry"
+  ],
+  "cov_log_bytes": 404523,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_incident_recovery_principal.py::test_genuine_overlap_with_later_work_is_an_owned_rollbackconflict_request"
+  ]
+ },
+ {
+  "id": 43469897107,
+  "sha": "0ac294fe9404a6efb32b59c9aa834698dffd70ae",
+  "created": "2026-11-13T17:09:06Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(ci): incident-ci prints only the enablement reading the release\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43476456232,
+  "sha": "afd694cd94a51fae352ee183240e74d1a6465d50",
+  "created": "2026-11-13T17:48:35Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(homelab-worker): pin the split host and pod-span collector conf\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43480337708,
+  "sha": "b2bc5a66cd95da0cc6310086dcf087074a3b2af9",
+  "created": "2026-11-13T18:12:23Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix(incident): the incident-ci entrance provisions locked pyright bef\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43488927204,
+  "sha": "9d7e17baf4cd0dbbbe6e02d65cec257a88f03dae",
+  "created": "2026-11-13T19:05:52Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): v213 every-workflow-editing-pr-rewrites: the workflow-ed\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43494249417,
+  "sha": "e4c0880d097e4729ed4f232fc3451cc9c1724ac6",
+  "created": "2026-11-13T19:39:23Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(coordinator): resolve seat checkouts under ~/workspace, not /da\u2026",
+  "failed_jobs": [
+   "export-telemetry"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43498286624,
+  "sha": "d2f49db530893a79c35378ddc91ab313557b36c0",
+  "created": "2026-11-13T20:05:27Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): state the no-restart scenario line as a prohibition (liv\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "cov_log_bytes": 405551,
+  "failed_tests": [
+   "tests/livespec_dev_tooling/test_incident_recovery_principal_refusals.py::test_crash_before_the_commit_exists_is_provably_inert"
+  ]
+ }
+]
