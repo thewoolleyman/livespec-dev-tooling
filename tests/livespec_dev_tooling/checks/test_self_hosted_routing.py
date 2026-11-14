@@ -135,6 +135,30 @@ _SHADOW_LIST_LOCAL_CI = (
 )
 
 
+_GUARDED_MERGE_GROUP = (
+    "name: guarded merge queue\n"
+    "on:\n"
+    "  pull_request:\n"
+    "  merge_group:\n"
+    "jobs:\n"
+    "  merge-queue-guard:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    permissions:\n"
+    "      contents: read\n"
+    "    outputs:\n"
+    "      trusted: ${{ steps.result.outputs.trusted }}\n"
+    "    steps:\n"
+    "      - id: result\n"
+    '        run: echo trusted=true >> "$GITHUB_OUTPUT"\n'
+    "  check:\n"
+    "    needs: [merge-queue-guard]\n"
+    "    if: ${{ !cancelled() }}\n"
+    "    runs-on: ${{ needs.merge-queue-guard.outputs.trusted == 'true' && fromJSON(vars.CI_RUNNER_LABELS || '[\\\"self-hosted\\\", \\\"local-ci\\\"]') || 'ubuntu-latest' }}\n"
+    "    steps:\n"
+    "      - run: just check\n"
+)
+
+
 def test_hosted_fallback_with_only_allowed_triggers_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -142,6 +166,90 @@ def test_hosted_fallback_with_only_allowed_triggers_passes(
     _ = _write_workflow(tmp_path=tmp_path, name="ci.yml", body=_CI_FROMJSON_HOSTED_FALLBACK)
     rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert rc == 0, f"a hosted fail-closed fallback should pass; combined={combined!r}"
+
+
+def test_guarded_merge_group_route_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A hosted read-only guard admits its guarded `merge_group` self-hosted route."""
+    _write_gating_labels(tmp_path=tmp_path, labels=("local-ci",))
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'gating_self_hosted_labels = ["local-ci"]\n'
+        'merge_queue_author_allowlist = ["dependabot[bot]"]\n',
+        encoding="utf-8",
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="ci.yml", body=_GUARDED_MERGE_GROUP)
+
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, f"a guarded merge-group route should pass; combined={combined!r}"
+
+
+def test_guarded_merge_group_allows_transitive_guard_needs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every job may reach the first guard through an intermediate job."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n" 'merge_queue_author_allowlist = ["dependabot[bot]"]\n',
+        encoding="utf-8",
+    )
+    body = _GUARDED_MERGE_GROUP.replace(
+        "  check:\n",
+        "  prepare:\n    needs: merge-queue-guard\n    runs-on: ubuntu-latest\n"
+        "    steps:\n      - run: echo prepare\n"
+        "  check:\n",
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="ci.yml", body=body)
+
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, f"a transitive guard dependency should pass; combined={combined!r}"
+
+
+def test_guarded_merge_group_allows_required_legs_gate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The ci-green required-legs reader is an alternative to !cancelled()."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n" 'merge_queue_author_allowlist = ["dependabot[bot]"]\n',
+        encoding="utf-8",
+    )
+    body = _GUARDED_MERGE_GROUP.replace("    if: ${{ !cancelled() }}\n", "").replace(
+        "  check:\n",
+        "  ci-green:\n"
+        "    needs: [merge-queue-guard]\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - run: python3 -m livespec_dev_tooling.ci_green_required_legs --gate-job ci-green\n"
+        "  check:\n",
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="ci.yml", body=body)
+
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, f"the required-legs gate shape should pass; combined={combined!r}"
+
+
+def test_guarded_merge_group_requires_guard_dependency_and_cancelled_condition(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unguarded merge-group route remains a named forbidden-trigger finding."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n" 'merge_queue_author_allowlist = ["dependabot[bot]"]\n',
+        encoding="utf-8",
+    )
+    body = _GUARDED_MERGE_GROUP.replace("    needs: [merge-queue-guard]\n", "").replace(
+        "    if: ${{ !cancelled() }}\n", ""
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="unguarded.yml", body=body)
+
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1
+    finding = _findings(combined=combined)[0]
+    assert finding["workflow"] == ".github/workflows/unguarded.yml"
+    assert finding["forbidden_triggers"] == ["merge_group"]
 
 
 def test_shadow_list_local_ci_with_comment_naming_forbidden_passes(
