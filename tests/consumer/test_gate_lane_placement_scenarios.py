@@ -51,17 +51,19 @@ def _committed_lane_order() -> list[str]:
     GATE_LANE_STATIC_QUEUE_FILE, so no scenario pins a committed order. A flavor
     line is `- name: <unquoted>` at the flavor indent under gates-cq's `flavors:`.
     """
-    for document in re.split(r"(?m)^---\s*$", _STATIC_QUEUE.read_text(encoding="utf-8")):
-        if re.search(r"(?m)^kind: ClusterQueue\s*$", document) and re.search(
-            r"(?m)^  name: gates-cq\s*$", document
-        ):
-            names = re.findall(
-                r"(?m)^        - name: ([A-Za-z0-9][A-Za-z0-9.-]*)\s*$",
-                document.split("\n      flavors:\n", 1)[1],
-            )
-            node_of = {flavor: node for node, flavor in _FLAVOR.items()}
-            return [node_of[name] for name in names if name in node_of]
-    raise AssertionError(f"no gates-cq flavor list in {_STATIC_QUEUE}")
+    queues = [
+        document
+        for document in re.split(r"(?m)^---\s*$", _STATIC_QUEUE.read_text(encoding="utf-8"))
+        if re.search(r"(?m)^kind: ClusterQueue\s*$", document)
+        and re.search(r"(?m)^  name: gates-cq\s*$", document)
+    ]
+    assert len(queues) == 1, f"one gates-cq ClusterQueue in {_STATIC_QUEUE}"
+    names = re.findall(
+        r"(?m)^        - name: ([A-Za-z0-9][A-Za-z0-9.-]*)\s*$",
+        queues[0].split("\n      flavors:\n", 1)[1],
+    )
+    node_of = {flavor: node for node, flavor in _FLAVOR.items()}
+    return [node_of[name] for name in names if name in node_of]
 
 
 _STATIC = _committed_lane_order()
