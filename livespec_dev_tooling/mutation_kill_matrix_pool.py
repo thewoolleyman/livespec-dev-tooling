@@ -109,7 +109,7 @@ def run_pending(  # noqa: PLR0913 — the callback is optional; every other keyw
     roots = import_roots(execute=execute, target=target)
     modules = {plan.mutant.identifier.rpartition(".")[0].split(".")[0] for plan in plans}
     pending: queue.SimpleQueue[MutantPlan | None] = queue.SimpleQueue()
-    for plan in plans:
+    for plan in sorted(plans, key=lambda plan: len(plan.selected)):
         pending.put(plan)
     for _ in range(count):
         pending.put(None)
