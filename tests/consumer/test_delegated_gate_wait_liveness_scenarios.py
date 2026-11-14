@@ -183,12 +183,12 @@ def _gated_repository(*, tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _wait_for_verdict(*, run_dir: Path, seconds: float) -> str:
+    exit_code = run_dir / "exit_code"
     deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if (run_dir / "exit_code").is_file():
-            return (run_dir / "exit_code").read_text(encoding="utf-8").strip()
+    while not exit_code.is_file():
+        assert time.monotonic() < deadline, f"no verdict in {run_dir} within {seconds} s"
         time.sleep(0.25)
-    return ""
+    return exit_code.read_text(encoding="utf-8").strip()
 
 
 def test_a_job_that_outlives_the_stall_window_still_ends_with_its_own_verdict(
