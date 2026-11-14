@@ -1,0 +1,21 @@
+import json,subprocess
+since="2026-11-06T22:05:00Z"
+Q="""query($o:String!,$n:String!,$since:GitTimestamp!,$c:String){repository(owner:$o,name:$n){defaultBranchRef{target{... on Commit{history(since:$since,first:50,after:$c){pageInfo{hasNextPage endCursor} nodes{oid committedDate checkSuites(first:20){nodes{conclusion workflowRun{databaseId event workflow{name}} checkRuns(first:30,filterBy:{conclusions:[FAILURE,TIMED_OUT]}){nodes{name}}}}}}}}}}}"""
+c=None; out=[]
+for _ in range(60):
+    a=["gh","api","graphql","-f","query="+Q,"-f","o=thewoolleyman","-f","n=livespec-dev-tooling","-f","since="+since]
+    if c: a+=["-f","c="+c]
+    h=json.loads(subprocess.run(a,capture_output=True,text=True).stdout)["data"]["repository"]["defaultBranchRef"]["target"]["history"]
+    for x in h["nodes"]:
+        if x["committedDate"]>"2026-11-13T22:05:00Z": continue
+        for s in x["checkSuites"]["nodes"]:
+            w=s["workflowRun"]
+            if w and w["event"]=="push" and w["workflow"]["name"]=="CI" and s["conclusion"]=="FAILURE":
+                names={r["name"] for r in s["checkRuns"]["nodes"]}
+                out.append((x["committedDate"],x["oid"][:9],w["databaseId"],"cov" if any("per-file-coverage" in n for n in names) else "", sorted(names)))
+    if not h["pageInfo"]["hasNextPage"]: break
+    c=h["pageInfo"]["endCursor"]
+mine={r["id"] for r in json.load(open("/tmp/claude-1000/-home-ubuntu-workspace-livespec-dev-tooling/c301216a-fdcf-40fa-b269-daabdb78668e/scratchpad/diag/livespec-dev-tooling.json")) if r["conclusion"]=="failure"}
+print("gql failed",len(out),"cov",sum(1 for o in out if o[3]))
+for o in out:
+    if o[2] not in mine: print("NOT IN MINE:",o)

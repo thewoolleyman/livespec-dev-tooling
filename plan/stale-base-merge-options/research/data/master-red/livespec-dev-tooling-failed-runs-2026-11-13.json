@@ -148,6 +148,20 @@
   "failed_tests": []
  },
  {
+  "id": 43128348212,
+  "sha": "ce6288d2f",
+  "created": "2026-11-12T00:35:08Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "test: drive the OOM Red leg through the hook's public entry point",
+  "failed_jobs": [
+   "check-per-file-coverage",
+   "ci-green"
+  ],
+  "failed_tests": [],
+  "note": "omitted by the REST listing; found by the GraphQL check-suite query; log reads 'Required test coverage of 100.0% not reached. Total coverage: 100.00%'"
+ },
+ {
   "id": 43133933158,
   "sha": "7ce9ecf5f0297f1af8c85cf98539e0d310aed941",
   "created": "2026-11-12T01:21:18Z",
