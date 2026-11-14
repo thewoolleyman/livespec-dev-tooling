@@ -18,7 +18,7 @@ A capacity change in the self-hosted pool must carry a dated section in the comm
 - a measured revert trigger;
 - later, the read's result, recorded within 24 hours.
 
-The check aggregate refuses a change that lacks any of them, naming the section and each missing element. It exempts only sections that already existed when this rule was ratified. The rule is a property and fixes no metric threshold.
+The check aggregate refuses a capacity change that lacks the plan or the trigger, naming the section and each missing element. While a result is overdue, it refuses further capacity changes only, and needs-attention names the section and its owner. It exempts only sections that already existed when this rule was ratified. The rule is a property and fixes no metric threshold.
 
 ### Motivation
 
@@ -51,7 +51,7 @@ A capacity change MUST add or change, in the same change, a dated section of the
 
 The trigger MAY be stated relative to the metric's pre-apply value and noise band. Neither element needs a numeric threshold.
 
-The read's result MUST be recorded in that section within 24 hours of the commit that added the section. Once 24 hours have passed with no recorded result, the check aggregate MUST refuse every change, naming the section and its owner, until the result is recorded.
+The read's result MUST be recorded in that section within 24 hours of the commit that added the section. Once 24 hours have passed with no recorded result, the check aggregate MUST refuse every further capacity change, naming the section and its owner, until the result is recorded. It MUST NOT refuse a change that is not a capacity change on that account. The overdue result MUST also be raised by needs-attention, naming the section and its owner.
 
 The check aggregate MUST refuse a capacity change with no such section, and a dated section recording a capacity change that lacks the plan, its owner or the trigger. Each refusal MUST name the section heading and each missing element.
 
@@ -85,15 +85,19 @@ When the check aggregate runs on that change
 
 Then this rule MUST NOT fail it
 
-## Scenario: a derivation section whose CI-side read result is missing after 24 hours refuses the next change
+## Scenario: a derivation section whose CI-side read result is missing after 24 hours refuses the next capacity change only
 
 Given a dated section in `ci-runner/k3s/phase2/kueue/DERIVATION.md`, added by a commit more than 24 hours ago, that records a capacity change and names its read plan, owner and trigger but no recorded result
 
-When the check aggregate runs on any later change
+When the check aggregate runs on a later capacity change
 
 Then it MUST fail
 
 And it MUST name that section's heading and its owner
+
+And when the check aggregate runs on a later change that is not a capacity change, this rule MUST NOT fail it
+
+And needs-attention MUST list that section and its owner
 ```
 
 The revise that accepts this proposal adds all three scenario headings to `tests/heading-coverage.json` in the same commit. Each row is `"test": "TODO"`, with a `reason` naming the tier the owed test runs at and `"work_item": "livespec-dev-tooling-rl2dqp"`. The same commit stages the regenerated `tests/heading-coverage-debt.json` (`just generate-heading-coverage-debt-register`).
