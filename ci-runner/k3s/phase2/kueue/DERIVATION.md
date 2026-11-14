@@ -2311,9 +2311,17 @@ admitted and 4-5 pending. Reclaim is Never across the cohort, so a small
 repository's pull request ran its parallel CI jobs one at a time whenever the
 two largest queues had borrowed the pool full. Fleet small-repository
 open-to-PR-CI-green median went from 4-5 min to 8.9 min (11-13) and then
-19.2 min (24 h to 11-14 01:55Z). Job duration p50 rising from 33-44 s to
-58-74 s from 11-11 18Z kept the pool full (Honeycomb github-ci, result
-s7G1HD4LLtr). GitHub showed livespec-overseer's gated runners as offline.
+19.2 min (24 h to 11-14 01:55Z). The driver is DEMAND in the 1-slot
+repositories through one serialized slot: livespec-overseer ran 643 jobs on
+11-13 against 145 on 11-11, and livespec-console-beads-fabro 574 against 291
+(ci-runtime-and-cost). Fleet job duration p50, counting only spans with
+duration_ms under one day so the bt2cnw wrapped-duration spans drop out, read
+33.3, 34.9 and then 38.1 s over 11-11 to 11-13. The step that is real is on
+11-13: a fixed per-job overhead on every job, trivial ones included
+(contention or pod start; hp's share of samples at CPU PSI 50 or more went
+from 0% to 42%). An earlier read of 33-44 s rising to 58-74 s from 11-11 18Z
+(Honeycomb result s7G1HD4LLtr) omitted that filter, and it is retracted.
+GitHub showed livespec-overseer's gated runners as offline.
 
 **What changed.** Each of the eight 1-slot pull-request queues takes a
 guaranteed floor of 2: livespec, livespec-console-beads-fabro,
@@ -2340,6 +2348,22 @@ capacity, and by each scale set's maxRunners. No queue gains a ceiling.
 median (19.2 min before), and livespec-dev-tooling and orchestrator queue wait
 p50/p95, so the cost to the large queues is read too. Read 2 h and 24 h after
 the apply.
+
+**Measured revert trigger.** The cost lands on livespec-dev-tooling and
+livespec-orchestrator-beads-fabro, which carry about 70% of fleet CI throughput
+and already sit under their M1 floors (throughput-plans-coordinator's
+condition, 2026-11-14). It landed through incident asxhj3 (livespec-dev-tooling#4629),
+was applied and read back at 2026-11-14 07:22:04Z, and the 6 h window runs from
+that read-back. The before values are recorded at apply time on
+livespec-dev-tooling-ukoeah: small-repository PR open-to-CI-green median
+19.2 min, livespec-dev-tooling 88.1 min and orchestrator 95.0 min (M3), and
+each queue's CI queue-wait p50 and p95 over the 24 h before the apply. If,
+within 6 h of the apply, either large repository's M3 median or its CI
+queue-wait p95 rises above its pre-apply 24 h value by more than its noise
+band, rebalance or revert. Rebalance by funding the small-queue floor from a
+re-derived cohort quota (lever e) rather than from the large queues. If
+ci-runtime-and-cost finds the 11-13 small-repository demand surge was waste
+(replaced heads, re-runs) that row 5c removes, revisit this split.
 
 **Revert.** Restore the eight 1-slot queues to 1, livespec-dev-tooling-cq to
 10 and livespec-orchestrator-beads-fabro-cq to 7, and drop their two exception
