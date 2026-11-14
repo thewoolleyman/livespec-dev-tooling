@@ -312,8 +312,7 @@ spec:
             # back from six). The node read 0.4% idle with CI-slice pressure
             # avg60 38.7, and a livespec-dev-tooling master coverage job ran
             # 102.5 min there against 27.0 normally. Derivation: DERIVATION.md
-            # "The PowerEdge gate lane back to four gates, and two more orchestrator
-            # runners (2026-11-14)".
+            # "The PowerEdge gate lane back to four gates (2026-11-14)".
             - name: "cpu"
               nominalQuota: 20
             - name: "memory"
