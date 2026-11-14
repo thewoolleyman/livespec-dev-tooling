@@ -1,0 +1,62 @@
+---
+# See defaults/main.yml for what this role forces and why it is root scope.
+
+- name: Create the Claude Code managed-policy directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ claude_distributed_sendmessage_policy_dir }}"
+    - "{{ claude_distributed_sendmessage_dropin_dir }}"
+    - "{{ claude_distributed_sendmessage_lib_dir }}"
+
+- name: Install the pane-input guard
+  # Under files/_vendor/: an installed, self-testing hook payload, the same
+  # declared exemption claude_code_hooks uses for tmux-fleet-guard.py.
+  ansible.builtin.copy:
+    src: _vendor/pane-input-guard.py
+    dest: "{{ claude_distributed_sendmessage_guard_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Prove the installed guard still blocks what it must
+  # Runs against the INSTALLED copy before the drop-in that wires it is
+  # written, so a regression never reaches Claude Code's managed settings.
+  # Post-write verification: skipped under --check (nothing is installed).
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ claude_distributed_sendmessage_guard_dest }}"
+      - --selftest
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Write the managed-settings drop-in
+  # A drop-in, not /etc/claude-code/managed-settings.json, so another managed
+  # policy on the host can own its own file. This role owns this file whole.
+  ansible.builtin.copy:
+    content: "{{ claude_distributed_sendmessage_settings | to_nice_json(indent=2) }}\n"
+    dest: "{{ claude_distributed_sendmessage_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Carry the SendMessage rule in the managed CLAUDE.md
+  # Managed memory loads into every session before user and project CLAUDE.md.
+  # A marked block, so the file can carry other managed guidance beside it.
+  ansible.builtin.blockinfile:
+    path: "{{ claude_distributed_sendmessage_memory }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "<!-- {mark} ANSIBLE MANAGED claude_distributed_sendmessage -->"
+    block: "{{ lookup('ansible.builtin.file', 'managed-memory.md') }}"
+  become: true

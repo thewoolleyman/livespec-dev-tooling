@@ -1,0 +1,20 @@
+---
+# Force SendMessage over terminal-pane typing for every Claude Code session on
+# the maintainer's interactive hosts: Remote Control at startup, cross-session
+# inbound accepted, the pane-input guard as a managed PreToolUse hook, and the
+# rule in the managed CLAUDE.md. Plan distributed-sendmessage
+# (epic livespec-dev-tooling-rlwppp); protocol in
+# .ai/distributed-sendmessage-protocol.md.
+#
+#   just ansible-drift ansible/claude-messaging.yml
+#   just ansible-apply ansible/claude-messaging.yml
+#
+# Run from the control node (the dev host). A session already running keeps
+# the settings it loaded; the guard hook is read per call, but Remote Control
+# reaches a session only once it is restarted (or runs /remote-control).
+- name: Claude Code distributed SendMessage
+  hosts: interactive_claude_hosts
+  gather_facts: false
+  roles:
+    - role: claude_distributed_sendmessage
+      tags: [claude_distributed_sendmessage]

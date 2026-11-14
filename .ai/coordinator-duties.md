@@ -167,7 +167,8 @@ priority 5 waited on a relay under a hold nobody re-checked. The top-3 child aud
 DEPENDENCIES lines were printed as status, not worked as a queue.
 
 **Rule P3: read the epics of silent seats every tick.** Every tick reads the newest comments on the epics of seats that
-cannot SendMessage: Mac and Codex seats, today fleet-mutation-testing-rule-26 on chads-macbook-pro (epic
+cannot SendMessage: Codex seats, and Claude seats on a Mac not yet on Remote Control
+(`.ai/distributed-sendmessage-protocol.md`), today fleet-mutation-testing-rule-26 on chads-macbook-pro (epic
 `livespec-dev-tooling-oi2two`). Silence from a waiting seat is never evidence that it is fine. Rule P3 is in the same
 07:48:20Z scope event. Measured 2026-11-09: that seat posted its ask as a comment on epic `livespec-dev-tooling-oi2two`
 at 07:26Z, and no tick read it.
@@ -233,9 +234,11 @@ fabro-currency earlier) recorded the coordinator's keypresses as the maintainer'
 had to post attribution corrections.
 
 **Never ask the maintainer to relay a message.** The coordinator never asks the maintainer to carry a message to any
-seat. For a seat this session cannot SendMessage, such as one on another machine or a Codex seat, reply as a ledger
-comment on the work item concerned or on its plan epic. Also send it through `herdr --machine <label>` where a saved
-herdr machine reaches that seat (chads-macbook-pro is saved). The maintainer, 2026-11-06, relayed verbatim through the
+seat. A Claude seat on vps, hetzner-xubuntu or gamingpc-xubuntu is reached by
+SendMessage across machines (`.ai/distributed-sendmessage-protocol.md`). For a seat this session cannot SendMessage,
+such as a Codex seat or a Claude seat on a Mac not yet on Remote Control, reply as a ledger comment on the work item
+concerned or on its plan epic. A Codex or pi seat also gets the text through `herdr --machine <label> pane send-text`;
+the managed pane-input guard refuses that into a Claude seat. The maintainer, 2026-11-06, relayed verbatim through the
 homelab-k8s-worker-nodes session, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:57:05Z: "asking the maintainer
 to paste your reply to me is unacceptable".
 
@@ -421,9 +424,12 @@ request is subject to the dispatch freeze (§9). The maintainer, 2026-11-06 ~06:
 machine/workspace to your monitored list of plans. They are executing on that machine, but may send stuff to CI
 and/or the factory."
 
-**A word given to a Mac or Codex seat goes into its PANE at the moment it is given.** Send it with
-`herdr --machine <m> pane send-text <pane> "<text>"`, then `herdr --machine <m> pane send-keys <pane> Enter`, not only
-as a ledger comment, and read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
+**A word given to a seat reaches it at the moment it is given.** A Claude seat on vps, hetzner-xubuntu or
+gamingpc-xubuntu gets it by SendMessage (maintainer ruling 2026-11-14, plan `distributed-sendmessage`: pane typing
+interrupts the maintainer, and the managed pane-input guard refuses it). A Codex or pi seat gets it in its PANE with
+`herdr --machine <m> pane send-text <pane> "<text>"`, then `herdr --machine <m> pane send-keys <pane> Enter`. A Claude
+seat on a Mac not yet on Remote Control gets a ledger comment and is named unreachable in the tick report. Never
+only a ledger comment where a live channel exists, and read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
 coordinator owns their restarts. The maintainer, 2026-11-09 ~15:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`:
 "why did you let this stall? fleet-mutation-testing-rule-26 . I told overseerd too".
 
