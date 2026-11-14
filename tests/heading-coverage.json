@@ -2545,6 +2545,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident test world raises the product child-process bounds it reaches to the hang guard",
+    "test": "TODO",
+    "reason": "Spec-first (v219): a real test at the integration tier is owed for this scenario, building an incident test world through the shared world fixture on a CPU-saturated host and asserting the raised inverse forge, cap, incident git and recovery principal timeouts, their orderings, unchanged product defaults outside the world, a named refusal code, and a test-set bound that still expires; livespec-dev-tooling-vm4vcn owns it.",
+    "work_item": "livespec-dev-tooling-vm4vcn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence",
     "test": "tests.livespec_dev_tooling.test_incident_fleet_cli.test_run_as_a_child_process_a_consumer_without_controller_evidence_is_left_out_named_and_refused",
     "reason": "Integration-tier: the real audit and enablement entry points run as a child process (`python -I -c`) against a fixture core manifest and fixture per-capability serving readers; a consumer whose independent-controller serving version cannot be read gets an unclassified controller row, is left out of the ready list and named in the findings with the missing evidence, and the enablement step run for it exits non-zero, names it and the missing evidence and enables nothing; a sibling test runs the same command against a manifest that cannot be authenticated and sees the recorded finding, zero ready repositories and a non-zero exit (livespec-dev-tooling-3wcldx).",

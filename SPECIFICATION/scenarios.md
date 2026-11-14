@@ -3979,13 +3979,32 @@ And the operator can inspect attempts, skip reasons, focused evidence, CI runs, 
 ## Scenario: incident focused verification reads its changed set through the isolated object view and disposes symlinked and submodule paths explicitly
 
 ```gherkin
-Given an installation whose configured target branch is a scratch branch other than `master`, and an expedited incident repair whose head the reference clone holds alongside a replace ref and a graft that would alter the changed set if honoured
+Given an installation whose configured target branch is a scratch branch other than `master`, and an expedited incident repair whose head the reference clone holds alongside a replace ref, a graft and a forged commit-graph file that would each alter the changed set if honoured
 And the head changes a `.py` under a source prefix stored as a symbolic link to an in-tree module, a second such link whose target leaves the repository, and a submodule gitlink under a source prefix
 When the controller's per-pull-request arm reads the changed set and classifies each changed path
-Then the changed set MUST equal the set read against the merge base with the configured scratch branch with replace refs, grafts and clone configuration ignored
+Then the changed set MUST equal the set read against the merge base with the configured scratch branch with replace refs, grafts, the commit-graph and clone configuration ignored
 And the in-tree symbolic-link module MUST be disposed as the module its target names within the head's tree
 And the escaping link and the submodule gitlink MUST each be refused with a reason that names its path
+And when the reference clone's object store carries an `objects/info/alternates` file that names another object store, the read MUST be refused before any object is read, with a reason that names that file
 ```
+
+## Scenario: an incident test world raises the product child-process bounds it reaches to the hang guard
+
+Given an incident test world built through the shared world fixture, with no opt-in by the test, on a host whose every CPU is saturated by a concurrent load generator
+
+And product code in that world that runs the inverse forge, incident git and the recovery principal under their product timeouts
+
+When a test in that world drives an incident through recovery
+
+Then the inverse forge timeout, its cap, the incident git timeouts and the recovery principal timeout MUST each be no shorter than the hang guard
+
+And the inverse forge timeout MUST stay strictly under its cap, the incident git timeout MUST stay under the timeout of the inverse forge the recovery principal runs, and the incident git fetch timeout MUST stay above the incident git timeout
+
+And the same product timeouts read outside the test world MUST equal their product defaults
+
+And when the recovery principal refuses for a reason other than the one the test expects, the test MUST fail with a report that names the refusal code it received
+
+And a bound that the test sets itself, and whose expiry the test expects, MUST still expire at the value the test set
 
 ## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it
 
