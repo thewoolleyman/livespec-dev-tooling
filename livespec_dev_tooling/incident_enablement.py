@@ -20,7 +20,6 @@ import os
 import time
 import urllib.error
 import urllib.request
-import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -263,7 +262,8 @@ def controller_enablement_writer(
         payload = {
             "repository": repository,
             "manifest_sha256": manifest_sha256,
-            "operation_id": f"incident-enable-{uuid.uuid4().hex}",
+            "operation_id": "incident-enable-"
+            + hashlib.sha256(f"{repository}\0{manifest_sha256}".encode()).hexdigest()[:32],
         }
         try:
             status, answer = post(
