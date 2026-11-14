@@ -793,6 +793,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a role script that decides whether a host alerts is tested in every alert state",
+    "work_item": "livespec-dev-tooling-ba7ypx",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a routed job sets up its actions from the pool's action-archive cache, and falls back to a download when an archive is missing",
     "work_item": "livespec-dev-tooling-r5o5zh",
     "first_seen": "2026-11-03"

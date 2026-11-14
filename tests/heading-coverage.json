@@ -4059,5 +4059,20 @@
     "heading": "## Scenario: a seat that types a message into a Claude seat's pane is refused and pointed at SendMessage",
     "test": "tests.consumer.test_claude_messaging_guards.test_the_pane_guard_denies_text_into_a_claude_pane_and_names_sendmessage",
     "reason": "Consumer-tier proof: the pane-input guard is loaded in-process and refuses send-text into a Claude pane naming SendMessage and ListAgents, while key-only send-keys and a Codex pane pass (sibling test test_the_pane_guard_allows_codex_panes_empty_panes_and_key_only_input, plus the guard's own 61-case corpus in test_each_installed_guard_passes_its_own_regression_corpus). The live refusal on a fresh hetzner-xubuntu session is host-captured on plan epic livespec-dev-tooling-rlwppp."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a role script that decides whether a host alerts is tested in every alert state",
+    "test": "TODO",
+    "reason": "Spec-first (v222): a real test at the integration tier is owed for this scenario, running ansible/roles/reconcile_runs/files/livespec-reconcile-runs-staleness with its clock, markers and alert-state file faked through every alert state (first alert, repeat inside the re-alert interval, re-alert after it, a growing and a shrinking set, recovery, a missing marker, and a run without --alert-state), asserting each exit status and the alert-state file; livespec-dev-tooling-ba7ypx owns it.",
+    "work_item": "livespec-dev-tooling-ba7ypx"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a unit a role installs fails and the operator is told which unit failed, not that a backup failed",
+    "test": "tests.livespec_dev_tooling.test_host_unit_alert.test_a_failed_unit_raises_one_event_and_one_push_naming_the_unit_and_host",
+    "reason": "Integration-tier proof: role host_unit_alert's committed script runs against a fake curl, journalctl and hostname, and its event names the unit and host with source host-unit-alert, outside the dolt-backup failure trigger's sources. Sibling tests in the same module cover each channel-acceptance state (test_the_alert_fails_only_when_no_channel_accepted_it), the committed OnFailure wiring and role order (test_the_units_roles_install_route_their_failure_to_the_host_unit_alert) and the guard against dolt-backup-alert@ (test_no_role_or_host_var_routes_a_failure_to_the_dolt_backup_alert). The live read-back on vmi3006760 is host-captured on livespec-dev-tooling-l7f72q (DEV-HOST-UNIT-ALERT-LIVE-READBACK)."
   }
 ]

@@ -5599,3 +5599,31 @@ And the refusal names `SendMessage` and `ListAgents`
 And `herdr pane send-keys <pane> esc` against the same pane is not refused
 
 And `herdr pane send-text` against a pane hosting a Codex agent is not refused
+
+## Scenario: a role script that decides whether a host alerts is tested in every alert state
+
+Given a role under `ansible/roles/` that installs a script whose non-zero exit makes a unit's `OnFailure=` raise an alert
+
+And the script keeps an alert-state file so that one episode raises one alert
+
+When this repository's committed tests run
+
+Then a test runs that committed script, with its clock, markers and endpoints faked, once for each alert state it distinguishes
+
+And for a first alert, a repeat inside the re-alert interval, a re-alert after it, a changed set and a recovery, the test asserts the exit status and the alert-state file's contents
+
+And for each condition under which the script stays silent, the test asserts that it exits zero
+
+## Scenario: a unit a role installs fails and the operator is told which unit failed, not that a backup failed
+
+Given role `reconcile_runs` has installed `reconcile-runs-staleness.service` on a dev host, with its `OnFailure=` naming the host-unit alert
+
+When the staleness check exits non-zero
+
+Then `host-unit-alert@reconcile-runs-staleness.service.service` starts and sends one Honeycomb event, with `source=host-unit-alert` and `outcome=unit_failure`, naming the unit and the host
+
+And the host-unit failure trigger counts that event
+
+And the "dolt-backup run failed" trigger does not count it
+
+And when no alert channel accepts the alert, the alert unit itself exits non-zero
