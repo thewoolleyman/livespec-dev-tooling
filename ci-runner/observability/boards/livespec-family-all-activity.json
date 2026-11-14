@@ -16,18 +16,18 @@
   "panels": [
     {
       "type": "query",
-      "key": "prs-merged-green-per-hour-by-repo",
+      "key": "fleet-nondocs-merged-green-per-hour",
       "dataset": "pr-throughput",
       "query_style": "combo",
       "position": {
         "x_coordinate": 0,
         "y_coordinate": 0,
         "height": 9,
-        "width": 8
+        "width": 12
       },
       "annotation": {
-        "name": "THROUGHPUT — PRs merged green per hour, by repository",
-        "description": "THE ONE METRIC of the throughput track (livespec-dev-tooling-q26e3c). COUNT of merged pull requests whose covering default-branch CI run concluded success, per hour, by repo. One event per merged PR, timestamped at the merge. Green = the first CI push run at or after the PR's merge head that reached a verdict succeeded (a concurrency-cancelled run is not a verdict). Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; a stopgap emits until it lands). Definition: plan/throughput-track-organization/research/003."
+        "name": "THROUGHPUT — FLEET non-docs PRs merged green per hour",
+        "description": "THE ONE METRIC of the throughput track, as one FLEET line: COUNT of merged pull requests whose covering default-branch CI run concluded success, per hour, EXCLUDING docs-only pull requests (every changed path ends in .md) and release-please pull requests (maintainer direction 2026-11-14). One line only: per-repository charts, lead time and stage split are on the board 'livespec throughput'. The pr.docs_only and pr.is_release filters also drop the pre-classification copies the interim writer's backfill left in the dataset. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
         "calculations": [
@@ -40,58 +40,19 @@
             "column": "pr.merged_green",
             "op": "=",
             "value": true
-          }
-        ],
-        "breakdowns": [
-          "repo"
-        ],
-        "orders": [
+          },
           {
-            "op": "COUNT",
-            "order": "descending"
-          }
-        ],
-        "time_range": 86400,
-        "granularity": 3600
-      }
-    },
-    {
-      "type": "query",
-      "key": "prs-merged-not-green-by-repo",
-      "dataset": "pr-throughput",
-      "query_style": "combo",
-      "position": {
-        "x_coordinate": 8,
-        "y_coordinate": 0,
-        "height": 9,
-        "width": 4
-      },
-      "annotation": {
-        "name": "Merged but NOT green — PRs per hour, by repository",
-        "description": "The loss beside the one metric: merged pull requests whose covering default-branch CI run FAILED, per hour, by repo. Every one of these is a PR the throughput metric does not count."
-      },
-      "query": {
-        "calculations": [
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
           {
-            "op": "COUNT"
-          }
-        ],
-        "filters": [
-          {
-            "column": "pr.merged_green",
+            "column": "pr.is_release",
             "op": "=",
             "value": false
           }
         ],
-        "breakdowns": [
-          "repo"
-        ],
-        "orders": [
-          {
-            "op": "COUNT",
-            "order": "descending"
-          }
-        ],
+        "breakdowns": [],
         "time_range": 86400,
         "granularity": 3600
       }
