@@ -49,7 +49,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-asxhj3
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
