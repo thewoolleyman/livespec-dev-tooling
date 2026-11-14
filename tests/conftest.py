@@ -185,7 +185,8 @@ def _pinned_ansible_rpc_start_waits_under_the_hang_guard(
     """
     marker = tmp_path_factory.getbasetemp() / f"ansible-rpc-start-hang-{uuid.uuid4().hex}"
     request.node.stash[_ANSIBLE_RPC_HANG_MARKER] = marker
-    for name, value in pinned_ansible.rpc_start_environment(base=os.environ, marker=marker).items():
+    rpc_start_environment = pinned_ansible.rpc_start_environment(base=os.environ, marker=marker)
+    for name, value in rpc_start_environment.items():
         monkeypatch.setenv(name, value)
 
 
