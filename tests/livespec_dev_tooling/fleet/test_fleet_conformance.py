@@ -154,7 +154,7 @@ def _all_required_role_keys_block() -> str:
 
 
 _PYPROJECT = (
-    '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n\n'
+    '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.191.0" }\n\n'
     + _all_required_role_keys_block()
 )
 # The fixture members are BEADS-BACKED with a consistent connection pair,
@@ -197,7 +197,7 @@ _CANONICAL_TARGETS = "\n".join(
 )
 _STANDARD_JUSTFILE = (
     "ensure-plugins:\n"
-    "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
+    "    mise exec -- uv run python -m livespec_dev_tooling.fleet.ensure_plugins\n"
 ) + WIRED_JUSTFILE.replace(
     "        check-aggregate-completeness\n        check-ci-matrix-completeness",
     _CANONICAL_TARGETS,

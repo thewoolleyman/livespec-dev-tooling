@@ -59,6 +59,7 @@ __all__: list[str] = [
     "assert_no_tracked_gitlinks",
     "assert_pin_freshness_workflow",
     "assert_release_dispatch_workflow",
+    "pinned_dev_tooling_tag",
 ]
 
 
@@ -123,7 +124,7 @@ def assert_no_tracked_gitlinks(*, ctx: FleetContext, member: FleetMember) -> Row
     return RowPass()
 
 
-def _pinned_tag(*, pyproject_text: str) -> str | None:
+def pinned_dev_tooling_tag(*, pyproject_text: str) -> str | None:
     """The `[tool.uv.sources].livespec-dev-tooling.tag` value, or None."""
     try:
         data: dict[str, object] = tomli.loads(pyproject_text)
@@ -302,7 +303,7 @@ def assert_dev_tooling_pin(*, ctx: FleetContext, member: FleetMember) -> RowOutc
     text = ctx.file_text(repo=member.repo, path="pyproject.toml")
     if text is None:
         return RowSkip(reason=f"{member.repo}: pyproject.toml unreadable")
-    tag = _pinned_tag(pyproject_text=text)
+    tag = pinned_dev_tooling_tag(pyproject_text=text)
     if tag is None:
         return RowFinding(
             message=(
