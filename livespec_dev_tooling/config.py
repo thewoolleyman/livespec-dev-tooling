@@ -595,6 +595,11 @@ class Config:
     # Merge-queue bot identities admitted to the guarded `merge_group` routing
     # shape. An empty declaration cannot opt a consumer into that exception.
     merge_queue_author_allowlist: tuple[str, ...] = ()
+    # The GitHub App id of the incident recovery principal, the only bypass
+    # actor `branch_protection_alignment` admits on a queue-required
+    # repository's default-branch rulesets. An App id is not a secret. Absent,
+    # a queue-required repository fails `merge_queue_bypass_path`.
+    recovery_bypass_integration_id: int | None = None
     # Bare FILENAMES of the DIRECT-CHILD `.py` files under `BIN_WRAPPER_TREE`
     # that are NOT shebang wrappers — pre-import machinery `wrapper_shape` must
     # not hold to the canonical 5-statement shape, and that `all_declared` must
@@ -1448,6 +1453,15 @@ def _parse_self_hosted_routing_overrides(*, table: dict[str, Any]) -> dict[str, 
     return overrides
 
 
+def _parse_recovery_bypass_integration_id(*, table: dict[str, Any]) -> int | None:
+    """Parse the recovery App id `branch_protection_alignment` admits as a bypass."""
+    value = table.get("recovery_bypass_integration_id")
+    if value is not None and type(value) is not int:
+        msg = "`recovery_bypass_integration_id` must be an integer GitHub App id"
+        raise ConfigParseError(msg)
+    return value
+
+
 def load_config(*, repo_root: Path) -> Config:
     """Read `<repo_root>/pyproject.toml`'s block and resolve the layout.
 
@@ -1520,6 +1534,7 @@ def load_config(*, repo_root: Path) -> Config:
         merge_queue_author_allowlist=overrides.get(
             "merge_queue_author_allowlist", baseline.merge_queue_author_allowlist
         ),
+        recovery_bypass_integration_id=_parse_recovery_bypass_integration_id(table=table),
         bin_non_wrapper_files=overrides.get(
             "bin_non_wrapper_files", baseline.bin_non_wrapper_files
         ),
