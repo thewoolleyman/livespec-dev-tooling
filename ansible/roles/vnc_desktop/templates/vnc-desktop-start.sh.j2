@@ -43,11 +43,18 @@ startxfce4 &
 # wasn't needed and died for every case it was. Observed 2026-08-04: Chrome was
 # SIGKILLed (exit 137), the loop went defunct, and the browser stayed down until
 # relaunched by hand.
+# --password-store=basic: Chrome keeps its own secrets out of the GNOME keyring. On this
+# framebuffer-only desktop nothing unlocks that keyring at login, so Chrome's first
+# libsecret request opened a gcr-prompter unlock dialog that grabbed the pointer and left
+# the VNC mouse dead (found on hetzner-xubuntu, then on the vps, 2026-11-14). Passwords
+# live in 1Password and Chrome's password manager is off, so the keyring guards nothing
+# worth the lockout (maintainer ruling 2026-11-14).
 (set +e; while true; do
     google-chrome \
         --no-first-run \
         --disable-session-crashed-bubble \
         --disable-gpu \
+        --password-store=basic \
         --user-data-dir="${HOME}/{{ vnc_desktop_chrome_profile_subdir }}" \
         --remote-debugging-port={{ vnc_desktop_cdp_port }} \
         --remote-debugging-address={{ vnc_desktop_cdp_address }}
