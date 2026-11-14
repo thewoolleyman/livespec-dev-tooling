@@ -292,7 +292,7 @@ spec:
             # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
             # plan gate-job-resources; legacy-coordinator-agent GO cb187a57).
             # From 2026-11-14 hp is third in flavor order, before poweredge (see
-            # the order note above). Measured, under the 2026-11-12 order, over the whole
+            # the order note above). Measured, under the 2026-11-09 order, over the whole
             # current layout (2026-11-11T08:45Z to 2026-11-12T10:20Z, 297
             # five-minute buckets of gate pods per node): hp ran no gate in 76%
             # of buckets and two or more in at most 10.8%, which is an upper

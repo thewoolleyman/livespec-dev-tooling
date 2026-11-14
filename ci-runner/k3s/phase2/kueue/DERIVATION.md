@@ -1779,6 +1779,59 @@ each admitted gate's 5-cpu request takes about that much CPU from the
 PowerEdge's best-effort runners. The after-read (the live quota and the pending
 count ten minutes after apply) is recorded on livespec-dev-tooling-ukoeah.
 
+### Fastest-first flavor order re-read (2026-11-14)
+
+**What was wrong.** The 2026-11-09 order (gmktec, PowerEdge, hp, with gamingpc
+appended last when it joined on 2026-11-11) no longer read fastest-first. By
+2026-11-14 the PowerEdge was the slowest gate node and the one most gates went
+to. It read 0.1% idle and carried 31 cores of gate requests beside 18 of
+factory sandboxes and 17 of CI workflow pods. Its gates ran at about twice
+gmktec-xubuntu's wall time.
+
+Gate pod wall time, from Honeycomb query ztfYCLKQeQS (`k8s.pod.cpu.usage`
+datapoints per gate pod at 30 s, so minutes = datapoints / 2). The window is
+the 6 h to 2026-11-14 00:2xZ, counting pods that ran over 2 min. Each cell is
+p50 / p95 in minutes, with n the gate pods behind it:
+
+| repository | gamingpc | gmktec | hp | PowerEdge |
+|---|---|---|---|---|
+| livespec-dev-tooling | 8.5 / 8.9 (n 4) | 20.0 / 21.5 (n 21) | 19.0 / 25.4 (n 4) | 35.5 / 38.5 (n 32) |
+| livespec-orchestrator-beads-fabro | 6.5 / 7.5 (n 5) | 11.5 / 17.1 (n 19) | 14.8 / 17.5 (n 4) | 20.2 / 31.0 (n 22) |
+| livespec-overseer | 4.0 / 4.9 (n 2) | 6.5 / 7.4 (n 12) | 8.8 / 9.0 (n 2) | 12.0 / 14.1 (n 15) |
+
+The M4 worker (macbook-m4-max-homelab-worker) read 10.0 / 10.5 (n 25) for
+livespec-dev-tooling, the only repository whose gate image publishes arm64.
+
+**What changed.** Only the order of `gates-cq`'s fleet flavors. It is now
+`gates-gamingpc-flavor`, `gates-flavor` (gmktec-xubuntu), `gates-hp-flavor`,
+then `gates-poweredge-flavor` last. Every lane keeps its quota. The gamingpc
+lane is 5 cpu / 8 Gi, ONE gate at the unit, so putting it first moves at most
+one gate at a time; the order mostly decides where the overflow goes.
+gmktec ahead of hp is borderline. hp's p50 is faster for livespec-dev-tooling
+(19.0 against 20.0), but its sample is 4 pods, and its p95 and both other
+repositories' p50 and p95 favour gmktec. hp's lane is also one gate. The
+enrolled container-worker flavor (the M4) still comes first. That placement is
+the 2026-11-09 maintainer rule that `converge-worker-queues.sh` carries out, by
+rebuilding the list as worker flavors followed by the committed order. It is
+not a speed reading, although the M4 also measured fast. Ruled by
+legacy-coordinator-agent (session 719514f8, 2026-11-14 ~00:0xZ) as the
+pre-authorized reversible route for the PowerEdge overcommit, under plan
+gate-job-resources (epic livespec-dev-tooling-ukoeah).
+
+**Revert.** Restore the order `gates-flavor`, `gates-poweredge-flavor`,
+`gates-hp-flavor`, `gates-gamingpc-flavor` in `cluster-queue-gates.yaml`, then
+apply it through the converge (`just ansible-apply ansible/ci-pool.yml --tags
+ci_converge_unit` from the control node), which reruns
+`converge-worker-queues.sh` so the worker flavor returns to first place.
+
+**What this does not fix.** The order is still static, and a reading of one
+6 h window, small for the one-gate lanes. Admission that follows measured CPU
+is the gvo7fa reconciler, which reads this file as its static order. Lowering
+gate CPU requests (livespec-dev-tooling-wirn53) does not change the PowerEdge's
+gate CPU use. The after-read is recorded on livespec-dev-tooling-ukoeah: the
+gates-cq order read from the cluster object, gate-lane queue-wait p95 (baseline
+20.3 / 30.8 / 30.4 min), and gate wall time per node.
+
 ### Topology-aware admission on the gates flavors (2026-11-04, livespec-dev-tooling-cikd6m)
 
 **What was wrong.** Quota is not capacity. On 2026-11-04 at 01:35Z,
