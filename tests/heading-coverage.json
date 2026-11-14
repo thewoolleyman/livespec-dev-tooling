@@ -4004,5 +4004,12 @@
     "test": "TODO",
     "reason": "Spec-first (v214): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, rendering the per-host no-data trigger definitions from the committed dev-host list and asserting one definition per host; livespec-dev-tooling-exx6f5 owns it.",
     "work_item": "livespec-dev-tooling-exx6f5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a seat that types a message into a Claude seat's pane is refused and pointed at SendMessage",
+    "test": "tests.consumer.test_claude_messaging_guards.test_the_pane_guard_denies_text_into_a_claude_pane_and_names_sendmessage",
+    "reason": "Consumer-tier proof: the pane-input guard is loaded in-process and refuses send-text into a Claude pane naming SendMessage and ListAgents, while key-only send-keys and a Codex pane pass (sibling test test_the_pane_guard_allows_codex_panes_empty_panes_and_key_only_input, plus the guard's own 61-case corpus in test_each_installed_guard_passes_its_own_regression_corpus). The live refusal on a fresh hetzner-xubuntu session is host-captured on plan epic livespec-dev-tooling-rlwppp."
   }
 ]

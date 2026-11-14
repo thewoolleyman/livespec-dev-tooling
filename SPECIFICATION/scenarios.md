@@ -5500,3 +5500,19 @@ Then within two evaluations of its 20-minute window that host's no-data trigger 
 And when the unit is started again and datapoints resume, the trigger MUST resolve
 
 And adding a second host to the dev-host list and running the generator MUST add exactly one trigger definition, for that host, and MUST leave every existing definition byte-identical
+
+## Scenario: a seat that types a message into a Claude seat's pane is refused and pointed at SendMessage
+
+Given an interactive host on which the `claude_distributed_sendmessage` role is applied
+
+And a Claude Code session started on that host after the apply
+
+When that session runs `herdr pane send-text <pane> <text>` against a pane that hosts a Claude agent
+
+Then the pane-input guard refuses the command and the text is not typed
+
+And the refusal names `SendMessage` and `ListAgents`
+
+And `herdr pane send-keys <pane> esc` against the same pane is not refused
+
+And `herdr pane send-text` against a pane hosting a Codex agent is not refused
