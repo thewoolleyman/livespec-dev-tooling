@@ -1,7 +1,7 @@
 ---
 topic: a-role-script-that-decides-whether-a-host-alerts-is-tested
 author: claude-opus-5-5
-created_at: 2026-11-14T13:41:57Z
+created_at: 2026-11-14T14:51:09Z
 ---
 
 ## Proposal: A role script that decides whether a host alerts is tested in every alert state
@@ -64,7 +64,11 @@ Add one more obligation to Host provisioning tree, with a scenario. A unit that 
 
 ### Motivation
 
-At 12:12:34Z on 2026-11-14, Honeycomb trigger 9HKs4W3UYN8 "dolt-backup run failed" emailed the operator while every dolt backup was succeeding (17 of 17 each hour). The unit that failed was `reconcile-runs-staleness.service`, installed by role `reconcile_runs`. Its `OnFailure=` named dolt-server's `dolt-backup-alert@`, which reports every failure as a backup unit failure. Role `honeycomb_trigger_recipients_check` routed its unit the same way. livespec-dev-tooling-l7f72q added role `host_unit_alert` and rerouted both units (livespec-dev-tooling#4678). It also created trigger 2PdsuwyiqqL "host unit failed", which counts only `source=host-unit-alert` events. That item's filing-stage spec-change-tier judgement found no ratified clause for this behaviour. On 2026-11-14 legacy-coordinator-agent searched every ratified file and confirmed that ## Host provisioning tree says nothing about alerting. It ruled no release, and ruled that this clause folds into this proposal, from the same author and plan. l7f72q's linked topic is relinked here, and its accept waits for this revise. dolt-server's own units (`dolt-backup`, `doltdb`, `dolt-backup-oversized-verify`) are outside this tree and keep their handler. That is the dolt-server owner's call, noted on l7f72q.
+At 12:12:34Z on 2026-11-14, Honeycomb trigger 9HKs4W3UYN8 "dolt-backup run failed" emailed the operator while every dolt backup was succeeding (17 of 17 each hour). The unit that failed was `reconcile-runs-staleness.service`, installed by role `reconcile_runs`. Its `OnFailure=` named dolt-server's `dolt-backup-alert@`, which reports every failure as a backup unit failure. Role `honeycomb_trigger_recipients_check` routed its unit the same way. livespec-dev-tooling-l7f72q added role `host_unit_alert` and rerouted both units (livespec-dev-tooling#4678). It also created trigger 2PdsuwyiqqL "host unit failed", which counts only `source=host-unit-alert` events. That item's filing-stage spec-change-tier judgement found no ratified clause for this behaviour. On 2026-11-14 legacy-coordinator-agent searched every ratified file and confirmed that ## Host provisioning tree says nothing about alerting. It ruled no release, and ruled that this clause folds into this proposal, from the same author and plan. l7f72q's linked topic is relinked here, and its accept waits for this revise. FLEET SCOPE, from a grep of each provisioning tree's origin/HEAD on 2026-11-14:
+
+- hetzner-xubuntu-info (96e83e9): no hit. `provisioning/source-services.yml:520` lists `dolt-backup-alert@.service` only as an excluded dolt-server unit, and no unit there routes `OnFailure=` to it.
+- vps-info (404c437): one hit. The role's predecessor installer, `services/honeycomb-trigger-recipients-check/`, still ships a unit with `OnFailure=dolt-backup-alert@honeycomb-trigger-recipients-check.service`, and `AGENTS.md:1647` documents it. Re-running that `install.sh` would undo the role's routing. vps-info has no ledger tenant, so the hit is filed as livespec-dev-tooling-3vv4my.
+- dolt-server (181965e): `dolt-backup.service`, `doltdb.service` (the onfailure drop-in) and `dolt-backup-oversized-verify.service` route to their own handler. They are dolt-server's units, so excluding them is the owner's call; it is noted on l7f72q.
 
 ### Proposed Changes
 
