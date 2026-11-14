@@ -1144,6 +1144,63 @@
     },
     {
       "type": "query",
+      "key": "stalled-prs-24h",
+      "dataset": "pr-throughput",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 52,
+        "height": 6,
+        "width": 12
+      },
+      "annotation": {
+        "name": "STALLED — non-docs PRs merged green in 24 h whose start-to-open exceeded 72 h (table)",
+        "description": "COUNT of merged-green, non-docs, non-release pull requests over 24 hours whose pr.stage_start_to_open_minutes exceeds 4320 (72 hours), by repo and pr.number, so a stall such as a preserved branch published days late is seen rather than averaged into the p90. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.stage_start_to_open_minutes",
+            "op": ">",
+            "value": 4320
+          }
+        ],
+        "time_range": 86400,
+        "granularity": 3600,
+        "breakdowns": [
+          "repo",
+          "pr.number"
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ]
+      }
+    },
+    {
+      "type": "query",
       "key": "excluded-and-not-green-24h",
       "dataset": "pr-throughput",
       "query_style": "table",
@@ -1189,7 +1246,7 @@
       "type": "text",
       "position": {
         "x_coordinate": 0,
-        "y_coordinate": 50,
+        "y_coordinate": 58,
         "height": 1,
         "width": 12
       },
@@ -1204,7 +1261,7 @@
       "query_style": "graph",
       "position": {
         "x_coordinate": 0,
-        "y_coordinate": 51,
+        "y_coordinate": 59,
         "height": 6,
         "width": 4
       },
@@ -1240,7 +1297,7 @@
       "query_style": "graph",
       "position": {
         "x_coordinate": 4,
-        "y_coordinate": 51,
+        "y_coordinate": 59,
         "height": 6,
         "width": 4
       },
@@ -1281,7 +1338,7 @@
       "query_style": "table",
       "position": {
         "x_coordinate": 8,
-        "y_coordinate": 51,
+        "y_coordinate": 59,
         "height": 6,
         "width": 4
       },
