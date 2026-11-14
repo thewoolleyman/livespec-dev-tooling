@@ -48,6 +48,7 @@ Coordinator side: this seat took its role at 01:13Z. The slowdown showed in the 
 | G5 | Fleet-utilization's STRANDED-CAPACITY gains a SATURATED-POOL signal: a binding queue beside nodes with idle below 5% and CI-slice pressure above 30, with queue-wait p95 | legacy-coordinator-agent's scripts/coordinator tooling | the k3s pool |
 | G6 | A release-cadence window for repositories that release per push (livespec-overseer first: 12 on 11-13) | the overseer owner, via legacy-coordinator-agent | every repository on Release Please |
 | G7 | Items held on spec-change topics nobody filed are flagged mechanically (e34ks3, qeou2e, biq757 tonight) | spec-implementation-lockstep (routed by legacy-coordinator-agent) | every tenant |
+| G8 | A merge-quiet window stops every helper: while a repository's merge-quiet marker is set, nobody (person, agent session or automation) readies, arms or merges a PR there; setting the marker disarms anything already armed; an unreadable marker means do not arm; only the incident's own fix is exempt. Added because seats and the release guard readied and re-armed PRs during the asxhj3 window | ci-runtime-and-cost (livespec-dev-tooling-lunexo; proposal livespec-dev-tooling#4652) | every repository with auto-enable-merge |
 
 The CI demand levers stay in progress: row 5c (approved by the maintainer; about 2,340 runner-min/day) and coverage sharding at constant runner-minutes (livespec-dev-tooling-mxjbmi, bd-ib-p622hp).
 
@@ -55,4 +56,4 @@ The CI demand levers stay in progress: row 5c (approved by the maintainer; about
 
 - Every tick treats an AWAITING MASTER VERDICT line over 60 min as a stop-the-line read that same tick, and routes it.
 - Every capacity ruling this seat makes carries a measured revert trigger and a +2 h CI-side read.
-- This seat tracks G1-G7 to closure as inherited waits.
+- This seat tracks G1-G8 to closure as inherited waits.

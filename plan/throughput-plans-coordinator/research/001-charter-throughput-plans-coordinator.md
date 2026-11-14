@@ -45,6 +45,7 @@ A resume of this plan starts the coordinator `/loop` with no interval IN THE SAM
 
 ## The tick, in this order
 
+0. **Notices first.** Before anything else, read the comments posted since the last tick on BOTH this plan's epic (livespec-dev-tooling-r7iuj6) AND legacy-coordinator-agent's epic (livespec-dev-tooling-6tgd2z), and act on every FROM COORDINATOR, MERGE-QUIET, QUIET OFF, FINAL HANDOFF and FROM legacy-dispatcher-agent notice. legacy-coordinator-agent posts fleet notices on its own epic, so reading only this epic misses them. While a merge-quiet window is on, no seat or helper of this track readies, arms, merges or reruns a PR in that repository, and a grade relay says "stays draft until QUIET OFF". After QUIET OFF, held PRs are released in waves, so the pool the fix freed is not flooded at once. Every `gh pr ready` is followed by `gh pr view N --json autoMergeRequest`; when ready did not arm, the PR is armed with `gh pr merge N --auto --rebase`.
 1. **HEADLINE METRIC, printed verbatim every tick.** Print both board links ABOVE the table:
    - family board (real-time): https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS/livespec-family-all-activity
    - throughput board (one repository per chart): https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/ytZuuVuT4BQ
@@ -57,7 +58,7 @@ A resume of this plan starts the coordinator `/loop` with no interval IN THE SAM
    - **M3** is the stage medians.
    - Below them: the start→open stall list (over 72 h), and the AWAITING MASTER VERDICT block.
 
-   There are NO targets: the metrics must keep improving. Any repository outside its noise band in the bad direction, or with a merge over 60 min awaiting a master verdict, gets a root-cause read routed to an owning plan THAT tick. The table costs Honeycomb queries against the MCP key's shared budget of about 100 an hour. If the newest event in dataset `pr-throughput` is older than 30 minutes, say so above the table and tell throughput-metric: a stale table is worse than none.
+   There are NO targets: the metrics must keep improving. Any repository outside its noise band in the bad direction, or OVER its per-repository AWAITING MASTER VERDICT threshold (min(180, max(60, 2 x master-cycle p50 + 30)) min), or with unrun merges, gets a root-cause read routed to an owning plan THAT tick. The table costs Honeycomb queries against the MCP key's shared budget of about 100 an hour. If the newest event in dataset `pr-throughput` is older than 30 minutes, say so above the table and tell throughput-metric: a stale table is worse than none.
 2. **Seats.** `herdr agent list` on hetzner-xubuntu, workspace throughput-improvements; read each seat's pane; a seat reading `blocked`, or idle with an executable next action, is unblocked or prompted this tick. Seats are reached ONLY with the SendMessage tool (ListAgents, then the session name), NEVER by typing into a pane: no `herdr agent prompt`, `herdr pane send-text`, `herdr pane run` or `tmux send-keys`, per `.ai/distributed-sendmessage-protocol.md`. A seat on another machine with no Remote Control row gets a ledger comment on its plan epic instead.
 3. **Levers.** For each row of the track table: owner, carrier state, next action, what changed since the last tick, and its measured effect on the metric where one exists.
 4. **In flight.** Open PRs of the track's plans, named as `repository#N`, and anything waiting on a spec ratification or the dispatcher.
@@ -65,12 +66,14 @@ A resume of this plan starts the coordinator `/loop` with no interval IN THE SAM
 
 ## Standing rules from the 2026-11-14 incident
 
-The fleet CI pool stall of 2026-11-13/14 is retold, with its causes and its guards G1-G7 and their owners, in `research/002-incident-retro-2026-11-14-ci-pool-stall.md`. This seat changed two things in itself:
+The fleet CI pool stall of 2026-11-13/14 is retold, with its causes and its guards G1-G8 and their owners, in `research/002-incident-retro-2026-11-14-ci-pool-stall.md`. This seat changed two things in itself:
 
-- Every tick treats an AWAITING MASTER VERDICT line over 60 min as a stop-the-line read that same tick, and routes it.
+- Every tick treats an AWAITING MASTER VERDICT line over its per-repository threshold as a stop-the-line read that same tick, and routes it.
 - Every capacity ruling this seat makes carries a measured revert trigger and a +2 h CI-side read.
+- Every tick starts by reading BOTH this epic and legacy-coordinator-agent's epic (step 0). Added after this seat missed the 07:03Z QUIET OFF, posted only on livespec-dev-tooling-6tgd2z, and earlier told seats to `gh pr ready` during the window, which auto-arms in livespec-dev-tooling.
+- A grader's brief for an alarm or trigger PR checks the platform's limits (a Honeycomb trigger's frequency against its time range) and the bound of any exclusion; legacy-coordinator-agent caught both on #4650 and #4599 where this seat's graders had not.
 
-It also tracks G1-G7 to closure as inherited waits.
+It also tracks G1-G8 to closure as inherited waits; G3 is withdrawn.
 
 ## The track's plans and their tabs (2026-11-14 ~01:0xZ)
 
