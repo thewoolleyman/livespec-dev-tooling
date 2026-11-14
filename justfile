@@ -147,6 +147,12 @@ import? 'dev-tooling/branch-protection.just'
 bootstrap:
     scripts/just/bootstrap.sh
 
+# Validate the committed radar against its tenant ledgers. This intentionally
+# remains outside `check:`: resolving the ledgers needs the credential wrapper
+# and is forbidden from the hermetic check suite.
+radar-validate:
+    /usr/local/bin/with-livespec-env.sh -- uv run python -m livespec_dev_tooling.radar.loader
+
 # Install (or idempotently re-install) the canonical livespec commit-refuse
 # hook at the primary checkout's shared `.git/hooks/{pre-commit,pre-push,
 # commit-msg}`. The installer module is the single canonical-body carrier; it
