@@ -286,6 +286,22 @@ its ratified clause and re-approved it.
 than relying on a later sweep. Recorded in the 2026-11-10 ~12:28Z restart handoff (session 9f244478) on epic
 `livespec-dev-tooling-6tgd2z`.
 
+**A merge-quiet window stops the coordinator's own helpers first (coordinator's reading).** Before switching QUIET ON,
+the coordinator messages every live background helper it spawned that merges, arms or reruns PRs: no `gh pr merge`, no
+auto-merge arming, no failed-job reruns. Every helper spawned during the window gets the same brief. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-14T04:58:08Z.
+
+- On livespec-dev-tooling, `gh pr ready` auto-arms rebase auto-merge (`.github/workflows/auto-enable-merge.yml`, §5),
+  so marking a PR ready IS arming it. Owners mark ready only at QUIET OFF.
+- QUIET OFF is announced at the incident's record-merge: to legacy-dispatcher-agent (its quiet-off script re-arms in
+  priority order), as a comment on `livespec-dev-tooling-6tgd2z` for the hetzner seats, and to each held PR's owner.
+  Measured 2026-11-14: livespec-dev-tooling#4629 merged at 07:01:38Z, and QUIET OFF was posted ~07:0xZ.
+- Measured 2026-11-14, inside incident asxhj3's window: livespec-dev-tooling#4598 (03:48Z) and
+  livespec-dev-tooling#4584 (04:53Z), both from the coordinator's own pre-window helpers, merged after a helper re-armed
+  them over the dispatcher's disarm and merge-hold. livespec-dev-tooling#4630 and livespec-dev-tooling#4608, from
+  hetzner throughput seats, merged too. The incident measured that none forced a re-gen, because the incident PR's base
+  read stayed fixed.
+
 **fabro-currency's pickers are answered like any seat's.** The maintainer, 2026-11-02 ~22:26Z: "WHY THGE FUCK ARE YOU
 LETTING IT B LOCK???" A ruling at 18:57Z had recorded "I'll talk to it myself" as "the coordinator does not direct
 fabro-currency until the maintainer hands it back". Handoffs and the loop prompt copied it forward, and a priority-3
