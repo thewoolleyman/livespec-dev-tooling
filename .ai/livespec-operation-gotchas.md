@@ -296,6 +296,22 @@ owning seat rewrote it at 17:31Z, so the 17:25:45Z pre-admission judgement no
 longer described the item. The coordinator accepted the new text and asked for
 this warning (their word, 2026-11-07).
 
+### A ratified scenario goes onto its owner's References line at merge
+
+When a revise merges a new or changed `## Scenario: ...` heading, find the work
+item named on that heading's `tests/heading-coverage.json` TODO row. In the same
+tick as the merge, add the heading verbatim to that item's Definition of Done
+`References:` line, separated by ", " and with its literal `## ` marker. Do it
+before the coordinator presses approve or the dispatcher tickets the item. Then
+read the line back, and tell the dispatcher to re-read the item, because the
+behaviour digest changes.
+
+Measured 2026-11-14 on v221 (livespec-dev-tooling#4670). The coordinator's
+first `approve:livespec-dev-tooling-vm4vcn` was refused because the item's
+References line did not name its newly ratified scenario, and the coordinator
+repaired the item by hand. livespec-dev-tooling-a3xotn had the same gap. It was
+caught only minutes before the dispatcher placed it fresh.
+
 ## A Plan Epic's Status Is Not A Freeze Signal
 
 A plan epic rests at `backlog` by design, so its status says nothing about whether
