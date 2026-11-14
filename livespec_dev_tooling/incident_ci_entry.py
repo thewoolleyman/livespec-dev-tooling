@@ -177,7 +177,7 @@ class CiEntry:
         # two pyright members started on a cold cache type-check against a
         # half-written typeshed. A failed provisioning launches no member.
         warmed = environ.get("LIVESPEC_PYRIGHT_WARMED") == "1"
-        if warm_locked_pyright(cwd=self.repo, already_warmed=warmed) != 0:
+        if warm_locked_pyright(cwd=self.repo, env=environment, already_warmed=warmed) != 0:
             if echo is not None:
                 echo(text="::: pyright provisioning failed; no selected member launched\n")
             return 1
