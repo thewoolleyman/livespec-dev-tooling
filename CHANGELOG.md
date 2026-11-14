@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.211.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.210.0...v1.211.0) (2026-11-14)
+
+
+### Features
+
+* reclaim abandoned coverage namespaces ([15c289a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/15c289a2548327f22372e6b2fb8cfe41cce13e8f))
+
+
+### Bug Fixes
+
+* **ansible:** point vps host config at the ~/workspace clone root ([6e26e65](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6e26e658919f0cd9804fd432f8ec757981fea4c9))
+* **ansible:** SendMessage is guidance, never a block on typing into panes ([753cf22](https://github.com/thewoolleyman/livespec-dev-tooling/commit/753cf225802f8d212d5fce8ce3c904a3c534cf13))
+* **dev-host-retention:** stamp a cut-off uv-cache ownership walk and log its duration ([0f1975c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f1975c7dd7cad5f80f999203c609c4d9b72d2b2))
+* **dev-host:** a scratch mover pass keeps only the session ids processes name ([4f8a651](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4f8a651b62dfe8aa5caa2044eb6435ff724086aa))
+* isolated object view must not read the clone's commit-graph ([38a6c16](https://github.com/thewoolleyman/livespec-dev-tooling/commit/38a6c16342700f53832abc1976c9d5b0ebd17b8a))
+* isolated object view refuses a clone that names another object store ([d1b0f8d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d1b0f8d43afb6265b37a7c6cee5f229b44394503))
+
 ## [1.210.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.209.0...v1.210.0) (2026-11-14)
 
 
