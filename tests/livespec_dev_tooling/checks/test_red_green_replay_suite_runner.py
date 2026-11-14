@@ -317,13 +317,26 @@ def test_a_silent_suite_is_killed_whole_once_it_stalls(tmp_path: Path) -> None:
     assert not _live_processes_carrying(token)
 
 
-def test_a_stalled_suite_reaps_a_descendant_that_started_its_own_session() -> None:
-    """A stalled suite terminates a session-escaping subprocess too."""
+def test_a_stalled_suite_reaps_a_descendant_that_started_its_own_session(tmp_path: Path) -> None:
+    """A stalled suite sends TERM, waits, then kills a session-escaping subprocess."""
     mod = _load()
     token = f"livespec-stall-session-escape-{uuid.uuid4().hex}"
+    term_log = tmp_path / "escapee.term"
+    escapee_script = tmp_path / "escapee.py"
+    escapee_script.write_text(
+        "import signal\n"
+        "import sys\n"
+        "import time\n"
+        "from pathlib import Path\n\n"
+        "def received_term(*_args):\n"
+        "    Path(sys.argv[1]).write_text('TERM', encoding='utf-8')\n\n"
+        "signal.signal(signal.SIGTERM, received_term)\n"
+        "while True:\n"
+        "    time.sleep(1)\n",
+        encoding="utf-8",
+    )
     escaped = (
-        f"setsid {sys.executable} -c 'import time; time.sleep(300)' {token} & "
-        "printf ready; sleep 300"
+        f"setsid {sys.executable} {escapee_script} {term_log} {token} & " "printf ready; sleep 300"
     )
     try:
         run = mod.run_suite(
@@ -336,6 +349,10 @@ def test_a_stalled_suite_reaps_a_descendant_that_started_its_own_session() -> No
         assert not _live_processes_carrying(token)
         assert "ending out-of-group descendant pid=" in run.output
         assert token in run.output
+        assert term_log.read_text(encoding="utf-8") == "TERM"
+        assert run.output.index("pass=1 SIGTERM") < run.output.index("pass=1 grace wait")
+        assert run.output.index("pass=1 grace wait") < run.output.index("pass=1 SIGKILL")
+        assert run.output.count("pass=") <= 3
     finally:
         _ = [os.kill(int(pid), signal.SIGTERM) for pid in _live_processes_carrying(token)]
 

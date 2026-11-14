@@ -974,13 +974,30 @@ def test_a_gate_pytest_session_that_stops_making_progress_ends_without_a_pass(
 
 @pytest.mark.integration
 def test_a_stalled_gate_reaps_a_descendant_that_started_its_own_session(
-    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """A gate stall ends a session-escaping descendant and records what it ended."""
+    """A gate stall sends TERM, waits, then kills a session-escaping descendant."""
     primary, worktree, env = fixture_repo
     token = f"livespec-gate-session-escape-{time.monotonic_ns()}"
+    term_log = tmp_path / "escapee.term"
+    escapee_script = tmp_path / "escapee.py"
+    _write(
+        path=escapee_script,
+        text=(
+            "import signal\n"
+            "import sys\n"
+            "import time\n"
+            "from pathlib import Path\n\n"
+            "def received_term(*_args):\n"
+            "    Path(sys.argv[1]).write_text('TERM', encoding='utf-8')\n\n"
+            "signal.signal(signal.SIGTERM, received_term)\n"
+            "while True:\n"
+            "    time.sleep(1)\n"
+        ),
+    )
     escaped = (
-        f"setsid python3 -c 'import time; time.sleep(300)' {token} & echo collected; exec sleep 300"
+        f"setsid {sys.executable} {escapee_script} {term_log} {token} & "
+        "echo collected; exec sleep 300"
     )
     try:
         run_id = _start(
@@ -994,6 +1011,10 @@ def test_a_stalled_gate_reaps_a_descendant_that_started_its_own_session(
         assert not _live_processes_carrying(token=token)
         assert "out-of-group descendant pid=" in output
         assert token in output
+        assert term_log.read_text(encoding="utf-8") == "TERM"
+        assert output.index("pass=1 SIGTERM") < output.index("pass=1 grace wait")
+        assert output.index("pass=1 grace wait") < output.index("pass=1 SIGKILL")
+        assert output.count("pass=") <= 3
     finally:
         _end_processes_carrying(token=token)
 
