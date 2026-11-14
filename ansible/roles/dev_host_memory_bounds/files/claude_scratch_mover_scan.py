@@ -26,6 +26,7 @@ __all__: list[str] = [
 ]
 
 _SESSION_NAME = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SESSION_ENV = re.compile(rb"(?:^|\x00)CLAUDE_CODE_SESSION_ID=([0-9a-f-]+)")
 _STAGING_NAME = re.compile(
     r"^\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.moving$"
@@ -36,7 +37,11 @@ _MAPS_FIELDS_WITH_PATH = 6
 
 @dataclass(frozen=True, kw_only=True)
 class References:
-    """What the running processes point at: session ids and path strings."""
+    """What the running processes name: session ids, from the environment and anywhere else.
+
+    `paths` holds the session-id-shaped strings found in any held string; it
+    never holds the held strings themselves.
+    """
 
     sessions: frozenset[str]
     paths: frozenset[str]
@@ -78,10 +83,25 @@ def _map_paths(*, process: Path) -> list[str]:
     ]
 
 
+def _process_strings(*, process: Path, environ: bytes) -> Iterator[str]:
+    """Every string one process holds; it is dropped once the caller has read it."""
+    yield _link(path=process / "cwd")
+    yield from _fd_targets(process=process)
+    yield from _map_paths(process=process)
+    for raw in (environ, _read(path=process / "cmdline")):
+        yield from raw.decode(errors="replace").split("\x00")
+
+
 def read_references(*, proc_root: Path) -> References:
-    """Collect every session id and path string the running processes hold."""
+    """Collect the session ids the running processes name, one process at a time.
+
+    Each process's environment, command line, working directory, descriptor
+    targets and mapped paths are read, matched against the session-id shape and
+    dropped before the next process is read, so the pass never holds more than
+    one process's strings. `paths` keeps only the session ids some process names.
+    """
     sessions: set[str] = set()
-    paths: set[str] = set()
+    named: set[str] = set()
     seen = 0
     readable = 0
     for process in proc_root.iterdir():
@@ -92,15 +112,11 @@ def read_references(*, proc_root: Path) -> References:
         readable += raw_environ is not None
         environ = raw_environ or b""
         sessions.update(match.decode() for match in _SESSION_ENV.findall(environ))
-        paths.add(_link(path=process / "cwd"))
-        paths.update(_fd_targets(process=process))
-        paths.update(_map_paths(process=process))
-        for raw in (environ, _read(path=process / "cmdline")):
-            paths.update(raw.decode(errors="replace").split("\x00"))
-    paths.discard("")
+        for held in _process_strings(process=process, environ=environ):
+            named.update(_SESSION_ID.findall(held))
     return References(
         sessions=frozenset(sessions),
-        paths=frozenset(paths),
+        paths=frozenset(named),
         scan_failed=seen > 0 and readable == 0,
     )
 
