@@ -18,6 +18,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from wsgiref.simple_server import make_server
 
 import pytest
 from returns.io import IOFailure, IOSuccess
@@ -393,6 +394,38 @@ def test_the_step_writes_only_to_the_installation_serving_the_repository() -> No
         1,
         "refused\texample/unserved: no controller installation serves it",
     )
+
+
+def test_the_enablement_step_retries_the_retained_controller_record_over_real_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rerun derives the same operation identity and leaves stored controller bytes intact."""
+    core = Core()
+    installation = _installation(tmp_path=tmp_path)
+    service = ControllerService(
+        installation=installation,
+        recover=lambda _intent: None,
+        identity_source=core.source(),
+    )
+    server = make_server("127.0.0.1", 0, service)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(
+            "livespec_dev_tooling.incident_enablement.INSTALLATION_PORTS",
+            {REPO: server.server_port},
+        )
+        write = controller_enablement_writer(
+            environ={"LIVESPEC_INCIDENT_CONTROL_SECRET": "control"}
+        )
+        assert write(repository=REPO, manifest_sha256=CURRENT) == (0, f"enabled\t{REPO}")
+        stored = next(installation.state.glob("enablement-*.json"))
+        before = stored.read_bytes()
+
+        assert write(repository=REPO, manifest_sha256=CURRENT) == (0, f"enabled\t{REPO}")
+        assert stored.read_bytes() == before
+    finally:
+        server.shutdown()
 
 
 def test_the_step_refuses_by_name_without_a_secret_a_reachable_controller_or_its_consent() -> None:
