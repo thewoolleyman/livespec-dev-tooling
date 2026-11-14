@@ -13,7 +13,7 @@ created_at: 2026-11-13T23:21:57Z
 
 ### Summary
 
-Under the same section, require every exporter (the shared module and any interim script a member still runs) to post a ci.job.<name> span whose end is never before its start. A job that GitHub reports with a completion earlier than its start, or with no start or completion stamp, MUST be posted with its end equal to its start, so Honeycomb reads duration_ms 0 rather than a uint64-wrapped value. This is the behaviour livespec-dev-tooling-bt2cnw implements, which its pre-dispatch screen held for this topic.
+Under the same section, require every exporter (the shared module and any interim script a member still runs) to post a ci.job.<name> span whose end is never before its start. A job that GitHub reports with a completion earlier than its start MUST be posted with its end equal to its start, so Honeycomb reads duration_ms 0 rather than a uint64-wrapped value. This is the behaviour livespec-dev-tooling-bt2cnw implements, which its pre-dispatch screen held for this topic.
 
 ### Motivation
 
@@ -23,7 +23,7 @@ Measured 2026-11-13 (Honeycomb github-ci, query 3LqgCqKjhLp): 242 ci.job spans o
 
 In non-functional-requirements.md section "Runner-pool node telemetry", insert this paragraph directly after the paragraph beginning **One CI run-telemetry exporter.** (when the-ci-run-telemetry-exporter's **Exporter failures name themselves.** paragraph is also ratified, it goes directly after that paragraph instead):
 
-> Every `ci.job.<name>` span the exporter posts MUST have an end time no earlier than its start time. A job that the GitHub jobs API reports with a completion time earlier than its start time, or with no start or no completion time, MUST be posted with its end time equal to its start time, so its `duration_ms` reads 0 and never wraps. This holds for every exporter a fleet member runs, including an interim script kept while the member adopts the shared module.
+> **Job spans never end before they start.** Every `ci.job.<name>` span the exporter posts MUST have an end time no earlier than its start time. A job that the GitHub jobs API reports with a completion time earlier than its start time MUST be posted with its end time equal to its start time, so its `duration_ms` reads 0 and never wraps. This holds for every exporter a fleet member runs, including an interim script kept while the member adopts the shared module.
 
 In scenarios.md, add this scenario directly after "## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships" (after the-ci-run-telemetry-exporter's two scenarios when that topic is also ratified):
 
