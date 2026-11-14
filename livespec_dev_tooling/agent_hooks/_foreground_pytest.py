@@ -16,15 +16,19 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Callable
+from fnmatch import fnmatch
 from pathlib import Path
 
 from livespec_dev_tooling.agent_hooks._command_shape import Invocation, invocations
+from livespec_dev_tooling.config import load_gate_job_only_tests
 from livespec_dev_tooling.gate_command import pytest_command
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import delegated_gate_enabled
 
 __all__: list[str] = [
     "foreground_full_suite_pytest",
+    "foreground_gate_job_only_pytest",
 ]
 
 # Options that take a separate value argument. The list narrows what is read
@@ -118,6 +122,29 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
     cannot lex (an unterminated quote) runs nothing at all, so it is not
     refused.
     """
+    return _foreground_pytest_repository(
+        command=command,
+        cwd=cwd,
+        predicate=_is_full_suite_pytest,
+    )
+
+
+def foreground_gate_job_only_pytest(*, command: str, cwd: Path) -> Path | None:
+    """Return an eligible repository when pytest explicitly selects a gate-only test."""
+    return _foreground_pytest_repository(
+        command=command,
+        cwd=cwd,
+        predicate=_is_gate_job_only_pytest,
+    )
+
+
+def _foreground_pytest_repository(
+    *,
+    command: str,
+    cwd: Path,
+    predicate: Callable[..., bool],
+) -> Path | None:
+    """Return the first delegated host repository whose pytest meets `predicate`."""
     try:
         parsed_command = _without_heredoc_bodies(command=command)
         _ = shlex.split(parsed_command)
@@ -126,21 +153,15 @@ def foreground_full_suite_pytest(*, command: str, cwd: Path) -> Path | None:
     target = cwd
     for invocation in invocations(command=parsed_command):
         if invocation.binary == "cd":
-            target = _cd_target(
-                cwd=cwd,
-                target=target,
-                cd_target=invocation.subcommand,
-            )
+            target = _cd_target(cwd=cwd, target=target, cd_target=invocation.subcommand)
             continue
         pytest_argv = pytest_command(command=_argv(invocation=invocation))
-        if pytest_argv is not None:
-            eligible = (
-                _is_full_suite_pytest(pytest_argv=pytest_argv, cwd=target)
-                and delegated_gate_enabled(repo_root=target)
-                and gates_kubeconfig_readable()
-            )
-            if eligible:
-                return target
+        if pytest_argv is not None and (
+            predicate(pytest_argv=pytest_argv, cwd=target)
+            and delegated_gate_enabled(repo_root=target)
+            and gates_kubeconfig_readable()
+        ):
+            return target
     return None
 
 
@@ -178,6 +199,43 @@ def _is_full_suite_pytest(*, pytest_argv: tuple[str, ...], cwd: Path) -> bool:
         elif not argument.startswith("-") and _names_test_path(argument=argument, cwd=cwd):
             return False
     return True
+
+
+def _is_gate_job_only_pytest(*, pytest_argv: tuple[str, ...], cwd: Path) -> bool:
+    """Whether an explicit pytest target contains a module declared gate-Job-only."""
+    globs = load_gate_job_only_tests(repo_root=cwd)
+    if not globs:
+        return False
+    for argument in _explicit_test_paths(pytest_argv=pytest_argv, cwd=cwd):
+        for module in _test_modules(path=argument, cwd=cwd):
+            relative = module.relative_to(cwd).as_posix()
+            if any(fnmatch(relative, glob) for glob in globs):
+                return True
+    return False
+
+
+def _explicit_test_paths(*, pytest_argv: tuple[str, ...], cwd: Path) -> tuple[str, ...]:
+    """Return positional pytest test-path arguments, excluding option values."""
+    paths: list[str] = []
+    expect_option_value = False
+    for argument in pytest_argv[1:]:
+        if expect_option_value:
+            expect_option_value = False
+        elif argument in _PYTEST_VALUE_OPTIONS:
+            expect_option_value = True
+        elif not argument.startswith("-") and _names_test_path(argument=argument, cwd=cwd):
+            paths.append(argument)
+    return tuple(paths)
+
+
+def _test_modules(*, path: str, cwd: Path) -> tuple[Path, ...]:
+    """Return test modules selected by a file, directory, or node-id pytest target."""
+    selected = cwd / path.split("::", maxsplit=1)[0]
+    if selected.is_file() and selected.suffix == ".py":
+        return (selected,)
+    if selected.is_dir():
+        return tuple(sorted({*selected.rglob("test_*.py"), *selected.rglob("*_test.py")}))
+    return ()
 
 
 def _names_test_path(*, argument: str, cwd: Path) -> bool:
