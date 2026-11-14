@@ -15,7 +15,7 @@ its typed next_action, the age of its last ledger move (STALE past 60 minutes) a
 newest epic comment, so an ask from a seat that cannot SendMessage (a Mac or Codex
 seat) is seen every tick (rule P3).
 
-TOP mirrors the priorities-record. When the record changes, change TOP in the same
+TOP mirrors the priorities-record (scope events 2026-11-14T18:24:20Z and 18:37:20Z), and a KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
 `bd show` and `bd comments`, through each tenant's credential wrapper, and local reads
 of the launch hold files.
@@ -36,16 +36,12 @@ import os
 import subprocess
 
 TOP = [
-    ("1 dev-host-disk-retention (VPS overload prevention; workspace livespec-dev-tooling, tab dev-host-disk-retention)", "livespec-dev-tooling-qgwxo4"),
-    ("2a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; the Hetzner migration off vmi3006760)", "hxi-vxsmdv"),
-    ("2b central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; the Hetzner credential leg)", "overseer-iyfjbo"),
-    ("2c distributed-send-message (hetzner-xubuntu, workspace livespec-dev-tooling, tab distributed-send-message; the cross-machine SendMessage the Hetzner move needs)", "livespec-dev-tooling-rlwppp"),
-    ("3 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
-    ("4 THROUGHPUT TRACK (throughput-track-organization; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-q26e3c"),
-    ("5 stale-base-merge-options (now the GitHub org move plus merge queue; prep only)", "livespec-dev-tooling-xowhol"),
-    ("6 address-honeycomb-alerts (orchestrator; carriers dolt-server-cudtkp, donph5, 7tfa3x, bd-ib-z2y4ca, bd-ib-immkx7)", "bd-ib-xkwdap"),
-    ("7a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
-    ("7b gate-job-resources", "livespec-dev-tooling-ukoeah"),
+    ("1a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab bootstrap-credentials-and-onboarding)", "hxi-vxsmdv"),
+    ("1b central-credential-service (livespec-overseer; vmi3006760, workspace livespec-overseer, tab central-credential-service)", "overseer-iyfjbo"),
+    ("1c distributed-send-message (hetzner-xubuntu, workspace livespec-dev-tooling, tab distributed-send-message)", "livespec-dev-tooling-rlwppp"),
+    ("2 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
+    ("3 stale-base-merge-options (GitHub org move to livespec-ai plus merge queue; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-xowhol"),
+    ("KEPT throughput-plans-coordinator (owns every factory throughput problem; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-r7iuj6"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
@@ -209,7 +205,7 @@ for label, epic in TOP:
     rec = run(["bd", "show", epic, "--json"], cwd, wrapper)
     comments = run(["bd", "comments", epic, "--json"], cwd, wrapper) or []
     if not rec:
-        print(f"P{label}: LEDGER READ FAILED ({epic})")
+        print(f"{'P' if label[:1].isdigit() else ''}{label}: LEDGER READ FAILED ({epic})")
         continue
     r = rec[0]
     na = (r.get("metadata") or {}).get("next_action") or {}
@@ -218,7 +214,8 @@ for label, epic in TOP:
     flag = ""
     if age > STALE_MINUTES:
         flag = "  <<< STALE: name the ONE next action and its holder; if it is the coordinator's, do it NOW"
-    print(f"P{label} ({epic}) [{r['status']}] last ledger move {age:.0f} min ago{flag}")
+    tag = "P" if label[:1].isdigit() else ""  # a KEPT seat is not a ranked priority
+    print(f"{tag}{label} ({epic}) [{r['status']}] last ledger move {age:.0f} min ago{flag}")
     print(f"    next_action({na.get('kind')}): {na.get('text', '')[:220]}")
     if comments:
         newest = comments[-1]
