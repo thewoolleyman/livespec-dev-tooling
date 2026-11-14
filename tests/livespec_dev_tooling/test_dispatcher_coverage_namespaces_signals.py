@@ -143,3 +143,12 @@ def test_a_signalled_check_runner_removes_its_coverage_directories_and_exits_non
     assert was_running
     assert status != 0
     assert leftovers == []
+
+
+def test_a_runner_that_never_reaches_its_marker_fails_as_a_named_hang(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "HANG_GUARD_SECONDS", 0)
+
+    with pytest.raises(pytest.fail.Exception, match=r"HANG: waiting for the check runner.*running"):
+        _signal_runner(tmp_path=tmp_path, runner="local-gates", signum=signal.SIGTERM)
