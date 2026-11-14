@@ -5342,13 +5342,13 @@ Then it MUST treat the outcome as an absent verdict and run the Red leg's test i
 
 And it MUST record the Red trailers only from that local run
 
-## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs
+## Scenario: the gmktec gate lane keeps room for two default-size gate Jobs
 
 Given the committed `cluster-queue-gates.yaml`
 
 When its tests run
 
-Then they MUST fail, naming the `gates-flavor` lane, if that lane's nominal CPU quota is below three times the renderer's default CPU request or its nominal memory quota is below three times the renderer's default memory request
+Then they MUST fail, naming the `gates-flavor` lane, if that lane's nominal CPU quota is below two times the renderer's default CPU request or its nominal memory quota is below two times the renderer's default memory request
 
 ## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor
 
