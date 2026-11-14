@@ -28,6 +28,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +40,7 @@ _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _RENDERED = re.compile(r'^\s*"msg": (?P<msg>"RENDERED=.*")$', re.MULTILINE)
 _BASE = "https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/ansible/inventory/host_vars"
 # Generous: a cold `uvx` resolves and caches ansible-core before the play runs.
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 
 def _ansible_core_pin() -> str:

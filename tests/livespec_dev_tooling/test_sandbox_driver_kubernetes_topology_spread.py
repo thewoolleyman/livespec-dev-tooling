@@ -24,6 +24,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 if sys.version_info >= (3, 11):  # pragma: no cover — 3.11 path unused on the 3.10 floor.
     import tomllib as _toml
 else:
@@ -39,7 +41,7 @@ _TEMPLATE = _ROLE / "templates" / "plugin-config.toml.j2"
 _WORKLOAD_ARCH_CONF = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "workload-arch.conf"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _RENDERED = re.compile(r'^\s*"msg": (?P<msg>"RENDERED=.*")$', re.MULTILINE)
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 
 def _ansible_core_pin() -> str:

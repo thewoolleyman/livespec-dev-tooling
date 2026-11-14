@@ -26,13 +26,14 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_observer_role_production_unchanged as base
 from tests.livespec_dev_tooling import test_incident_observer_role_scratch_refusals as refusals
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-jpfdcx
 _FIRST = "Read this node's tailscale serve and funnel configuration"
 _LAST = "Refuse a funnel port that publishes a path beyond the declared list"
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _DNS = "node.example.ts.net"
 _HOST = _DNS + ":10000"
 _CALLBACK = "/callback"
