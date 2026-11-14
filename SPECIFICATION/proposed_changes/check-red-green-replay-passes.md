@@ -24,9 +24,9 @@ Work item livespec-dev-tooling-a4w7qr was refused at the spec-change tier on 202
 In SPECIFICATION/contracts.md, section "## Suite-green replay leg", add this bullet immediately after the bullet "Range validation collects a Red+Green commit's recorded test":
 
 - **Range validation refuses a trailer subject and a stale recorded checksum.** The commit-range validation of `check-red-green-replay` (the no-argument path, which judges every non-merge commit in `origin/master..HEAD`) MUST apply both rules below to every commit in its range, with the same exemptions as the collection bullet above: a forge-authored revert verified under the server-side revert exemption, and an expedited commit the incident chain records. No lever, flag or subject prefix MAY exempt a commit from either rule.
-  - *Trailer subject.* A commit whose subject line, the first line of its message, has the form of a git trailer (`Key: value`, where `Key` is a token of letters, digits and hyphens, followed by a colon and a space) MUST fail the range. The finding MUST name the commit's sha and its subject line.
-  - *Recorded checksum on its own tree.* A commit carrying a `TDD-Red-Test-File-Checksum` trailer MUST fail the range when that value does not equal the checksum, computed by the same rule the Red leg used to record it, of the bytes of the file its `TDD-Red-Test` trailer names on that commit's own tree, or when that file is absent there. The finding MUST name the commit's sha, the test file, the recorded checksum and the checksum read on the commit's tree.
-  - *Finding.* Each rule's failure MUST carry a `check_id` distinct from the missing-trailers failure and from the collection failure. The remedy each names is to rewrite the range so that every commit has a non-trailer subject and every recorded checksum matches its own tree.
+  - *Trailer subject.* A commit whose subject line, the first line of its message, has the form of a git trailer (`Key: value`, where `Key` is a token of letters, digits and hyphens that contains at least one hyphen, as every trailer the fleet writes does, such as `Factory-Run-Id`, `TDD-Red-Test` and `Co-Authored-By`, followed by a colon and a space) MUST fail the range. A conventional-commit type such as `fix:` or `feat:`, which this repository's Red-Green protocol requires, is not a trailer subject. The finding MUST name the commit's sha and its subject line.
+  - *Recorded checksum on its own tree.* A commit carrying a `TDD-Red-Test-File-Checksum` trailer MUST fail the range when that value does not equal the checksum, computed by the same rule the Red leg used to record it, of the bytes of the file named by the path part of its `TDD-Red-Test` value (any `::` node id dropped, as the collection bullet states) on that commit's own tree, or when that file is absent there, or when the commit carries no `TDD-Red-Test` trailer at all. The finding MUST name the commit's sha, the test file, the recorded checksum and the checksum read on the commit's tree.
+  - *Finding.* Each rule's failure MUST carry its own `check_id`, distinct from the other rule's, from the missing-trailers failure and from the collection failure. The remedy each names is to rewrite the range so that every commit has a non-trailer subject and every recorded checksum matches its own tree.
   - *Passing range.* A range in which every commit has a non-trailer subject line and every recorded `TDD-Red-Test-File-Checksum` matches its commit's own tree MUST pass both rules.
   - *Fleet scope.* Every consumer whose CI runs the shared `red_green_replay` check.
   - *Spec-first.* The shipped range path checks only that the trailer keys are present. Work item livespec-dev-tooling-a4w7qr owns the change.
@@ -41,7 +41,11 @@ When check-red-green-replay validates the range
 
 Then the check MUST fail with a finding that names that commit's sha and that subject line
 
+And a commit whose subject is `fix: x` MUST NOT fail the trailer-subject rule
+
 And a range holding a commit whose TDD-Red-Test-File-Checksum differs from the checksum of its TDD-Red-Test file on that commit's own tree MUST fail the check with a finding that names the commit's sha, the test file, the recorded checksum and the checksum read on the tree
+
+And the trailer-subject finding and the checksum finding MUST each carry a check_id that differs from the other's, from the missing-trailers finding's and from the collection finding's
 
 And a range in which every commit has a non-trailer subject line and every recorded checksum matches its own tree MUST pass both rules
 
@@ -64,7 +68,7 @@ This is the root of the trailer-only commits that finding 1's range rule refuses
 
 In SPECIFICATION/contracts.md, section "## Suite-green replay leg", add this bullet after the bullet added by finding 1:
 
-- **An empty commit message stays empty.** Every commit-msg hook writer that the dev-tooling pack installs and that appends trailers to the message file, including the replay leg's `TDD-*` trailers and the factory provenance gate's `Factory-Run-Id` trailer, MUST leave the message file unchanged when the message has no content other than whitespace and comment lines. A `git commit` attempted with an empty message in a repository whose commit-msg hooks come from the pack MUST therefore be aborted by git, with no new commit created and HEAD unchanged, both with and without a factory run marker present. A writer MUST NOT supply a subject line to make an empty message non-empty. Fleet scope: every consumer that installs the pack's commit-msg hooks. Spec-first: the shipped writers append their trailers to an empty message, and work item livespec-dev-tooling-a4w7qr owns the change.
+- **An empty commit message stays empty.** Every commit-msg hook writer that the dev-tooling pack installs and that appends trailers to the message file, including the replay leg's `TDD-*` trailers and the factory provenance gate's `Factory-Run-Id` trailer, MUST leave the message file unchanged when the message has no content other than whitespace and comment lines. A `git commit` attempted with an empty message in a repository whose commit-msg hooks come from the pack MUST therefore be aborted by git, with no new commit created and HEAD unchanged, both with and without a factory run marker present. A writer MUST NOT supply a subject line to make an empty message non-empty. This bullet takes precedence over every bullet of this section that requires a trailer to be recorded. Fleet scope: every consumer that installs the pack's commit-msg hooks. Spec-first: the shipped writers append their trailers to an empty message, and work item livespec-dev-tooling-a4w7qr owns the change.
 
 In SPECIFICATION/scenarios.md, add after the scenario added by finding 1:
 
