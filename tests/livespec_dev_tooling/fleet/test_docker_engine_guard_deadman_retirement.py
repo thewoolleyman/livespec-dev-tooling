@@ -147,12 +147,19 @@ def test_the_dead_man_is_a_bounded_oneshot_carrying_the_rollbacks_stop_propertie
     assert "--property=KillMode=control-group" in armed
     assert "--property=SendSIGKILL=yes" in armed
     assert _service_properties(argv=armed) == _service_properties(
-        argv=model.rollback_argv(run="run-a")
+        argv=model.rollback_argv(run="run-a", paths=_paths(root=tmp_path))
     )
     assert "--on-unit-inactive=60" in armed
     assert "--timer-property=AccuracySec=1s" in armed
     assert "--collect" in armed
-    assert armed[-2:] == ("rollback", "run-a")
+    assert armed[-6:] == (
+        "rollback",
+        "run-a",
+        "--state-root",
+        str(tmp_path / "var"),
+        "--runtime-root",
+        str(tmp_path / "run"),
+    )
 
 
 def _verify(*, root: Path, postconditions: dict[str, bool]) -> tuple[Any, Any]:

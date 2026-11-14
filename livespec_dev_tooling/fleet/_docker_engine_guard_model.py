@@ -210,7 +210,24 @@ def _rollback_service_properties() -> tuple[str, ...]:
     )
 
 
-def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
+def _rollback_command(*, run: str, paths: GuardPaths) -> tuple[str, ...]:
+    """The guard's own `rollback <run>` command line, roots included.
+
+    Both the dead-man and a triggered rollback run exactly this, and the
+    guard takes its two roots only from flags, so each carries the run's.
+    """
+    return (
+        str(GUARD_EXECUTABLE),
+        "rollback",
+        run,
+        "--state-root",
+        str(paths.state_root),
+        "--runtime-root",
+        str(paths.runtime_root),
+    )
+
+
+def deadman_argv(*, run: str, on_active_seconds: int, paths: GuardPaths) -> tuple[str, ...]:
     """The `systemd-run` that arms this run's dead-man.
 
     `--on-active` is the interval REMAINING to the already-recorded
@@ -225,6 +242,10 @@ def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
     reason `_rollback_service_properties` records: the two run the same
     command, so the dead-man carrying a weaker bound than the triggered
     path is a dead-man whose own budget cannot kill it.
+
+    The command ends in the run's own roots, because the guard has no
+    default for either: a dead-man that fired without them would be
+    refused rather than roll the run back.
     """
     return (
         "systemd-run",
@@ -234,13 +255,11 @@ def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
         f"--on-unit-inactive={DEADMAN_REPEAT_SECONDS}",
         "--timer-property=AccuracySec=1s",
         *_rollback_service_properties(),
-        str(GUARD_EXECUTABLE),
-        "rollback",
-        run,
+        *_rollback_command(run=run, paths=paths),
     )
 
 
-def rollback_argv(*, run: str) -> tuple[str, ...]:
+def rollback_argv(*, run: str, paths: GuardPaths) -> tuple[str, ...]:
     """The `systemd-run` that starts a rollback as its own transient unit.
 
     Used where a rollback must be TRIGGERED by something already holding
@@ -256,9 +275,7 @@ def rollback_argv(*, run: str) -> tuple[str, ...]:
         "--no-block",
         f"--unit=docker-engine-guard-rollback-{run}",
         *_rollback_service_properties(),
-        str(GUARD_EXECUTABLE),
-        "rollback",
-        run,
+        *_rollback_command(run=run, paths=paths),
     )
 
 
@@ -267,6 +284,9 @@ def rollback_argv(*, run: str) -> tuple[str, ...]:
 # marker that cannot be read is not evidence that no run committed.
 MarkerState = Literal["absent", "self", "other", "unreadable"]
 
+# The production locations the specification names. NOT command-line defaults:
+# the guard takes each root only from `--state-root` / `--runtime-root`, so a
+# caller that omits one is refused instead of writing these live paths.
 DEFAULT_STATE_ROOT: Final[Path] = Path("/var/lib/docker-engine-guard")
 DEFAULT_RUNTIME_ROOT: Final[Path] = Path("/run/docker-engine-guard")
 
