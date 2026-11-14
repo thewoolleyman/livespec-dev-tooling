@@ -1493,3 +1493,80 @@ def test_a_gate_with_no_running_member_and_no_output_is_ended_by_the_stall_windo
     assert "FAILED" in waited.stdout
     assert "PASSED" not in waited.stdout
     assert "stall window" in (run_dir / "output.log").read_text(encoding="utf-8")
+
+
+# --- scenario: a stalled gate leaves a record of which process was hung -----
+
+_SNAPSHOT = "stall-snapshot"
+
+
+@pytest.mark.integration
+def test_a_stalled_gate_records_every_attributed_process_before_any_signal(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """The stall-snapshot lists the hung processes, session escapee included, pre-TERM.
+
+    The gate's TERM handler records whether the snapshot already existed when
+    the first signal arrived, so the order is observed rather than inferred.
+    """
+    primary, worktree, env = fixture_repo
+    token = f"livespec-gate-stall-snapshot-{time.monotonic_ns()}"
+    seen_before_term = tmp_path / "snapshot.before-term"
+    command = (
+        f'snapshot="${{LIVESPEC_GATE_RUN_PROGRESS_STAMP%/*}}/{_SNAPSHOT}"; '
+        f"trap 'if [ -s \"$snapshot\" ]; then echo yes > {seen_before_term}; fi; exit 0' TERM; "
+        f"setsid python3 -c 'import time; time.sleep(300)' {token} & "
+        "echo collected; sleep 300 & wait"
+    )
+    try:
+        run_id = _start(
+            cwd=worktree,
+            env={**env, _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+            command=["bash", "-c", command],
+        )
+
+        run_dir = _await_verdict(primary=primary, run_id=run_id)
+        snapshot = run_dir / _SNAPSHOT
+        assert snapshot.is_file()
+        text = snapshot.read_text(encoding="utf-8")
+        header = text.splitlines()[0].split()
+        assert header[:4] == ["PID", "PPID", "SID", "ELAPSED"]
+        assert any(
+            token in line and "python3" in line and "sleep(300)" in line
+            for line in text.splitlines()
+        )
+        assert "sleep 300" in text
+        assert seen_before_term.read_text(encoding="utf-8").strip() == "yes"
+        assert str(snapshot) in (run_dir / "output.log").read_text(encoding="utf-8")
+        for subcommand in ("status", "wait"):
+            reported = _gate(cwd=primary, env=env, args=[subcommand, run_id])
+            assert "FAILED" in reported.stdout, subcommand
+            assert str(snapshot) in reported.stdout, subcommand
+    finally:
+        _end_processes_carrying(token=token)
+
+
+@pytest.mark.integration
+def test_a_stall_snapshot_that_cannot_be_taken_carries_the_reason_and_the_gate_still_ends(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A failing `ps` yields a reason in the file, never a gate that outlives its window."""
+    primary, worktree, env = fixture_repo
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    shim = shims / "ps"
+    _ = shim.write_text("#!/bin/sh\necho 'ps: shim failure' >&2\nexit 3\n", encoding="utf-8")
+    shim.chmod(0o755)
+    run_id = _start(
+        cwd=worktree,
+        env={**env, "PATH": f"{shims}:{env['PATH']}", _STALL_ENV: "2", _STALL_GRACE_ENV: "1"},
+        command=["sleep", "300"],
+    )
+
+    run_dir = _await_verdict(primary=primary, run_id=run_id)
+
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == "124"
+    text = (run_dir / _SNAPSHOT).read_text(encoding="utf-8")
+    assert "snapshot unavailable" in text
+    assert "shim failure" in text
+    assert str(run_dir / _SNAPSHOT) in (run_dir / "output.log").read_text(encoding="utf-8")

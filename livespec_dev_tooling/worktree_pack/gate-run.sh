@@ -226,6 +226,12 @@ idle_sleep() {
 # session, which escapes that group, so the pre-TERM descendant snapshot ends
 # each escapee by pid and records its command line. A line naming the window is
 # appended, and the run records STALL_EXIT_CODE, a FAILED verdict, never a pass.
+# Before any signal the runner writes `stall-snapshot` into the run directory:
+# every process attributed to the run (the group, its descendants, and every
+# process carrying the progress stamp) with pid, parent pid, session id,
+# elapsed time, kernel wait channel and full command line, so a silent stall
+# can still be localized after the kill. The snapshot goes to its own file, not
+# to output.log or the stamp, so taking it never renews the window.
 # The window, its default and its override are the commit-time replay leg's
 # (LIVESPEC_SUITE_GREEN_STALL_SECONDS, 900 s). TERM first, KILL after
 # GATE_STALL_KILL_GRACE_SECONDS. Builtins only per tick (`kill -0`, `-nt`, a
@@ -303,6 +309,71 @@ still_attributed() {
 }
 
 
+# Pids still in the gate's own process group. A member whose parent exited was
+# re-parented to init, so neither the ancestry walk nor, for a command that
+# cleared its environment, the progress stamp reaches it; the group does.
+group_member_pids() {
+    local group="$1" d pid
+    for d in /proc/[0-9]*; do
+        pid="${d##*/}"
+        read_proc_identity "$pid"
+        if [[ "$PROC_PGRP" == "$group" ]]; then
+            printf '%s\n' "$pid"
+        fi
+    done
+}
+
+# How long the snapshot's `ps` may run. It is an observer: a wedged host must
+# not hold the stall window's enforcement up behind it.
+readonly STALL_SNAPSHOT_PS_CEILING_S=20
+
+# Write `stall-snapshot` into the run directory: a `ps` table over every
+# process attributed to the run, or the reason one could not be taken. Taken
+# once, before any signal. The table comes FIRST so the file opens on its
+# column header; the trailer says when and why it was taken. Returns non-zero
+# only when the file itself could not be written. Never touches output.log or
+# the progress stamp, so the stall window is not renewed.
+write_stall_snapshot() {
+    local dir="$1" group="$2" stall="$3" snapshot="$dir/stall-snapshot"
+    local table="" reason="" status=0 pid csv="" note=""
+    local -a pids=() ps_command=()
+    local -A seen=()
+    if [[ ! -d /proc ]]; then
+        reason='no /proc on this host, so no process can be attributed to the run'
+    elif ! command -v ps >/dev/null 2>&1; then
+        reason='ps is not installed, so the attributed processes cannot be listed'
+    else
+        while IFS= read -r pid; do
+            [[ -z "${seen[$pid]:-}" ]] || continue
+            seen[$pid]=1
+            pids+=("$pid")
+        done < <(group_member_pids "$group"; descendant_pids "$group"; stamped_pids "$dir/progress.stamp")
+        csv="$(IFS=,; printf '%s' "${pids[*]:-}")"
+        ps_command=(ps -ww -o pid,ppid,sid,etime,wchan:32,args --forest -p "$csv")
+        if command -v timeout >/dev/null 2>&1; then
+            ps_command=(timeout "$STALL_SNAPSHOT_PS_CEILING_S" "${ps_command[@]}")
+        fi
+        table="$("${ps_command[@]}" 2>&1)" || status=$?
+        if [[ -z "$csv" ]]; then
+            reason='no process attributed to the run was left to list'
+        elif [[ "$table" != *$'\n'* ]]; then
+            reason="ps exited $status and listed no process: ${table:-<no output>}"
+        elif (( status != 0 )); then
+            note="ps exited $status; a pid that exited between attribution and listing is absent"
+        fi
+    fi
+    {
+        if [[ -n "$reason" ]]; then
+            printf 'snapshot unavailable: %s\n' "$reason"
+        else
+            printf '%s\n' "$table"
+        fi
+        printf '# stall-snapshot taken at %s, before any signal was sent; stall window %ss; gate pid %s\n' \
+            "$(timestamp)" "$stall" "$group"
+        [[ -z "$note" ]] || printf '# %s\n' "$note"
+    } >"$snapshot" 2>/dev/null
+}
+
 run_gate_with_stall_bound() {
     local dir="$1"
     shift
@@ -319,7 +390,7 @@ run_gate_with_stall_bound() {
     set +m
     # Opened after the gate launches, so the gate inherits nothing of ours.
     open_idle_fd || true
-    local quiet_since=$SECONDS quiet_tick_count=0 ended
+    local quiet_since=$SECONDS quiet_tick_count=0 ended snapshot_note
     local -a escaped=() verified=() survivors=()
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ "$dir/output.log" -nt "$observed" || "$stamp" -nt "$observed" ]]; then
@@ -330,8 +401,15 @@ run_gate_with_stall_bound() {
             printf '%s\n' "$quiet_tick_count" >"$quiet_ticks"
         fi
         if (( SECONDS - quiet_since >= stall )); then
-            printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
-                "$stall" >>"$dir/output.log"
+            # Before the line below and before any signal: the attributed
+            # processes are still the hung ones.
+            if write_stall_snapshot "$dir" "$gate_pid" "$stall"; then
+                snapshot_note="stall-snapshot: $dir/stall-snapshot"
+            else
+                snapshot_note="stall-snapshot could not be written: $dir/stall-snapshot"
+            fi
+            printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass; %s\n' \
+                "$stall" "$snapshot_note" >>"$dir/output.log"
             for _pass in 1 2 3; do
                 mapfile -t escaped < <(record_and_term_out_of_group_descendants "$dir" "$gate_pid")
                 kill -TERM -- "-$gate_pid" 2>/dev/null || true
@@ -1356,6 +1434,9 @@ report_run() {
     fi
     report_target_evidence "$dir"
     printf '  output.log        : %s\n' "$dir/output.log"
+    if [[ -f "$dir/stall-snapshot" ]]; then
+        printf '  stall-snapshot    : %s\n' "$dir/stall-snapshot"
+    fi
 
     case "$state" in
         PASSED)
