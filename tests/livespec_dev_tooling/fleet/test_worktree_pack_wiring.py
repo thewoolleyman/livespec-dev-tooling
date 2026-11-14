@@ -62,6 +62,7 @@ WIRED_GITIGNORE = """\
 /dev-tooling/branch-protection.sh
 /dev-tooling/gate-run.sh
 /dev-tooling/check-no-workflow-edits.sh
+/dev-tooling/local-gate-scope.sh
 /dev-tooling/worktree.just
 /dev-tooling/branch-protection.just
 """

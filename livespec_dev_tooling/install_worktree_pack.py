@@ -1,14 +1,15 @@
 """install_worktree_pack — install the canonical livespec worktree-discipline pack.
 
 Writes the canonical worktree-discipline pack into a governed repo's
-`dev-tooling/` directory. The pack is seven files from a single package
-source/generator pair: the four executable shell scripts `worktree-lib.sh`
+`dev-tooling/` directory. The pack is eight files from a single package
+source/generator pair: the five executable shell scripts `worktree-lib.sh`
 (the portable, ecosystem-neutral worktree-lifecycle core),
 `branch-protection.sh` (the server-side branch-protection mirror),
 `gate-run.sh` (the detached gate runner), and `check-no-workflow-edits.sh`
 (the fleet's one workflow-edit guard — an authorship control at the agent
 boundary with a ledger-verified human-authorization override, no
-environment escape; livespec-dev-tooling-fy02), plus the two non-executable
+environment escape; livespec-dev-tooling-fy02), `local-gate-scope.sh` (runs a
+gate inside the host's gate memory slice where one exists), plus the two non-executable
 justfile fragments `worktree.just` (the four `just worktree-*` lifecycle
 recipe stanzas) and `branch-protection.just` (the `protect-default-branch` /
 `check-branch-protection` recipe stanzas), each `import`ed by the consumer
@@ -149,7 +150,7 @@ def _read_canonical_body(*, name: str) -> str:
     return (_PACK_DATA_DIR / name).read_text(encoding="utf-8")
 
 
-# The six canonical bodies, read once at import from package-data. Exposed
+# The seven canonical bodies, read once at import from package-data. Exposed
 # as module constants so the verifier imports the SAME bytes it asserts the
 # installed files against (no drift seam).
 CANONICAL_WORKTREE_LIB_BODY = _read_canonical_body(name="worktree-lib.sh")
@@ -158,6 +159,7 @@ CANONICAL_WORKTREE_JUST_BODY = _read_canonical_body(name="worktree.just")
 CANONICAL_BRANCH_PROTECTION_JUST_BODY = _read_canonical_body(name="branch-protection.just")
 CANONICAL_GATE_RUN_BODY = _read_canonical_body(name="gate-run.sh")
 CANONICAL_NO_WORKFLOW_EDITS_BODY = _read_canonical_body(name="check-no-workflow-edits.sh")
+CANONICAL_LOCAL_GATE_SCOPE_BODY = _read_canonical_body(name="local-gate-scope.sh")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -193,6 +195,7 @@ _PACK_PAYLOAD_FILES: tuple[PackFile, ...] = (
         body=CANONICAL_NO_WORKFLOW_EDITS_BODY,
         executable=True,
     ),
+    PackFile(name="local-gate-scope.sh", body=CANONICAL_LOCAL_GATE_SCOPE_BODY, executable=True),
     PackFile(name="worktree.just", body=CANONICAL_WORKTREE_JUST_BODY, executable=False),
     PackFile(
         name="branch-protection.just",

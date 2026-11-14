@@ -219,7 +219,7 @@ worktree_provision_pack() {
 
     source_dir="$primary/dev-tooling"
     dest_dir="$dest/dev-tooling"
-    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh worktree.just branch-protection.just .gitignore"
+    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh local-gate-scope.sh worktree.just branch-protection.just .gitignore"
 
     mkdir -p "$dest_dir"
     absent=""
@@ -233,7 +233,7 @@ worktree_provision_pack() {
     # A partial copy leaves some of these absent, so both lines tolerate a
     # missing target: the copy is best-effort by construction and must not
     # abort under `set -e`.
-    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh" "$dest_dir/gate-run.sh" "$dest_dir/check-no-workflow-edits.sh" 2>/dev/null || true
+    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh" "$dest_dir/gate-run.sh" "$dest_dir/check-no-workflow-edits.sh" "$dest_dir/local-gate-scope.sh" 2>/dev/null || true
     chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just" "$dest_dir/.gitignore" 2>/dev/null || true
     if [ -n "$absent" ]; then
         echo "worktree-lib provision-pack: NOTE — the primary's own pack is incomplete, so" >&2

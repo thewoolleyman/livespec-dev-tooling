@@ -368,6 +368,13 @@ check:
     if [[ ${#skip_targets[@]} -gt 0 ]]; then
         export skip="${skip:-} ${skip_targets[*]}"
     fi
+    # The aggregate runs in the host's gate memory slice where the host provides
+    # one (the Gate memory slice paragraph of the local gate concurrency limit,
+    # non-functional-requirements.md). The scope keeps this recipe's exported
+    # caller variables. Without the pack script it runs unscoped.
+    if [[ -x dev-tooling/local-gate-scope.sh ]]; then
+        exec dev-tooling/local-gate-scope.sh scripts/just/check.sh "${targets[@]}"
+    fi
     scripts/just/check.sh "${targets[@]}"
 
 # ---------------------------------------------------------------

@@ -999,6 +999,7 @@ _EXPECTED_PACK: tuple[tuple[str, bool], ...] = (
     ("branch-protection.sh", True),
     ("gate-run.sh", True),
     ("check-no-workflow-edits.sh", True),
+    ("local-gate-scope.sh", True),
     ("worktree.just", False),
     ("branch-protection.just", False),
     (".gitignore", False),
