@@ -54,10 +54,25 @@ _CONCURRENCY_WAIT_TESTS = (
     ),
     _TESTS / "livespec_dev_tooling" / "fleet" / "test_tag_adopt.py",
 )
+_GATE_RUN_WAIT_TESTS = (
+    _TESTS / "livespec_dev_tooling" / "test_gate_runner_delegate.py",
+    _TESTS / "livespec_dev_tooling" / "worktree_pack" / "test_gate_run.py",
+    _TESTS / "consumer" / "test_sandbox_image_gate_toolchain_scenarios.py",
+)
 _SPEC_MINIMUM_SECONDS = 120
 _OWN_CONCURRENCY_TIMEOUT = re.compile(
     r"(?:\.(?:acquire|join|wait)\(\s*(?:timeout\s*=\s*)?[0-9][0-9.]*\s*\)"
     r"|timeout\s*=\s*(?:[0-9][0-9.]*|_TIMEOUT_SECONDS)\b)"
+)
+# What a wait on a detached gate run must not carry in those files: a `timeout=` keyword
+# that is not the hang guard, a numeric `.wait(...)`, and the fixed bounds the files used to
+# define. `timeout_s=` is a different token: it is the parameter of the fake-clock poll
+# helper, which every caller sizes from the hang guard or drives with an injected clock.
+_OWN_GATE_RUN_BOUND = re.compile(
+    r"(?:(?<![A-Za-z_])timeout\s*=\s*(?!HANG_GUARD_SECONDS\b)"
+    r"|\.wait\(\s*[0-9]"
+    r"|\b_(?:RUN|VERDICT)_TIMEOUT_S\b"
+    r"|\b_(?:WRITER|IDLE_GATE)_CEILING_S\s*=\s*[0-9])"
 )
 
 
@@ -148,3 +163,18 @@ def test_no_concurrency_wait_test_file_keeps_a_bound_of_its_own() -> None:
         if _OWN_CONCURRENCY_TIMEOUT.search(line)
     ]
     assert offenders == []
+
+
+def test_no_gate_run_wait_test_file_keeps_a_bound_of_its_own() -> None:
+    offenders = [
+        f"{path.name}:{number}"
+        for path in _GATE_RUN_WAIT_TESTS
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if _OWN_GATE_RUN_BOUND.search(line)
+    ]
+    assert offenders == []
+
+
+def test_every_gate_run_wait_test_file_takes_its_bound_from_the_hang_guard() -> None:
+    for path in _GATE_RUN_WAIT_TESTS:
+        assert "from tests.hang_guard import" in path.read_text(encoding="utf-8"), path.name

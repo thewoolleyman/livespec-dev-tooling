@@ -38,6 +38,7 @@ from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_GATE_RUN_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
 )
+from tests.hang_guard import HANG_GUARD_SECONDS, run_under_hang_guard
 
 __all__: list[str] = []
 
@@ -45,13 +46,14 @@ _SCRIPT = "gate-run.sh"
 _STORE = Path("tmp") / "gate-runs"
 _RUN_ID = "20260821T095508Z-3605372"
 _NOTE = "NOTE: zero check targets completed"
-_VERDICT_TIMEOUT_S = 90.0
 _POLL_INTERVAL_S = 0.1
 _GATE_EXIT_CODE = 7
 # The flip writer's rendezvous ceilings and the exit codes it reports when one
-# is hit. Kept well inside _VERDICT_TIMEOUT_S, so a broken rendezvous surfaces
-# as a wrong exit code rather than as a missing verdict.
-_WRITER_CEILING_S = 60
+# is hit. The ceiling is the repository's hang guard, the same as every wait the
+# test makes on the detached run, so a loaded host cannot exhaust it first. A
+# broken rendezvous therefore ends the writer and the test's own verdict wait at
+# the same guard, and the test fails either way.
+_WRITER_CEILING_S = HANG_GUARD_SECONDS
 _WRITER_LOCK_UNSEEN_EXIT = 3
 _WRITER_RELEASE_UNRECORDED_EXIT = 4
 
@@ -150,11 +152,15 @@ def test_expected_escapee_cleanup_ends_a_live_process() -> None:
 
         _end_processes_carrying(token=token)
 
-        assert process.wait(timeout=5) == -signal.SIGTERM
+        assert (
+            _wait_for_process(process=process, waiting_for="the probe to end on SIGTERM")
+            == -signal.SIGTERM
+        )
     finally:
         _end_processes_carrying(token=token)
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            _ = process.wait(timeout=5)
+        # A teardown wait: SIGKILL cannot be ignored, so this wait needs no bound.
+        process.kill()
+        _ = process.wait()
 
 
 def _init_repo(*, tmp_path: Path) -> Path:
@@ -329,12 +335,55 @@ def _wait_for_file(
     return _wait_until(ready=path.is_file, timeout_s=timeout_s, clock=clock, sleep=sleep)
 
 
-def _await_verdict(*, primary: Path, run_id: str) -> Path:
+def _hang_message(*, waiting_for: str, seconds: float) -> str:
+    return (
+        f"HANG: the test was waiting for {waiting_for}, and it had not finished after "
+        f"{seconds} s, the repository's hang guard (tests/hang_guard.py). This is a run "
+        "that never ended, not a slow one."
+    )
+
+
+def _wait_under_hang_guard(
+    *,
+    ready: Callable[[], bool],
+    waiting_for: str,
+    timeout_s: float = HANG_GUARD_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Return once `ready()` holds; fail the test as a HANG naming `waiting_for` at the guard."""
+    if not _wait_until(ready=ready, timeout_s=timeout_s, clock=clock, sleep=sleep):
+        pytest.fail(_hang_message(waiting_for=waiting_for, seconds=timeout_s), pytrace=False)
+
+
+def _communicate_under_hang_guard(
+    *, process: subprocess.Popen[str], waiting_for: str, timeout_s: float = HANG_GUARD_SECONDS
+) -> tuple[str, str]:
+    """`process.communicate()` bounded only by the hang guard; expiry fails as a named HANG."""
+    try:
+        return process.communicate(None, timeout_s)
+    except subprocess.TimeoutExpired:
+        pytest.fail(_hang_message(waiting_for=waiting_for, seconds=timeout_s), pytrace=False)
+
+
+def _wait_for_process(
+    *, process: subprocess.Popen[str], waiting_for: str, timeout_s: float = HANG_GUARD_SECONDS
+) -> int:
+    """`process.wait()` bounded only by the hang guard; expiry fails as a named HANG."""
+    try:
+        return process.wait(timeout_s)
+    except subprocess.TimeoutExpired:
+        pytest.fail(_hang_message(waiting_for=waiting_for, seconds=timeout_s), pytrace=False)
+
+
+def _await_verdict(*, primary: Path, run_id: str, timeout_s: float = HANG_GUARD_SECONDS) -> Path:
     """Block until the detached child records a verdict; return its run dir."""
     run_dir = primary / _STORE / run_id
-    assert _wait_for_file(
-        path=run_dir / "exit_code", timeout_s=_VERDICT_TIMEOUT_S
-    ), f"gate run {run_id} never recorded a verdict under {run_dir}"
+    _wait_under_hang_guard(
+        ready=(run_dir / "exit_code").is_file,
+        waiting_for=f"gate run {run_id} to record a verdict under {run_dir}",
+        timeout_s=timeout_s,
+    )
     return run_dir
 
 
@@ -390,6 +439,58 @@ def test_the_verdict_poll_helper_sleeps_until_the_file_appears(*, tmp_path: Path
     assert sleeps == [_POLL_INTERVAL_S] * 3
 
 
+def test_a_verdict_that_is_never_recorded_fails_as_a_hang_naming_the_gate_run(
+    *, tmp_path: Path
+) -> None:
+    """The expiry is the outcome under test, so this one wait is bounded on purpose."""
+    (tmp_path / _STORE / _RUN_ID).mkdir(parents=True)
+    with pytest.raises(pytest.fail.Exception) as raised:
+        _ = _await_verdict(primary=tmp_path, run_id=_RUN_ID, timeout_s=0.2)
+    message = str(raised.value)
+    assert message.startswith("HANG: ")
+    assert f"gate run {_RUN_ID}" in message
+
+
+def test_the_hang_guard_wait_returns_without_failing_once_the_condition_holds() -> None:
+    sleeps: list[float] = []
+    _wait_under_hang_guard(
+        ready=lambda: len(sleeps) == 2,
+        waiting_for="two sleeps",
+        timeout_s=100.0,
+        clock=_fake_clock(step_s=1.0),
+        sleep=sleeps.append,
+    )
+    assert sleeps == [_POLL_INTERVAL_S] * 2
+
+
+def test_the_waits_on_a_detached_run_are_sized_from_the_repository_hang_guard() -> None:
+    for helper in (_await_verdict, _wait_under_hang_guard, _communicate_under_hang_guard):
+        defaults = helper.__kwdefaults__
+        assert defaults is not None
+        assert defaults["timeout_s"] == HANG_GUARD_SECONDS
+    assert _WRITER_CEILING_S == HANG_GUARD_SECONDS
+    assert _IDLE_GATE_CEILING_S == HANG_GUARD_SECONDS
+
+
+@pytest.mark.parametrize("waiter", [_communicate_under_hang_guard, _wait_for_process])
+def test_a_process_that_does_not_end_fails_as_a_hang_naming_what_was_awaited(
+    waiter: Callable[..., object],
+) -> None:
+    """The expiry is the outcome under test, so this one wait is bounded on purpose."""
+    process = subprocess.Popen(
+        ["sleep", "300"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        with pytest.raises(pytest.fail.Exception) as raised:
+            _ = waiter(process=process, waiting_for="the sleeper to end", timeout_s=0.2)
+        message = str(raised.value)
+        assert message.startswith("HANG: ")
+        assert "waiting for the sleeper to end" in message
+    finally:
+        process.kill()
+        _ = process.communicate()
+
+
 def _flip_writer(*, tmp_path: Path, primary: Path) -> Path:
     """A gate command that flips core.bare in lock-step with the watcher.
 
@@ -397,8 +498,8 @@ def _flip_writer(*, tmp_path: Path, primary: Path) -> Path:
     never by a fixed sleep (livespec-dev-tooling-lndv2l): the writer holds
     the lock until the watcher has recorded seeing it, then publishes the
     write, then stays alive until the RELEASED record has landed, so the
-    record can name it. The 60 s waits are liveness ceilings against a hang
-    only; a writer that hits one exits with a distinct code, which the
+    record can name it. The waits are liveness ceilings against a hang
+    (the repository's hang guard) only; a writer that hits one exits with a distinct code, which the
     exit-code assertion reports as a broken rendezvous.
     """
     writer = tmp_path / "flip-writer.sh"
@@ -539,14 +640,13 @@ def test_gate_list_ignores_non_regular_record_entries_without_blocking(*, tmp_pa
     _write(path=fifo_command / "exit_code", text="0\n")
     os.mkfifo(fifo_command / "command")
 
-    listed = subprocess.run(
+    listed = run_under_hang_guard(
         [str(repo / "dev-tooling" / _SCRIPT), "list", "--all"],
         cwd=str(repo),
         env=_child_env(home=tmp_path / "home"),
         check=False,
         capture_output=True,
         text=True,
-        timeout=30,
     )
 
     assert listed.returncode == 0, listed.stderr
@@ -767,8 +867,10 @@ _SHIMMED_COMMANDS: tuple[str, ...] = (
 # The waiter's log also shims the idle descriptor's two execs: `mkfifo` and
 # then `rm`, the waiter's last exec before its poll loop.
 _WAITER_SHIMMED: tuple[str, ...] = (*_SHIMMED_COMMANDS, "mkfifo", "rm")
-# A liveness ceiling only: the test releases the idle gate itself.
-_IDLE_GATE_CEILING_S = 120
+# A liveness ceiling only: the test releases the idle gate itself. It is the
+# repository's hang guard, so the gate never ends on its own inside a wait the
+# test makes under that guard.
+_IDLE_GATE_CEILING_S = HANG_GUARD_SECONDS
 # The idle window lasts this many counted waiter polls, not a wall-clock span.
 _IDLE_WINDOW_POLLS = 15
 _WAITER_POLL_INTERVAL_S = 0.1
@@ -992,12 +1094,16 @@ def _idle_run(
     try:
         # The runner's last exec precedes the gate, and the gate touches `ready`;
         # the idle descriptor's `rm` is the waiter's last exec before its loop.
-        assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
-        assert _wait_until(
-            ready=lambda: "rm" in _shim_names(log=idle.waiter_log), timeout_s=_VERDICT_TIMEOUT_S
+        _wait_under_hang_guard(
+            ready=ready.is_file, waiting_for=f"the idle gate of run {run_id} to touch {ready}"
         )
-        assert _wait_until(
-            ready=lambda: _poll_count(log=idle.counter_log) > 0, timeout_s=_VERDICT_TIMEOUT_S
+        _wait_under_hang_guard(
+            ready=lambda: "rm" in _shim_names(log=idle.waiter_log),
+            waiting_for=f"the waiter of run {run_id} to open its idle descriptor",
+        )
+        _wait_under_hang_guard(
+            ready=lambda: _poll_count(log=idle.counter_log) > 0,
+            waiting_for=f"the counting waiter of run {run_id} to enter its poll loop",
         )
         yield idle
     finally:
@@ -1012,7 +1118,10 @@ def _counter_log_after_the_verdict(*, primary: Path, idle: _IdleRun) -> list[str
     # this line can only undercount the polls made after the verdict.
     with idle.counter_log.open("a", encoding="utf-8") as log:
         _ = log.write(f"{_VERDICT_SEEN}\n")
-    _ = idle.counter.communicate(timeout=_VERDICT_TIMEOUT_S)
+    _ = _communicate_under_hang_guard(
+        process=idle.counter,
+        waiting_for=f"the counting waiter to return after gate run {idle.run_id} recorded its verdict",
+    )
     return _shim_lines(log=idle.counter_log)
 
 
@@ -1037,16 +1146,19 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
         waiter_before = _spawn_count(log=idle.waiter_log)
         window_ends_at = _poll_count(log=idle.counter_log) + _IDLE_WINDOW_POLLS
 
-        assert _wait_until(
+        _wait_under_hang_guard(
             ready=lambda: _poll_count(log=idle.counter_log) >= window_ends_at,
-            timeout_s=_VERDICT_TIMEOUT_S,
+            waiting_for=f"the counting waiter of run {idle.run_id} to make {_IDLE_WINDOW_POLLS} polls",
         )
 
         assert _spawn_count(log=idle.runner_log) == runner_before
         assert _spawn_count(log=idle.waiter_log) == waiter_before
 
         lines = _counter_log_after_the_verdict(primary=fixture_repo[0], idle=idle)
-        stdout, _stderr = idle.waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
+        stdout, _stderr = _communicate_under_hang_guard(
+            process=idle.waiter,
+            waiting_for=f"the waiter to return after gate run {idle.run_id} recorded its verdict",
+        )
         polls_after = _sleep_seconds(lines=lines[lines.index(_VERDICT_SEEN) :])
         assert len(polls_after) <= _MAX_WAITER_POLLS_AFTER_EXIT
         assert max(_sleep_seconds(lines=lines)) <= _WAITER_POLL_INTERVAL_S
