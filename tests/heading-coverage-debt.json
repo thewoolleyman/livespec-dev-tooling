@@ -1269,6 +1269,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an incident test world raises the product child-process bounds it reaches to the hang guard",
+    "work_item": "livespec-dev-tooling-vm4vcn",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
     "work_item": "livespec-dev-tooling-levu6j",
     "first_seen": "2026-11-12"
