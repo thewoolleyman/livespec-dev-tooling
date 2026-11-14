@@ -10,9 +10,15 @@ route through `CiAuthorityBoundary.enablement`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import tempfile
+import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import cast
 
 from livespec_dev_tooling._incident_enablement_reading import (
     REVERT_PHASES,
@@ -23,6 +29,7 @@ from livespec_dev_tooling._incident_enablement_reading import (
 )
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_enablement import (
+    FRESHNESS_SECONDS,
     INSTALLATION_PORTS,
     READ_PATH,
     EnablementPost,
@@ -31,11 +38,97 @@ from livespec_dev_tooling.incident_enablement import (
     _post,
     production_identity_source,
 )
+from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
 __all__: list[str] = ["controller_fence", "installation_reader"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 _QUERY_TOKEN_ENV = "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"  # noqa: S105 - a variable name
+
+
+@dataclass(frozen=True, kw_only=True)
+class _HookConfirmation:
+    """The hook's local freshness cache, never the controller enablement record."""
+
+    head: str
+    identity: str
+    at: float
+
+
+def _hook_confirmation_path(*, environ: Mapping[str, str], repository: str) -> Path:
+    """A host-local state path, deliberately independent of any candidate checkout."""
+    state_home = Path(environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
+    digest = hashlib.sha256(repository.encode()).hexdigest()
+    return state_home / "livespec-dev-tooling" / "incident-enablement" / f"{digest}.json"
+
+
+def _load_hook_confirmation(*, path: Path) -> _HookConfirmation | None:
+    """Return only a complete local confirmation; malformed cache state is unavailable."""
+    try:
+        value: object = strict_json(text=path.read_bytes(), limit=None)
+    except (IncidentJsonRefusalError, OSError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    record = cast("dict[str, object]", value)
+    head, identity, confirmed_at = record.get("head"), record.get("identity"), record.get("at")
+    if (
+        not isinstance(head, str)
+        or not isinstance(identity, str)
+        or type(confirmed_at) not in (float, int)
+    ):
+        return None
+    return _HookConfirmation(
+        head=head,
+        identity=identity,
+        at=float(cast("float | int", confirmed_at)),
+    )
+
+
+def _save_hook_confirmation(*, path: Path, confirmation: _HookConfirmation) -> None:
+    """Atomically retain a successful own read for a future hook invocation."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name, dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            _ = stream.write(
+                json.dumps(
+                    {
+                        "at": confirmation.at,
+                        "head": confirmation.head,
+                        "identity": confirmation.identity,
+                    },
+                    sort_keys=True,
+                )
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        _ = Path(temporary).replace(path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def _own_identity(
+    *, environ: Mapping[str, str], repository: str, source: IdentitySource
+) -> str | None:
+    """Read core's head once and its manifest only when local confirmation needs renewal."""
+    moment = time.time()
+    path = _hook_confirmation_path(environ=environ, repository=repository)
+    cached = _load_hook_confirmation(path=path)
+    fresh = cached is not None and moment - cached.at <= FRESHNESS_SECONDS
+    head = source.read_head()
+    if head is None:
+        return cached.identity if fresh and cached is not None else None
+    if fresh and cached is not None and cached.head == head:
+        return cached.identity
+    identity = source.read_identity()
+    if identity is None:
+        return None
+    _save_hook_confirmation(
+        path=path,
+        confirmation=_HookConfirmation(head=head, identity=identity, at=moment),
+    )
+    return identity
 
 
 def installation_reader(
@@ -77,7 +170,18 @@ def installation_reader(
                 installation=installation,
                 detail=f"{READ_PATH} query failed: {unreachable}",
             )
-        own = own_identity or production_identity_source().read_identity
+        if own_identity is None:
+            source = production_identity_source()
+
+            def own() -> str | None:
+                return _own_identity(
+                    environ=environ,
+                    repository=repository,
+                    source=source,
+                )
+
+        else:
+            own = own_identity
         return answer_reading(
             answer=answer,
             installation=installation,
