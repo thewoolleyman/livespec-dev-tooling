@@ -8,14 +8,17 @@ of its own.
 **Window:** the 7 days to 2026-11-13T22:05Z, which is throughput-track-organization's window.
 
 **Data:** the GitHub Actions REST runs and jobs APIs, plus each failed coverage job's log. Method:
-`data/master-red/collect.py.txt`. Raw failed-run records: `data/master-red/*-failed-runs-2026-11-13.json`. My counts
-differ slightly from the throughput measurement (19 of 38 failed runs, by GraphQL check suites), because the two
-methods cut the window edges differently. Neither method changes a classification.
+`data/master-red/collect.py.txt`. Raw failed-run records: `data/master-red/*-failed-runs-2026-11-13.json`.
+
+The REST listing returned 37 failed runs, 18 of them on coverage. The throughput measurement, which used GraphQL check
+suites, found 38 and 19. I re-ran the GraphQL query to settle the difference. It returns exactly one run the REST listing
+omitted: 43128348212, commit ce6288d2f (livespec-dev-tooling#4214), created 2026-11-12 00:35:08Z, which failed on
+`check-per-file-coverage`. It is classified below, so **no coverage red is in dispute: the set is 19 of 38**.
 
 ## 1. livespec-dev-tooling
 
-748 master `push` runs of `ci.yml`: 349 success, 362 cancelled (superseded by a newer merge) and 37 failed. 18 of the
-37 failed on `check-per-file-coverage`. Each of those 18 is classified below.
+749 master `push` runs of `ci.yml`: 349 success, 362 cancelled (superseded by a newer merge) and 38 failed. 19 of the
+38 failed on `check-per-file-coverage`. Each of those 19 is classified below.
 
 ### Stale-base semantic conflict: 7 runs, 4 episodes
 
@@ -24,7 +27,7 @@ The composed tree failed, and it stayed red until a fix that names the interacti
 
 | Episode | PR, merged | Same-area commit that landed after its tested base | Red master runs | Fix |
 |---|---|---|---|---|
-| A | livespec-dev-tooling#4224 (bf3aab28), 2026-11-12 01:15:37Z | 323d37ed, the gate_repro reproduction route, landed **1 s earlier** | 2 (7ce9ecf5f, c3d4a34e1) | 1364fa2a: "read the Job in sequence, not through one terminal wait's argv" |
+| A | livespec-dev-tooling#4224 (bf3aab28), 2026-11-12 01:15:37Z | livespec-dev-tooling#4177 (085a0983), 2026-11-12 00:39:22Z. It is a **revert** of the client's terminal watch, which the suite's stub answered. It landed after #4224's last rebase (base b1a2f1f32, which does not contain it). 323d37ed is #4224's own first commit, not the conflicting change | 2 (7ce9ecf5f, c3d4a34e1) | 1364fa2a. Its message: "livespec-dev-tooling#4177 reverted the watch at 00:39Z, after livespec-dev-tooling#4224's last rebase and before its auto-merge … The branch was green and the merged tree red" |
 | B | livespec-dev-tooling#4339 (b9838b28), 2026-11-12 16:09:03Z | 4793883d added a converge step, which renumbered the step labels the test sliced on | 1 (6201dcdb2) | 8b3d6340. Its own comment says: "a step added ahead of this one renumbers the labels (4793883d8 did)" |
 | C | livespec-dev-tooling#4138 (37f7caa7), 2026-11-11 11:15:58Z | 0088dfc7 renamed the fixture `union_key_block`, **6 s earlier**. Both commits were under the same work item, bqnzcm | 1 (37f7caa7f) | Reverted (bc333050). The collection error read: `cannot import name 'union_key_block'` |
 | D | livespec-dev-tooling#4449 (da0264ace), 2026-11-13 05:33:59Z | livespec-dev-tooling#4442 (fba395aa), 87 s earlier. The test monkeypatched the loader that #4449 moved | 3 (da0264ace, 01a87e860, 517f396ff) | 785e0b96. This is incident livespec-dev-tooling-3hilpy |
@@ -33,29 +36,32 @@ The composed tree failed, and it stayed red until a fix that names the interacti
 of the PRs ahead of it, so in each case the second PR's `merge_group` run would have failed, and the queue would have
 removed that PR without merging it. That holds only under note 005's conditions:
 - (a) `merge_group` runs the full aggregate, because every one of these failures surfaced only in `check-per-file-coverage`;
-- (b) every path to master goes through the queue. Three of the four pairs merged within 87 s of each other, and two within
-  6 s, so any path that skips the queue reopens exactly this window.
+- (b) every path to master goes through the queue. Episode A's culprit was itself a REVERT (#4177). A server-side or expedited-incident revert that lands outside the
+  queue is exactly the bypass condition (b) guards against: the queue cannot test a PR against a change that never
+  entered it. So the incident recovery path's direct push must either be followed by re-queuing every armed PR, or must
+  itself go through the queue whenever master is not red. Two of the four pairs merged within 87 s of each other, and one
+  within 6 s.
 
-### Flake or nondeterministic coverage: 11 runs
+### Flake or nondeterministic coverage: 12 runs
 
-The next completed master run was green in every case, and no commit between the two touched the failing test. A merge
-queue would NOT have prevented any of these. It would have ejected an innocent PR instead, at the same per-run rate.
+For each of these, a later master run passed `check-per-file-coverage` with the failing test, or for the coverage
+cases the code involved, untouched by any commit in between. That is NOT always the very next run. After 75e99de9c, the
+next run (8c0900840) also failed coverage, as one of the nondeterministic-coverage runs below. After d273b7a9d, the next
+runs failed on other jobs (export-telemetry), not on coverage. None of the 12 had a same-tree re-run (every run is attempt
+1), so the classification rests on "passed later without a change", not on a re-run of the same tree. A merge queue would
+NOT have prevented any of these. It would have ejected an innocent PR instead, at the same per-run rate.
 
-- **4 runs: nondeterministic coverage.** These are 42382775178, 42458558770, 43029995883 and 43151602585 (commits
-  b795877a6, 8c0900840, d8d23caec and 37850ee7d). Each failed with `FAIL Required test coverage of 100.0% not reached.
-  Total coverage: 100.00%`. A few lines were covered on some runs and not others, and the total rounds to 100.00%. Two of
-  the four also logged a `FLAKE-RETRIED` test in the same session. One hypothesis, unproven, is that a retried test's
-  first attempt leaves lines uncovered. That belongs to fleet-flaky-tests, not here.
-- **7 runs: isolated test failures.** In each, the next run was green with no fix to the test:
-  - 4e154e493: `test_node_status_credential_pull_on_rejection::test_a_missing_node_is_still_waited_for`;
-  - 3e060c120: `test_delegated_gate_declared_recipe_scenarios::test_a_red_verdict_names_the_members_…[last-is-bash-stdout]`;
-  - 63302bba5: the same test, `[last-is-bash-stderr]`. It failed twice in 4 hours, so it is a repeat offender;
-  - 75e99de9c: `test_gate_run::test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process`;
-  - b082d9a87: `test_incident_recovery_principal_target_branch::test_moved_scratch_head_without_overlap_…`;
-  - d273b7a9d: `test_incident_recovery_principal::test_genuine_overlap_with_later_work_…`;
-  - d2f49db53: `test_incident_recovery_principal_refusals::test_crash_before_the_commit_exists_is_provably_inert`.
+Each is routed below to fleet-flaky-tests (epic livespec-dev-tooling-zwveqp) by item:
 
-  Three of the seven are in the incident recovery principal's tests. That cluster is a lead for fleet-flaky-tests.
+| Run(s) | Failure | Routed to |
+|---|---|---|
+| b795877a6, ce6288d2f, 8c0900840, d8d23caec, 37850ee7d (5 runs) | `FAIL Required test coverage of 100.0% not reached. Total coverage: 100.00%` | livespec-dev-tooling-e34ks3 (pending-approval): a timed wait loop covers its sleep line only when the wait is slow. That fits better than this note's earlier retry hypothesis, which is withdrawn |
+| 4e154e493 | `test_node_status_credential_pull_on_rejection::test_a_missing_node_is_still_waited_for` | livespec-dev-tooling-xrdhfl, root-fixed and closed 2026-11-12T00:11Z, after this failure |
+| 3e060c120, 63302bba5 | `test_delegated_gate_declared_recipe_scenarios::test_a_red_verdict_names_the_members_…[last-is-bash-stdout / -stderr]` | livespec-dev-tooling-wv57ma, closed 2026-11-09T20:26Z, after both failures |
+| 75e99de9c | `test_gate_run::test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process` | livespec-dev-tooling-oczx3k, closed 2026-11-13T11:12Z; its siblings x5z6ly and qohfro are also closed |
+| b082d9a87 | `test_incident_recovery_principal_target_branch::test_moved_scratch_head_without_overlap_…` | livespec-dev-tooling-63ig7h, closed 2026-11-13T20:47Z |
+| d273b7a9d | `test_incident_recovery_principal::test_genuine_overlap_with_later_work_…` | livespec-dev-tooling-vzfxlg (active): the recovery principal's tests see a "pending" outcome on a loaded runner |
+| d2f49db53 | `test_incident_recovery_principal_refusals::test_crash_before_the_commit_exists_is_provably_inert` | **No item names it.** Proposed to fleet-flaky-tests as part of vzfxlg's scope if it shares that cause, or else as a new item. Filing it is that plan's call |
 
 ## 2. livespec-orchestrator-beads-fabro (fleet scope, as the item asks)
 
@@ -82,9 +88,9 @@ A merge queue would have prevented 0 of the orchestrator's 11.
 
 ## 3. What this means for the plan
 
-- **Prevented by the queue:** 7 of livespec-dev-tooling's 18 coverage reds (39%). That is every stale-base case, and
+- **Prevented by the queue:** 7 of livespec-dev-tooling's 19 coverage reds (37%). That is every stale-base case, and
   each cost a red master plus a fix-forward or revert. In the orchestrator, 0 of 11.
-- **Not prevented:** 11 of 18 in dev-tooling and 11 of 11 in the orchestrator. In a queue, each of those becomes an
+- **Not prevented:** 12 of 19 in dev-tooling and 11 of 11 in the orchestrator. In a queue, each of those becomes an
   ejected innocent PR, followed by a re-queue. That makes flake reduction (fleet-flaky-tests) a direct input to queue
   throughput, and the semantic-conflict drill in work item livespec-dev-tooling-o6eytb should measure the ejection rate
   next to the prevention.
