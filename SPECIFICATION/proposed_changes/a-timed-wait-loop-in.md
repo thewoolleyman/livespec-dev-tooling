@@ -1,7 +1,7 @@
 ---
 topic: a-timed-wait-loop-in
 author: claude-opus-5-5
-created_at: 2026-11-14T03:01:15Z
+created_at: 2026-11-14T03:03:21Z
 ---
 
 ## Proposal: A looped real-time sleep in a coverage-measured test file carries a coverage marker, so per-file coverage does not depend on host load
@@ -10,10 +10,11 @@ created_at: 2026-11-14T03:01:15Z
 
 - SPECIFICATION/non-functional-requirements.md
 - SPECIFICATION/scenarios.md
+- SPECIFICATION/contracts.md
 
 ### Summary
 
-Add a "Load-independent test coverage" bullet to §"Testing approach": a coverage-measured test file MUST NOT loop over a real-time time.sleep unless that line carries a pragma: no cover or a slow-path-covered-by: <test node id> marker, which is registered as a coverage exclusion and names an existing test. A shared check, looped_sleep_coverage, enforces it. A scenario states the three verdicts. A wait loop's sleep line runs only when the awaited condition is late, so today a file's per-file coverage passes on an idle host and fails on a loaded one.
+Add a "Load-independent test coverage" bullet to §"Testing approach": a test-tree Python file MUST NOT hold a real-time sleep (time.sleep, by static name) inside a loop unless the sleep's line carries pragma: no cover or a `# slow-path-covered-by: <path>::<test>` marker naming a test a static read finds. Admit that marker as one narrow exclude_also entry, which the coverage-exclusion paragraph otherwise forbids without a propose-change cycle. A shared check, looped_sleep_coverage, enforces it and refuses the marker on any other line. Add the check to tests_tree_prefix's consumers, plus a scenario. A wait loop's sleep line runs only when the awaited condition is late, so today a file's per-file coverage passes on an idle host and fails on a loaded one.
 
 ### Motivation
 
@@ -21,13 +22,21 @@ Work item livespec-dev-tooling-e34ks3 (plan fleet-flaky-tests, epic livespec-dev
 
 ### Proposed Changes
 
-All edits are in `non-functional-requirements.md` §"Testing approach" and one new scenario appended to `scenarios.md`. No H2 heading of `non-functional-requirements.md` is added, renamed or removed.
+Edits are in `non-functional-requirements.md` (the §"Testing approach" bullet and the coverage-exclusion paragraph), one scenario appended to `scenarios.md`, and one Consumers-list name in `contracts.md`. No H2 heading of `non-functional-requirements.md` or `contracts.md` is added, renamed or removed.
 
-**1. Testing approach bullet (`non-functional-requirements.md`).** Add the bullet below directly after the "Environment-independent test coverage" bullet. If the pending proposal `root-fix-tests-livespec-dev` ("Host-independent test verdicts") has been ratified first and already sits at that position, add this bullet directly after that one instead. The two bullets do not interact: that one governs a test's verdict, and this one governs its coverage.
+**1. Testing approach bullet (`non-functional-requirements.md`).** Add the bullet below directly after the "Environment-independent test coverage" bullet. If the pending proposal `root-fix-tests-livespec-dev` ("Host-independent test verdicts") has been ratified first and already sits at that position, add this bullet directly after that one instead. The two do not interact: that one governs a test's verdict, this one governs its coverage, and a marker exempts nothing from that one.
 
-- **Load-independent test coverage.** A coverage-measured Python file under the repository's test tree MUST NOT contain a `for`, `async for` or `while` statement whose body calls the standard library's real-time `time.sleep`, unless the line of that call carries a `pragma: no cover` comment or a `slow-path-covered-by: <test node id>` marker. Such a sleep runs only while the condition the loop waits for is not yet true, which depends on how fast the host runs the test, so the file's per-file coverage would depend on host load. A `slow-path-covered-by:` marker MUST be registered in `pyproject.toml` `[tool.coverage.report].exclude_also`, so that its line is excluded from coverage as a pragma's line is, and the test node id it names MUST exist in the repository: that test is the one that drives the slow path on purpose. The shared check `looped_sleep_coverage` enforces this. It MUST refuse a looped real-time sleep that carries neither marker, naming the file and line. It MUST refuse a `slow-path-covered-by:` marker whose node id names no test in the repository, naming the marker's file, its line and the missing node id. It MUST pass a file whose looped real-time sleeps all carry a pragma or a marker naming an existing test. A sleep through an injected or patched clock is not a real-time `time.sleep` and is outside this rule. This bullet is spec-first: test files in this repository still carry unmarked looped real-time sleeps, and work item livespec-dev-tooling-e34ks3 owns the change.
+- **Load-independent test coverage.** A Python file under the repository's test tree (`tests_tree_prefix`, default `"tests/"`) MUST NOT contain a real-time sleep inside a loop unless the sleep's line carries a coverage marker. Such a sleep runs only while the condition the loop waits for is not yet true, which depends on how fast the host runs the test, so the file's per-file coverage under the 100% gate would depend on host load. A *real-time sleep* is a call written as `time.sleep(...)` where `time` is bound by `import time`, or through an alias the same file binds by `import time as <name>` or `from time import sleep [as <name>]`. A call through any other name, including `asyncio.sleep`, `threading.Event.wait` and a sleep reached through an injected or patched clock, is outside this rule. *Inside a loop* means anywhere lexically within the body or the `else` clause of a `for`, `async for` or `while` statement, including nested blocks, but not inside a function or class defined within that loop. The *coverage marker* is either a `pragma: no cover` comment, or a trailing comment `# slow-path-covered-by: <path>::<test>` on the sleep's own line. There, `<path>` is a repository-relative path to a Python file under the test tree, and `<test>` names a module-level test function or a `<Class>::<method>` test method that a static read of that file finds, without parametrization brackets. That file MAY be the file that carries the marker. The named test is the one that drives the slow path on purpose. The shared check `looped_sleep_coverage` enforces this. It reads source statically and performs no network I/O. It MUST refuse a looped real-time sleep that carries neither marker, naming the file and line. It MUST refuse a `slow-path-covered-by:` marker whose named test that static read does not find, naming the marker's file, its line and the missing test. It MUST refuse a `slow-path-covered-by:` marker on any line that does not hold a looped real-time sleep, naming the file and line, so the marker's coverage exclusion reaches no other line. It MUST pass a file whose looped real-time sleeps all carry a pragma or a marker naming a test it finds. A marker exempts a line only from per-file coverage. It never exempts a test from §"Testing approach"'s rules on test verdicts and concurrency waits. This bullet is spec-first: test files in this repository still carry unmarked looped real-time sleeps, and work item livespec-dev-tooling-e34ks3 owns the change.
 
-**2. Scenario (`scenarios.md`).** Append the scenario below. It carries no number; the revise pass assigns one if the file numbers its scenarios.
+**2. Coverage-exclusion paragraph (`non-functional-requirements.md`).** The paragraph that limits `exclude_also` to livespec's exact list currently reads: "`exclude_also` MUST be minimal and limited to structurally-unreachable patterns matching livespec's exact list: `if TYPE_CHECKING:`, `raise NotImplementedError`, `raise ImportError`, `@overload`, `if __name__ == .__main__.:`, `sys.path.insert`, `case _:`. No other exclusions are permitted without a propose-change cycle." Directly after that last sentence, add this sentence:
+
+> The list additionally carries one entry, `# slow-path-covered-by:`, which is not structurally unreachable: it excludes only a looped real-time sleep's own line, as §"Testing approach" bullet "Load-independent test coverage" defines, and the shared check `looped_sleep_coverage` refuses that marker on any other line.
+
+The short coverage-gate bullet in §"Testing approach" ("Exclusions are minimal and documented in `pyproject.toml` `[tool.coverage.report].exclude_also`") stays as it is: the new entry is documented there like every other entry. This proposal is the propose-change cycle that paragraph requires for a new exclusion.
+
+**3. `tests_tree_prefix` consumers (`contracts.md`).** In the `tests_tree_prefix` role key's **Consumers:** list, add `looped_sleep_coverage` in alphabetical position, since the new check walks that tree. If the pending proposal `tests-tree-prefix-consumers-name` (which adds `no_ambient_environment_loops` to the same list) has been ratified first, keep its name and add this one too. The two additions do not interact.
+
+**4. Scenario (`scenarios.md`).** Append the scenario below. The file uses unnumbered `## Scenario:` headings, so it carries none.
 
 ## Scenario: a looped real-time sleep in a coverage-measured test file is refused unless it carries a coverage marker
 
@@ -52,6 +61,6 @@ Feature: looped_sleep_coverage keeps per-file coverage independent of host load
     Then the check passes
 ```
 
-**3. Revise co-edit.** The revise pass that accepts this proposal MUST add one `tests/heading-coverage.json` row for the new scenario heading in the same revise commit, carrying `test: "TODO"`, `work_item: "livespec-dev-tooling-e34ks3"`, and a `reason` stating that a real test at the integration tier or above is owed (a consumer-style check-runner test running `looped_sleep_coverage` against a fixture mini-project under `tmp_path`) and that livespec-dev-tooling-e34ks3 owns it. The same commit MUST regenerate `tests/heading-coverage-debt.json` with `just generate-heading-coverage-debt-register`, never by hand.
+**5. Revise co-edit.** The revise pass that accepts this proposal MUST add one `tests/heading-coverage.json` row for the new scenario heading in the same revise commit, carrying `test: "TODO"`, `work_item: "livespec-dev-tooling-e34ks3"`, and a `reason` stating that a real test at the integration tier or above is owed (a consumer-style check-runner test running `looped_sleep_coverage` against a fixture mini-project under `tmp_path`) and that livespec-dev-tooling-e34ks3 owns it. The same commit MUST regenerate `tests/heading-coverage-debt.json` with `just generate-heading-coverage-debt-register`, never by hand.
 
-**4. Unchanged.** The coverage gate's 100% line and branch floor, the "Load-independent concurrency waits" bullet and every other bullet of the section are unchanged. A pragma or a marker is the only exclusion this bullet admits, and it admits it only on the looped sleep's own line.
+**6. Unchanged.** The coverage gate's 100% line and branch floor, the "Load-independent concurrency waits" and "Environment-independent test coverage" bullets, and every other entry of the exclusion list are unchanged. The marker is the only exclusion this proposal admits, and it reaches only a looped real-time sleep's own line.
