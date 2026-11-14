@@ -458,7 +458,7 @@ pane and its own report are never evidence that the plan is moving. For each own
    unreachable, report `plan-slug (repo), ledger not yet onboarded`, never "no plan". The maintainer, 2026-11-02
    ~20:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 20:04:20Z: "On Hetzner it absolutely has a plan. It's
    just in its new repo. You need to look in the right ledger." Measured that day: plan
-   bootstrap-credentials-and-onboarding lived in `/data/projects/hetzner-xubuntu-info` (tenant `hetzner-xubuntu-info`,
+   bootstrap-credentials-and-onboarding lived in `~/workspace/hetzner-xubuntu-info` (tenant `hetzner-xubuntu-info`,
    prefix `hxi`), where `bd` reported "no beads database found", and the coordinator had reported the Hetzner priority
    as having no plan. A dependency between items in different ledger tenants is recorded in prose on both items,
    NEVER as a `blocks` edge. Measured 2026-11-06 ~06:2xZ: three cross-tenant `blocks` edges on
@@ -1381,7 +1381,7 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
   (`<<'EOF'`) into a file and pass it with `bd comment <id> --file <path>`. Inside a double-quoted comment string, an
   unescaped backtick is a shell command substitution. Measured 2026-11-10 by expedited-incident-response-flag:
   backticks garbled livespec-dev-tooling-3wcldx's first rider, and one ran uv and pasted its usage text into the ledger.
-- **Look before you delete.** `/data/projects/livespec-dev-tooling/.overseer-state` at the repo root can be ANOTHER
+- **Look before you delete.** `~/workspace/livespec-dev-tooling/.overseer-state` at the repo root can be ANOTHER
   session's state marker. Read a file before removing it.
 - **Relays.** Peers keep messaging a retired seat's name. That seat forwards what it receives to the current
   coordinator and tells the sender the new address.

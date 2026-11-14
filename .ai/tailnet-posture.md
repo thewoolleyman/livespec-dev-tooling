@@ -6,7 +6,7 @@ Tailscale key, tag, ACL or grant change, or any way for GitHub-hosted runners
 
 ## The posture
 
-The authority is `/data/projects/tailscale-admin/AGENTS.md`, sections
+The authority is `~/workspace/tailscale-admin/AGENTS.md`, sections
 "Maintainer-approved tailnet posture (2026-08-17)" and "autogroup:member
 exclusion". Read them there. In short:
 

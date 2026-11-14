@@ -281,11 +281,11 @@ command names DIFFERENT work-item stores depending on the shell's cwd. Running
 `bd show livespec-dev-tooling-<id>` from another fleet repo's checkout fails
 with "no issue found" (or worse, a `bd create`/`bd comment` lands in the wrong
 tenant silently). This bit a live session twice in one day — both times right
-after a `cd /data/projects/<other-repo> && ...` compound command whose cwd
+after a `cd "$HOME/workspace/<other-repo>" && ...` compound command whose cwd
 leaked into the next `bd` call.
 
 Rule: run `bd` for a repo's items from THAT repo's checkout
-(`/data/projects/livespec-dev-tooling` for this repo), and after any compound
+(`~/workspace/livespec-dev-tooling` for this repo), and after any compound
 command that `cd`s into a sibling repo, treat the cwd as poisoned for `bd`
 until reset. Cross-tenant filing (a bug owned by a sibling) is done by
 deliberately `cd`-ing into the OWNING repo first — make that explicit in the

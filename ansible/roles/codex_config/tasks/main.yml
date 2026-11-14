@@ -82,7 +82,7 @@
     fail_msg: >-
       {{ codex_config_env_wrapper }} is missing. Install it from the
       1password-env-wrapper repo (canonical copy at
-      /data/projects/1password-env-wrapper/with-homelab-env.sh) before applying
+      ~/workspace/1password-env-wrapper/with-homelab-env.sh) before applying
       this role; it resolves {{ codex_config_cloudflare_mcp_token_env }} for the
       Cloudflare MCP entry.
     success_msg: "{{ codex_config_env_wrapper }} is present"

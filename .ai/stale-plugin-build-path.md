@@ -25,9 +25,9 @@ Read the project's install path, and run plugin scripts from that path:
 
 ```bash
 python3 -c "
-import json; d = json.load(open('$HOME/.claude/plugins/installed_plugins.json'))
+import json, os; d = json.load(open('$HOME/.claude/plugins/installed_plugins.json')); me = os.path.realpath('$HOME/workspace/livespec-dev-tooling')
 for e in d['plugins']['livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro']:
-    if e.get('projectPath') == '/data/projects/livespec-dev-tooling': print(e['installPath'], e['lastUpdated'])"
+    if os.path.realpath(e.get('projectPath') or '') == me: print(e['installPath'], e['lastUpdated'])"
 ```
 
 Before you report that a surface is absent, also grep the plugin's own repo

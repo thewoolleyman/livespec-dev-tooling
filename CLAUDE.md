@@ -266,7 +266,7 @@ The open backlog of this repository is owned by the plan
 skill**, read by absolute path:
 
 ```text
-/data/projects/livespec-overseer/.claude/skills/drain-backlog/SKILL.md
+~/workspace/livespec-overseer/.claude/skills/drain-backlog/SKILL.md
 ```
 
 Read that skill in full, then this plan's charter,
@@ -720,14 +720,14 @@ stopping points.
 1. Confirm the primary checkout before editing:
 
    ```bash
-   git -C /data/projects/livespec-dev-tooling config --get livespec.primaryPath
-   git -C /data/projects/livespec-dev-tooling status --short --branch
+   git -C "$HOME/workspace/livespec-dev-tooling" config --get livespec.primaryPath
+   git -C "$HOME/workspace/livespec-dev-tooling" status --short --branch
    ```
 
 2. If the change will modify tracked files, create a dedicated worktree
    from the primary checkout's `master` and do all edits there. Every
    fleet worktree lives under the per-user root `~/.worktrees/<repo>/<branch>`
-   (never a peer of the clones in `/data/projects`); `just bootstrap`
+   (never a peer of the clones in `~/workspace`); `just bootstrap`
    registers `~/.worktrees` in mise's `trusted_config_paths`, so a
    freshly created worktree's `.mise.toml` auto-trusts and the first
    `mise exec` inside it never stops on the "config not trusted" prompt:
@@ -740,7 +740,7 @@ stopping points.
    mise exec -- just worktree-create <branch>
    ```
 
-   A raw `mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch>
+   A raw `mise exec -- git -C "$HOME/workspace/livespec-dev-tooling" worktree add -b <branch>
    "$HOME/.worktrees/livespec-dev-tooling/<branch>" master` also yields a usable
    worktree — the pre-commit and pre-push hooks install the pack before
    any gate reads it, so the worktree can commit and push with no
@@ -760,7 +760,7 @@ stopping points.
    on the v215 branch: "the rule has no exception").
 4. Open a PR, wait for required checks, and merge through the PR using
    the repo's rebase-merge discipline.
-5. After merge, refresh `/data/projects/livespec-dev-tooling` to
+5. After merge, refresh `~/workspace/livespec-dev-tooling` to
    `origin/master`, remove the feature worktree, delete the local
    branch, and verify the primary checkout is clean on `master`.
 
