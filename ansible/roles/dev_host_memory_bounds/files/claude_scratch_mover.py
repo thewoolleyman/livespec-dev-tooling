@@ -15,6 +15,9 @@ A session directory is moved only when ALL of these hold:
   a memory map, its command line or its environment;
 - nothing under it has been modified for `MOVER_MIN_AGE_SECONDS`.
 
+When processes exist but not one of their environments can be read, no session
+can be proven dead, so the pass keeps every session (`liveness-scan-failed`).
+
 The references are read again just before each move, because a session may
 resume between the scan and the move.
 
@@ -59,6 +62,7 @@ class References:
 
     sessions: frozenset[str]
     paths: frozenset[str]
+    scan_failed: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,11 +77,15 @@ class Config:
     apply: bool
 
 
-def _read(*, path: Path) -> bytes:
+def _read_or_none(*, path: Path) -> bytes | None:
     try:
         return path.read_bytes()
     except OSError:
-        return b""
+        return None
+
+
+def _read(*, path: Path) -> bytes:
+    return _read_or_none(path=path) or b""
 
 
 def _link(*, path: Path) -> str:
@@ -108,10 +116,15 @@ def read_references(*, proc_root: Path) -> References:
     """Collect every session id and path string the running processes hold."""
     sessions: set[str] = set()
     paths: set[str] = set()
+    seen = 0
+    readable = 0
     for process in proc_root.iterdir():
         if not process.name.isdigit():
             continue
-        environ = _read(path=process / "environ")
+        seen += 1
+        raw_environ = _read_or_none(path=process / "environ")
+        readable += raw_environ is not None
+        environ = raw_environ or b""
         sessions.update(match.decode() for match in _SESSION_ENV.findall(environ))
         paths.add(_link(path=process / "cwd"))
         paths.update(_fd_targets(process=process))
@@ -119,7 +132,11 @@ def read_references(*, proc_root: Path) -> References:
         for raw in (environ, _read(path=process / "cmdline")):
             paths.update(raw.decode(errors="replace").split("\x00"))
     paths.discard("")
-    return References(sessions=frozenset(sessions), paths=frozenset(paths))
+    return References(
+        sessions=frozenset(sessions),
+        paths=frozenset(paths),
+        scan_failed=seen > 0 and readable == 0,
+    )
 
 
 def is_referenced(*, directory: Path, references: References) -> bool:
@@ -156,6 +173,8 @@ def why_kept(
     *, directory: Path, references: References, now: float, min_age_seconds: float
 ) -> str | None:
     """The reason a session directory must stay, or None when it may move."""
+    if references.scan_failed:
+        return "liveness-scan-failed"
     if directory.name in references.sessions:
         return "session-running"
     if is_referenced(directory=directory, references=references):
