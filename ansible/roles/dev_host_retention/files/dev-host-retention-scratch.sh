@@ -25,6 +25,14 @@ LIVE_SESSION_SCAN_FAILURE=
 # a completed scan. Anything else, including a missing ARG_MAX, returns
 # non-zero with the reason in LIVE_SESSION_SCAN_FAILURE, and the caller
 # removes no session directory and says so in the run's journal.
+#
+# 123 is also what xargs returns when EVERY grep exits 2, which is a scan that
+# read no environment at all (a proc root the caller's privileges cannot read,
+# or one mounted wrongly) and found no live id because it saw nothing. So an
+# empty live set is trusted only when at least one environment was read, which
+# the marker above shows as at least one match; a single unreadable or vanished
+# environment stays silent as before
+# (livespec-dev-tooling-pxqxti).
 scan_live_session_ids() {
     local tmp_root=$1 proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc}
     local entry arg_max status target path_after_project session_id
@@ -37,14 +45,19 @@ scan_live_session_ids() {
             return 1
         fi
         mapfile -d '' -t matches < <(printf '%s\0' "${environments[@]}" |
-            xargs -0 -s "$arg_max" grep -ahsz '^CLAUDE_CODE_SESSION_ID=.' -- 2>/dev/null)
+            xargs -0 -s "$arg_max" grep -aohsz -e '^CLAUDE_CODE_SESSION_ID=..*' -e '^.' -- 2>/dev/null)
         wait "$!"
         status=$?
         if [[ $status != 0 && $status != 123 ]]; then
             LIVE_SESSION_SCAN_FAILURE="status $status"
             return 1
         fi
+        if ((${#matches[@]} == 0)); then
+            LIVE_SESSION_SCAN_FAILURE="no process environment could be read"
+            return 1
+        fi
         for entry in "${matches[@]}"; do
+            [[ $entry == CLAUDE_CODE_SESSION_ID=?* ]] || continue
             LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1
         done
     fi
