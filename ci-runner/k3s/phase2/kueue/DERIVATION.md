@@ -1708,6 +1708,46 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
+### The PowerEdge gate lane back to four gates (2026-11-14)
+
+This section sits ahead of the two 2026-11-11 PowerEdge sections it reverses
+in part. It is placed here, out of date order, so that it does not collide
+with the concurrent edits at the end of this file.
+
+**What was wrong.** On 2026-11-14 the PowerEdge was CPU-saturated by the ruled
+rule: 0.4% idle and BestEffort CI-slice `cpu.pressure` some avg60 38.7, read
+~03:3xZ with 10 s `/proc/stat` deltas (`.ai/ci-node-capacity-reads.md`).
+`gates-cq` held 25 of this lane's 30 cpu. The PowerEdge carries 17 of the
+pool's 30 CI churn slots, and its CI pods are BestEffort, so admitted gates
+(Burstable, 5 cpu request each) take CPU from them by CFS weight. Measured
+cost: livespec-dev-tooling master run 43543797308's `check-per-file-coverage`
+ran 102.5 min on the PowerEdge, against 27.0 min in the previous green master
+run (43546621384). Under starvation it ended RED on three Ansible "Local RPC
+server did not start" timeouts (livespec-dev-tooling-biq757). That one run held
+the B' master-push group from 02:00 to 03:46Z, which stalled every later
+master verdict. Gate pods there ran a p50 of 35.5 min for livespec-dev-tooling
+against 20.0 on gmktec (Honeycomb ztfYCLKQeQS).
+
+**What changed.** `gates-poweredge-flavor` goes from 30 cpu / 48 Gi back to
+20 cpu / 32 Gi, which is four gates at the 5 cpu / 8 Gi unit. The 2026-11-14
+fastest-first order already tries the PowerEdge last, so this cap bounds the
+overflow it takes. `node-cpu-budget.yaml` gate_cpu moves with it. Ruled by
+throughput-plans-coordinator at ~04:1xZ as lever (c), pulled forward from the
+05:0xZ re-measure, under plan gate-job-resources (epic
+livespec-dev-tooling-ukoeah).
+
+**Measure.** Before and after: livespec-dev-tooling master
+`check-per-file-coverage` duration on the PowerEdge (27.0 normal, 102.5
+starved); CI job duration p50 counting only spans with `duration_ms` under one
+day; gate pod p50 per node (livespec-dev-tooling PowerEdge 35.5, gmktec 20.0,
+hp 19.0, gamingpc 8.5, M4 10.0); and `gates-cq` pending workloads, so the cost
+of moving gates is visible.
+
+**Revert trigger.** If fleet gate pod p50 worsens beyond its noise band within
+6 h of the apply without a matching CI gain, restore 30 cpu / 48 Gi on
+`gates-poweredge-flavor` and 30 in `node-cpu-budget.yaml`, then apply with
+`just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`.
+
 ### The PowerEdge gate lane to six gates (2026-11-11)
 
 **The read.** ci-runtime-and-cost's `fleet-utilization.sh --stranded-only`

@@ -24,7 +24,7 @@ nodes:
     gate_cpu: 15            # gates-flavor
   poweredge-xubuntu:
     allocatable_cpu: 72
-    gate_cpu: 30            # gates-poweredge-flavor
+    gate_cpu: 20            # gates-poweredge-flavor (30 -> 20, 2026-11-14)
   hp-xubuntu:
     allocatable_cpu: 14.5
     gate_cpu: 5             # gates-hp-flavor
