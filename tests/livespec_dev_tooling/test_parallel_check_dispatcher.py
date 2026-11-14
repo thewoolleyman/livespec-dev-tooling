@@ -715,6 +715,34 @@ def test_main_does_not_repeat_the_shell_warmup(
     assert not (tmp_path / "pyright.log").exists(), "the shell warm-up must not run twice"
 
 
+def test_main_passes_its_cwd_and_environment_to_pyright_warmup(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The dispatcher provisions pyright in the same context it will dispatch from."""
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        mod,
+        "warm_locked_pyright",
+        lambda **kwargs: calls.append(kwargs) or 0,
+    )
+    monkeypatch.setenv("DISPATCHER_WARMUP_TEST", "present")
+    _write_justfile(tmp_path=tmp_path, content="check-lint:\n    @echo lint ok\n")
+
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-lint"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls[0]["cwd"] == tmp_path
+    assert "env" in calls[0]
+    warmup_environment = calls[0]["env"]
+    assert isinstance(warmup_environment, dict)
+    assert warmup_environment["DISPATCHER_WARMUP_TEST"] == "present"
+
+
 def test_coverage_dependency_ordering_enforced(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

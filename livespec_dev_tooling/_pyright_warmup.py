@@ -8,7 +8,6 @@ completes this install before it fans out.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -41,9 +40,7 @@ def _dev_group_pins_pyright(*, lock_text: str) -> bool:
     )
 
 
-def warm_locked_pyright(
-    *, cwd: Path, env: Mapping[str, str] | None = None, already_warmed: bool
-) -> int:
+def warm_locked_pyright(*, cwd: Path, env: Mapping[str, str], already_warmed: bool) -> int:
     """Run locked pyright once before a caller fans out check targets."""
     if already_warmed or not (cwd / "uv.lock").is_file():
         return 0
@@ -52,5 +49,5 @@ def warm_locked_pyright(
     return subprocess.call(  # noqa: S603
         ["uv", "run", "--frozen", "pyright", "--version"],  # noqa: S607
         cwd=cwd,
-        env=env if env is not None else os.environ,
+        env=env,
     )
