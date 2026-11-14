@@ -29,9 +29,19 @@ owns the halt procedure and the phase outline; this note fixes the ORDER and the
 
 ## 3. Sequence
 
-Phase 2, the halt (note 005 §2): freeze, drain, then the quiet check. One addition: during the halt, set each fleet
-repository's `CI_RUNNER_LABELS` variable to `["ubuntu-latest"]`. The personal-account ARC registrations stop serving after
-the transfer, and repository variables survive a transfer (rehearsal row 3).
+Phase 2, the halt (note 005 §2): freeze, drain, then the quiet check. Two additions:
+
+- **Preserve before any cancel** (coordinator-duties §10). legacy-dispatcher-agent executes this factory half, not this
+  seat. Before ANY live factory run is cancelled:
+  - its committed tree is on a ref on origin, verified with
+    `git ls-remote origin refs/heads/needs-human/<dispatch-id>`, using the DISPATCH id, never the run id;
+  - that ref has a non-empty diff against its merge-base with origin/master.
+
+  The cancel goes through the factory server's `POST /api/v1/runs/{id}/cancel`, never `fabro rm --force`
+  (`.ai/factory-restart-cancels-runs.md`). The record of cancelled ids stays with legacy-dispatcher-agent, which
+  re-dispatches each one SEEDED from its preserved ref in Phase 5.
+- During the halt, set each fleet repository's `CI_RUNNER_LABELS` variable to `["ubuntu-latest"]`. The personal-account
+  ARC registrations stop serving after the transfer, and repository variables survive a transfer (rehearsal row 3).
 
 Phase 3, the window. These are steps 1 to 5. Take them for ONE repository at a time, in this order: livespec-dev-tooling,
 livespec, then the other eight.
@@ -62,10 +72,21 @@ After all 10 repositories are transferred:
 9. **The recovery drill on livespec-dev-tooling** (DoD assertion 6): the twin pushes one commit to master and it lands;
    the maintainer's token is refused.
 
-Phase 4: require the merge queue on livespec-dev-tooling and the orchestrator, with build concurrency of 2 or more. Run
-the semantic-conflict drill and one factory dispatch end to end (note 005 §3).
+Phase 5: lift the halt. legacy-dispatcher-agent re-dispatches the cancelled runs SEEDED from their preserved refs.
+Watch master health for 24 hours.
 
-Phase 5: lift the halt, re-dispatch the cancelled runs, and watch master health and queue latency for 24 hours.
+**Phase 4 (the merge queue) is OUT of Monday's window.** Phases 2, 3 and 5 stand on their own. The maintainer has
+ruled where the single full-suite run that guards master runs. That is call 3 of note 005 §5, recorded verbatim on this
+epic in comment 27 at 2026-11-13T14:45:12Z: "3. The answer is obviously option A because this gives us control over the
+capacity and speed I am not accepting contributions to this currently so I'm not concerned about the security risks
+right now".
+
+Option A is `merge_group` CI running the FULL suite on the guarded self-hosted runners, with every path to master going
+through the queue. Its precondition is self-hosted runners registered at the organization, and those do not exist
+until ARC is restored at livespec-ai (xyi5vu, §5). So Phase 4 starts after xyi5vu: require the merge queue on
+livespec-dev-tooling and the orchestrator, run the semantic-conflict drill, and run one factory dispatch end to end (note
+005 §3). The queue's build concurrency is a tuning value the seat sets from note 003's measurements, starting at 2 or
+more, and reports. Requiring the queue on hosted runners on Monday would contradict option A.
 
 ## 4. If master goes red or an incident opens mid-window (condition B, accepted)
 
