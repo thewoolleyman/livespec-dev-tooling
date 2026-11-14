@@ -59,7 +59,7 @@
     fail_msg: >-
       {{ honeycomb_mcp_onepassword_wrapper }} is missing. Install it from the
       1password-env-wrapper repo (canonical copy at
-      /data/projects/1password-env-wrapper/with-homelab-env.sh) before applying
+      ~/workspace/1password-env-wrapper/with-homelab-env.sh) before applying
       this role.
     success_msg: "{{ honeycomb_mcp_onepassword_wrapper }} is present"
 

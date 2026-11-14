@@ -52,12 +52,12 @@ Authoritative host locations:
 - encrypted service-account token:
   `/etc/credstore.encrypted/1password-env-wrapper-livespec`
 - installed wrapper: `/usr/local/bin/with-livespec-env.sh`
-- wrapper factory repo: `/data/projects/1password-env-wrapper/`
+- wrapper factory repo: `~/workspace/1password-env-wrapper/`
 
 Use the wrapper for commands that need these values:
 
 ```bash
-source /data/projects/1password-env-wrapper/with-livespec-env.sh <command>
+source "$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" <command>
 ```
 
 Probe only for presence, never values. For beads/Dolt work, a safe probe is a

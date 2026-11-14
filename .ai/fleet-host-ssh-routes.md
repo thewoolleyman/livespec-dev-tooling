@@ -14,7 +14,7 @@ the right account with its key missing.)
 
 ## Where the routes are written down
 
-The `tailscale-admin` repository (a sibling clone, `/data/projects/tailscale-admin`
+The `tailscale-admin` repository (a sibling clone, `~/workspace/tailscale-admin`
 on the VPS) is the record of every tailnet machine: its `AGENTS.md` "Machines"
 and "Remote Access" sections and its `README.md` machine table give each host's
 SSH account and SSH server, with the date each was last measured. Read it
