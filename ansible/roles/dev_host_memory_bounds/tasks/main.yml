@@ -150,6 +150,35 @@
   become: true
   when: dev_host_memory_bounds_state == 'present'
 
+- name: Find the on-disk project directories the scratch mover writes into
+  ansible.builtin.find:
+    paths: "{{ dev_host_memory_bounds_rt_scratch_disk_dir }}"
+    file_type: directory
+    recurse: false
+    hidden: true
+  become: true
+  register: dev_host_memory_bounds_rt_disk_projects
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Give every on-disk project directory to the scratchpad login
+  # The manual /tmp relief of 2026-11-14 left project directories here owned by
+  # root:root 755, so after the bind the login could not create session
+  # directories in them. The mover gives a project directory the source's owner
+  # and mode on every move; this step fixes the ones already on disk.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ dev_host_memory_bounds_user }}"
+    group: "{{ dev_host_memory_bounds_user }}"
+    mode: "0700"
+  become: true
+  loop: >-
+    {{ dev_host_memory_bounds_rt_disk_projects.files | default([])
+       | rejectattr('uid', 'equalto', dev_host_memory_bounds_rt_uid | int) | list }}
+  loop_control:
+    label: "{{ item.path }}"
+  when: dev_host_memory_bounds_state == 'present'
+
 - name: Install the scratchpad bind mount unit
   ansible.builtin.template:
     src: scratch-bind.mount.j2
@@ -190,6 +219,21 @@
     owner: root
     group: root
     mode: "0755"
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - dev_host_memory_bounds_scratch_mover_enabled | bool
+
+- name: Install the scratch mover's read-only scan module
+  # Installed before the executable, so a timer firing mid-apply never imports
+  # a scan module that is not yet on disk.
+  ansible.builtin.copy:
+    src: claude_scratch_mover_scan.py
+    dest: "{{ dev_host_memory_bounds_scratch_mover_bin | dirname }}/claude_scratch_mover_scan.py"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
   become: true
   when:
     - dev_host_memory_bounds_state == 'present'
@@ -272,6 +316,7 @@
     - "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_scratch_mover_timer }}"
     - "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_scratch_mover_service }}"
     - "{{ dev_host_memory_bounds_scratch_mover_bin }}"
+    - "{{ dev_host_memory_bounds_scratch_mover_bin | dirname }}/claude_scratch_mover_scan.py"
   when: >-
     dev_host_memory_bounds_state == 'absent'
     or not (dev_host_memory_bounds_scratch_mover_enabled | bool)

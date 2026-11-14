@@ -192,6 +192,18 @@ directory that is dead and idle to the same relative path under
   pass reads `/proc` again just before each move.
 - **Idle:** nothing under it was modified within
   `dev_host_memory_bounds_scratch_mover_min_age_seconds` (2h).
+- **Session id anywhere:** a session is held when its id appears anywhere in
+  a process's cwd, fds, maps, command line or environment.
+- **Staged, then copied:** the directory is first renamed to `.<id>.moving`
+  in the same `/tmp` directory (atomic), `/proc` is read again, and it is put
+  back if anything references it. Only then is it copied to disk. A failed copy
+  puts it back, and a staging directory a crashed pass left is restored first.
+- **Never follows a symlink (it runs as root):** the RAM root, the disk root and
+  the source project directory must be real directories owned by the RAM root's
+  owner, and the destination project directory a real directory, or the move or
+  pass is refused. A destination project directory takes the source's owner
+  and mode. The role also gives any project directory already on disk to the
+  scratchpad login (mode 0700).
 - **Never overwrites:** an existing destination fails that move, leaves the
   source, and marks the pass failed.
 - **Log:** every decision is one JSON line in

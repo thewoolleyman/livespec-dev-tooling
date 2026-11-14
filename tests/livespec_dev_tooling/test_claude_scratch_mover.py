@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -176,10 +177,12 @@ def test_a_session_any_process_still_references_is_kept(
     assert {"event": "kept", "path": str(dead), "reason": "referenced"} in _events(capsys)
 
 
-def test_a_path_that_only_shares_a_prefix_does_not_hold_a_session(tmp_path: Path) -> None:
+def test_a_held_string_without_the_session_id_does_not_hold_it(tmp_path: Path) -> None:
     ram, _, _ = _roots(tmp_path)
     dead = _session(ram=ram, sid=_DEAD)
-    references = mover.References(sessions=frozenset(), paths=frozenset({f"{dead}-other/file"}))
+    references = mover.References(
+        sessions=frozenset(), paths=frozenset({str(dead.parent / _OTHER), "/usr/bin/python3"})
+    )
     assert not mover.is_referenced(directory=dead, references=references)
 
 
@@ -322,10 +325,17 @@ def test_a_move_that_fails_leaves_the_source_and_fails_the_pass(
 def test_a_new_destination_project_directory_copies_the_source_owner_and_mode(
     tmp_path: Path,
 ) -> None:
-    ram, disk, _ = _roots(tmp_path)
+    ram, disk, proc = _roots(tmp_path)
     dead = _session(ram=ram, sid=_DEAD)
     (ram / _PROJECT).chmod(0o700)
-    assert mover.move(source=dead, ram_root=ram, disk_root=disk) is None
+    outcome = mover.move(
+        source=dead,
+        ram_root=ram,
+        disk_root=disk,
+        owner_uid=ram.lstat().st_uid,
+        references=lambda: mover.read_references(proc_root=proc),
+    )
+    assert outcome == ("moved", None)
     created = (disk / _PROJECT).stat()
     source = (ram / _PROJECT).stat()
     assert (created.st_uid, created.st_gid) == (source.st_uid, source.st_gid)
@@ -382,6 +392,8 @@ def test_the_role_runs_the_installed_script_on_a_timer_with_its_kill_switch() ->
     assert f"Unit={defaults['dev_host_memory_bounds_scratch_mover_service']}" in timer
     tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
     assert "src: claude_scratch_mover.py" in tasks
+    # The project directories already on disk are given to the scratchpad login.
+    assert "- name: Give every on-disk project directory to the scratchpad login" in tasks
 
 
 def test_a_scan_that_reads_no_process_environment_moves_nothing(
@@ -410,3 +422,197 @@ def test_one_readable_environment_is_enough_to_trust_the_scan(
     assert live.exists()
     assert not dead.exists()
     assert {"event": "kept", "path": str(live), "reason": "session-running"} in _events(capsys)
+
+
+@pytest.mark.parametrize(
+    "hold",
+    [
+        {"cmdline": ["bash", "-c", "cd {dead} && ls"]},
+        {"environ": {"PATH": "{dead}/bin:/usr/bin"}},
+        {"cmdline": ["claude", "--resume", "{sid}"]},
+    ],
+    ids=["cd-then-and", "path-style", "resume-by-id"],
+)
+def test_the_session_id_anywhere_in_a_process_holds_the_session(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], hold: dict[str, object]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    filled = json.loads(json.dumps(hold).replace("{dead}", str(dead)).replace("{sid}", _DEAD))
+    _process(proc=proc, pid=10, **filled)
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 0
+    assert dead.exists()
+    assert {"event": "kept", "path": str(dead), "reason": "referenced"} in _events(capsys)
+
+
+def test_a_symlinked_destination_project_is_refused_and_nothing_lands_at_its_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (disk / _PROJECT).symlink_to(elsewhere)
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 1
+    assert dead.exists()
+    assert list(elsewhere.iterdir()) == []
+    assert {"error": "unsafe-destination", "event": "move-failed", "path": str(dead)} in _events(
+        capsys
+    )
+
+
+def test_a_symlinked_ram_root_refuses_the_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    _ = _session(ram=ram, sid=_DEAD)
+    linked = tmp_path / "linked-ram"
+    linked.symlink_to(ram)
+    config = _config(ram=linked, disk=disk, proc=proc, tmp_path=tmp_path)
+    assert _run(config=config, proc=proc) == 1
+    assert _events(capsys) == [
+        {"event": "refused", "ram_root": str(linked), "reason": "ram-root-unsafe"}
+    ]
+
+
+def test_a_symlinked_disk_root_refuses_the_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    linked = tmp_path / "linked-disk"
+    linked.symlink_to(disk)
+    config = _config(ram=ram, disk=linked, proc=proc, tmp_path=tmp_path)
+    assert _run(config=config, proc=proc) == 1
+    assert dead.exists()
+    assert _events(capsys) == [
+        {"disk_root": str(linked), "event": "refused", "reason": "disk-root-unsafe"}
+    ]
+
+
+def test_a_directory_owned_by_another_user_is_not_a_safe_directory(tmp_path: Path) -> None:
+    assert mover.real_dir(path=tmp_path, uid=tmp_path.lstat().st_uid)
+    assert not mover.real_dir(path=tmp_path, uid=tmp_path.lstat().st_uid + 1)
+    assert not mover.real_dir(path=tmp_path / "missing", uid=None)
+
+
+def test_a_source_project_owned_by_another_user_is_refused(tmp_path: Path) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    outcome = mover.move(
+        source=dead,
+        ram_root=ram,
+        disk_root=disk,
+        owner_uid=ram.lstat().st_uid + 1,
+        references=lambda: mover.read_references(proc_root=proc),
+    )
+    assert outcome == ("move-failed", "unsafe-source")
+    assert dead.exists()
+
+
+def test_an_existing_destination_project_takes_the_source_mode(tmp_path: Path) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    _ = _session(ram=ram, sid=_DEAD)
+    (ram / _PROJECT).chmod(0o700)
+    (disk / _PROJECT).mkdir()
+    (disk / _PROJECT).chmod(0o755)
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 0
+    assert (disk / _PROJECT).stat().st_mode & 0o7777 == 0o700
+    assert (disk / _PROJECT / _DEAD).is_dir()
+
+
+def test_a_session_referenced_once_staged_is_put_back_and_kept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    staged = dead.parent / f".{_DEAD}.moving"
+    reads = iter(
+        [
+            mover.References(sessions=frozenset(), paths=frozenset()),
+            mover.References(sessions=frozenset(), paths=frozenset()),
+            mover.References(sessions=frozenset(), paths=frozenset({f"{staged}/tasks/out.txt"})),
+        ]
+    )
+    code = mover.run(
+        config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path),
+        references=lambda: next(reads),
+        now=time.time,
+        is_mount=lambda _path: False,
+    )
+    assert code == 0
+    assert dead.is_dir()
+    assert not staged.exists()
+    assert not (disk / _PROJECT / _DEAD).exists()
+    assert {"event": "kept", "path": str(dead), "reason": "referenced-after-staging"} in _events(
+        capsys
+    )
+
+
+def test_an_existing_staging_name_fails_the_move(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    (dead.parent / f".{_DEAD}.moving").mkdir()
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 1
+    assert dead.exists()
+    assert {"error": "staging-exists", "event": "move-failed", "path": str(dead)} in _events(capsys)
+
+
+def test_a_staging_directory_a_crashed_pass_left_is_restored_first(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    project = ram / _PROJECT
+    left = _session(ram=ram, sid=_DEAD)
+    left.rename(project / f".{_DEAD}.moving")
+    _ = (project / f".{_OTHER}.moving").write_text("a file, not a directory", encoding="utf-8")
+    (project / ".not-a-staging-name").mkdir()
+    live = _session(ram=ram, sid=_LIVE)
+    (project / f".{_LIVE}.moving").mkdir()
+    _process(proc=proc, pid=10, environ={"CLAUDE_CODE_SESSION_ID": _LIVE})
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 0
+    events = _events(capsys)
+    assert events[0] == {"event": "restored-staging", "path": str(project / _DEAD)}
+    assert {"event": "moved", "path": str(project / _DEAD), "to": str(disk)} in events
+    assert live.exists()
+    assert (project / f".{_LIVE}.moving").exists()
+
+
+def _fake_mv(*, returncode: int, perform: bool) -> object:
+    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if perform:
+            Path(argv[-2]).rename(argv[-1])
+        stderr = "mv: boom" if returncode else ""
+        return subprocess.CompletedProcess(argv, returncode, "", stderr)
+
+    return run
+
+
+@pytest.mark.parametrize(
+    ("returncode", "perform", "detail", "restored"),
+    [
+        (1, False, "mv: boom", True),
+        (0, False, "move-incomplete", True),
+        (1, True, "mv: boom", False),
+    ],
+    ids=["mv-fails", "mv-claims-success-but-staging-remains", "mv-fails-after-moving"],
+)
+def test_a_failed_copy_puts_the_session_back_when_it_can(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    returncode: int,
+    perform: bool,
+    detail: str,
+    restored: bool,
+) -> None:
+    ram, disk, proc = _roots(tmp_path)
+    dead = _session(ram=ram, sid=_DEAD)
+    monkeypatch.setattr(mover.subprocess, "run", _fake_mv(returncode=returncode, perform=perform))
+    assert _run(config=_config(ram=ram, disk=disk, proc=proc, tmp_path=tmp_path), proc=proc) == 1
+    assert dead.exists() is restored
+    assert not (dead.parent / f".{_DEAD}.moving").exists()
+    assert {"error": detail, "event": "move-failed", "path": str(dead)} in _events(capsys)
