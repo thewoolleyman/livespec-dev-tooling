@@ -13,13 +13,20 @@
     - "{{ claude_distributed_sendmessage_policy_dir }}"
     - "{{ claude_distributed_sendmessage_dropin_dir }}"
 
-- name: Remove the retired pane-input guard
+- name: Replace the retired pane-input guard with an allow-all stub
   # The guard blocked typing into Claude panes. Retired by maintainer ruling
   # 2026-11-14: typing into a pane is sometimes necessary, so SendMessage is
-  # guidance, not a block. The drop-in below no longer wires it.
-  ansible.builtin.file:
-    path: "{{ claude_distributed_sendmessage_guard_dest }}"
-    state: absent
+  # guidance, not a block, and the drop-in below no longer wires it. The path
+  # must NOT be deleted: a session started before this apply keeps the old
+  # managed hook cached, and `python3 <missing file>` exits 2, which BLOCKS
+  # every Bash call in that session (it did, on hetzner-xubuntu, 2026-11-14).
+  # The stub admits everything.
+  ansible.builtin.copy:
+    src: _vendor/retired-pane-input-guard.py
+    dest: "{{ claude_distributed_sendmessage_guard_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
   become: true
 
 - name: Write the managed-settings drop-in
