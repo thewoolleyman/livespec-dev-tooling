@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling import incident_ci_inventory as module
+from livespec_dev_tooling._incident_ci_plan import select_incident_targets
+from livespec_dev_tooling.incident_ci_policy import CiTarget
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = _ROOT / ".github/workflows/ci.yml"
@@ -136,6 +138,23 @@ def test_a_gate_annotated_fast_in_check_targets_is_classified_fast_in_ci():
         text=module.render_inventory(workflow=workflow, inventory="check-file-lloc\n")
     )
     assert {t.classification for t in unannotated} == {"unclassified"}
+
+
+def test_an_adopters_declared_incident_precondition_is_recorded_when_the_member_is_deferred():
+    targets = module.load_repository_inventory(
+        repository="thewoolleyman/livespec-orchestrator-beads-fabro"
+    )
+    picker = next(target for target in targets if target.name == "check-codex-skill-picker")
+    selected, deferred = select_incident_targets(
+        targets=(picker, CiTarget(name="check-fast", classification="fast"))
+    )
+    assert selected == (CiTarget(name="check-fast", classification="fast"),)
+    assert [(entry.name, entry.reason) for entry in deferred] == [
+        (
+            "check-codex-skill-picker",
+            "incident-policy:not-applicable: authenticated-codex-cli-with-installed-plugin",
+        )
+    ]
 
 
 @pytest.mark.parametrize(

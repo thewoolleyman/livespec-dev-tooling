@@ -75,8 +75,15 @@ def execution_view(
             lines.setdefault(target.batch, []).append(target.name)
             continue
         first = execution.setdefault(target.name, target)
-        if (first.classification, first.needs, first.produces, first.consumes) != (
+        if (
+            first.classification,
+            first.precondition,
+            first.needs,
+            first.produces,
+            first.consumes,
+        ) != (
             target.classification,
+            target.precondition,
             target.needs,
             target.produces,
             target.consumes,
@@ -116,11 +123,7 @@ def select_incident_targets(
     *, targets: tuple[CiTarget, ...]
 ) -> tuple[tuple[CiTarget, ...], tuple[CiDeferral, ...]]:
     selected = {t.name for t in targets if _classification(target=t) == "fast"}
-    reasons = {
-        t.name: f"incident-policy:{_classification(target=t)}"
-        for t in targets
-        if t.name not in selected
-    }
+    reasons = {t.name: _deferral_reason(target=t) for t in targets if t.name not in selected}
     changed = True
     while changed:
         changed = False
@@ -139,6 +142,15 @@ def select_incident_targets(
             if t.name not in selected
         ),
     )
+
+
+def _deferral_reason(*, target: CiTarget) -> str:
+    """Name a not-applicable member's declared normal-path precondition."""
+    classification = _classification(target=target)
+    prefix = f"incident-policy:{classification}"
+    if classification == "not-applicable" and target.precondition:
+        return f"{prefix}: {target.precondition}"
+    return prefix
 
 
 def build_plan(

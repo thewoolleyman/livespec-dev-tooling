@@ -249,6 +249,7 @@
       "consumes": [],
       "name": "check-doctor-static",
       "needs": [],
+      "precondition": "livespec-core-plugin-installed",
       "produces": []
     },
     {
@@ -265,6 +266,7 @@
       "consumes": [],
       "name": "check-red-green-replay",
       "needs": [],
+      "precondition": "tdd-trailers-or-pull-request-event-admission",
       "produces": []
     },
     {
@@ -393,6 +395,7 @@
       "consumes": [],
       "name": "check-codex-skill-picker",
       "needs": [],
+      "precondition": "authenticated-codex-cli-with-installed-plugin",
       "produces": []
     },
     {
@@ -409,6 +412,7 @@
       "consumes": [],
       "name": "check-commit-pairs-source-and-test",
       "needs": [],
+      "precondition": "a-staged-test-beside-each-staged-source-file",
       "produces": []
     },
     {
@@ -433,6 +437,7 @@
       "consumes": [],
       "name": "check-fabro-graph-validity",
       "needs": [],
+      "precondition": "a-host-fabro-cli",
       "produces": []
     },
     {

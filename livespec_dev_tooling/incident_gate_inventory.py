@@ -7,7 +7,7 @@ import re
 from livespec_dev_tooling.check_inventory import annotation_values, inventory_lines
 from livespec_dev_tooling.incident_local_gates import GateSpec
 
-__all__: list[str] = ["inventory_gates", "timing_classes"]
+__all__: list[str] = ["inventory_gates", "precondition_names", "timing_classes"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-cerkbn
 # The existing aggregate inventory remains the population. An absent or invalid
@@ -50,6 +50,19 @@ def timing_classes(*, inventory: str) -> dict[str, str]:
     }
 
 
+def precondition_names(*, inventory: str) -> dict[str, str]:
+    """Map members to their one declared incident precondition, or an empty name.
+
+    A repeated member or repeated precondition is ambiguous, so it is never
+    carried into an expedited receipt as though it were a dependable probe.
+    """
+    declared: dict[str, list[str]] = {}
+    for member in inventory_lines(text=inventory):
+        values = annotation_values(member=member, key=_PRECONDITION_KEY)
+        declared.setdefault(member.name, []).append(values[0] if len(values) == 1 else "")
+    return {name: values[0] if len(values) == 1 else "" for name, values in declared.items()}
+
+
 def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
     """Build argv from the canonical inventory, retaining explicit deferrals.
 
@@ -64,10 +77,7 @@ def inventory_gates(*, inventory: str) -> tuple[GateSpec, ...]:
             " nothing was run, deferred or receipted"
         )
         raise ValueError(message)
-    preconditions = {
-        member.name: " ".join(annotation_values(member=member, key=_PRECONDITION_KEY))
-        for member in members
-    }
+    preconditions = precondition_names(inventory=inventory)
     return tuple(
         GateSpec(
             name=name,

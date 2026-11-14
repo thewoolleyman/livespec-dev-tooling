@@ -277,6 +277,7 @@
       "consumes": [],
       "name": "check-red-green-replay",
       "needs": [],
+      "precondition": "tdd-trailers-or-pull-request-event-admission",
       "produces": []
     },
     {
@@ -365,6 +366,7 @@
       "consumes": [],
       "name": "check-commit-pairs-source-and-test",
       "needs": [],
+      "precondition": "a-staged-test-beside-each-staged-source-file",
       "produces": []
     },
     {
