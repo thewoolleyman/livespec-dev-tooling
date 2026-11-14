@@ -37,6 +37,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -49,7 +51,7 @@ _MACHINE_ID = re.compile(r"^[0-9a-f]{32}$")
 _FOREIGN_MACHINE_ID = "0123456789abcdef0123456789abcdef"
 _REACHED = "VPS-IDENTITY-GUARD-REACHED"
 # A cold `uvx` resolves and caches ansible-core before the first play runs.
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 
 def _ansible_core_pin() -> str:
