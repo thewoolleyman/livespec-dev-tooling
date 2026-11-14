@@ -11,7 +11,11 @@ Actions resolves it at run time, then assert:
   the run in progress completes and GitHub keeps only the newest pending run in the group;
 - a `chore(master): release` push and a push whose head commit carries the
   `Factory-Override: EXPEDITED_INCIDENT_RESPONSE` trailer resolve to a group of their own;
-- a pull-request run and an incident-scratch push resolve to a group of their own;
+- a pull-request run resolves to ONE group per pull request, `<workflow>-pr-<number>`, and
+  `cancel-in-progress` evaluates true only for a pull_request event, so a newer push cancels the
+  run of the head it replaced (topic a-newer-push-to-a-pull-request-cancels-the-ci-run-of-the-head-it,
+  livespec-dev-tooling-7zslke), while every push evaluates it false;
+- an incident-scratch push resolves to a group of its own;
 - the workflow declares no `merge_group` trigger, so no merge-group run can join the group.
 
 The evaluator below implements exactly the GitHub expression subset the committed group uses
@@ -163,6 +167,26 @@ def _group(*, github: dict[str, Any]) -> str:
     return _EXPR.sub(resolve, raw)
 
 
+def _cancel(*, github: dict[str, Any]) -> bool:
+    raw = _workflow()["concurrency"]["cancel-in-progress"]
+    assert isinstance(raw, str), f"cancel-in-progress must be one event-scoped expression: {raw!r}"
+    match = _EXPR.fullmatch(raw.strip())
+    assert match is not None, f"cancel-in-progress is neither a boolean nor one expression: {raw!r}"
+    value = _Parser(tokens=_tokens(source=match.group(1)), context={"github": github}).parse()
+    assert isinstance(value, bool)
+    return value
+
+
+def _pull_request(*, number: int, run_id: str) -> dict[str, Any]:
+    return {
+        "workflow": _workflow()["name"],
+        "event_name": "pull_request",
+        "ref": f"refs/pull/{number}/merge",
+        "run_id": run_id,
+        "event": {"pull_request": {"number": number}},
+    }
+
+
 def _push(*, ref: str, message: str, run_id: str, earlier: tuple[str, ...] = ()) -> dict[str, Any]:
     """A push event whose head commit carries ``message``, after the ``earlier`` commits it also pushed."""
     commits = [{"message": text} for text in (*earlier, message)]
@@ -189,7 +213,7 @@ def test_ordinary_master_pushes_share_one_group_that_never_cancels_the_run_in_pr
         github=_push(ref=_MASTER, message="feat: a third thing\n\nBody text.", run_id="103")
     )
     assert first == second == third == "CI-master-push"
-    assert _workflow()["concurrency"]["cancel-in-progress"] is False
+    assert _cancel(github=_push(ref=_MASTER, message="fix: one thing", run_id="104")) is False
 
 
 def test_a_release_or_expedited_master_push_runs_in_a_group_of_its_own() -> None:
@@ -236,19 +260,17 @@ def test_a_release_or_expedited_master_push_runs_in_a_group_of_its_own() -> None
 
 
 def test_pull_request_and_incident_scratch_runs_never_join_the_master_group() -> None:
-    pull_request = _group(
-        github={
-            "workflow": _workflow()["name"],
-            "event_name": "pull_request",
-            "ref": "refs/pull/4010/merge",
-            "run_id": "301",
-            "event": {"pull_request": {"number": 4010}},
-        },
+    first_head = _group(github=_pull_request(number=4010, run_id="301"))
+    newer_head = _group(github=_pull_request(number=4010, run_id="303"))
+    other_pr = _group(github=_pull_request(number=4011, run_id="304"))
+    scratch_push = _push(
+        ref="refs/heads/incident-scratch/drill", message="fix: drill", run_id="302"
     )
-    scratch = _group(
-        github=_push(ref="refs/heads/incident-scratch/drill", message="fix: drill", run_id="302")
-    )
-    assert pull_request == "CI-301"
+    scratch = _group(github=scratch_push)
+    assert first_head == newer_head == "CI-pr-4010"
+    assert other_pr == "CI-pr-4011"
+    assert _cancel(github=_pull_request(number=4010, run_id="303")) is True
     assert scratch == "CI-302"
+    assert _cancel(github=scratch_push) is False
     triggers = _workflow()[True]  # PyYAML reads the bare `on:` key as boolean True.
     assert "merge_group" not in triggers

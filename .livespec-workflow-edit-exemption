@@ -1,41 +1,16 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/ci.yml's incident-ci step gains five lines that
-# print ONLY the enablement reading the released plan recorded (one json.dumps of
-# the plan's "enablement" field, then one echo), right after the step reads the
-# plan's mode. The whole plan is never printed: it carries an environment map. No
-# existing workflow line is deleted or modified; no job, trigger, permission,
-# runner, concurrency group or required check changes; the added work is one
-# in-process JSON read, so CI runtime does not change.
+# The change: .github/workflows/ci.yml's top-level concurrency block. A pull_request
+# run now joins the group `<workflow>-pr-<pull request number>` with cancel-in-progress
+# true, so a newer push to a pull request cancels the CI run of the head it replaced.
+# Every push run keeps its existing group (B' `master-push`, or its own run_id) with
+# cancel-in-progress false, unchanged. The comment above the block is updated to say
+# pull requests now group per pull request. This implements the ratified topic
+# a-newer-push-to-a-pull-request-cancels-the-ci-run-of-the-head-it (row 5c).
 #
-# The maintainer approved this change in session on 2026-11-13 ("Yes I approve the
-# CI change"; relayed by legacy-coordinator-agent as "I approved A"), recorded on
-# the work item with the approval:workflow-edit-additive label.
-work_item=livespec-dev-tooling-ahl6vz
-change=additive
-ci_runtime=no-significant-increase
-reason=ADDITIVE tier (approval:workflow-edit-additive), maintainer-approved 2026-11-13: incident-ci prints only the released plan's enablement reading to its step log, so the exdkra CI-plan vantage can be read back from the run (contracts.md, expedited incident execution). Five added lines; no existing workflow line changes.
-#
-# ---- Preceding entry, kept beside this one as the coordinator directed (2026-11-13) ----
-# The guard (dev-tooling/check-no-workflow-edits.sh) parses exactly ONE live work_item= and
-# reason= line, and a declaration inherited from the base authorizes nothing, so the
-# bqnzcm.4 slice 2a entry is preserved verbatim below as comments, not as a second live
-# declaration.
-# | # Workflow-edit exemption — one exemption binds to one reviewed change.
-# | #
-# | # The change: ONE NEW FILE, .github/workflows/reusable-incident-ci-publish.yml,
-# | # the incident CI publisher of livespec-dev-tooling-bqnzcm.4 (slice 2a). No
-# | # existing workflow line is deleted or modified. The workflow is called only by
-# | # `workflow_call`, and nothing calls it until slice 2b pins ci.yml to the master
-# | # commit that carries it, so CI runtime does not change.
-# | #
-# | # Its one job holds only `id-token: write` (top-level `permissions: {}`): that
-# | # permission lets the job request its own OIDC identity token, which the
-# | # independent controller verifies against its pinned CI identity policy. It is
-# | # not a workflow write scope and grants no credential beyond the job's own
-# | # identity. No secret is passed in.
-# | work_item=livespec-dev-tooling-bqnzcm.4
-# | change=additive
-# | ci_runtime=no-significant-increase
-# | reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization: adds the new reusable workflow reusable-incident-ci-publish.yml, whose single publish job holds only id-token: write and posts a PASSED incident CI aggregate to the controller's /ci/publish (spec v207, an-expedited-pull-request-s). No existing workflow line changes, and nothing calls it until slice 2b.
-# | #
+# Tier: MAINTAINER. It modifies existing workflow lines (the group expression and
+# cancel-in-progress) and runs less CI (replaced PR heads only); the newest head of
+# every pull request still runs the full aggregate, so no gate is removed from any
+# head that can merge.
+work_item=livespec-dev-tooling-7zslke
+reason=Row 5c: cancel the CI run of a replaced pull-request head (about 1,960 runner-minutes a day recoverable in livespec-dev-tooling on 2026-11-13); maintainer approval required for the modified concurrency lines.

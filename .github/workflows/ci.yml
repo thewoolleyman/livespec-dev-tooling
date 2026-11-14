@@ -133,17 +133,29 @@ on:
 # livespec-dev-tooling-qzw2gf). Every push to refs/heads/master joins ONE group with
 # cancel-in-progress false: the run in progress always completes, and when a newer
 # master push joins, GitHub cancels the older run still PENDING in the group, so only
-# the newest pending run is kept. A dropped run is never its commit's verdict. Every
-# other run groups by its own run_id and is never held: pull requests, incident-scratch
+# the newest pending run is kept. A dropped run is never its commit's verdict. Pull
+# requests group per pull request (below). Every other run groups by its own run_id and
+# is never held: incident-scratch
 # pushes, `chore(master): release` commits, the incident recovery principal's
 # `Revert complete incident PR #` commits, and every push in which ANY commit carries a
 # `Factory-Override:` trailer, which covers the expedited-incident trailer (a superset, so
 # no expedited run is ever dropped and this file never names the incident flag). This repository calls no
 # master-health reconciler, which the allowance requires (check: livespec-dev-tooling-xtofr3).
+#
+# Per-pull-request concurrency (SPECIFICATION/constraints.md §"CI matrix shape", topic
+# a-newer-push-to-a-pull-request-cancels-the-ci-run-of-the-head-it; livespec-dev-tooling-7zslke).
+# A pull_request run joins `<workflow>-pr-<number>` with cancel-in-progress true (the
+# trailing pull_request.number interpolation is empty on every push), so a
+# newer push to the pull request cancels the run of the head it replaced, pending or in
+# progress; the newest head's run still runs the full aggregate. cancel-in-progress is
+# true ONLY for pull_request events, so the B' master-push group above and every
+# run_id-keyed push (release, revert principal, Factory-Override, incident-scratch) keep
+# cancel-in-progress false exactly as before. The key carries the workflow name because
+# concurrency groups are shared across a repository's workflows.
 concurrency:
   group: >-
-    ${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref == 'refs/heads/master' && !startsWith(github.event.head_commit.message, 'chore(master): release') && !startsWith(github.event.head_commit.message, 'Revert complete incident PR #') && !contains(join(github.event.commits.*.message, ' '), 'Factory-Override:')) && 'master-push' || github.run_id }}
-  cancel-in-progress: false
+    ${{ github.workflow }}-${{ github.event_name == 'pull_request' && 'pr-' || ((github.event_name == 'push' && github.ref == 'refs/heads/master' && !startsWith(github.event.head_commit.message, 'chore(master): release') && !startsWith(github.event.head_commit.message, 'Revert complete incident PR #') && !contains(join(github.event.commits.*.message, ' '), 'Factory-Override:')) && 'master-push' || github.run_id) }}${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check-python:
