@@ -695,18 +695,22 @@ fabro_server_instances:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
-          # The candidate runs python-agent-v1.204.0, the image the orchestrator's
-          # launch build pins (v0.326.0, f4c05ab80e4e; digest
-          # sha256:a337831c976b19f88fce227544e513d48ff3966a75099b2b117cfe905eb6babf),
+          # The candidate runs python-agent-v1.207.0, the image the orchestrator's
+          # launch build pins (v0.328.0, c1f8445faf3b; digest
+          # sha256:793fa5dca89a9579984d0008d3e5fc64d56b7af668d2ac3e80bbe2621f419561),
           # proven in-pod here first (livespec-dev-tooling-nfnvvb). Its parity is
           # read against a pod from v1.188.1, which the fleet instance above still
-          # runs and moves to only after that parity read passes.
+          # runs and moves to only after that parity read passes. v1.204.0 (digest
+          # sha256:a337831c976b19f88fce227544e513d48ff3966a75099b2b117cfe905eb6babf,
+          # the v0.326.0 pin) passed that read here on run 01M7BCBM624T; the
+          # v0.328.0 roll moved the pin to v1.207.0, built from the same
+          # docker/fabro-sandbox inputs, so this repeats the proof on the current pin.
           # v1.188.1 carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
           # livespec-dev-tooling-wrlwvk, #3424), first proven in-pod here on v1.173.0
           # (run 01M6MQBBRZ7A); its parity proof against v1.136.2 was taken here
           # (run 01M6XWZJ2NF2).
-          # ROLLBACK: python-agent-v1.188.1.
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.204.0
+          # ROLLBACK: python-agent-v1.204.0.
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.207.0
           cpu_cores: 6
           memory_mb: 7629
       kubernetes-rust:
