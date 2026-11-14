@@ -23,5 +23,7 @@
   "--required-job=check-check-coverage-incremental",
   "--required-job=check-metadata-batch",
   "--required-job=incident-ci",
-  "--required-job=ci-green"
+  "--required-job=ci-green",
+  "--ci-identity-policy",
+  "/etc/livespec-incident/ci-identity.json"
 ]
