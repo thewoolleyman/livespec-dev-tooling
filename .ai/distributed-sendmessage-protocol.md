@@ -72,10 +72,12 @@ root-owned Claude Code managed-settings drop-in,
 
 There is NO hook that blocks pane input. An earlier version installed a
 PreToolUse guard, `/usr/local/lib/claude-code/pane-input-guard.py`, that denied
-typing into Claude panes; the maintainer retired it on 2026-11-14 and the role
-now removes it from every host. If a session still shows a
-`BLOCKED: ... Typing into another agent session's pane` denial, the session
-started before the guard was removed: restart it.
+typing into Claude panes; the maintainer retired it on 2026-11-14. The role
+now installs an allow-all stub at that path: a session started before the
+retirement keeps the old hook cached, and a missing file there would block
+every Bash call in it. If a session still shows a
+`BLOCKED: ... Typing into another agent session's pane` denial, it predates the
+stub: restart it.
 
 The rule is also carried in the managed `/etc/claude-code/CLAUDE.md`, which
 every session loads.
