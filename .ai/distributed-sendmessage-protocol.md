@@ -21,7 +21,10 @@ maintainer ruled this on 2026-11-14 (plan `distributed-sendmessage`, epic
    machines labelled `Remote Control`.
 2. Call `SendMessage` with `to` set to the session's name, exactly as the
    listing prints it. There is no machine prefix. Append the ` [ref]` only when
-   two rows share a name or an error asks you to.
+   two rows share a name or an error asks you to. A `[ref]` is local to the
+   machine that printed it, and the same session shows a different ref on
+   another host, so never pass a ref read on one machine to a session on
+   another. Use the bare name.
    SendMessage refuses a name that matches no listed session (it asks you to
    list or disambiguate). It does not queue the message for a session that
    is not connected yet, so an unlisted peer gets a ledger comment instead.
@@ -87,11 +90,11 @@ The provisioning that installs this:
   `ansible/roles/claude_distributed_sendmessage`, applied by
   `just ansible-apply ansible/claude-messaging.yml` from the dev host. The
   hosts are the inventory group `interactive_claude_hosts`.
-- hetzner-xubuntu: `hetzner-xubuntu-info` adds the same role to
-  `provisioning/ansible/sessions.yml` once its `provisioning/livespec-dev-tooling.pin`
-  moves to a release that carries the role (plan child
-  livespec-dev-tooling-ajsrg3). Until that lands, hetzner-xubuntu is not
-  covered.
+- hetzner-xubuntu: `hetzner-xubuntu-info` converges the same role from
+  `provisioning/ansible/sessions.yml` at its `provisioning/livespec-dev-tooling.pin`
+  (hetzner-xubuntu-info#128).
+
+Proved live on 2026-11-14 with fresh sessions on hetzner-xubuntu and vmi3006760. Each listed the other as `Remote Control`, and messages went both ways. The guard denied text into a Claude pane and allowed key-only input. The evidence is on epic livespec-dev-tooling-rlwppp.
 
 To check a session picked the policy up, run `/status`: its setting sources
 must name the managed source. Claude Code reads managed sources first-wins, so
