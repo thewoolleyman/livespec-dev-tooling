@@ -299,6 +299,7 @@ check:
         check-master-ci-green
         check-match-keyword-only
         check-newtype-domain-primitives
+        check-no-ambient-environment-loops
         check-no-direct-destructive-cli
         check-no-direct-tool-invocation
         check-no-except-outside-io
@@ -1033,6 +1034,15 @@ check-match-keyword-only:
 
 check-newtype-domain-primitives:
     uv run python -m livespec_dev_tooling.checks.newtype_domain_primitives
+
+# Environment-independent test coverage (livespec-dev-tooling-dpkz32;
+# contracts.md §"`no_ambient_environment_loops` check"). Fails each `for` /
+# `async for` under tests_tree_prefix whose iterable reads os.environ, directly,
+# through an import alias, or through a same-scope name bound from os.environ,
+# os.environ.copy() or dict(os.environ), naming the single-expression rewrite.
+# Static source read; no pragma, flag or environment variable exempts a loop.
+check-no-ambient-environment-loops:
+    uv run python -m livespec_dev_tooling.checks.no_ambient_environment_loops
 
 # Destructive-default CLI wrapping gate (livespec/SPECIFICATION/
 # non-functional-requirements.md §"Destructive-default CLI wrapping"):

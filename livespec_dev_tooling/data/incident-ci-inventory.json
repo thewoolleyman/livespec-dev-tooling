@@ -129,6 +129,14 @@
     },
     {
       "batch": "check-python-batch",
+      "classification": "fast",
+      "consumes": [],
+      "name": "check-no-ambient-environment-loops",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-python-batch",
       "classification": "slow",
       "consumes": [],
       "name": "check-no-except-outside-io",

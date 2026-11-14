@@ -493,6 +493,7 @@ jobs:
           just check-main-guard || failed="$failed check-main-guard"
           just check-match-keyword-only || failed="$failed check-match-keyword-only"
           just check-newtype-domain-primitives || failed="$failed check-newtype-domain-primitives"
+          just check-no-ambient-environment-loops || failed="$failed check-no-ambient-environment-loops"
           just check-no-except-outside-io || failed="$failed check-no-except-outside-io"
           just check-no-inheritance || failed="$failed check-no-inheritance"
           just check-no-lloc-soft-warnings || failed="$failed check-no-lloc-soft-warnings"

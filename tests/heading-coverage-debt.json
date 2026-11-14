@@ -1031,13 +1031,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes",
-    "work_item": "livespec-dev-tooling-dpkz32",
-    "first_seen": "2026-11-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a test-only commit runs only its staged tests unless shared test support changed",
     "work_item": "livespec-dev-tooling-lugvnr",
     "first_seen": "2026-10-30"
