@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -41,9 +42,30 @@ _NOW = 1_800_000_000
 _BEAT = "2027-01-15T08:00:00Z"  # == _NOW
 _GMK, _PE, _HP = "gmktec-xubuntu", "poweredge-xubuntu", "hp-xubuntu"
 _FLAVOR = {_GMK: "gates-flavor", _PE: "gates-poweredge-flavor", _HP: "gates-hp-flavor"}
-# The committed static order of cluster-queue-gates.yaml restricted to these three
-# lanes (gamingpc, gmktec, hp, poweredge since the 2026-11-14 fastest-first re-read).
-_STATIC = [_GMK, _HP, _PE]
+
+
+def _committed_lane_order() -> list[str]:
+    """The nodes of these three lanes, in the flavor order committed for gates-cq.
+
+    Read from _STATIC_QUEUE, the file the reconciler reads through
+    GATE_LANE_STATIC_QUEUE_FILE, so no scenario pins a committed order. A flavor
+    line is `- name: <unquoted>` at the flavor indent under gates-cq's `flavors:`.
+    """
+    for document in re.split(r"(?m)^---\s*$", _STATIC_QUEUE.read_text(encoding="utf-8")):
+        if re.search(r"(?m)^kind: ClusterQueue\s*$", document) and re.search(
+            r"(?m)^  name: gates-cq\s*$", document
+        ):
+            names = re.findall(
+                r"(?m)^        - name: ([A-Za-z0-9][A-Za-z0-9.-]*)\s*$",
+                document.split("\n      flavors:\n", 1)[1],
+            )
+            node_of = {flavor: node for node, flavor in _FLAVOR.items()}
+            return [node_of[name] for name in names if name in node_of]
+    raise AssertionError(f"no gates-cq flavor list in {_STATIC_QUEUE}")
+
+
+_STATIC = _committed_lane_order()
+assert sorted(_STATIC) == sorted(_FLAVOR), _STATIC
 _GATE_CPU = 5
 
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
@@ -391,7 +413,8 @@ def test_a_lane_whose_node_cannot_run_the_gate_architecture_is_neither_free_nor_
     cluster = _pool(tmp_path, [arm, _free(_PE), _free(_HP)])
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
-    assert cluster.order == [_FLAVOR[_HP], _FLAVOR[_PE], _FLAVOR[_GMK]]
+    # The ineligible lane sorts last; the others keep the committed order.
+    assert cluster.order == [*(_FLAVOR[n] for n in _STATIC if n != _GMK), _FLAVOR[_GMK]]
     assert f"{_GMK}(ineligible-architecture)" in run.stdout
     assert "UNREAD" not in run.stdout
 
@@ -430,7 +453,7 @@ def test_container_worker_flavors_stay_in_front_and_quota_is_never_changed(
     quota = {f["name"]: f["resources"] for f in before["spec"]["resourceGroups"][0]["flavors"]}
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
-    assert cluster.order == [worker, _FLAVOR[_HP], _FLAVOR[_PE], _FLAVOR[_GMK]]
+    assert cluster.order == [worker, *(_FLAVOR[n] for n in _STATIC if n != _GMK), _FLAVOR[_GMK]]
     after = json.loads((cluster.fake / "cq.json").read_text(encoding="utf-8"))
     assert {
         f["name"]: f["resources"] for f in after["spec"]["resourceGroups"][0]["flavors"]
