@@ -137,9 +137,45 @@ jobs:
           set -uo pipefail
           # `gh pr merge --auto` is idempotent — re-running on a PR
           # that already has auto-merge set returns 0.
+          # Capture the arm call's stderr so a refusal can be classified
+          # (livespec-dev-tooling-cxj64i); it is replayed to the log below.
+          merge_err="$(mktemp)"
+          exec 3>&2 2>"$merge_err"
           if gh pr merge "$PR" --repo "$REPO" --auto --rebase; then
+            exec 2>&3; cat "$merge_err" >&2
+            # Arm read-back (cxj64i): the call can succeed while the PR stays
+            # unarmed (#4634, #4651, #4590). Only "OPEN true" (armed) or a PR
+            # that already merged counts; anything else, including a failed
+            # read, is NOT armed. Retry the arm once, then fail loudly.
+            arm_state() { gh pr view "$PR" --repo "$REPO" --json state,autoMergeRequest -q '"\(.state) \(.autoMergeRequest != null)"' 2>/dev/null || echo "READ-FAILED"; }
+            arm_ok() { case "$1" in "OPEN true"|MERGED*) return 0 ;; *) return 1 ;; esac; }
+            state="$(arm_state)"
+            if ! arm_ok "$state"; then
+              echo "::warning::PR #$PR read back as '$state' after gh pr merge --auto; retrying the arm once"
+              gh pr merge "$PR" --repo "$REPO" --auto --rebase || true
+              state="$(arm_state)"
+              if ! arm_ok "$state"; then
+                echo "::error::PR #$PR is NOT armed: read back '$state' after two gh pr merge --auto calls"
+                exit 1
+              fi
+            fi
             echo "Auto-merge enabled on PR #$PR (rebase strategy)"
           else
+            exec 2>&3; cat "$merge_err" >&2
+            # Unstable-status fallback (cxj64i): GitHub refuses to ENABLE
+            # auto-merge on a PR whose required checks have passed but which
+            # reads "unstable" because a NON-required check failed, often this
+            # workflow's own earlier failed run. ONLY that refusal falls back to
+            # the merge API, which applies branch protection's required checks
+            # itself and refuses a PR they do not admit. The App behind APP_ID
+            # (thewoolleyman-factory-bot, 3668528) is NOT the bypass actor on the
+            # master-incident-recovery-bypass ruleset (Integration 5656677).
+            if grep -qi 'unstable status' "$merge_err"; then
+              if gh pr merge "$PR" --repo "$REPO" --rebase; then
+                echo "PR #$PR read unstable only on non-required checks; the merge API merged it (rebase strategy)"
+                exit 0
+              fi
+            fi
             echo "::error::failed to enable auto-merge on PR #$PR"
             exit 1
           fi
