@@ -448,7 +448,7 @@ Every trigger description MUST name the emitter path, the receiver path, the own
 
 ## Interactive fleet seat profile
 
-**Scope.** This section governs the interactive fleet seats this repository's tooling launches on the dev host: the long-lived Claude Code sessions that coordinate, monitor, drive a plan or run a loop on the maintainer's behalf, as distinct from factory runs, which §"Fabro factory host provisioning" and the factory's own configuration govern. It fixes where a seat's model, effort and context bound are set and how conformance is observed. It does not fix their values, which are the maintainer's call. The messaging rule under "Seats message by SendMessage, never by pane typing." and its managed policy also reach every interactive host named under "Where the policy is converged.", not only the dev host.
+**Scope.** This section governs the interactive fleet seats this repository's tooling launches on the dev host: the long-lived Claude Code sessions that coordinate, monitor, drive a plan or run a loop on the maintainer's behalf, as distinct from factory runs, which §"Fabro factory host provisioning" and the factory's own configuration govern. It fixes where a seat's model, effort and context bound are set and how conformance is observed. It does not fix their values, which are the maintainer's call. The messaging guidance under "Seats prefer SendMessage; pane typing stays allowed." and its managed policy also reach every interactive host named under "Where the policy is converged.", not only the dev host.
 
 **One committed profile.** This repository MUST carry ONE committed fleet seat profile that names, for each seat class it defines (at least one class for coordinator and monitor seats and one for implementing seats), the model, the reasoning effort and the context bound a seat of that class runs with. The context bound MUST state the auto-compact threshold, and it MUST be set below the model's context ceiling. For a loop or monitor class it MUST also state a bounded lifetime after which the seat writes a ledger-held handoff and is replaced by a fresh session. Changing a value for a class MUST be one edit to the profile.
 
@@ -456,20 +456,13 @@ Every trigger description MUST name the emitter path, the receiver path, the own
 
 **Observable in llm-spend.** The model and effort a seat runs with MUST be the ones its class names in the profile. They appear as `spend.model` and `spend.effort` on that seat's responses in the `llm-spend` dataset, so conformance MUST be judged there and not from the launch command alone.
 
-**Seats message by SendMessage, never by pane typing.** An interactive Claude Code session MUST address another Claude Code session with the `SendMessage` tool, on the same host or another, and MUST NOT type text into a terminal pane that hosts a Claude agent. This repository MUST carry one Ansible role, `claude_distributed_sendmessage`, that installs the following as root-owned Claude Code MANAGED policy on each interactive host it is applied to:
+**Seats prefer SendMessage; pane typing stays allowed.** An interactive Claude Code session SHOULD address another Claude Code session with the `SendMessage` tool, on the same host or another, because text typed into a terminal pane lands in the input line the maintainer may be typing into. Typing into another session's pane MUST remain available: no hook or policy this repository installs may refuse it, because it is sometimes necessary, for example to run a slash command, answer a picker, reach a session `SendMessage` cannot reach, or reach a non-Claude seat. This repository MUST carry one Ansible role, `claude_distributed_sendmessage`, that installs the following as root-owned Claude Code MANAGED policy on each interactive host it is applied to:
 
 - `remoteControlAtStartup: true`, so every interactive session signed in to claude.ai joins Remote Control and is listed and messageable from the other hosts;
 - `crossSessionInbound: accept`, so a permission-mode difference between sender and receiver does not hold a message behind an approval dialog;
-- a PreToolUse Bash hook, the pane-input guard;
-- the rule itself, in the managed `CLAUDE.md`.
+- the guidance itself, in the managed `CLAUDE.md`: prefer `SendMessage`, and type into a pane when that is necessary.
 
-The pane-input guard MUST refuse `herdr pane send-text`, `herdr pane run` and `herdr agent prompt` whose target pane hosts a Claude agent, and MUST fail closed when it cannot determine that target's occupant. It MUST refuse literal-text `tmux send-keys` and `tmux paste-buffer` into any pane, since tmux is a retired transport. Every refusal MUST name `SendMessage` and `ListAgents`. Key-only `send-keys`, through herdr or tmux, MUST be admitted. For herdr text input, the guard MUST also admit:
-
-- input into the caller's own pane, on the local herdr;
-- input into a pane that hosts no agent;
-- input into a pane hosting a non-Claude agent, which cannot receive SendMessage.
-
-An internal error in the guard itself admits the command, with a note on stderr, so that a guard defect cannot disable every Bash call. The role MUST run the guard's regression corpus against the staged copy before it replaces an installed guard. The protocol agents follow is `.ai/distributed-sendmessage-protocol.md`.
+The role MUST NOT install a PreToolUse hook, or any other policy, that refuses input into a pane. At the retired pane-input guard's path, `/usr/local/lib/claude-code/pane-input-guard.py`, it MUST keep an allow-all stub that admits every Bash call, because a session started while the guard was wired keeps the old hook until it restarts and would fail every Bash call if that path were missing. The protocol agents follow is `.ai/distributed-sendmessage-protocol.md`.
 
 **Where the policy is converged.** The playbook `ansible/claude-messaging.yml` MUST apply `claude_distributed_sendmessage` to every member of the inventory group `interactive_claude_hosts`, and the dev host `vps` MUST be a member of that group. `gamingpc-xubuntu` MUST also be a member of `interactive_claude_hosts`. `hetzner-xubuntu` is an interactive host whose own repository, `hetzner-xubuntu-info`, MUST converge `claude_distributed_sendmessage` from its committed provisioning at its pin of this repository; it MUST NOT be added to this repository's inventory.
 

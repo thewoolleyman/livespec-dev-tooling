@@ -31,9 +31,9 @@ In SPECIFICATION/non-functional-requirements.md §"Interactive fleet seat profil
 
 - `remoteControlAtStartup: true`, so every interactive session signed in to claude.ai joins Remote Control and is listed and messageable from the other hosts;
 - `crossSessionInbound: accept`, so a permission-mode difference between sender and receiver does not hold a message behind an approval dialog;
-- the guidance itself, in the managed `CLAUDE.md`: prefer `SendMessage`, and type into a pane only when that is necessary.
+- the guidance itself, in the managed `CLAUDE.md`: prefer `SendMessage`, and type into a pane when that is necessary.
 
-The role MUST NOT install a PreToolUse hook, or any other policy, that refuses input into a pane. It MUST remove the retired pane-input guard, `/usr/local/lib/claude-code/pane-input-guard.py`, from a host that carries it. The protocol agents follow is `.ai/distributed-sendmessage-protocol.md`.
+The role MUST NOT install a PreToolUse hook, or any other policy, that refuses input into a pane. At the retired pane-input guard's path, `/usr/local/lib/claude-code/pane-input-guard.py`, it MUST keep an allow-all stub that admits every Bash call, because a session started while the guard was wired keeps the old hook until it restarts and would fail every Bash call if that path were missing. The protocol agents follow is `.ai/distributed-sendmessage-protocol.md`.
 
 Leave "**Where the policy is converged.**" and "**The protocol is linked from agent guidance.**" unchanged.
 
@@ -49,4 +49,4 @@ When that session runs `herdr pane send-text <pane> <text>` against a pane that 
 
 Then no hook installed by the role refuses the command
 
-And the managed `CLAUDE.md` that session loaded tells it to prefer `SendMessage` and to type into a pane only when that is necessary
+And the managed `CLAUDE.md` that session loaded tells it to prefer `SendMessage` and that typing into a pane stays available when that is necessary

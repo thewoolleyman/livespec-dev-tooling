@@ -4071,9 +4071,9 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a seat that types a message into a Claude seat's pane is refused and pointed at SendMessage",
-    "test": "tests.consumer.test_claude_messaging_guards.test_the_pane_guard_denies_text_into_a_claude_pane_and_names_sendmessage",
-    "reason": "Consumer-tier proof: the pane-input guard is loaded in-process and refuses send-text into a Claude pane naming SendMessage and ListAgents, while key-only send-keys and a Codex pane pass (sibling test test_the_pane_guard_allows_codex_panes_empty_panes_and_key_only_input, plus the guard's own 61-case corpus in test_each_installed_guard_passes_its_own_regression_corpus). The live refusal on a fresh hetzner-xubuntu session is host-captured on plan epic livespec-dev-tooling-rlwppp."
+    "heading": "## Scenario: a seat may type into a Claude seat's pane and is guided to prefer SendMessage",
+    "test": "tests.consumer.test_claude_messaging_guards.test_the_managed_dropin_forces_remote_control_and_blocks_no_pane_input",
+    "reason": "Consumer-tier: the test reads the role's committed defaults and asserts the managed drop-in forces remoteControlAtStartup and crossSessionInbound accept and wires no hook, so nothing the role installs refuses pane input. The managed CLAUDE.md guidance text is asserted by the sibling test test_the_managed_memory_prefers_sendmessage_and_allows_pane_typing, and the live behaviour is host-captured on epic livespec-dev-tooling-rlwppp."
   },
   {
     "spec_root": "SPECIFICATION",
