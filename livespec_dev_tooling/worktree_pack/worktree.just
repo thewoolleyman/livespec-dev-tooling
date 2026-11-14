@@ -60,10 +60,12 @@ worktree-reap *args:
 # finish reports DIED_WITHOUT_VERDICT — it can never read as a pass.
 # ---------------------------------------------------------------
 
-# Launch a gate command detached; prints the run id and returns fast.
+# Launch a gate command detached; prints the run id and returns fast. On a
+# host that provides local-gate.slice the gate runs in a scope there
+# (local-gate-scope.sh); elsewhere it launches exactly as before.
 [positional-arguments]
 gate-start *args:
-    ./dev-tooling/gate-run.sh start "$@"
+    ./dev-tooling/local-gate-scope.sh ./dev-tooling/gate-run.sh start "$@"
 
 # Block until a run reaches a terminal state; exits with its verdict.
 [positional-arguments]
