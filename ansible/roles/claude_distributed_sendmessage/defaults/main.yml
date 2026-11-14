@@ -20,8 +20,8 @@ claude_distributed_sendmessage_dropin_dir: "{{ claude_distributed_sendmessage_po
 claude_distributed_sendmessage_dropin: "{{ claude_distributed_sendmessage_dropin_dir }}/50-distributed-sendmessage.json"
 claude_distributed_sendmessage_memory: "{{ claude_distributed_sendmessage_policy_dir }}/CLAUDE.md"
 claude_distributed_sendmessage_lib_dir: /usr/local/lib/claude-code
-# RETIRED: the pane-input guard hook is no longer installed; the role removes
-# this path from hosts that carried it.
+# RETIRED: the pane-input guard hook is no longer wired. This path now holds
+# an allow-all stub for sessions that still carry the old cached hook.
 claude_distributed_sendmessage_guard_dest: "{{ claude_distributed_sendmessage_lib_dir }}/pane-input-guard.py"
 
 # remoteControlAtStartup: every interactive session connects to Remote Control,
