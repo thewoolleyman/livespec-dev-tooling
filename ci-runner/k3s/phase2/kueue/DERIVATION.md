@@ -1782,7 +1782,10 @@ gate-job-resources (epic livespec-dev-tooling-ukoeah). It covers:
   the PowerEdge's rises above 1.25x 16.2 min.
 A restore of 15 cpu still satisfies v223's two-Job floor. Apply the change and
 any restore with `just ansible-apply ansible/ci-pool.yml --tags
-ci_converge_unit --limit gmktec-xubuntu`.
+ci_converge_unit --limit poweredge-xubuntu`. The converge unit runs only on the
+k3s server, and an apply limited to gmktec skips it. The change was applied
+that way at about 21:00Z on 2026-11-14, and the live `gates-cq` read back
+`gates-flavor` 10 cpu / 16Gi.
 
 **Result.** Due within 24 h of this commit, recorded here.
 
