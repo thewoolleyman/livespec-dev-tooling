@@ -784,6 +784,24 @@ gate_arches="$(awk -v n="${gate_class_name}" '$1 == "gate" && $2 == n && n != "g
 substitute GATE_ARCHES       "${gate_arches//,/, }"
 substitute QUEUE             "${queue}"
 substitute CPU               "${cpu}"
+# Whole CPUs of the cpu request, floored at 1, for the gate container's
+# worker-count env (PYTEST_XDIST_AUTO_NUM_WORKERS, OMP_NUM_THREADS). The request
+# is a Kubernetes quantity: a whole number ("5"), a decimal ("1.5") or
+# millicores ("500m"). Anything else is refused rather than rendered, because
+# the same string is the pod's cpu request.
+case "${cpu}" in
+  [0-9]*m)
+    millis="${cpu%m}"
+    case "${millis}" in *[!0-9]*) echo "FATAL: --cpu ${cpu} is not a cpu quantity" >&2; exit 2 ;; esac
+    cpu_workers="$((10#${millis} / 1000))" ;;
+  [0-9]*.[0-9]* | [0-9]*)
+    whole="${cpu%%.*}"; frac="${cpu#"${whole}"}"; frac="${frac#.}"
+    case "${whole}${frac}" in *[!0-9]*) echo "FATAL: --cpu ${cpu} is not a cpu quantity" >&2; exit 2 ;; esac
+    cpu_workers="$((10#${whole}))" ;;
+  *) echo "FATAL: --cpu ${cpu} is not a cpu quantity" >&2; exit 2 ;;
+esac
+[ "${cpu_workers}" -ge 1 ] || cpu_workers=1
+substitute CPU_WORKERS       "${cpu_workers}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"
 substitute CACHE_KILL_SWITCH "${cache_kill_switch}"
