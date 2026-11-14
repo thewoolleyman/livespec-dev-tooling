@@ -37,13 +37,10 @@ def _argv(*, variables: dict[str, Any]) -> list[str]:
 
 
 def test_no_approved_publisher_commit_provisions_no_policy() -> None:
-    # The empty list is SET here, so a committed rollout that lists a commit does
-    # not break the property: an empty list leaves production's render unchanged.
+    # The empty list is SET here to prove the explicit disablement behavior;
+    # production's committed configuration instead approves its released publisher.
     variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": []}
     assert "--ci-identity-policy" not in _argv(variables=variables)
-    base.assert_production_render_matches_fixture(
-        rendered=base.render_installation(variables=variables), variables=variables
-    )
 
 
 def test_production_configuration_provisions_the_released_publisher() -> None:
