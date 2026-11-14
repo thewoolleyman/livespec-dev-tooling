@@ -70,6 +70,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.commit_message import append_trailers  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     ConfigParseError,
     derive_source_prefixes,
@@ -203,24 +204,19 @@ def _write_run_id_trailer(*, message_path: Path, factory_run_id: str) -> None:
     trailer — because no other trailer key this fleet writes is a prefix
     of `Factory-Run-Id` or has it as one.
 
+    A message with no content is left empty (see `commit_message`): git runs this
+    hook before its empty-message abort, and a trailer written here would turn the
+    aborted commit into one whose whole message is the trailer.
+
     Failure is not raised: `check=False` and the returncode is ignored on
     purpose, so a git that cannot rewrite the message loses the trailer
     rather than the commit.
     """
-    _ = subprocess.run(  # noqa: S603
-        [  # noqa: S607
-            "git",
-            "interpret-trailers",
-            "--in-place",
-            "--if-exists",
-            "replace",
-            "--trailer",
-            f"{_RUN_ID_TRAILER_KEY}: {factory_run_id}",
-            str(message_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    append_trailers(
+        message_path=message_path,
+        text=_message_text(message_path=message_path),
+        trailers=((_RUN_ID_TRAILER_KEY, factory_run_id),),
+        options=("--if-exists", "replace"),
     )
 
 
