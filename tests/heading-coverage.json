@@ -3384,9 +3384,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a test loop over os.environ fails the ambient-environment check on every host, while a single-expression rewrite passes",
-    "test": "TODO",
-    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario: `no_ambient_environment_loops` run over fixture test trees on a host environment with and without a `GIT_` variable fails a loop over `os.environ` (pragma or `dict(os.environ)` alias included) and passes the single-expression rewrite. livespec-dev-tooling-dpkz32 owns it; the implementation PR that ships it replaces this row.",
-    "work_item": "livespec-dev-tooling-dpkz32"
+    "test": "tests.consumer.test_no_ambient_environment_loops.test_a_loop_over_os_environ_fails_on_every_host_while_the_rewrite_passes",
+    "reason": "Consumer-tier: the shipped `no_ambient_environment_loops` check run over one fixture test tree, once with a `GIT_` variable in the process environment and once with none, returns the same verdict both times: exit 4 naming the file, the line and the single-expression rewrite of a loop over `os.environ` (its body line carrying `# pragma: no cover`) and of the same loop over a name bound from `dict(os.environ)`, and no finding for the comprehension rewrite. The same module pins the check as a member of the `just check` aggregate and of `check-targets.txt` (livespec-dev-tooling-dpkz32)."
   },
   {
     "spec_root": "SPECIFICATION",
