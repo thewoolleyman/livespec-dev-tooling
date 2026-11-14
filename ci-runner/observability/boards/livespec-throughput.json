@@ -42,7 +42,7 @@
         "width": 6
       },
       "annotation": {
-        "name": "FLEET — M1 non-docs PRs merged green per hour (7 d)",
+        "name": "FLEET — M1 non-docs PRs merged green per hour (7 d) — 7-day floor 6.90/h",
         "description": "COUNT of merged-green, non-docs, non-release pull requests across every repository, one line, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
@@ -68,7 +68,6 @@
             "value": false
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 3600
       }
@@ -120,7 +119,6 @@
             "op": "exists"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -149,7 +147,7 @@
         "width": 4
       },
       "annotation": {
-        "name": "livespec-dev-tooling — M1 merged green per hour (7 d)",
+        "name": "livespec-dev-tooling — M1 merged green per hour (7 d) — 7-day floor 2.73/h",
         "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec-dev-tooling only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
@@ -180,7 +178,6 @@
             "value": "livespec-dev-tooling"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 3600
       }
@@ -237,7 +234,6 @@
             "op": "exists"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -298,7 +294,6 @@
             "value": "livespec-dev-tooling"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -327,7 +322,7 @@
         "width": 4
       },
       "annotation": {
-        "name": "livespec-orchestrator-beads-fabro — M1 merged green per hour (7 d)",
+        "name": "livespec-orchestrator-beads-fabro — M1 merged green per hour (7 d) — 7-day floor 1.72/h",
         "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec-orchestrator-beads-fabro only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
@@ -358,7 +353,6 @@
             "value": "livespec-orchestrator-beads-fabro"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 3600
       }
@@ -415,7 +409,6 @@
             "op": "exists"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -476,7 +469,6 @@
             "value": "livespec-orchestrator-beads-fabro"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -505,7 +497,7 @@
         "width": 4
       },
       "annotation": {
-        "name": "livespec-overseer — M1 merged green per hour (7 d)",
+        "name": "livespec-overseer — M1 merged green per hour (7 d) — 7-day floor 0.46/h",
         "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec-overseer only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
@@ -536,7 +528,6 @@
             "value": "livespec-overseer"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 3600
       }
@@ -593,7 +584,6 @@
             "op": "exists"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -654,7 +644,6 @@
             "value": "livespec-overseer"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -683,7 +672,7 @@
         "width": 4
       },
       "annotation": {
-        "name": "livespec — M1 merged green per hour (7 d)",
+        "name": "livespec — M1 merged green per hour (7 d) — 7-day floor 0.29/h",
         "description": "COUNT of merged-green, non-docs, non-release pull requests in livespec only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
@@ -714,7 +703,6 @@
             "value": "livespec"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 3600
       }
@@ -771,7 +759,6 @@
             "op": "exists"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -832,7 +819,6 @@
             "value": "livespec"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -861,7 +847,7 @@
         "width": 4
       },
       "annotation": {
-        "name": "hetzner-xubuntu-info — M1 merged green per hour (7 d)",
+        "name": "hetzner-xubuntu-info — M1 merged green per hour (7 d) — 7-day floor 0.41/h",
         "description": "COUNT of merged-green, non-docs, non-release pull requests in hetzner-xubuntu-info only, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
@@ -892,7 +878,6 @@
             "value": "hetzner-xubuntu-info"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 3600
       }
@@ -949,7 +934,6 @@
             "op": "exists"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -1010,7 +994,6 @@
             "value": "hetzner-xubuntu-info"
           }
         ],
-        "breakdowns": [],
         "time_range": 604800,
         "granularity": 21600
       }
@@ -1080,11 +1063,11 @@
             ]
           }
         ],
+        "time_range": 86400,
+        "granularity": 3600,
         "breakdowns": [
           "repo"
         ],
-        "time_range": 86400,
-        "granularity": 3600,
         "orders": [
           {
             "op": "COUNT",
@@ -1146,11 +1129,11 @@
             ]
           }
         ],
+        "time_range": 604800,
+        "granularity": 3600,
         "breakdowns": [
           "repo"
         ],
-        "time_range": 604800,
-        "granularity": 3600,
         "orders": [
           {
             "op": "COUNT",
@@ -1186,14 +1169,152 @@
             "op": "exists"
           }
         ],
+        "time_range": 86400,
+        "granularity": 3600,
         "breakdowns": [
           "repo",
           "pr.docs_only",
           "pr.is_release",
           "pr.merged_green"
         ],
-        "time_range": 86400,
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 50,
+        "height": 1,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## Delegated gates (all repositories)"
+      }
+    },
+    {
+      "type": "query",
+      "key": "gate-queue-wait",
+      "dataset": "livespec-delegated-gate",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 51,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "FLEET — delegated pre-push gate queue wait, median and p90 (s)",
+        "description": "P50 and P90 of the gate Job's creation-to-Kueue-admission seconds across every repository, in 6-hour buckets over 7 days. Emitter: the delegated pre-push gate's point span livespec.delegated-gate.outcome (service livespec-delegated-gate), whose livespec.gate.queue_wait_seconds and livespec.gate.duration_seconds come from the gate Job's own timestamps and are absent, never 0, when the run did not reach that point (livespec-dev-tooling-7g45w6). Empty until that item ships."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "livespec.gate.queue_wait_seconds"
+          },
+          {
+            "op": "P90",
+            "column": "livespec.gate.queue_wait_seconds"
+          }
+        ],
+        "filters": [
+          {
+            "column": "livespec.gate.queue_wait_seconds",
+            "op": "exists"
+          }
+        ],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "gate-duration",
+      "dataset": "livespec-delegated-gate",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 4,
+        "y_coordinate": 51,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "FLEET — delegated pre-push gate duration of passed runs, median and p90 (s)",
+        "description": "P50 and P90 of the gate Job's admission-to-terminal seconds for runs whose outcome is passed, so a failing tree does not skew it, in 6-hour buckets over 7 days. Emitter: the delegated pre-push gate's point span livespec.delegated-gate.outcome (service livespec-delegated-gate), whose livespec.gate.queue_wait_seconds and livespec.gate.duration_seconds come from the gate Job's own timestamps and are absent, never 0, when the run did not reach that point (livespec-dev-tooling-7g45w6). Empty until that item ships."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "livespec.gate.duration_seconds"
+          },
+          {
+            "op": "P90",
+            "column": "livespec.gate.duration_seconds"
+          }
+        ],
+        "filters": [
+          {
+            "column": "livespec.gate.duration_seconds",
+            "op": "exists"
+          },
+          {
+            "column": "livespec.gate.outcome",
+            "op": "=",
+            "value": "passed"
+          }
+        ],
+        "time_range": 604800,
+        "granularity": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "gate-by-repo-7d",
+      "dataset": "livespec-delegated-gate",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 8,
+        "y_coordinate": 51,
+        "height": 6,
+        "width": 4
+      },
+      "annotation": {
+        "name": "Delegated pre-push gates by repository, 7 d (table)",
+        "description": "COUNT by outcome, with P50 queue wait and P50 duration, per livespec.gate.repository over 7 days. Emitter: the delegated pre-push gate's point span livespec.delegated-gate.outcome (service livespec-delegated-gate), whose livespec.gate.queue_wait_seconds and livespec.gate.duration_seconds come from the gate Job's own timestamps and are absent, never 0, when the run did not reach that point (livespec-dev-tooling-7g45w6). Empty until that item ships."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT"
+          },
+          {
+            "op": "P50",
+            "column": "livespec.gate.queue_wait_seconds"
+          },
+          {
+            "op": "P50",
+            "column": "livespec.gate.duration_seconds"
+          }
+        ],
+        "filters": [
+          {
+            "column": "livespec.gate.outcome",
+            "op": "exists"
+          }
+        ],
+        "time_range": 604800,
         "granularity": 3600,
+        "breakdowns": [
+          "livespec.gate.repository",
+          "livespec.gate.outcome"
+        ],
         "orders": [
           {
             "op": "COUNT",
