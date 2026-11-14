@@ -1,0 +1,42 @@
+---
+# claude_distributed_sendmessage -- force Claude Code sessions on an interactive
+# host to message each other with SendMessage (across machines, through Remote
+# Control) instead of typing into each other's terminal panes.
+#
+# Plan distributed-sendmessage (epic livespec-dev-tooling-rlwppp). The protocol
+# the hook and the managed memory point at is
+# .ai/distributed-sendmessage-protocol.md in this repository.
+#
+# ROOT SCOPE, DELIBERATELY. Everything here is Claude Code MANAGED policy:
+# /etc/claude-code/ is read by every session of every account on the host, and
+# a managed key outranks the user's ~/.claude/settings.json -- which Claude
+# Code re-serializes on its own saves and other roles merge into. That is what
+# "force" means here: no user-settings rewrite can drop Remote Control or the
+# guard. The user-scope roles (claude_code_hooks, claude_ntfy) are untouched.
+
+claude_distributed_sendmessage_policy_dir: /etc/claude-code
+claude_distributed_sendmessage_dropin_dir: "{{ claude_distributed_sendmessage_policy_dir }}/managed-settings.d"
+claude_distributed_sendmessage_dropin: "{{ claude_distributed_sendmessage_dropin_dir }}/50-distributed-sendmessage.json"
+claude_distributed_sendmessage_memory: "{{ claude_distributed_sendmessage_policy_dir }}/CLAUDE.md"
+claude_distributed_sendmessage_lib_dir: /usr/local/lib/claude-code
+claude_distributed_sendmessage_guard_dest: "{{ claude_distributed_sendmessage_lib_dir }}/pane-input-guard.py"
+
+# remoteControlAtStartup: every interactive session connects to Remote Control,
+#   so sessions on the other hosts can list and message it. Needs a claude.ai
+#   login; an API key or a non-Anthropic base URL in a session's environment
+#   silently leaves that session off the network.
+# crossSessionInbound: accept. Unset, Claude Code HOLDS a message for an
+#   approval dialog whenever sender and receiver run in different permission-mode
+#   classes -- and that dialog is exactly the interruption this role removes.
+#   Every session reachable here belongs to the same claude.ai account. It is a
+#   lock where the strictest source wins, so a user may still choose hold/refuse.
+claude_distributed_sendmessage_settings:
+  remoteControlAtStartup: true
+  crossSessionInbound: accept
+  hooks:
+    PreToolUse:
+      - matcher: Bash
+        hooks:
+          - type: command
+            command: "python3 {{ claude_distributed_sendmessage_guard_dest }}"
+            timeout: 15
