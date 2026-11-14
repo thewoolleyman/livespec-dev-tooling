@@ -1488,6 +1488,8 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 |---|---|---|---|---|
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
+| `livespec-dev-tooling` | 5 | 10 | **20** | 2026-11-14 |
+| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-14 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -1514,6 +1516,18 @@ repository sets `CI_RUNNER_LABELS_MASTER` to that label. Confirm also that the
 existing three-slot non-lendable `livespec-dev-tooling-master-cq` remains
 admitted: the new lane receives its quota from the ordinary orchestrator queue
 (9 -> 8), not from the dev-tooling master reservation.
+
+**`livespec-dev-tooling` 10 to 20, and `livespec-orchestrator-beads-fabro` 8
+to 14 (2026-11-14).** Each keeps the ceiling its quota before the small-queue
+floor derived (10 and 7). The floor moved eight units of guarantee to the
+1-slot queues, but these two queues still carry most of the pool's demand and
+borrow whatever the small queues leave idle. Cutting their ceilings to the rule
+values would cap that borrowing at 10 and 8 runners when the pool is otherwise
+empty. The measurement is in "Small-queue floor of 2: cohort 30 re-split
+(2026-11-14)" at the end of this file. The acceptance check: within 24 h, each
+queue's admitted count exceeds its new quota in the hours when the small queues
+are idle, and Kueue's pending count stays bounded by maxRunners. If neither
+queue ever borrows past its rule value, drop the row and take the rule value.
 
 ## The gates quota on gmktec-xubuntu and hp-xubuntu (2026-11-03)
 
@@ -2228,3 +2242,53 @@ master pushes to a listener that does not yet exist.
 **Proof.** The pull request records the 24-hour before-reads: CPU pressure on gmktec and hp, CI queue wait p50/p95, and job duration p50 on gmktec. The same reads are repeated 2-3 hours after the apply. The claim "throughput does not fall" is a measurement, not an assumption.
 
 **Kill switch.** Restore gmktec 8, hp 5 and gamingpc 1 in their profiles, livespec-orchestrator-beads-fabro-cq 8 and its maxRunners 16. Then apply in the reverse order: `node_extended_resource --limit gmktec-xubuntu,hp-xubuntu` (raise), then `--limit gamingpc-xubuntu` (cut), then `ci_converge_unit` (quotas back to 31).
+
+## Small-queue floor of 2: cohort 30 re-split (2026-11-14)
+
+**Why.** It is a stop-the-line for livespec-overseer CI, raised by
+legacy-coordinator-agent, and ruled STRANDED-CAPACITY by
+throughput-plans-coordinator on 2026-11-14 ~03:0xZ, lever (a). The live read at
+~02:5xZ from the ClusterQueues on poweredge-xubuntu showed the cohort at 28 of
+its 30 churn-slot quota. The two idle units sat in the master lanes, which lend
+nothing (lendingLimit 0, kept on purpose by the same ruling, lever (b)). 52
+arc-runner pods were Pending, every one held at the `kueue.x-k8s.io/admission`
+scheduling gate, the oldest for 852 s. The nodes meanwhile had free slots:
+poweredge 14 of 17, gmktec 5 of 6, gamingpc 2 of 3. Every 1-slot queue read 1
+admitted and 4-5 pending. Reclaim is Never across the cohort, so a small
+repository's pull request ran its parallel CI jobs one at a time whenever the
+two largest queues had borrowed the pool full. Fleet small-repository
+open-to-PR-CI-green median went from 4-5 min to 8.9 min (11-13) and then
+19.2 min (24 h to 11-14 01:55Z). Job duration p50 rising from 33-44 s to
+58-74 s from 11-11 18Z kept the pool full (Honeycomb github-ci, result
+s7G1HD4LLtr). GitHub showed livespec-overseer's gated runners as offline.
+
+**What changed.** Each of the eight 1-slot pull-request queues takes a
+guaranteed floor of 2: livespec, livespec-console-beads-fabro,
+livespec-driver-claude, livespec-driver-codex, livespec-driver-pi,
+livespec-orchestrator-git-jsonl, livespec-overseer and livespec-runtime. That is
++8. The eight units come from the two largest queues in proportion to their
+quotas (10:7 of 8 is 4.7:3.3): livespec-dev-tooling-cq 10 -> 5 and
+livespec-orchestrator-beads-fabro-cq 7 -> 4. The sum stays 30, equal to the
+nodes' declared capacity (poweredge 17 + gmktec 6 + hp 4 + gamingpc 3), so no
+floor is over-subscribed. Kueue admits a workload that fits inside its queue's
+nominal quota ahead of one that would borrow, so as runner slots free, a small
+queue gets up to two jobs back without preempting a running one. Reclaim stays
+Never, so no running CI job is killed. fabro-cq stays at 1: its recorded
+ceiling is 2, and a floor of 2 would leave it no room to borrow. The master
+lanes are unchanged. Every small queue's maxRunners is already 6, which is
+max(2 x 2, 6). The two large queues keep maxRunners 20 and 14 as recorded
+exceptions (above), so their borrowing ceiling is unchanged.
+
+**Bound.** Admission stays bounded by the 30-unit cohort, which equals node
+capacity, and by each scale set's maxRunners. No queue gains a ceiling.
+
+**Measure.** Pending arc-runner pods at the admission gate (52 before), each
+1-slot queue's admitted count (1 before), small-repository open-to-PR-CI-green
+median (19.2 min before), and livespec-dev-tooling and orchestrator queue wait
+p50/p95, so the cost to the large queues is read too. Read 2 h and 24 h after
+the apply.
+
+**Revert.** Restore the eight 1-slot queues to 1, livespec-dev-tooling-cq to
+10 and livespec-orchestrator-beads-fabro-cq to 7, and drop their two exception
+rows. Then apply with `just ansible-apply ansible/ci-pool.yml --tags
+ci_converge_unit`.
