@@ -166,7 +166,7 @@
   "panel_queries": [
     {
       "annotation": {
-        "description": "THE ONE METRIC of the throughput track (livespec-dev-tooling-q26e3c). COUNT of merged pull requests whose covering default-branch CI run concluded success, per hour, by repo. One event per merged PR, timestamped at the merge. Green = the first CI push run at or after the PR's merge head that reached a verdict succeeded (a concurrency-cancelled run is not a verdict). Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; a stopgap emits until it lands). Definition: plan/throughput-track-organization/research/003.",
+        "description": "THE ONE METRIC of the throughput track (livespec-dev-tooling-q26e3c). COUNT of merged pull requests whose covering default-branch CI run concluded success, per hour, by repo. One event per merged PR, timestamped at the merge. Green = the first CI push run at or after the PR's merge head that reached a verdict succeeded (a concurrency-cancelled run is not a verdict). Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; a stopgap emits until it lands). Definition: plan/archive/throughput-track-organization/research/003.",
         "id": "AgM9Zsh782f",
         "name": "THROUGHPUT \u2014 PRs merged green per hour, by repository",
         "query_id": "F3pXRsE3KVR",

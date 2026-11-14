@@ -53,7 +53,7 @@ Only NON-DOCS, NON-RELEASE pull requests count. Docs-only means every changed pa
 
 ## What exists today (2026-11-14 ~05:4xZ)
 
-- Definition, validation and baseline: `plan/throughput-track-organization/research/003-the-one-metric-definition-and-baseline.md` (moves under `plan/archive/` when that plan archives).
+- Definition, validation and baseline: `plan/archive/throughput-track-organization/research/003-the-one-metric-definition-and-baseline.md` (moves under `plan/archive/` when that plan archives).
 - Dataset `pr-throughput` in the Honeycomb `livespec` environment. Events carrying `pr.docs_only` are the classified copies (a 176 h backfill on 2026-11-14 ~02:0xZ, 1859 events); older copies lack the field and are filtered out by `pr.docs_only = false`.
 - Boards: `krThv8DvcwS` (family board, first panel the headline) and `ytZuuVuT4BQ` ('livespec throughput', 27 panels), both applied by `ci-runner/observability/boards/apply-boards.sh`.
 - **The feed is still a STOPGAP, run by this plan's seat**: `~/.local/share/pr-throughput/emit.py` and `headline.py` on hetzner-xubuntu, state under `~/.local/state/pr-throughput/` (`emitted-v2.json`, `awaiting.json`, `emit.log`). A background loop of the seat's Claude session runs it every 10 minutes and dies with that session; the seat relaunches it first after any restart. Loop command, run from `~/workspace/livespec-dev-tooling`:
