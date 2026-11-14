@@ -70,6 +70,9 @@ from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware 
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
+from livespec_dev_tooling.checks._merge_group_guard import (  # noqa: E402
+    guarded_merge_group_is_valid,
+)
 from livespec_dev_tooling.checks._self_hosted_routing_parse import (  # noqa: E402
     fail_open_reason,
     runs_on_values,
@@ -174,7 +177,13 @@ def _references_ci_runner_router(*, stripped: str) -> bool:
 
 
 def _trigger_finding(
-    *, path: Path, cwd: Path, stripped: str, values: list[str], gating_labels: frozenset[str]
+    *,
+    path: Path,
+    cwd: Path,
+    stripped: str,
+    values: list[str],
+    gating_labels: frozenset[str],
+    author_allowlist: tuple[str, ...],
 ) -> _TriggerFinding | None:
     """Return a finding when this workflow routes a forbidden trigger to a gating job."""
     referenced = _referenced_gating_labels(values=values, gating_labels=gating_labels)
@@ -183,6 +192,12 @@ def _trigger_finding(
     if not referenced:
         return None
     forbidden = tuple(sorted(workflow_triggers(stripped=stripped) & _FORBIDDEN_TRIGGERS))
+    if forbidden == ("merge_group",) and guarded_merge_group_is_valid(
+        source=stripped,
+        gating_labels=gating_labels,
+        author_allowlist=author_allowlist,
+    ):
+        return None
     if not forbidden:
         return None
     return _TriggerFinding(
@@ -216,7 +231,9 @@ def _fail_open_findings(
     return findings
 
 
-def _collect_findings(*, cwd: Path, gating_labels: frozenset[str]) -> _Findings:
+def _collect_findings(
+    *, cwd: Path, gating_labels: frozenset[str], author_allowlist: tuple[str, ...]
+) -> _Findings:
     """Scan the repo's own workflows for both holes."""
     workflows_dir = cwd / _WORKFLOWS_DIR
     if not workflows_dir.is_dir():
@@ -228,7 +245,12 @@ def _collect_findings(*, cwd: Path, gating_labels: frozenset[str]) -> _Findings:
         stripped = strip_yaml_comments(source=path.read_text(encoding="utf-8"))
         values = runs_on_values(stripped=stripped)
         trigger = _trigger_finding(
-            path=path, cwd=cwd, stripped=stripped, values=values, gating_labels=gating_labels
+            path=path,
+            cwd=cwd,
+            stripped=stripped,
+            values=values,
+            gating_labels=gating_labels,
+            author_allowlist=author_allowlist,
         )
         if trigger is not None:
             triggers.append(trigger)
@@ -256,7 +278,11 @@ def main() -> int:
         return 1
     config = unsafe_perform_io(loaded.unwrap())
     gating_labels = _DEFAULT_GATING_LABELS | frozenset(config.gating_self_hosted_labels)
-    findings = _collect_findings(cwd=cwd, gating_labels=gating_labels)
+    findings = _collect_findings(
+        cwd=cwd,
+        gating_labels=gating_labels,
+        author_allowlist=config.merge_queue_author_allowlist,
+    )
     for trigger in findings.triggers:
         log.error(
             "workflow routes a forbidden trigger to a gating self-hosted job",

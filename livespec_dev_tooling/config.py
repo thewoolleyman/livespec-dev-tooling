@@ -592,6 +592,9 @@ class Config:
     # ordinary case — a repo with no self-hosted capacity declares nothing and
     # the check stays a no-op there.
     gating_self_hosted_labels: tuple[str, ...] = ()
+    # Merge-queue bot identities admitted to the guarded `merge_group` routing
+    # shape. An empty declaration cannot opt a consumer into that exception.
+    merge_queue_author_allowlist: tuple[str, ...] = ()
     # Bare FILENAMES of the DIRECT-CHILD `.py` files under `BIN_WRAPPER_TREE`
     # that are NOT shebang wrappers — pre-import machinery `wrapper_shape` must
     # not hold to the canonical 5-statement shape, and that `all_declared` must
@@ -1436,6 +1439,15 @@ def _parse_role_key_overrides(*, table: dict[str, Any]) -> dict[str, Any]:
     return overrides
 
 
+def _parse_self_hosted_routing_overrides(*, table: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Parse the two consumer declarations owned by self-hosted routing."""
+    overrides: dict[str, tuple[str, ...]] = {}
+    for key in ("gating_self_hosted_labels", "merge_queue_author_allowlist"):
+        if key in table:
+            overrides[key] = _as_str_tuple(value=table[key], key=key)
+    return overrides
+
+
 def load_config(*, repo_root: Path) -> Config:
     """Read `<repo_root>/pyproject.toml`'s block and resolve the layout.
 
@@ -1449,13 +1461,10 @@ def load_config(*, repo_root: Path) -> Config:
         return Config()
     baseline = Config()
     overrides: dict[str, Any] = _parse_role_key_overrides(table=table)
+    overrides.update(_parse_self_hosted_routing_overrides(table=table))
     if "tests_tree_prefix" in table:
         overrides["tests_tree_prefix"] = _as_str(
             value=table["tests_tree_prefix"], key="tests_tree_prefix"
-        )
-    if "gating_self_hosted_labels" in table:
-        overrides["gating_self_hosted_labels"] = _as_str_tuple(
-            value=table["gating_self_hosted_labels"], key="gating_self_hosted_labels"
         )
     if "bin_non_wrapper_files" in table:
         # ADDITIVE, unlike every other key parsed here: the declared names are
@@ -1507,6 +1516,9 @@ def load_config(*, repo_root: Path) -> Config:
         tests_tree_prefix=overrides.get("tests_tree_prefix", baseline.tests_tree_prefix),
         gating_self_hosted_labels=overrides.get(
             "gating_self_hosted_labels", baseline.gating_self_hosted_labels
+        ),
+        merge_queue_author_allowlist=overrides.get(
+            "merge_queue_author_allowlist", baseline.merge_queue_author_allowlist
         ),
         bin_non_wrapper_files=overrides.get(
             "bin_non_wrapper_files", baseline.bin_non_wrapper_files
