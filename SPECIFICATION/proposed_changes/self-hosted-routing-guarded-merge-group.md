@@ -35,7 +35,7 @@ This realizes, in dev-tooling, the two livespec proposals filed with it. They ar
 > - (b) Every job whose `runs-on` can resolve to a gating self-hosted label lists the guard job in `needs:`.
 > - (c) On a `merge_group` event, that `runs-on` selects self-hosted capacity only through an expression conditioned on the guard job's boolean output, and otherwise resolves to a hosted literal.
 > - (d) The consumer declares a non-empty `merge_queue_author_allowlist` in its `[tool.livespec_dev_tooling]` block.
-> - (e) A failed or cancelled guard never yields a green batch. Each gating job that needs the guard carries `if: ${{ !cancelled() }}`, so it still runs, routed to the hosted literal by (c), when the guard failed. Alternatively, the all-green gate job (`ci-green`) fails a `merge_group` run in which any gating job it lists in `needs:` concluded `skipped`. The check accepts either shape. A workflow with neither shape is a finding, because today's `ci-green` fails only on `failure` or `cancelled`, so a skipped job would let an untested batch pass.
+> - (e) A failed or cancelled guard never yields a green batch. The workflow satisfies this in one of two shapes, and the check accepts either. First shape: each gating job that needs the guard carries `if: ${{ !cancelled() }}`, so when the guard fails it still runs, routed to the hosted literal by (c). Second shape: the all-green gate job (`ci-green`) runs the required-leg reader, `python3 -m livespec_dev_tooling.ci_green_required_legs` (livespec-dev-tooling-nofeol). That reader already fails the gate for any needed leg that was not created or did not conclude `success`, so a skipped gating job fails it. The static check recognises the second shape as a step of the job named by `--gate-job` whose `run:` invokes `livespec_dev_tooling.ci_green_required_legs` with `--gate-job` set to that job's own id. Today's livespec-dev-tooling `ci.yml` already carries that step ("Every required leg was created and concluded success"), so the check never flags it. A workflow with neither shape is a finding.
 > - (f) The guard job runs on every event. On `pull_request` and `push` it makes no API call and outputs `true`, because those events are already governed by the first two classes of **Event routing**. The guard computes its output from the forge API only on `merge_group`. So `needs:` is always satisfied, and no `pull_request` or `push` run changes its routing.
 >
 > Any other workflow that combines a gating self-hosted route with `merge_group` is a finding, exactly as before. The check verifies the guard's SHAPE statically. Whether the guard's API query is correct is proven by the guard's own tests, and the repository's fork-approval setting is graded by `branch_protection_alignment`.
@@ -73,7 +73,7 @@ Then it reports no finding for that workflow
 
 And when the gating job's needs: omits the guard job, self_hosted_routing fails naming the workflow file and the merge_group trigger
 
-And when the gating job lacks the !cancelled() condition and ci-green does not fail a skipped gating job, self_hosted_routing fails naming the workflow file
+And when the gating job lacks the !cancelled() condition and ci-green carries no ci_green_required_legs step, self_hosted_routing fails naming the workflow file
 ```
 
 ```gherkin
