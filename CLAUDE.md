@@ -159,7 +159,9 @@ The files:
   makes resume refuse. Read it also before diagnosing a succeeded run whose
   proved, green PR does not merge, or before pressing `set-merge-hold:<id>:off`:
   the `merge-hold:on` label is legacy-coordinator-agent's, and removing it IS
-  the merge (2026-11-10).
+  the merge (2026-11-10). Read it also before routing an item SEEDED from a
+  named ref: a rider never places the sandbox, only the item's latest seed
+  ruling does, and two 5lhafp runs started on a stale seed (2026-11-14).
 - Read `.ai/false-green-gates-and-audits.md` before trusting a green gate
   that disagrees with reality, writing a gate that replays a production step,
   auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
