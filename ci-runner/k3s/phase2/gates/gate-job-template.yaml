@@ -833,6 +833,20 @@ spec:
             # under a 5 cpu request and oversubscribe the gate's own quota.
             - name: LIVESPEC_TEST_PARALLELISM
               value: "@@PARALLELISM@@"
+            # The two worker-count knobs a tool reads when nothing else sizes
+            # it. This container has NO cpu limit, so cgroup cpu.max reads "max"
+            # and every CPU count a tool can see is the NODE's (72 on
+            # poweredge), while memory is capped at the request. A bare
+            # `pytest -n auto`, or a BLAS/OpenMP pool sized from the CPU count,
+            # would start one worker per node CPU against that memory cap: the
+            # OOM class that killed a factory run (livespec-dev-tooling-vy75ws).
+            # Both equal the cpu request in whole CPUs, floored at 1, derived by
+            # render-gate-job.sh. LIVESPEC_TEST_PARALLELISM above still governs
+            # the committed recipes; these bound everything else.
+            - name: PYTEST_XDIST_AUTO_NUM_WORKERS
+              value: "@@CPU_WORKERS@@"
+            - name: OMP_NUM_THREADS
+              value: "@@CPU_WORKERS@@"
             # Requirement 5: the cache environment is REUSED from
             # ../arc/hook-pod-template.yaml rather than re-invented, so the two
             # cannot drift. Keep these in step with that file's container env.

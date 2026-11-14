@@ -1457,6 +1457,54 @@ if [ "${got_cpu}" = "${default_cpu}" ] && [ "${got_mem_req}" = "${default_memory
 else
   fail "a render with no size flags carries cpu '${got_cpu}' memory '${got_mem_req}' / '${got_mem_lim}' parallelism '${got_par}', not the renderer's defaults"
 fi
+# The gate container's worker-count env: PYTEST_XDIST_AUTO_NUM_WORKERS and
+# OMP_NUM_THREADS each equal the cpu request in whole CPUs, floored at 1, because
+# the container has no cpu limit and every CPU count a tool reads is the node's.
+# Prints "<PYTEST_XDIST_AUTO_NUM_WORKERS> <OMP_NUM_THREADS>" for the manifest at $1.
+gate_worker_env() {
+  gate_container_block "$1" | sed 's/[[:space:]]*#.*$//' | awk '
+    want == "x" && /^[[:space:]]*value:/ { gsub(/[" ]/, "", $2); x = $2; want = "" }
+    want == "o" && /^[[:space:]]*value:/ { gsub(/[" ]/, "", $2); o = $2; want = "" }
+    /^[[:space:]]*- name: PYTEST_XDIST_AUTO_NUM_WORKERS[[:space:]]*$/ { want = "x" }
+    /^[[:space:]]*- name: OMP_NUM_THREADS[[:space:]]*$/ { want = "o" }
+    END { print x, o }
+  '
+}
+read -r got_x got_o <<< "$(gate_worker_env "${out_sized}")"
+if [ "${got_x}" = "${sized_cpu}" ] && [ "${got_o}" = "${sized_cpu}" ]; then
+  pass "PYTEST_XDIST_AUTO_NUM_WORKERS and OMP_NUM_THREADS are the passed cpu ${sized_cpu}"
+else
+  fail "PYTEST_XDIST_AUTO_NUM_WORKERS '${got_x}' and OMP_NUM_THREADS '${got_o}' are not the passed cpu ${sized_cpu}"
+fi
+read -r got_x got_o <<< "$(gate_worker_env "${out_a}")"
+if [ "${got_x}" = "${default_cpu}" ] && [ "${got_o}" = "${default_cpu}" ]; then
+  pass "a render with no size flags sets both worker-count vars to the default cpu ${default_cpu}"
+else
+  fail "a render with no size flags sets PYTEST_XDIST_AUTO_NUM_WORKERS '${got_x}' and OMP_NUM_THREADS '${got_o}', not ${default_cpu}"
+fi
+for pair in "500m:1" "2500m:2" "1.5:1" "0.5:1" "3:3"; do
+  quantity="${pair%%:*}"; want="${pair##*:}"
+  out_q="${SCRATCH}/workers-${quantity}.yaml"
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+       --cpu "${quantity}" > "${out_q}" 2>"${SCRATCH}/workers.err"; then
+    read -r got_x got_o <<< "$(gate_worker_env "${out_q}")"
+    if [ "${got_x}" = "${want}" ] && [ "${got_o}" = "${want}" ]; then
+      pass "--cpu ${quantity} renders both worker-count vars as ${want}"
+    else
+      fail "--cpu ${quantity} renders PYTEST_XDIST_AUTO_NUM_WORKERS '${got_x}' and OMP_NUM_THREADS '${got_o}', not ${want}"
+    fi
+  else
+    fail "--cpu ${quantity} was refused: $(cat "${SCRATCH}/workers.err")"
+  fi
+done
+for bad_cpu in "abc" "5x" "1.5.3" "m" ""; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --cpu "${bad_cpu}" \
+       > /dev/null 2>&1; then
+    fail "--cpu '${bad_cpu}' was rendered rather than refused"
+  else
+    pass "--cpu '${bad_cpu}' is refused"
+  fi
+done
 # One gate unit, read off the gates-cq annotations where the unit lives, so a
 # default-size Job is held to the quota unit without restating either value.
 gates_queue="${SCRIPT_DIR}/../kueue/cluster-queue-gates.yaml"
