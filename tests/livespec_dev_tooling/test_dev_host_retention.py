@@ -737,6 +737,81 @@ def test_a_later_run_walks_only_what_changed_since_the_last_complete_walk(
     assert log.count(str(first)) == 1
 
 
+def _cut_off_env(*, tmp_path: Path) -> dict[str, str]:
+    """An environment whose ownership walk is cut off by a one-second budget."""
+    return _nobody_env(tmp_path=tmp_path) | {
+        "STUB_CHOWN_SLEEP": "30",
+        "LIVESPEC_DEV_HOST_UV_OWNERSHIP_BUDGET_SECONDS": "1",
+    }
+
+
+def test_a_cut_off_walk_leaves_the_next_run_walking_only_what_changed_after_it(
+    *, tmp_path: Path
+) -> None:
+    """A walk that outlasts its budget on every run never engaged the stamp.
+
+    The cut-off run still records its start as the point the next run walks
+    from, so the next run does not start over at the head of the cache.
+    """
+    cut_off_env = _cut_off_env(tmp_path=tmp_path)
+    first = tmp_path / "uv-cache" / "first"
+    first.touch()
+    chown_log = tmp_path / "chown.log"
+
+    cut_off = _retain(env=cut_off_env)
+    assert "ownership walk exceeded its 1s budget" in cut_off.stdout, cut_off.stdout
+    assert chown_log.read_text(encoding="utf-8").count(str(first)) == 1
+
+    assert _retain(env=_nobody_env(tmp_path=tmp_path)).returncode == 0
+    assert (
+        chown_log.read_text(encoding="utf-8").count(str(first)) == 1
+    ), "a cut-off walk must leave the next run less work, not the full walk again"
+
+
+def test_a_foreign_path_written_after_a_cut_off_walk_is_handed_back_before_the_prune(
+    *, tmp_path: Path
+) -> None:
+    """The walk after a cut-off reaches the paths changed since it and no more."""
+    cut_off_env = _cut_off_env(tmp_path=tmp_path)
+    first = tmp_path / "uv-cache" / "first"
+    second = tmp_path / "uv-cache" / "archive-v0" / "second"
+    first.touch()
+    assert _retain(env=cut_off_env).returncode == 0
+    second.parent.mkdir(parents=True)
+    second.touch()
+
+    done = _retain(env=_nobody_env(tmp_path=tmp_path))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    log = (tmp_path / "chown.log").read_text(encoding="utf-8")
+    assert (
+        log.count(str(second)) == 1
+    ), "a path written after the recorded point must be handed back"
+    assert log.count(str(first)) == 1, "a path from before the recorded point must not be walked"
+    events = (tmp_path / "events.log").read_text(encoding="utf-8").splitlines()
+    chown_index = next(i for i, e in enumerate(events) if str(second) in e)
+    assert any(
+        e.startswith("uv ") for e in events[chown_index + 1 :]
+    ), f"the prune did not follow the hand-back:\n{events}"
+
+
+def test_the_ownership_walk_line_says_how_long_it_ran_and_whether_it_completed(
+    *, tmp_path: Path
+) -> None:
+    """A reader tells a walk cut off by its budget from one that finished."""
+    cut_off_env = _cut_off_env(tmp_path=tmp_path)
+    (tmp_path / "uv-cache" / "root-written").touch()
+
+    cut_off = _retain(env=cut_off_env)
+    finished = _retain(env=_nobody_env(tmp_path=tmp_path))
+
+    cut_off_line = next(line for line in cut_off.stdout.splitlines() if "ownership walk" in line)
+    assert re.search(r"ran \d+s and was cut off before it completed", cut_off_line), cut_off_line
+    finished_line = next(line for line in finished.stdout.splitlines() if "ownership walk" in line)
+    assert re.search(r"ran \d+s and completed", finished_line), finished_line
+    assert "exceeded its" not in finished.stdout, finished.stdout
+
+
 def test_the_retention_service_gives_the_script_a_state_directory() -> None:
     """The stamp needs somewhere durable to live; systemd creates it for the unit."""
     assert "StateDirectory=livespec-dev-host-retention" in _read(path=_SERVICE_TEMPLATE)
