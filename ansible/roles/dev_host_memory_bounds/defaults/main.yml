@@ -110,21 +110,16 @@ dev_host_memory_bounds_gate_memory_max: 10G
 
 # A host drop-in on the orchestrator's reconcile-runs.service timer unit (the
 # unit itself is installed by that repository's install.sh and stays
-# untouched). MemoryMax is 6G, not 5G, on legacy-dispatcher-agent's
-# measurement: one timer pass sat at 3.7G after 4.5 minutes and was still
-# growing, and a pass killed at MemoryMax is wasted until the next tick.
-# MemoryHigh is 5G, not the first draft's 4G: with no swap a pass held at High
-# STALLS, and a stalled oneshot blocks every later tick, so High sits above the
-# measured peak (coordinator grade, 2026-11-13). 6G kills only a runaway.
-# MEASURED PEAK: 3.7G RSS (16:3xZ, 4.5 min into a pass) and 3.3G (17:1xZ, 5.5
-# min in), both on the dev VPS, 2026-11-13; no pass has yet been read to its end.
-# WHAT A KILL DOES: the pass dies, systemd records the oneshot as failed
-# (Restart=no), and the next timer tick asks the same inventory question again.
-# legacy-dispatcher-agent confirms a pass is retry-safe. The cost is one wasted
-# pass, which is the reason MemoryMax sits 2G above the measured peak.
+# untouched). ONE SOURCE PER VALUE: the orchestrator's committed unit owns the
+# pass's memory and CPU numbers (CPUWeight=20, MemoryHigh=5G, MemoryMax=8G,
+# measured peaks 3.5 GB median and 4.7 GB max, its own comments carry the
+# measurements). It was re-converged on vmi3006760 from orchestrator master on
+# 2026-11-14 02:27Z. This drop-in used to set MemoryHigh 5G / MemoryMax 6G as
+# well, which overrode the unit's 8G, so it was a second source for one number
+# (coordinator ruling, 2026-11-14). It now carries only the one value the unit
+# does not set, the OOM-killer preference below. When the orchestrator unit
+# carries OOMScoreAdjust itself, remove this drop-in in a follow-up change.
 dev_host_memory_bounds_reconcile_unit: reconcile-runs.service
-dev_host_memory_bounds_reconcile_memory_high: 5G
-dev_host_memory_bounds_reconcile_memory_max: 6G
 
 # The OOM-killer preference for reconcile-runs. Restartable work goes first,
 # so a pressure event takes a reconcile pass before it takes Dolt or a seat.

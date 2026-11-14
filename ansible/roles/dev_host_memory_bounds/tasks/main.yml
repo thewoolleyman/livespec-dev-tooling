@@ -57,8 +57,6 @@
     - "{{ dev_host_memory_bounds_dispatch_memory_max }}"
     - "{{ dev_host_memory_bounds_gate_memory_high }}"
     - "{{ dev_host_memory_bounds_gate_memory_max }}"
-    - "{{ dev_host_memory_bounds_reconcile_memory_high }}"
-    - "{{ dev_host_memory_bounds_reconcile_memory_max }}"
     - "{{ dev_host_memory_bounds_dispatch_loop_memory_max }}"
   tags: [dev_host_memory_bounds_cutover, dev_host_memory_bounds_tmp_cap]
 
@@ -161,7 +159,7 @@
   register: dev_host_memory_bounds_rt_mount_file
   when: dev_host_memory_bounds_state == 'present'
 
-- name: Install the reconcile-runs memory bound
+- name: Install the reconcile-runs drop-in directory
   ansible.builtin.file:
     path: "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_reconcile_unit }}.d"
     state: directory
@@ -171,7 +169,7 @@
   become: true
   when: dev_host_memory_bounds_state == 'present'
 
-- name: Write the reconcile-runs memory bound drop-in
+- name: Write the reconcile-runs OOM preference drop-in
   ansible.builtin.template:
     src: reconcile-memory-bounds.conf.j2
     dest: >-

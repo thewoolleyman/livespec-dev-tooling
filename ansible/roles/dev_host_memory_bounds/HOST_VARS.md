@@ -15,7 +15,7 @@ OOM-killed at 15:32:41Z). The numbers and where each came from are in
 | `factory-dispatch.slice`, derived from the fleet cap (on the VPS: MemoryHigh 19296M / MemoryMax 21440M) | `/etc/systemd/user/` | the next launch into it |
 | the per-loop scope bound, `3500M` | `/etc/livespec/factory-dispatch-loop-memory-max` | the next launch that reads it |
 | `local-gate.slice`, MemoryHigh 9G / MemoryMax 10G | `/etc/systemd/user/` | the next launch into it |
-| reconcile-runs MemoryHigh 5G / MemoryMax 6G, OOMScoreAdjust 500 | `/etc/systemd/system/reconcile-runs.service.d/50-livespec-memory-bounds.conf` | the next timer pass |
+| reconcile-runs OOMScoreAdjust 500 (its memory and CPU numbers are the orchestrator unit's own) | `/etc/systemd/system/reconcile-runs.service.d/50-livespec-memory-bounds.conf` | the next timer pass |
 
 A slice bounds only what is launched into it. A session puts a command there
 with:
@@ -91,8 +91,7 @@ its own `host_vars`:
 | `dev_host_memory_bounds_dispatch_memory_high` | derived | 90% of the dispatch MemoryMax. |
 | `dev_host_memory_bounds_dispatch_loop_memory_max` | `3500M` | Each launcher's own scope bound: the measured peak plus its children. |
 | `dev_host_memory_bounds_gate_memory_high` / `_max` | `9G` / `10G` | The local-gate slice; one full suite at a time. |
-| `dev_host_memory_bounds_reconcile_memory_high` / `_max` | `5G` / `6G` | The reconcile-runs bound; the measured peak is 3.7G, and High sits above it because a stalled oneshot blocks later ticks. |
-| `dev_host_memory_bounds_memory_swap_max` | `0` | MemorySwapMax for both slices and reconcile-runs. |
+| `dev_host_memory_bounds_memory_swap_max` | `0` | MemorySwapMax for both slices. |
 
 The per-loop figures were measured on the dev VPS on 2026-11-13. A new host
 should re-measure them (VmRSS and VmHWM of each running `dispatcher.py loop`)
@@ -103,8 +102,8 @@ once dispatch runs there.
 On a host without swap (the dev VPS), MemorySwapMax has no effect. Above a
 slice's MemoryHigh, its anonymous memory cannot be reclaimed, so the slice
 STALLS; MemoryMax is where processes are killed. On a host WITH swap,
-MemoryHigh reclaims to swap first. The default of `0` keeps the slices and
-reconcile-runs out of swap, so they behave exactly as they do on the VPS, and a
+MemoryHigh reclaims to swap first. The default of `0` keeps the slices out of
+swap, so they behave exactly as they do on the VPS, and a
 runaway cannot push the live ledger or the seats into swap. Set it to a size,
 or to `infinity`, only as a deliberate choice for that host.
 

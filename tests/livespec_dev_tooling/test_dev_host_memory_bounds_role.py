@@ -139,6 +139,9 @@ def rendered() -> dict[str, str]:
         "tmp_dropin": (_ROLE / "templates" / "tmp-mount-bounds.conf.j2").read_text(
             encoding="utf-8"
         ),
+        "reconcile_dropin": (_ROLE / "templates" / "reconcile-memory-bounds.conf.j2").read_text(
+            encoding="utf-8"
+        ),
     }
     return _render(variables=variables, templates=templates)
 
@@ -191,3 +194,21 @@ def test_the_tmp_cap_dropin_carries_the_size_and_inode_cap(rendered: dict[str, s
 
 def test_the_stray_unit_glob_matches_the_scratchpad_mount_units(rendered: dict[str, str]) -> None:
     assert rendered["stray_glob"] == "tmp-claude*.mount"
+
+
+def test_the_reconcile_dropin_sets_only_what_the_orchestrator_unit_does_not(
+    rendered: dict[str, str],
+) -> None:
+    # One source per value: the orchestrator's committed reconcile-runs.service
+    # owns the pass's memory and CPU numbers, so this drop-in must not set them.
+    defaults = _yaml(relative="defaults/main.yml")
+    directives = [
+        line.split("=", 1)[0]
+        for line in rendered["reconcile_dropin"].splitlines()
+        if "=" in line and not line.startswith("#")
+    ]
+    assert directives == ["OOMScoreAdjust"]
+    assert (
+        f"OOMScoreAdjust={defaults['dev_host_memory_bounds_reconcile_oom_score_adjust']}"
+        in rendered["reconcile_dropin"].splitlines()
+    )
