@@ -60,16 +60,19 @@ _EXPORT_GUARD = "${{ github.ref == 'refs/heads/master' }}"
 # Factory-Override push)
 # resolves to its own run_id group: a scratch push is never grouped with, held by or dropped behind
 # another run, and it runs master's complete job graph under master's job conditions and routing.
+# A pull request joins its own per-pull-request group, cancelling only on a pull_request event
+# (livespec-dev-tooling-7zslke); every push keeps cancel-in-progress false.
 # Any other concurrency form, including cancel-in-progress true, is still a ref read and refused.
 _BPRIME_CONCURRENCY = {
     "group": (
-        "${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref == 'refs/heads/master'"
+        "${{ github.workflow }}-${{ github.event_name == 'pull_request' && 'pr-' ||"
+        " ((github.event_name == 'push' && github.ref == 'refs/heads/master'"
         " && !startsWith(github.event.head_commit.message, 'chore(master): release')"
         " && !startsWith(github.event.head_commit.message, 'Revert complete incident PR #')"
         " && !contains(join(github.event.commits.*.message, ' '), 'Factory-Override:'))"
-        " && 'master-push' || github.run_id }}"
+        " && 'master-push' || github.run_id) }}${{ github.event.pull_request.number }}"
     ),
-    "cancel-in-progress": False,
+    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
 }
 
 
@@ -303,7 +306,10 @@ def _with_concurrency(*, group: str, cancel: str) -> dict[Any, Any]:
 
 def test_the_b_prime_master_push_concurrency_block_is_the_one_admitted_top_level_ref_read() -> None:
     """The pinned B' block keeps a scratch push in its own run_id group, so it splits nothing."""
-    workflow = _with_concurrency(group=str(_BPRIME_CONCURRENCY["group"]), cancel="false")
+    workflow = _with_concurrency(
+        group=str(_BPRIME_CONCURRENCY["group"]),
+        cancel=str(_BPRIME_CONCURRENCY["cancel-in-progress"]),
+    )
     assert _ref_reads(workflow=workflow) == []
 
 
@@ -315,7 +321,7 @@ def test_the_b_prime_master_push_concurrency_block_is_the_one_admitted_top_level
             str(_BPRIME_CONCURRENCY["group"]).replace(
                 "refs/heads/master", "refs/heads/incident-scratch"
             ),
-            "false",
+            str(_BPRIME_CONCURRENCY["cancel-in-progress"]),
         ),
         ("${{ github.workflow }}-${{ github.ref }}", "false"),
     ],
