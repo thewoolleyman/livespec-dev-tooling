@@ -13,7 +13,7 @@ created_at: 2026-11-13T23:54:32Z
 
 ### Summary
 
-Two checks change for the org move. The self_hosted_routing check gets a contract. It keeps merge_group in its forbidden-trigger set except for the guarded shape that livespec NFR §"Self-hosted CI runner host requirements" → **Event routing** defines. branch_protection_alignment learns the merge queue. On an organization-owned repository that livespec requires to use the queue, a missing merge_queue rule or a build concurrency below 2 fails the check.
+Two checks change for the org move. The self_hosted_routing check gets a contract. It keeps merge_group in its forbidden-trigger set except for the guarded shape that livespec NFR §"Self-hosted CI runner host requirements" → **Event routing** defines. branch_protection_alignment learns the merge queue. On an organization-owned repository that livespec requires to use the queue, the check fails on any of four conditions: a missing merge_queue rule, a build concurrency below 2, a merge method other than rebase, or any bypass or push path to master other than the committed recovery App.
 
 ### Motivation
 
@@ -35,18 +35,22 @@ This realizes, in dev-tooling, the two livespec proposals filed with it. They ar
 > - (b) Every job whose `runs-on` can resolve to a gating self-hosted label lists the guard job in `needs:`.
 > - (c) On a `merge_group` event, that `runs-on` selects self-hosted capacity only through an expression conditioned on the guard job's boolean output, and otherwise resolves to a hosted literal.
 > - (d) The consumer declares a non-empty `merge_queue_author_allowlist` in its `[tool.livespec_dev_tooling]` block.
+> - (e) A failed or cancelled guard never yields a green batch. Each gating job that needs the guard carries `if: ${{ !cancelled() }}`, so it still runs, routed to the hosted literal by (c), when the guard failed. Alternatively, the all-green gate job (`ci-green`) fails a `merge_group` run in which any gating job it lists in `needs:` concluded `skipped`. The check accepts either shape. A workflow with neither shape is a finding, because today's `ci-green` fails only on `failure` or `cancelled`, so a skipped job would let an untested batch pass.
+> - (f) The guard job runs on every event. On `pull_request` and `push` it makes no API call and outputs `true`, because those events are already governed by the first two classes of **Event routing**. The guard computes its output from the forge API only on `merge_group`. So `needs:` is always satisfied, and no `pull_request` or `push` run changes its routing.
 >
 > Any other workflow that combines a gating self-hosted route with `merge_group` is a finding, exactly as before. The check verifies the guard's SHAPE statically. Whether the guard's API query is correct is proven by the guard's own tests, and the repository's fork-approval setting is graded by `branch_protection_alignment`.
 
 2. In "### `branch_protection_alignment` check", add three ALIGNMENT-gate rules and their exit codes:
 
-> - The check reads the repository owner's `type` from `repos/{owner}/{repo}`. The repository is QUEUE-REQUIRED when the owner is an `Organization` and the repository is one that livespec NFR §"CI as a merge gate (branch protection)" requires to use the merge queue. A queue-required repository with no `merge_queue` rule among its active rulesets' rules for the default branch FAILS (exit `4`, `failure_mode` `merge_queue_absent`).
+> - The check reads the repository owner's `type` from `repos/{owner}/{repo}`. The repository is QUEUE-REQUIRED when the owner is an `Organization` and its name is in `QUEUE_REQUIRED_REPOSITORIES`. That is a module-level constant of `livespec_dev_tooling.checks.branch_protection_alignment`, which today holds `livespec-dev-tooling` and `livespec-orchestrator-beads-fabro`, the set livespec NFR §"CI as a merge gate (branch protection)" names. It is deliberately not consumer configuration, because a repository must not be able to opt itself out of the queue. It changes only with a livespec specification revision. A queue-required repository with no `merge_queue` rule among its active rulesets' rules for the default branch FAILS (exit `4`, `failure_mode` `merge_queue_absent`).
 > - A `merge_queue` rule whose build concurrency is below 2 FAILS (exit `4`, `failure_mode` `merge_queue_concurrency_below_floor`).
+> - A `merge_queue` rule whose `merge_method` is not `REBASE` FAILS (exit `4`, `failure_mode` `merge_queue_method_not_rebase`). `master` accepts only rebase-merges, so each PR's per-commit Red-Green-Replay TDD trailers survive.
+> - On a queue-required repository, the queue is the only path to `master` except the incident recovery principal. Every active ruleset that applies to the default branch MUST carry, as its ONLY `bypass_actors` entry, the `Integration` whose id equals the consumer's committed `recovery_bypass_integration_id` key (`[tool.livespec_dev_tooling]`; an App id is not a secret), with no other actor. Classic branch protection MUST either be absent or set `enforce_admins` with no push `restrictions` exception. Any other bypass actor or push path FAILS (exit `4`, `failure_mode` `merge_queue_bypass_path`). An absent `recovery_bypass_integration_id` on a queue-required repository FAILS the same way, because the check cannot tell the recovery App from any other App.
 > - On a repository whose workflows use the guarded `merge_group` exception of `self_hosted_routing`, a fork-PR workflow-approval setting below `all_external_contributors` FAILS (exit `4`, `failure_mode` `fork_approval_below_strictest`). An unreadable setting takes the existing outcome-3 graceful-skip path.
 >
 > On a personal-account repository a `merge_queue` rule cannot exist, and none of these rules fire. The `strict_enabled` rule is unchanged.
 
-In the exit-code list, add `merge_queue_absent`, `merge_queue_concurrency_below_floor` and `fork_approval_below_strictest` to the exit-`4` fail branches.
+In the exit-code list, add `merge_queue_absent`, `merge_queue_concurrency_below_floor`, `merge_queue_method_not_rebase`, `merge_queue_bypass_path` and `fork_approval_below_strictest` to the exit-`4` fail branches.
 
 3. In SPECIFICATION/scenarios.md, add:
 
@@ -61,11 +65,15 @@ And the gating job's merge_group route selects self-hosted capacity only on the 
 
 And the consumer declares a non-empty merge_queue_author_allowlist
 
+And each gating job that needs the guard carries if: ${{ !cancelled() }}
+
 When self_hosted_routing runs
 
 Then it reports no finding for that workflow
 
 And when the gating job's needs: omits the guard job, self_hosted_routing fails naming the workflow file and the merge_group trigger
+
+And when the gating job lacks the !cancelled() condition and ci-green does not fail a skipped gating job, self_hosted_routing fails naming the workflow file
 ```
 
 ```gherkin
