@@ -1,19 +1,28 @@
 # Distributed SendMessage protocol
 
 Read this before you message, ask, notify, direct or answer another agent
-session (a Claude Code one; Codex and pi seats are covered below), on this machine or on another fleet host. Read it also before you run
-`herdr pane send-text`, `herdr pane run`, `herdr agent prompt` or
-`tmux send-keys` against a pane you did not create, and before you diagnose a
-`BLOCKED: ... Typing into another agent session's pane` hook denial.
+session (a Claude Code one; Codex and pi seats are covered below), on this
+machine or on another fleet host, and before you run `herdr pane send-text`,
+`herdr pane run`, `herdr agent prompt` or `tmux send-keys` against a pane you
+did not create.
 
 ## The rule
 
-**Agent sessions talk to each other with Claude Code's `SendMessage` tool, never
-by typing into each other's terminal panes.** Text typed into a pane lands in
-the same input line the maintainer may be typing into. It interrupts their
-direct interaction with that session, and it can corrupt both inputs. The
-maintainer ruled this on 2026-11-14 (plan `distributed-sendmessage`, epic
-`livespec-dev-tooling-rlwppp`).
+**Agent sessions talk to each other with Claude Code's `SendMessage` tool by
+default.** Text typed into a pane lands in the same input line the maintainer
+may be typing into, which interrupts their direct interaction with that
+session and can corrupt both inputs. So reach for SendMessage first, every
+time it can do the job.
+
+**Typing into a pane is NOT forbidden and nothing blocks it.** It is sometimes
+necessary, and then it is the right tool: a slash command such as
+`/remote-control` or `/reload-plugins`, answering a picker or dialog, a session
+that SendMessage cannot reach, or a Codex or pi seat. When you type, check the
+pane is idle first (`herdr pane read`), keep the text short, and send `Enter`
+separately. The maintainer ruled this on 2026-11-14 (plan
+`distributed-sendmessage`, epic `livespec-dev-tooling-rlwppp`): "DO NOT PREVENT
+SESSIONS FROM TYPING INTO PANES. IT IS NECESSARY SOMETIMES. JUST GIVE EXPLICIT
+AND ABUNDANT GUIDANCE TO USE SENDMESSAGE."
 
 ## How to send
 
@@ -44,12 +53,12 @@ tool round. That is delivery, not that anyone read it or acted on it. For a
 session on another machine, nothing reports back. **Never treat silence as
 agreement.** When you need a result, ask for a reply. If it matters, record the
 request where the work is tracked (for example a relay on the plan epic).
-Waiting on a peer is not a reason to type into its pane.
+Waiting on a peer is not, by itself, a reason to type into its pane.
 
 To hear when a session on THIS machine goes idle, use
 `SendMessage(notify_when_idle: true)` and don't poll `ListAgents`.
 
-## What is enforced, and where
+## What is configured, and where
 
 On every interactive host (`vps`, `hetzner-xubuntu`, `gamingpc-xubuntu`), a
 root-owned Claude Code managed-settings drop-in,
@@ -59,27 +68,14 @@ root-owned Claude Code managed-settings drop-in,
   Control, so the other hosts can list it and message it.
 - `crossSessionInbound: accept`. This stops a permission-mode mismatch between
   sender and receiver from holding a message behind an approval dialog. That
-  dialog would be the same interruption this protocol removes.
-- A PreToolUse Bash hook, `/usr/local/lib/claude-code/pane-input-guard.py`. It
-  DENIES:
-  - `herdr pane send-text`, `herdr pane run` or `herdr agent prompt` into a
-    pane where herdr reports a CLAUDE agent (including with `--machine`,
-    `--remote` or `--session`). It fails closed when it cannot look the pane up.
-  - `tmux send-keys` that carries literal text, and `tmux paste-buffer`, into
-    ANY pane. tmux is a retired transport here; Codex and pi seats are reached
-    with `herdr pane send-text <pane> "<text>"` then `herdr pane send-keys
-    <pane> Enter`.
+  dialog would be the same interruption this protocol avoids.
 
-  It ALLOWS:
-  - key-only input (`herdr pane send-keys <pane> esc`, `tmux send-keys -t x
-    Escape`), which unblocks a picker or dialog that SendMessage cannot reach;
-  - input into your own pane;
-  - input into a pane with no agent, such as starting a new session in a fresh
-    shell pane;
-  - input into a NON-Claude agent (Codex, pi). Those harnesses cannot receive
-    SendMessage, so their pane remains the channel to them. Send the text, then
-    `send-keys Enter`, and mirror anything durable as a ledger comment;
-  - every read (`pane read`, `wait-output`, `agent read`).
+There is NO hook that blocks pane input. An earlier version installed a
+PreToolUse guard, `/usr/local/lib/claude-code/pane-input-guard.py`, that denied
+typing into Claude panes; the maintainer retired it on 2026-11-14 and the role
+now removes it from every host. If a session still shows a
+`BLOCKED: ... Typing into another agent session's pane` denial, the session
+started before the guard was removed: restart it.
 
 The rule is also carried in the managed `/etc/claude-code/CLAUDE.md`, which
 every session loads.
@@ -94,7 +90,7 @@ The provisioning that installs this:
   `provisioning/ansible/sessions.yml` at its `provisioning/livespec-dev-tooling.pin`
   (hetzner-xubuntu-info#128).
 
-Proved live on 2026-11-14 with fresh sessions on hetzner-xubuntu and vmi3006760. Each listed the other as `Remote Control`, and messages went both ways. The guard denied text into a Claude pane and allowed key-only input. The evidence is on epic livespec-dev-tooling-rlwppp.
+Proved live on 2026-11-14 with fresh sessions on hetzner-xubuntu and vmi3006760. Each listed the other as `Remote Control`, and messages went both ways. The evidence is on epic livespec-dev-tooling-rlwppp.
 
 To check a session picked the policy up, run `/status`: its setting sources
 must name the managed source. Claude Code reads managed sources first-wins, so
@@ -106,7 +102,7 @@ Re-applying is the repair path. Don't hand-edit `/etc/claude-code/`.
 
 **Rollback.** To remove the policy from a host, make a committed change that
 deletes `/etc/claude-code/managed-settings.d/50-distributed-sendmessage.json`
-and `/usr/local/lib/claude-code/pane-input-guard.py`, and removes the marked
+and removes the marked
 block from `/etc/claude-code/CLAUDE.md`. The block is removed with
 `ansible.builtin.blockinfile` set to `state: absent` and the marker
 `<!-- {mark} ANSIBLE MANAGED claude_distributed_sendmessage -->`. The same
@@ -132,13 +128,17 @@ recipe is in the header of `ansible/claude-messaging.yml`.
 
 - **It runs on a Mac.** The Macs are outside this rollout. A Claude seat there
   joins only when its user settings enable Remote Control (`/config`, then
-  "Enable Remote Control for all sessions"). Until it does, the guard still
-  refuses to type into it, so reach it by a ledger comment on the item or plan
-  it owns, and name it as unreachable in your report.
+  "Enable Remote Control for all sessions"). Until it does, reach it through
+  its pane or a ledger comment on the item or plan it owns.
 
-If none of these applies and SendMessage still cannot reach a session, report
-it to the maintainer or the coordinator. Do not fall back to typing into the
-pane.
+- **Its Remote Control dropped.** When the claude.ai login on a host changes,
+  running sessions print "Remote Control disconnected" and stay off the
+  network until `/remote-control` is run in them (follow-up
+  livespec-dev-tooling-2mlr3g). Typing `/remote-control` into an idle pane and
+  approving the "Enable Remote Control" picker is a correct use of pane input.
+
+If SendMessage cannot reach a session, typing into its pane is allowed. Check
+it is idle, keep it short, and say who you are.
 
 ## Privacy and routing
 

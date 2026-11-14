@@ -254,11 +254,11 @@ The files:
 - Read `.ai/distributed-sendmessage-protocol.md` before messaging, asking,
   directing or answering another agent session on any host, and before running
   `herdr pane send-text`, `herdr pane run`, `herdr agent prompt` or
-  `tmux send-keys` against a pane you did not create, or diagnosing a
-  `BLOCKED: ... Typing into another agent session's pane` hook denial. Claude
-  sessions talk through `SendMessage` (across machines via Remote Control),
-  never by typing into each other's panes: that interrupts the maintainer
-  (ruling 2026-11-14, plan distributed-sendmessage).
+  `tmux send-keys` against a pane you did not create. Claude sessions talk
+  through `SendMessage` by default (across machines via Remote Control),
+  because typed text can interrupt the maintainer. Typing into a pane is still
+  allowed and is not blocked; use it when it is necessary (ruling 2026-11-14,
+  plan distributed-sendmessage).
 
 ## Backlog drive — this repo has no foreman seat
 

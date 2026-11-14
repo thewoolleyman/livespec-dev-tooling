@@ -1,7 +1,9 @@
 ---
-# claude_distributed_sendmessage -- force Claude Code sessions on an interactive
-# host to message each other with SendMessage (across machines, through Remote
-# Control) instead of typing into each other's terminal panes.
+# claude_distributed_sendmessage -- make SendMessage (across machines, through
+# Remote Control) the easy, default way for Claude Code sessions on an
+# interactive host to message each other. GUIDANCE, NOT A BLOCK: typing into a
+# pane stays allowed, because it is sometimes necessary (maintainer ruling
+# 2026-11-14: "DO NOT PREVENT SESSIONS FROM TYPING INTO PANES").
 #
 # Plan distributed-sendmessage (epic livespec-dev-tooling-rlwppp). The protocol
 # the hook and the managed memory point at is
@@ -10,15 +12,16 @@
 # ROOT SCOPE, DELIBERATELY. Everything here is Claude Code MANAGED policy:
 # /etc/claude-code/ is read by every session of every account on the host, and
 # a managed key outranks the user's ~/.claude/settings.json -- which Claude
-# Code re-serializes on its own saves and other roles merge into. That is what
-# "force" means here: no user-settings rewrite can drop Remote Control or the
-# guard. The user-scope roles (claude_code_hooks, claude_ntfy) are untouched.
+# Code re-serializes on its own saves and other roles merge into, so no
+# user-settings rewrite can drop Remote Control. The user-scope roles (claude_code_hooks, claude_ntfy) are untouched.
 
 claude_distributed_sendmessage_policy_dir: /etc/claude-code
 claude_distributed_sendmessage_dropin_dir: "{{ claude_distributed_sendmessage_policy_dir }}/managed-settings.d"
 claude_distributed_sendmessage_dropin: "{{ claude_distributed_sendmessage_dropin_dir }}/50-distributed-sendmessage.json"
 claude_distributed_sendmessage_memory: "{{ claude_distributed_sendmessage_policy_dir }}/CLAUDE.md"
 claude_distributed_sendmessage_lib_dir: /usr/local/lib/claude-code
+# RETIRED: the pane-input guard hook is no longer installed; the role removes
+# this path from hosts that carried it.
 claude_distributed_sendmessage_guard_dest: "{{ claude_distributed_sendmessage_lib_dir }}/pane-input-guard.py"
 
 # remoteControlAtStartup: every interactive session connects to Remote Control,
@@ -34,10 +37,3 @@ claude_distributed_sendmessage_guard_dest: "{{ claude_distributed_sendmessage_li
 claude_distributed_sendmessage_settings:
   remoteControlAtStartup: true
   crossSessionInbound: accept
-  hooks:
-    PreToolUse:
-      - matcher: Bash
-        hooks:
-          - type: command
-            command: "python3 {{ claude_distributed_sendmessage_guard_dest }}"
-            timeout: 15
