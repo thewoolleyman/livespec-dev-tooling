@@ -21,8 +21,21 @@ the role refuse before it writes. Private keys are never committed.
 
 Every managed entry is a local-forward-only key: `restrict`,
 `port-forwarding`, an exact `permitopen`, `permitlisten="invalid.invalid:1"`,
-and `command="/bin/false"` deny shells, commands, remote forwards, and other
-destinations. Apply against the OpenSSH public address, not Tailscale SSH.
+and a forced `command` deny shells, client-chosen commands, remote forwards,
+and other destinations. Apply against the OpenSSH public address, not Tailscale
+SSH.
+
+The forced command is
+`/usr/bin/setpriv --pdeathsig KILL /usr/bin/sleep infinity`: it does nothing
+and blocks. It blocks so that a forwarding client can open a session instead
+of running `ssh -N`. On OpenSSH 10.0 (vps), sshd sets `TCP_NODELAY` on the
+connection only when a session starts. Without it, Nagle's algorithm holds
+small forwarded replies for about one extra round trip
+(hetzner-xubuntu-info research note 024). `setpriv --pdeathsig KILL` kills
+the sleep when its sshd parent exits. sshd does not kill a no-pty session's
+child when the connection drops, so a bare `sleep` would be left behind on
+every reconnect. A `-N` client never opens a session, so this command never
+runs for it.
 
 ```text
 just ansible-drift ansible/dev-host.yml --tags authorized_keys_managed
