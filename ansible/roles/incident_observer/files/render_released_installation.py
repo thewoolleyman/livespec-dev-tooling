@@ -37,6 +37,10 @@ The argv it renders:
              as the dedicated recovery App, whose credential it reads from the
              protected `recovery-app.json` beside controller.json; without that
              file every forge operation refuses by name.
+
+With `--ci-identity-policy <path>` the manifest also carries
+`ci_identity_policy: {path, sha256}`, the digest of the exact policy bytes the
+role installed (bqnzcm.4). Without it the manifest is unchanged.
 """
 
 from __future__ import annotations
@@ -67,6 +71,9 @@ class ManifestInputs:
     config: Path
     required_jobs: tuple[str, ...]
     interpreter: Path
+    # The optional protected CI identity policy (docs/incident-ci-identity.md); absent,
+    # the manifest carries no `ci_identity_policy` member and is unchanged.
+    ci_identity_policy: Path | None = None
 
 
 def package_digest(*, root: Path) -> str:
@@ -79,7 +86,7 @@ def package_digest(*, root: Path) -> str:
 
 
 def render_manifest(*, inputs: ManifestInputs, package_root: Path) -> dict[str, object]:
-    """Render the eight-key manifest; every executable path is hashed as found."""
+    """Render the eight-key manifest, plus the optional CI identity policy member."""
     interpreter = str(inputs.interpreter)
     reader = [interpreter, str(inputs.reader_script)]
     principal = [interpreter, "-I", str(package_root / _PRINCIPAL_MODULE), str(inputs.config)]
@@ -87,7 +94,7 @@ def render_manifest(*, inputs: ManifestInputs, package_root: Path) -> dict[str, 
     for value in (*reader, *principal, str(inputs.interpreter.resolve())):
         if value not in _ARGV_SEPARATORS:
             files[value] = hashlib.sha256(Path(value).read_bytes()).hexdigest()
-    return {
+    manifest: dict[str, object] = {
         "release": inputs.release,
         "revision": inputs.revision,
         "package_sha256": package_digest(root=package_root),
@@ -97,6 +104,12 @@ def render_manifest(*, inputs: ManifestInputs, package_root: Path) -> dict[str, 
         "files": files,
         "required_jobs": list(inputs.required_jobs),
     }
+    if inputs.ci_identity_policy is not None:
+        manifest["ci_identity_policy"] = {
+            "path": str(inputs.ci_identity_policy),
+            "sha256": hashlib.sha256(inputs.ci_identity_policy.read_bytes()).hexdigest(),
+        }
+    return manifest
 
 
 def _parse(argv: list[str]) -> ManifestInputs:
@@ -108,6 +121,7 @@ def _parse(argv: list[str]) -> ManifestInputs:
     _ = parser.add_argument("--config", required=True, type=Path)
     _ = parser.add_argument("--required-job", action="append", required=True)
     _ = parser.add_argument("--interpreter", type=Path, default=Path(sys.executable))
+    _ = parser.add_argument("--ci-identity-policy", type=Path, default=None)
     args = parser.parse_args(argv)
     return ManifestInputs(
         release=args.release,
@@ -117,6 +131,7 @@ def _parse(argv: list[str]) -> ManifestInputs:
         config=args.config,
         required_jobs=tuple(args.required_job),
         interpreter=args.interpreter,
+        ci_identity_policy=args.ci_identity_policy,
     )
 
 

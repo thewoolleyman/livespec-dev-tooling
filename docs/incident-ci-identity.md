@@ -59,6 +59,22 @@ approved isolated immutable reusable workflow and obtaining issuer keys through
 an independent trust path remain operator obligations. No request or environment
 selects policy, audience, keys, issuer endpoint, workflow revision or executable.
 
+The committed `incident_observer` role provisions this policy
+(livespec-dev-tooling-bqnzcm.4; see the role README, "The CI identity
+policy"). Its trust basis for the issuer keys is stated plainly. At every
+apply the role reads `https://token.actions.githubusercontent.com/.well-known/jwks`
+over TLS, verified only against the host's system CA store, from that one
+fixed issuer host. Nothing pins the issuer's certificate or key. The role
+then replaces the pinned keys with the keys that read returns. So the keys are
+exactly as trustworthy as that TLS read at apply time. After the read, no
+request can change them, because the controller never fetches keys on a
+request. A dry run reports a key change: the role's key-file write runs in
+check mode and shows `changed`. It does not show the re-rendered policy. A key
+the forge stops publishing leaves the policy at the next apply. A row outside
+the loader's bounds is dropped by name, because one such row would make the
+whole policy unloadable. The apply then fails if the installation does not
+load its policy.
+
 The issuer is fixed to `https://token.actions.githubusercontent.com`, with RS256
 and JWT headers. Optional bounded `x5t` metadata is accepted and ignored for key
 selection. Token-selected key material, key URLs and critical extensions refuse.
