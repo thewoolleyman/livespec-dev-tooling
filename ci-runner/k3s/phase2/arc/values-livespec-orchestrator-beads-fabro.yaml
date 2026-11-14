@@ -264,9 +264,4 @@ minRunners: 0
 # 16 -> 14 on 2026-11-13: the ClusterQueue falls 8 -> 7 (per-node CPU budget,
 # cohort 30), max(2 x 7, 6) = 14, the bounded-multiple rule the fleet-capacity
 # scenario test enforces.
-# 14 -> 16 on 2026-11-14: a recorded exception above the rule's 8, paired with
-# the PowerEdge gate lane cut 30 -> 20 cpu. The scale set sat at 14 of 14 with
-# runs queued while the cohort held 8 free churn slots. See ../kueue/DERIVATION.md
-# "The PowerEdge gate lane back to four gates, and two more orchestrator
-# runners (2026-11-14)".
-maxRunners: 16
+maxRunners: 14

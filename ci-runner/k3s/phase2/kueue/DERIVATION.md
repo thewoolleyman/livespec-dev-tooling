@@ -1489,7 +1489,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 5 | 10 | **20** | 2026-11-14 |
-| `livespec-orchestrator-beads-fabro` | 4 | 8 | **16** | 2026-11-14 |
+| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-14 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -1722,7 +1722,7 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
-### The PowerEdge gate lane back to four gates, and two more orchestrator runners (2026-11-14)
+### The PowerEdge gate lane back to four gates (2026-11-14)
 
 This section sits ahead of the two 2026-11-11 PowerEdge sections it reverses
 in part. It is placed here, out of date order, so that it does not collide
@@ -1782,15 +1782,21 @@ OVERCOMMITTED: 0.2% idle and BestEffort `cpu.pressure` full avg60 33.78, with
 5 gate pods and 20 of the lane's 30 cpu admitted. The overflow gates are the
 node's largest CPU class while the CI pods behind them queue.
 
-**Two more orchestrator runners.** At 12:57Z `livespec-orchestrator-k3s` sat
-at 14 of 14 runners with 11 orchestrator runs queued, among them a
-stop-the-line revert. Meanwhile the cohort used 22 of its 30 churn slots, with
-free slots on poweredge 6, hp 2, gmktec 1 and M4 1 (ci-runtime-and-cost,
-13:02Z). The cap was the scale set's own `maxRunners`, not the cohort and not
-the node slots. Its recorded exception goes 14 -> 16, inside cohort 30, with no
-node-slot change. Most of the free slots are on the PowerEdge, so the raise
-ships only with the gate cut above: the node gives up as much as 10 cpu of
-gate reservation and gains at most 2 BestEffort runners.
+**Two more orchestrator runners: considered and withdrawn.** At 12:57Z
+`livespec-orchestrator-k3s` sat at 14 of 14 runners with runs queued while the
+cohort held 8 free churn slots (ci-runtime-and-cost, 13:02Z), and a raise to
+16 was routed here. The 13:00-14:06Z window then read every runner node
+saturated. Median `k8s.node.cpu.usage`:
+- poweredge 71.85 of 72 cores;
+- gmktec 31.96 of 32;
+- gamingpc 15.85 of 16;
+- hp averaging 11.25 of 16.
+
+legacy-coordinator-agent's 13:53Z read flagged gmktec and hp overcommitted
+(BestEffort pressure 35.2 and 35.9). On a saturated fleet two more runners add
+contention, not throughput (`.ai/ci-node-capacity-reads.md`: the cap is
+throughput-derived), so `maxRunners` stays 14. Reopen the raise only on a
+windowed read with free CPU on the nodes that would take the runners.
 
 **CI-side read at +2 h.** Owner: plan gate-job-resources (epic
 livespec-dev-tooling-ukoeah). It covers:
@@ -1805,10 +1811,9 @@ livespec-dev-tooling-ukoeah). It covers:
 - Per-node avg / p95 `k8s.node.cpu.usage`, and the PowerEdge's BestEffort
   CI-slice `cpu.pressure`.
 
-**Revert trigger.** Within 6 h of the apply, EITHER of these restores BOTH
-values: `gates-poweredge-flavor` 30 cpu / 48 Gi and `node-cpu-budget.yaml`
-gate_cpu 30, and `livespec-orchestrator-k3s` `maxRunners` 14 in this table, the
-values file and both test tables.
+**Revert trigger.** Within 6 h of the apply, EITHER of these restores
+`gates-poweredge-flavor` to 30 cpu / 48 Gi and `node-cpu-budget.yaml` gate_cpu
+to 30.
 - (a) The PowerEdge's hour-window p95 `k8s.node.cpu.usage` stays at or above
   71 cores AND `gates-cq` shows 1 or more pending for 15 min or longer: the
   cap starves gates while the node stays full.
@@ -1816,8 +1821,7 @@ values file and both test tables.
   above 1.25x its 03:05-09:09Z value: M4 10.0, gamingpc 11.0, gmktec 19.2,
   hp 21.5 min.
 Apply the restore with `just ansible-apply ansible/ci-pool.yml --tags
-ci_converge_unit --limit poweredge-xubuntu` and the converge of the
-orchestrator scale set.
+ci_converge_unit --limit poweredge-xubuntu`.
 
 **Result.** Due within 24 h of this commit, recorded here.
 
