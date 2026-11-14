@@ -2,7 +2,7 @@
 
 Plan throughput-metric (livespec-dev-tooling-oe7cfw). This note refines how the throughput headline attributes a red
 covering run. It does not change the metric's definition, which is throughput-track-organization's note 003
-(`plan/throughput-track-organization/research/003-the-one-metric-definition-and-baseline.md`, section "Definition";
+(`plan/archive/throughput-track-organization/research/003-the-one-metric-definition-and-baseline.md`, section "Definition";
 it moves to `plan/archive/throughput-track-organization/research/` when that plan archives) as ratified in
 SPECIFICATION/non-functional-requirements.md section "Merged-green throughput telemetry" (proposal
 a-scheduled-graphql-reconciler-emits). The definition belongs to this plan, so rules that evolve it live here.

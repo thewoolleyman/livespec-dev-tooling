@@ -22,6 +22,10 @@ definition it should apply.
 - Input for livespec-dev-tooling-bgespb: its committed definition must carry
   every panel recorded here.
 
+- At the archive of plan throughput-track-organization, the plan path inside this
+  export was updated to `plan/archive/throughput-track-organization/`; nothing
+  else was changed.
+
 ## livespec-family-all-activity.krThv8DvcwS.2026-11-13.pre-throughput.json
 
 - The same board, `krThv8DvcwS`, exported earlier on 2026-11-13 (about 23:3xZ)
