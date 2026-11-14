@@ -1489,7 +1489,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 5 | 10 | **20** | 2026-11-14 |
-| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-14 |
+| `livespec-orchestrator-beads-fabro` | 4 | 8 | **16** | 2026-11-14 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -1722,7 +1722,7 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
-### The PowerEdge gate lane back to four gates (2026-11-14)
+### The PowerEdge gate lane back to four gates, and two more orchestrator runners (2026-11-14)
 
 This section sits ahead of the two 2026-11-11 PowerEdge sections it reverses
 in part. It is placed here, out of date order, so that it does not collide
@@ -1757,10 +1757,69 @@ day; gate pod p50 per node (livespec-dev-tooling PowerEdge 35.5, gmktec 20.0,
 hp 19.0, gamingpc 8.5, M4 10.0); and `gates-cq` pending workloads, so the cost
 of moving gates is visible.
 
-**Revert trigger.** If fleet gate pod p50 worsens beyond its noise band within
-6 h of the apply without a matching CI gain, restore 30 cpu / 48 Gi on
-`gates-poweredge-flavor` and 30 in `node-cpu-budget.yaml`, then apply with
-`just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`.
+**The post-#4607 read (the cost this cap buys back).** The fastest-first
+order moved placement: from 03:05Z to 09:09Z the PowerEdge ran 21% of
+livespec-dev-tooling gates (15 of 71), against 48% before, and `gates-cq` read
+0 pending at 10:45Z. A ~05:09Z single read (3.7% idle, pressure 6.86) looked
+healed. Single reads swing by tens of points within minutes, so the deciding
+read is windowed. Honeycomb `metrics`, `k8s.node.cpu.usage` in cores, avg / p95:
+
+| Node | Cores | 11:00-12:00Z | 12:00-13:0xZ |
+|---|---|---|---|
+| poweredge | 72 | 53.2 / 69.2 | 46.8 / 71.95 |
+| gmktec | 32 | 15.6 / 32.0 | 20.7 / 32.0 |
+| hp | 16 | 10.1 / 15.4 | 4.4 / 10.5 |
+| gamingpc | 16 | 6.9 / 16.0 | 10.4 / 16.0 |
+
+PowerEdge pod CPU over 12:00-13:0xZ, the SUM of `k8s.pod.cpu.usage` by
+namespace:
+- `gates`: 1308.5 (47%), from 10 pods;
+- `arc-runners`: 795.2 (28%), from 218 pods;
+- `factory`: 639.0 (23%), from 11 pods.
+
+legacy-coordinator-agent's 12:55:54Z utilization read flagged the node
+OVERCOMMITTED: 0.2% idle and BestEffort `cpu.pressure` full avg60 33.78, with
+5 gate pods and 20 of the lane's 30 cpu admitted. The overflow gates are the
+node's largest CPU class while the CI pods behind them queue.
+
+**Two more orchestrator runners.** At 12:57Z `livespec-orchestrator-k3s` sat
+at 14 of 14 runners with 11 orchestrator runs queued, among them a
+stop-the-line revert. Meanwhile the cohort used 22 of its 30 churn slots, with
+free slots on poweredge 6, hp 2, gmktec 1 and M4 1 (ci-runtime-and-cost,
+13:02Z). The cap was the scale set's own `maxRunners`, not the cohort and not
+the node slots. Its recorded exception goes 14 -> 16, inside cohort 30, with no
+node-slot change. Most of the free slots are on the PowerEdge, so the raise
+ships only with the gate cut above: the node gives up as much as 10 cpu of
+gate reservation and gains at most 2 BestEffort runners.
+
+**CI-side read at +2 h.** Owner: plan gate-job-resources (epic
+livespec-dev-tooling-ukoeah). It covers:
+- livespec-orchestrator-beads-fabro pull_request job queue wait, created to
+  started from the GitHub jobs API (this repository's exporter carries no
+  `ci.job.queue_ms` for it), split into the nonroot coverage shards and the
+  tail jobs. Before: tail p50 0.2 min; shards 0.2-13.6 min (11:07-11:55Z).
+- livespec-dev-tooling `ci.job.queue_ms > 0` p50 / p95. Before: 34 s / 362 s
+  (07:22-10:45Z).
+- CI job duration p50, counting only spans with `duration_ms` under one day.
+- `gates-cq` pending workloads.
+- Per-node avg / p95 `k8s.node.cpu.usage`, and the PowerEdge's BestEffort
+  CI-slice `cpu.pressure`.
+
+**Revert trigger.** Within 6 h of the apply, EITHER of these restores BOTH
+values: `gates-poweredge-flavor` 30 cpu / 48 Gi and `node-cpu-budget.yaml`
+gate_cpu 30, and `livespec-orchestrator-k3s` `maxRunners` 14 in this table, the
+values file and both test tables.
+- (a) The PowerEdge's hour-window p95 `k8s.node.cpu.usage` stays at or above
+  71 cores AND `gates-cq` shows 1 or more pending for 15 min or longer: the
+  cap starves gates while the node stays full.
+- (b) The livespec-dev-tooling gate pod p50 on any non-PowerEdge node rises
+  above 1.25x its 03:05-09:09Z value: M4 10.0, gamingpc 11.0, gmktec 19.2,
+  hp 21.5 min.
+Apply the restore with `just ansible-apply ansible/ci-pool.yml --tags
+ci_converge_unit --limit poweredge-xubuntu` and the converge of the
+orchestrator scale set.
+
+**Result.** Due within 24 h of this commit, recorded here.
 
 ### The PowerEdge gate lane to six gates (2026-11-11)
 

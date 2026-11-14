@@ -83,7 +83,7 @@ _RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
     # the 2026-11-14 small-queue floor cuts their guarantee, not their burst
     # (DERIVATION.md "Small-queue floor of 2: cohort 30 re-split (2026-11-14)").
     "livespec-dev-tooling-cq": 20,
-    "livespec-orchestrator-beads-fabro-cq": 14,
+    "livespec-orchestrator-beads-fabro-cq": 16,
 }
 
 # Each exception's row in DERIVATION.md "Recorded exceptions to the rule":
