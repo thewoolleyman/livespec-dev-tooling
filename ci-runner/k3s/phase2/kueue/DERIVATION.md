@@ -2312,9 +2312,13 @@ repository's pull request ran its parallel CI jobs one at a time whenever the
 two largest queues had borrowed the pool full. Fleet small-repository
 open-to-PR-CI-green median went from 4-5 min to 8.9 min (11-13) and then
 19.2 min (24 h to 11-14 01:55Z). The driver is DEMAND in the 1-slot
-repositories through one serialized slot: livespec-overseer ran 643 jobs on
-11-13 against 145 on 11-11, and livespec-console-beads-fabro 574 against 291
-(ci-runtime-and-cost). Fleet job duration p50, counting only spans with
+repositories through one serialized slot. Counted as Honeycomb github-ci job
+spans (every span carrying ci.job.name, all workflows and events the CI-run
+exporter sends, UTC days), livespec-overseer ran 181, 72 and then 643 jobs on
+11-11, 11-12 and 11-13, and livespec-console-beads-fabro 291, 198 and 574. That
+exporter covers only the runs it exports, so a count from the GitHub API over
+every workflow run (the retro's 1,973 and 720 for 11-13) is higher. The two
+counts agree on the step. Fleet job duration p50, counting only spans with
 duration_ms under one day so the bt2cnw wrapped-duration spans drop out, read
 33.3, 34.9 and then 38.1 s over 11-11 to 11-13. The step that is real is on
 11-13: a fixed per-job overhead on every job, trivial ones included
@@ -2360,8 +2364,11 @@ livespec-dev-tooling-ukoeah: small-repository PR open-to-CI-green median
 each queue's CI queue-wait p50 and p95 over the 24 h before the apply. If,
 within 6 h of the apply, either large repository's M3 median or its CI
 queue-wait p95 rises above its pre-apply 24 h value by more than its noise
-band, rebalance or revert. Rebalance by funding the small-queue floor from a
-re-derived cohort quota (lever e) rather than from the large queues. If
+band, rebalance or revert. Rebalance WITHIN cohort 30: move nominal quota from
+the master lanes or fabro, or lower the floor back to 1 for a queue that sat
+idle over the window. A cohort raise is not a rebalance option: lever (e) was
+closed on 2026-11-14 because every pool node read CPU-saturated, and a raise
+needs a fresh node-idle read showing headroom first. If
 ci-runtime-and-cost finds the 11-13 small-repository demand surge was waste
 (replaced heads, re-runs) that row 5c removes, revisit this split.
 
