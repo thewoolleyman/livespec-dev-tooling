@@ -698,8 +698,17 @@ fabro_server_instances:
         # canary's environment-parity read passes.
         # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
         # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
-        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
+        # v0.8.5 ONE-POD CANARY (2026-11-14, orchestrator bd-ib-l7br6c and bd-ib-p3g5tp;
+        # coordinator legacy-coordinator-agent GO, duties section 10): the idle PID 1
+        # ignores TERM and INT, so a signal from inside the sandbox cannot end it, and
+        # the pod hands its CPU limit to PYTEST_XDIST_AUTO_NUM_WORKERS, OMP_NUM_THREADS
+        # and LIVESPEC_TEST_PARALLELISM (a spec value wins; a zero limit sets none).
+        # This instance moves first; the fleet instance follows only after this
+        # canary's environment-parity read passes.
+        # REVERT to v0.8.4: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        # REVERT to v0.8.4: sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.5
+        sha256: fc519854754b7417fa68828bd45dbd1a8504a1b76e69756614b1e4d0857bea36
         inherit_env:
           - HOME
           - PATH
@@ -1037,6 +1046,12 @@ sandbox_driver_kubernetes_versioned_releases:
   # REVERT target. Digest verified by download of the release asset.
   - version: v0.8.4
     sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
+  # v0.8.5 (bd-ib-l7br6c, bd-ib-p3g5tp): v0.8.4 plus an idle PID 1 that ignores
+  # TERM and INT, and the pod's CPU limit handed to the tools that count CPUs.
+  # The candidate pins it for its one-pod canary; v0.8.4 stays installed as the
+  # REVERT target. Digest verified by download of the release asset.
+  - version: v0.8.5
+    sha256: fc519854754b7417fa68828bd45dbd1a8504a1b76e69756614b1e4d0857bea36
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
