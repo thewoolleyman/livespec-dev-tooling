@@ -18,34 +18,42 @@ WATCH_TIMED_OUT_DETAIL = "kubectl terminal-state watch timed out"
 _REQUEST_TIMEOUT_SECONDS = 240
 _WATCH_WINDOW_SECONDS = 240
 _PROCESS_TIMEOUT_SECONDS = 270
+# The heartbeat is a Python process rather than a shell loop. A shell heartbeat
+# stopped through `kill` + `wait` can lose the TERM while it sits in `wait` (dash
+# does), and a TERM ignored on entry cannot be trapped at all, so the finished
+# command then blocks on a 30-second sleep or forever. This one resets TERM, ends
+# on the KILL the command sends it, owns no child to orphan, and also ends if its
+# parent shell is gone.
+_HEARTBEAT_START = r"""
+heartbeat_program='
+import os
+import signal
+import sys
+import time
+
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+parent = os.getppid()
+stamp = sys.argv[1]
+while os.getppid() == parent:
+    if stamp:
+        try:
+            open(stamp, "w").close()
+        except OSError:
+            pass
+    # Renew the stamp every 30 seconds (sleep 30), far inside the 900-second stall window.
+    time.sleep(30)
+'
+python3 -c "$heartbeat_program" "$progress_stamp" >/dev/null 2>&1 &
+heartbeat_pid=$!
+"""
 _RUN_WITH_PROGRESS_SCRIPT = (
     r"""
 set -eu
 progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
-heartbeat() {
-    sleeper_pid=
-    stop_heartbeat() {
-        if test -n "$sleeper_pid"; then
-            kill "$sleeper_pid" 2>/dev/null || true
-            wait "$sleeper_pid" 2>/dev/null || true
-        fi
-        exit 0
-    }
-    trap stop_heartbeat TERM
-    while :; do
-        if test -n "$progress_stamp"; then
-            : >"$progress_stamp"
-        fi
-        sleep 30 &
-        sleeper_pid=$!
-        wait "$sleeper_pid" || true
-        sleeper_pid=
-    done
-}
-heartbeat >/dev/null 2>&1 &
-heartbeat_pid=$!
-cleanup() {
-    kill "$heartbeat_pid" 2>/dev/null || true
+"""
+    + _HEARTBEAT_START
+    + r"""cleanup() {
+    kill -KILL "$heartbeat_pid" 2>/dev/null || true
     wait "$heartbeat_pid" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -72,30 +80,10 @@ temporary=$(mktemp -d)
 fifo="$temporary/watch"
 stderr="$temporary/stderr"
 progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
-heartbeat() {
-    sleeper_pid=
-    stop_heartbeat() {
-        if test -n "$sleeper_pid"; then
-            kill "$sleeper_pid" 2>/dev/null || true
-            wait "$sleeper_pid" 2>/dev/null || true
-        fi
-        exit 0
-    }
-    trap stop_heartbeat TERM
-    while :; do
-        if test -n "$progress_stamp"; then
-            : >"$progress_stamp"
-        fi
-        sleep 30 &
-        sleeper_pid=$!
-        wait "$sleeper_pid" || true
-        sleeper_pid=
-    done
-}
-heartbeat >/dev/null 2>&1 &
-heartbeat_pid=$!
-cleanup() {
-    kill "$heartbeat_pid" 2>/dev/null || true
+"""
+    + _HEARTBEAT_START
+    + r"""cleanup() {
+    kill -KILL "$heartbeat_pid" 2>/dev/null || true
     wait "$heartbeat_pid" 2>/dev/null || true
     rm -rf "$temporary"
 }
