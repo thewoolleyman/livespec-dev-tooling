@@ -32,6 +32,8 @@ import tempfile
 import textwrap
 from pathlib import Path
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _PLAY = _REPO_ROOT / "ansible" / "dev-host.yml"
@@ -130,7 +132,7 @@ def _render_pods_endpoint(*, flannel_subnet: str, override: str = "") -> str:
             cwd=_REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=HANG_GUARD_SECONDS,
             check=False,
             env=os.environ | {"ANSIBLE_NOCOWS": "1"},
         )

@@ -248,7 +248,9 @@ def test_no_module_cuts_an_ansible_run_off_before_the_hang_guard() -> None:
     subprocess timeout is a smaller literal kills the run first and the report
     never comes (`test_fabro_client_role`, CI run 43573421425).
     """
-    literal = re.compile(r"^_(?:PLAYBOOK_|ENGINE_|DRIFT_)?TIMEOUT_SECONDS = \d+$", re.MULTILINE)
+    literal = re.compile(
+        r"^_(?:PLAYBOOK_|ENGINE_|DRIFT_)?TIMEOUT_SECONDS = \d+$|^\s+timeout=\d+,$", re.MULTILINE
+    )
     modules = _modules_running_pinned_ansible()
     assert len(modules) >= 30
     cut_short = {
