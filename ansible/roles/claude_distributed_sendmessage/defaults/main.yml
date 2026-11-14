@@ -37,3 +37,19 @@ claude_distributed_sendmessage_guard_dest: "{{ claude_distributed_sendmessage_li
 claude_distributed_sendmessage_settings:
   remoteControlAtStartup: true
   crossSessionInbound: accept
+
+# NO PERMISSION PROMPT MAY STALL A SEAT (maintainer, 2026-11-14: "prevent the
+# blockage. I dont really care about dangerous commands."). Measured on Claude
+# Code 2.1.325 (livespec-dev-tooling-6tgd2z): in bypass mode the built-in
+# "Dangerous rm operation" check still prompts, a PreToolUse hook "allow" does
+# NOT suppress it, a settings-file "env" key does NOT either, and this variable
+# in the PROCESS environment does. So it is exported from every place a seat's
+# claude process can inherit it: login shells, interactive bash, every zsh, and
+# the systemd user manager.
+claude_distributed_sendmessage_seat_env:
+  CLAUDE_CODE_EVEN_MORE_DANGEROUSLY_SKIP_PERMISSIONS: "1"
+claude_distributed_sendmessage_profile_snippet: /etc/profile.d/claude-seat-no-stall.sh
+claude_distributed_sendmessage_environment_d: /etc/environment.d/50-claude-seat-no-stall.conf
+claude_distributed_sendmessage_shell_rcs:
+  - /etc/bash.bashrc
+  - /etc/zsh/zshenv
