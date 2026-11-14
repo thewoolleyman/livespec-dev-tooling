@@ -116,6 +116,9 @@ from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
 from livespec_dev_tooling.checks._ci_severity_lever_parity import (  # noqa: E402
     ci_severity_lever_findings,
 )
+from livespec_dev_tooling.checks._master_push_concurrency_reconciler import (  # noqa: E402
+    reconciler_concurrency_findings,
+)
 from livespec_dev_tooling.config import (  # noqa: E402  — vendor-path-aware.
     load_repo_local_ci_skips,
 )
@@ -132,6 +135,10 @@ _SEVERITY_LEVERS_SOURCE = Path("scripts") / "just" / "gate-surface-severity-leve
 _FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST"
 _CHECK_ID = "ci_matrix_completeness"
 _EXIT_VIOLATIONS = 4
+_MASTER_PUSH_CONCURRENCY_MESSAGE = (
+    "workflow concurrency can drop a master push run while the master-health reconciler relies "
+    "on every master commit having a verdict"
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -214,6 +221,21 @@ def _collect_findings(
         justfile_targets=justfile_targets,
         jobs=jobs,
         repo_local_skips=load_repo_local_ci_skips(repo_root=cwd) or (),
+    )
+    workflows_dir = cwd / _CI_YML_PATH.parent
+    workflow_sources = {
+        str(path.relative_to(cwd)): path.read_text(encoding="utf-8")
+        for pattern in ("*.yml", "*.yaml")
+        for path in sorted(workflows_dir.glob(pattern))
+    }
+    findings.extend(
+        finding(
+            mode="master-push-concurrency-with-reconciler",
+            message=_MASTER_PUSH_CONCURRENCY_MESSAGE,
+            workflow=item.workflow,
+            reconciler_caller=item.reconciler_caller,
+        )
+        for item in reconciler_concurrency_findings(workflows=workflow_sources)
     )
     # The committed lever source binds only the repository that carries it
     # (the gate-surface severity lever rules in contracts.md): it is sourced by
