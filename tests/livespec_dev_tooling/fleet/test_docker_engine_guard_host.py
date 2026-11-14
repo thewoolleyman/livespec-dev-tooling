@@ -1546,7 +1546,8 @@ def test_the_dead_man_recipe_reaches_systemd_run_with_collect_and_both_budgets(
     """
     model = importlib.import_module(_MODEL_MODULE)
     units = importlib.import_module(_UNITS_MODULE)
-    recipe = model.deadman_argv(run="run-a", on_active_seconds=360)
+    paths = model.GuardPaths(state_root=tmp_path / "var", runtime_root=tmp_path / "run")
+    recipe = model.deadman_argv(run="run-a", on_active_seconds=360, paths=paths)
     commands = _Commands()
 
     _real_host(root=tmp_path, commands=commands).systemd_run(argv=recipe)
@@ -1559,7 +1560,14 @@ def test_the_dead_man_recipe_reaches_systemd_run_with_collect_and_both_budgets(
     assert "--property=TimeoutStartSec=900" in emitted
     assert "--unit=docker-engine-deadman-run-a" in emitted
     assert "--on-active=360" in emitted
-    assert emitted[-2:] == ("rollback", "run-a")
+    assert emitted[-6:] == (
+        "rollback",
+        "run-a",
+        "--state-root",
+        str(tmp_path / "var"),
+        "--runtime-root",
+        str(tmp_path / "run"),
+    )
     assert commands.timeouts == [units.UNIT_ACTION_TIMEOUT_SECONDS]
 
 

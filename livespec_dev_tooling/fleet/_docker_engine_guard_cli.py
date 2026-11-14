@@ -23,8 +23,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (
-    DEFAULT_RUNTIME_ROOT,
-    DEFAULT_STATE_ROOT,
     DEFAULT_WINDOW_SECONDS,
     OPERATIONS,
     GuardPaths,
@@ -66,8 +64,12 @@ def parse_request(*, argv: Sequence[str]) -> CliRequest:
     parser = argparse.ArgumentParser(prog=_PROG, description=_DESCRIPTION)
     _ = parser.add_argument("operation", choices=OPERATIONS)
     _ = parser.add_argument("run")
-    _ = parser.add_argument("--state-root", default=str(DEFAULT_STATE_ROOT))
-    _ = parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME_ROOT))
+    # Neither root has a default: both are host state that a unit or an
+    # operator also reads, so an invocation that omits one is refused rather
+    # than allowed to write the live location. The specification names the
+    # production values, which the role and every re-invoked rollback pass.
+    _ = parser.add_argument("--state-root", required=True)
+    _ = parser.add_argument("--runtime-root", required=True)
     _ = parser.add_argument("--window-seconds", type=int, default=DEFAULT_WINDOW_SECONDS)
     # INTERNAL. The rollback driver spawns one child process per rollback
     # phase and names the phase here; no operator and no role step passes

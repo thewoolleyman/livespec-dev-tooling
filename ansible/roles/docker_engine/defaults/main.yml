@@ -109,10 +109,13 @@ docker_engine_guard_source_root: "{{ role_path }}/../../.."
 docker_engine_guard_install_root: /usr/local/lib/docker-engine-guard
 docker_engine_guard_executable: /usr/local/libexec/docker-engine-guard
 
-# NOT KNOBS. The guard's own DEFAULT_STATE_ROOT and DEFAULT_RUNTIME_ROOT
-# (_docker_engine_guard_model.py). The drop-ins name paths under them and the
-# guard reads its records there; a different value here would make the two
-# disagree about where the start permission is.
+# NOT KNOBS. The production locations the specification names, which the
+# guard's DEFAULT_STATE_ROOT and DEFAULT_RUNTIME_ROOT
+# (_docker_engine_guard_model.py) record. The guard has no default for either:
+# every operation, and the preflight, is passed them as `--state-root` and
+# `--runtime-root`. The drop-ins name paths under them and the guard reads its
+# records there; a different value here would make the two disagree about where
+# the start permission is.
 docker_engine_state_root: /var/lib/docker-engine-guard
 docker_engine_runtime_root: /run/docker-engine-guard
 

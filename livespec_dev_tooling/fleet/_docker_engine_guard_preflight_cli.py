@@ -58,7 +58,6 @@ if str(_PACKAGE_ROOT) not in sys.path:
 from livespec_dev_tooling.fleet._docker_engine_guard_host import build_real_host  # noqa: E402
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (  # noqa: E402
     DEFAULT_RUNTIME_ROOT,
-    DEFAULT_STATE_ROOT,
     GuardPaths,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_resync import (  # noqa: E402
@@ -119,26 +118,25 @@ def _parser() -> argparse.ArgumentParser:
     record is the baseline the window's samples compare against and so
     belongs after that decision and before the first package step.
 
-    `--run` is REQUIRED and `--state-root` is not, which is the split
-    the guard's own command line already makes: the run is decided by
-    the role step and a default for it would be this module guessing
-    which run it is recording, while the state root has a location the
-    specification names and is overridden only for the disposable
-    acceptance host.
+    `--run` and `--state-root` are both REQUIRED. The run is decided by
+    the role step, and a default for it would be this module guessing
+    which run it is recording. The state root has a location the
+    specification names, but it is host state the guard also reads, so it
+    has no default either: an invocation that omits it is refused rather
+    than allowed to write the live location.
     """
     parser = argparse.ArgumentParser(prog=_PROG, description=_DESCRIPTION)
     operations = parser.add_subparsers(dest="operation", required=True)
     refusals = operations.add_parser(REFUSALS, help=_REFUSALS_HELP)
     _ = refusals.add_argument("--declared", required=True)
+    _ = refusals.add_argument("--state-root", required=True)
     record = operations.add_parser(RECORD, help=_RECORD_HELP)
     _ = record.add_argument("--run", required=True)
-    _ = record.add_argument("--state-root", default=str(DEFAULT_STATE_ROOT))
+    _ = record.add_argument("--state-root", required=True)
     return parser
 
 
-def _host(
-    *, state_root: Path = DEFAULT_STATE_ROOT, runner: GuardCommandRunner, proc_root: Path
-) -> RealHost:
+def _host(*, state_root: Path, runner: GuardCommandRunner, proc_root: Path) -> RealHost:
     """The real host both preflight reads run against.
 
     `build_real_host` and not the `HostOps` protocol, which is the
@@ -157,7 +155,13 @@ def _host(
 
 
 def _refusals(
-    *, declared: Path, runner: GuardCommandRunner, proc_root: Path, config: Path, dropins: Path
+    *,
+    declared: Path,
+    state_root: Path,
+    runner: GuardCommandRunner,
+    proc_root: Path,
+    config: Path,
+    dropins: Path,
 ) -> int:
     """Report every reason this host may not reserve a run; whether there was one.
 
@@ -171,7 +175,7 @@ def _refusals(
     bridge to delete, then a group member to remove, then a drop-in to
     edit, one converge apart each.
     """
-    refusals = _host(runner=runner, proc_root=proc_root).preflight_refusals(
+    refusals = _host(state_root=state_root, runner=runner, proc_root=proc_root).preflight_refusals(
         declared=read_declared_ranges(path=declared), config=config, dropins=dropins
     )
     logger = logging.getLogger(LOGGER_NAME)
@@ -222,6 +226,7 @@ def main(
         )
     return _refusals(
         declared=Path(args.declared),
+        state_root=Path(args.state_root),
         runner=runner,
         proc_root=proc_root,
         config=config,
