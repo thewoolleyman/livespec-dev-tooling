@@ -23,12 +23,15 @@
     owner: root
     group: root
     mode: "0755"
+    # The self-test runs against the staged copy BEFORE it replaces the live
+    # guard, so a re-apply of a broken guard leaves the working one in place.
+    validate: "python3 %s --selftest"
   become: true
 
 - name: Prove the installed guard still blocks what it must
-  # Runs against the INSTALLED copy before the drop-in that wires it is
-  # written, so a regression never reaches Claude Code's managed settings.
-  # Post-write verification: skipped under --check (nothing is installed).
+  # The copy's validate already gated the bytes; this re-proves the INSTALLED
+  # copy (interpreter and path as the hook runs them) before the drop-in that
+  # wires it is written. Post-write verification: skipped under --check.
   ansible.builtin.command:
     argv:
       - python3

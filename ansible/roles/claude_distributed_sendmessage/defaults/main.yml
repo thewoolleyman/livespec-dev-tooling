@@ -28,8 +28,9 @@ claude_distributed_sendmessage_guard_dest: "{{ claude_distributed_sendmessage_li
 # crossSessionInbound: accept. Unset, Claude Code HOLDS a message for an
 #   approval dialog whenever sender and receiver run in different permission-mode
 #   classes -- and that dialog is exactly the interruption this role removes.
-#   Every session reachable here belongs to the same claude.ai account. It is a
-#   lock where the strictest source wins, so a user may still choose hold/refuse.
+#   Every session reachable here belongs to the same claude.ai account. A
+#   managed value overrides a USER-scope hold/refuse; only a project or local
+#   `refuse`/`hold` (stricter) still applies. See the protocol's trust boundary.
 claude_distributed_sendmessage_settings:
   remoteControlAtStartup: true
   crossSessionInbound: accept

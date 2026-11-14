@@ -20,8 +20,10 @@ DENIED (with a message naming SendMessage and ListAgents):
     unreachable, unparseable answer, a pane id that is a shell expansion) the
     guard fails CLOSED.
   - `herdr ... agent prompt ...` -- unless its target is a non-Claude agent.
-  - `tmux ... send-keys|send ...` carrying literal text: `-l`, or any key
-    argument that is not a tmux key name. tmux is a retired transport here.
+  - `tmux ... send-keys|send ...` carrying literal text (`-l`, or any key
+    argument that is not a tmux key name) and `tmux paste-buffer`, into ANY
+    pane. tmux is a retired transport here; Codex and pi seats are reached
+    with `herdr pane send-text` then `herdr pane send-keys Enter`.
 
 ALLOWED:
   - `herdr ... pane send-keys` / `agent send-keys` and key-name-only
@@ -34,8 +36,19 @@ ALLOWED:
     harnesses cannot receive SendMessage, so their pane is the only channel.
   - Everything that reads (`pane read`, `wait-output`, `agent read`).
 
+Also: a quoted payload that something executes (`sh -c '...'`, `ssh host
+'...'`, `watch '...'`, `"$(...)"`, backticks) is classified as a command line;
+pane input sent through `ssh` fails CLOSED (the remote pane cannot be seen --
+use `herdr --machine`, which the guard can check); heredoc bodies are data
+unless they feed a shell; a herdr/tmux token counts only at a command position
+(so `echo herdr ...`, `grep`, commit messages pass); `agent prompt` targets are
+resolved by `herdr agent get` (names or pane ids); an internal guard error
+ALLOWS (stderr note) rather than blocking every Bash call.
+
 Scope: a guardrail against the habit, not a sandbox. Raw `herdr api` socket
-calls are out of scope. Every token position is scanned for a `herdr` / `tmux`
+calls, and pane input issued from another language (`python3 -c
+"subprocess.run(['herdr', ...])"`), are out of scope. A `claude -p` child
+inherits its parent's HERDR_PANE_ID and so may type into that one pane. Every token position is scanned for a `herdr` / `tmux`
 command head (the lesson of tmux-fleet-guard.py: wrappers such as `env`,
 `sudo`, `timeout`, `sh -c` displace the head from position 0), and `sh -c` /
 `bash -c` / `eval` payloads are re-classified one level down.
@@ -61,6 +74,7 @@ PROTOCOL_URL = (
 _HERDR_GLOBALS_WITH_VALUE = {"--machine", "--remote", "--session"}
 _SHELLS = {"sh", "bash", "zsh", "dash"}
 _TMUX_SEND = {"send-keys", "send"}
+_TMUX_PASTE = {"paste-buffer", "pasteb"}
 _TMUX_FLAGS_WITH_VALUE = {"-t", "-N", "-c", "-F"}
 _TMUX_KEY = re.compile(
     r"^(?:Enter|Escape|Esc|Tab|BTab|BSpace|Space|Up|Down|Left|Right|Home|End|"
@@ -85,9 +99,99 @@ def _basename(token: str) -> str:
     return os.path.basename(token.strip("(){}"))
 
 
+_WRAPPERS = {
+    "env",
+    "sudo",
+    "doas",
+    "nice",
+    "nohup",
+    "timeout",
+    "command",
+    "exec",
+    "stdbuf",
+    "time",
+    "watch",
+    "xargs",
+    "setsid",
+    "chronic",
+    "ionice",
+    "mise",
+    "uv",
+    "uvx",
+    "run",
+    "--",
+    # shell keywords that precede a command
+    "do",
+    "then",
+    "else",
+    "elif",
+    "if",
+    "while",
+    "until",
+    "{",
+    "!",
+}
+_EXECUTORS = _SHELLS | {
+    "ssh",
+    "watch",
+    "eval",
+    "su",
+    "sudo",
+    "doas",
+    "xargs",
+    "timeout",
+    "nohup",
+    "setsid",
+    "env",
+    "nice",
+    "runuser",
+    "parallel",
+    "script",
+    "flock",
+}
+_SSH_FLAGS_WITH_VALUE = set("pilo JFLRDWbcEemOQSw".replace(" ", ""))
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_UNTOKENIZABLE_HAZARD = re.compile(
+    r"\bherdr\b.*\b(pane\s+(send-text|run)|agent\s+prompt)\b"
+    r"|\btmux\b.*\b(send(-keys)?|paste-buffer|pasteb)\b"
+)
+
+
+def _strip_heredocs(command: str) -> str:
+    """Drop heredoc BODIES (data, e.g. a commit message), unless the heredoc
+    feeds a shell, in which case the body is commands and is kept."""
+    lines = command.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        match = _HEREDOC.search(line)
+        i += 1
+        if not match:
+            continue
+        head = line[: match.start()].strip().split()
+        feeds_shell = bool(head) and _basename(head[0]) in (_SHELLS | {"eval", "ssh"})
+        delimiter = match.group(2)
+        body: list[str] = []
+        while i < len(lines) and lines[i].strip() != delimiter:
+            body.append(lines[i])
+            i += 1
+        if feeds_shell:
+            out.extend(body)
+        if i < len(lines):
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
+
+
 def _token_segments(command: str) -> list[list[str]]:
-    """Quote-aware split into simple commands. Raises ValueError on bad quoting."""
-    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+    """Quote-aware split into simple commands. Raises ValueError on bad quoting.
+
+    Backtick bodies become their own segments; `$(` opens one through the
+    `(` punctuation."""
+    text = _strip_heredocs(command).replace("`", " ; ").replace("\n", " ; ")
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=";&|()")
     lexer.whitespace_split = True
     segments: list[list[str]] = [[]]
     for tok in lexer:
@@ -98,27 +202,32 @@ def _token_segments(command: str) -> list[list[str]]:
     return [seg for seg in segments if seg]
 
 
-def _lookup_agent(globals_: list[str], pane: str) -> str | None:
-    """Return the agent name herdr reports in `pane`, '' when none.
+def _lookup_agent(globals_: list[str], kind: str, target: str) -> str:
+    """Return the agent herdr reports for `target` ('' when none).
 
+    kind "pane" reads `herdr pane get` (pane ids); kind "agent" reads
+    `herdr agent get` (agent names and pane ids; not-found means no agent).
     Raises LookupError when the answer cannot be obtained.
     """
     herdr = os.environ.get("HERDR_BIN_PATH") or "herdr"
     try:
         proc = subprocess.run(
-            [herdr, *globals_, "pane", "get", pane],
+            [herdr, *globals_, kind, "get", target],
             capture_output=True,
             text=True,
             timeout=8,
             check=False,
         )
-        data = json.loads(proc.stdout)
-        return str(data["result"]["pane"].get("agent") or "")
-    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as exc:
+        data = json.loads(proc.stdout.strip() or proc.stderr)
+        if kind == "agent" and (data.get("error") or {}).get("code") == "agent_not_found":
+            return ""
+        record = data["result"][kind]
+        return str(record.get("agent") or "")
+    except Exception as exc:
         raise LookupError(str(exc)) from exc
 
 
-def _classify_herdr(args: list[str], lookup) -> str | None:
+def _classify_herdr(args: list[str], lookup, via_ssh: bool) -> str | None:
     globals_: list[str] = []
     i = 0
     while i < len(args) and args[i].startswith("-"):
@@ -139,32 +248,38 @@ def _classify_herdr(args: list[str], lookup) -> str | None:
     is_prompt = group == "agent" and verb == "prompt"
     if not is_prompt and (group != "pane" or verb not in {"send-text", "run"}):
         return None
-    positionals = [a for a in rest[2:] if not a.startswith("-")]
+    positionals = [a for a in rest[2:] if a != "--" and not a.startswith("-")]
     if not positionals:
         return None
-    pane = positionals[0]
-    remote = any(g.split("=")[0] in _HERDR_GLOBALS_WITH_VALUE for g in globals_)
-    if not remote and pane == os.environ.get("HERDR_PANE_ID", "\0"):
-        return None
-    if "$" in pane or "`" in pane:
+    target = positionals[0]
+    what = f"`herdr {group} {verb}`"
+    if via_ssh:
         return _deny_reason(
-            f"`herdr {group} {verb}` into a pane id the guard cannot evaluate ({pane})"
+            f"{what} run through ssh, where the guard cannot see what the remote "
+            "pane hosts (failing closed). For a Codex or pi pane on another "
+            "machine use `herdr --machine <m> ...`, which the guard can check"
         )
+    remote = any(g.split("=")[0] in _HERDR_GLOBALS_WITH_VALUE for g in globals_)
+    if not remote and target == os.environ.get("HERDR_PANE_ID", "\0"):
+        return None
+    if "$" in target:
+        return _deny_reason(f"{what} into a target the guard cannot evaluate ({target})")
     try:
-        agent = lookup(globals_, pane)
+        agent = lookup(globals_, "agent" if is_prompt else "pane", target)
     except LookupError:
         return _deny_reason(
-            f"`herdr {group} {verb}` into pane {pane}, whose occupant could not be "
-            "checked (failing closed)"
+            f"{what} into {target}, whose occupant could not be checked (failing closed)"
         )
     if "claude" in agent.lower():
-        return _deny_reason(
-            f"`herdr {group} {verb}` would type into pane {pane}, which hosts a {agent} session"
-        )
+        return _deny_reason(f"{what} would type into {target}, which hosts a {agent} session")
     return None
 
 
 def _classify_tmux(args: list[str]) -> str | None:
+    if any(a in _TMUX_PASTE for a in args):
+        return _deny_reason(
+            "`tmux paste-buffer` pastes text into a pane (tmux is a retired transport)"
+        )
     idx = next((n for n, a in enumerate(args) if a in _TMUX_SEND), None)
     if idx is None:
         return None
@@ -182,13 +297,51 @@ def _classify_tmux(args: list[str]) -> str | None:
             continue
         keys.append(a)
         i += 1
+    printable = [k for k in keys if len(k) == 1]
+    if len(printable) > 1:
+        return _deny_reason(
+            "`tmux send-keys` spells out text one character at a time "
+            "(tmux is a retired transport)"
+        )
     for key in keys:
         if not _TMUX_KEY.match(key):
-            return _deny_reason(f"`tmux send-keys` types literal text ({key!r}) into a pane")
+            return _deny_reason(
+                f"`tmux send-keys` types literal text ({key!r}) into a pane "
+                "(tmux is a retired transport)"
+            )
     return None
 
 
-def classify(command: str, lookup=_lookup_agent, depth: int = 0) -> str | None:
+def _at_command_position(tokens: list[str], n: int) -> bool:
+    """True when tokens[n] can be a command head: segment start, or after a
+    wrapper, an option, a bare number (timeout 5) or a VAR=value."""
+    if n == 0:
+        return True
+    prev = tokens[n - 1]
+    return (
+        _basename(prev) in _WRAPPERS
+        or prev.startswith("-")
+        or bool(re.fullmatch(r"\d+(\.\d+)?[smhd]?", prev))
+        or ("=" in prev and not prev.startswith("="))
+        # an option's value: `sudo -u ubuntu herdr`, `timeout -s KILL 5 tmux`
+        or (n >= 2 and tokens[n - 2].startswith("-") and _basename(tokens[0]) in _WRAPPERS)
+    )
+
+
+def _ssh_remainder(rest: list[str]) -> str | None:
+    i = 0
+    while i < len(rest) and rest[i].startswith("-"):
+        flag = rest[i]
+        i += 2 if (len(flag) == 2 and flag[1] in _SSH_FLAGS_WITH_VALUE) else 1
+    if i >= len(rest):
+        return None
+    remainder = rest[i + 1 :]
+    return " ".join(remainder) if remainder else None
+
+
+def classify(
+    command: str, lookup=_lookup_agent, depth: int = 0, via_ssh: bool = False
+) -> str | None:
     """Return a deny reason, or None to allow."""
     if depth > _MAX_DEPTH:
         return _deny_reason("a command nested too deeply to inspect")
@@ -197,30 +350,45 @@ def classify(command: str, lookup=_lookup_agent, depth: int = 0) -> str | None:
     try:
         segments = _token_segments(command)
     except ValueError:
-        if re.search(r"send-text|send-keys|\bsend\b|\brun\b|prompt", command):
+        if _UNTOKENIZABLE_HAZARD.search(command):
             return _deny_reason("a pane-input-shaped command that does not tokenize")
         return None
     for tokens in segments:
         for n, tok in enumerate(tokens):
-            base = _basename(tok)
-            rest = tokens[n + 1 :]
-            if base in _SHELLS and rest:
-                for m, arg in enumerate(rest):
-                    if arg.startswith("-") and "c" in arg[1:] and m + 1 < len(rest):
-                        verdict = classify(rest[m + 1], lookup, depth + 1)
-                        if verdict:
-                            return verdict
-                        break
-            elif base == "eval" and rest:
-                verdict = classify(" ".join(rest), lookup, depth + 1)
+            # A quoted payload is re-classified as a command line of its own
+            # when something EXECUTES it: it follows an executor (sh -c '...',
+            # ssh host '...', watch '...', sudo ...) or it carries a "$(...)".
+            # A quoted argument to echo, grep or git commit -m is data.
+            if not (re.search(r"\s", tok) and re.search(r"\b(herdr|tmux)\b", tok)):
+                continue
+            executed = "$(" in tok or any(_basename(t) in _EXECUTORS for t in tokens[:n])
+            if executed:
+                verdict = classify(tok, lookup, depth + 1, via_ssh)
                 if verdict:
                     return verdict
-            elif base == "herdr":
-                verdict = _classify_herdr(rest, lookup)
+        for n, tok in enumerate(tokens):
+            base = _basename(tok)
+            rest = tokens[n + 1 :]
+            if not _at_command_position(tokens, n):
+                continue
+            if base == "ssh":
+                remainder = _ssh_remainder(rest)
+                if remainder:
+                    verdict = classify(remainder, lookup, depth + 1, via_ssh=True)
+                    if verdict:
+                        return verdict
+                break
+            if base == "eval" and rest:
+                verdict = classify(" ".join(rest), lookup, depth + 1, via_ssh)
                 if verdict:
                     return verdict
                 break
-            elif base == "tmux":
+            if base == "herdr":
+                verdict = _classify_herdr(rest, lookup, via_ssh)
+                if verdict:
+                    return verdict
+                break
+            if base == "tmux":
                 verdict = _classify_tmux(rest)
                 if verdict:
                     return verdict
@@ -231,12 +399,15 @@ def classify(command: str, lookup=_lookup_agent, depth: int = 0) -> str | None:
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
-    except ValueError:
+        if payload.get("tool_name") not in (None, "Bash"):
+            return 0
+        command = (payload.get("tool_input") or {}).get("command") or ""
+        reason = classify(command)
+    except Exception as exc:  # noqa: BLE001
+        # A guard bug must not take every Bash call down with it: allow, and
+        # say so on stderr (shown in the transcript as a hook error).
+        sys.stderr.write(f"pane-input-guard: internal error, allowing: {exc!r}\n")
         return 0
-    if payload.get("tool_name") not in (None, "Bash"):
-        return 0
-    command = (payload.get("tool_input") or {}).get("command") or ""
-    reason = classify(command)
     if reason:
         sys.stdout.write(
             json.dumps(
@@ -276,6 +447,8 @@ _CORPUS: list[tuple[str, bool]] = [
     ("tmux send-keys -t seat 'git status' Enter", True),
     ("tmux send-keys -l -t seat hello", True),
     ("tmux -L x send -t seat hello Enter", True),
+    ("tmux paste-buffer -b sup -t seat", True),
+    ("tmux load-buffer -b sup /tmp/msg.txt", False),
     ("herdr pane send-keys w1:p1 esc", False),
     ("herdr agent send-keys w1:p1 enter", False),
     ("herdr pane send-text w1:p2 'claude --name worker'", False),
@@ -293,14 +466,45 @@ _CORPUS: list[tuple[str, bool]] = [
     ("git commit -m 'stop using herdr pane send-text'", False),
     ("grep -rn 'tmux send-keys' docs/", False),
     ("ls -la", False),
+    # agent prompt resolves names through `herdr agent get`
+    ("herdr agent prompt codex-seat 'go'", False),
+    ("herdr agent prompt claude-seat 'go'", True),
+    ("herdr agent prompt no-such-agent 'go'", False),
+    # nested and quoted payloads
+    ('x="$(herdr pane send-text w1:p1 hi)"', True),
+    ("echo `herdr pane send-text w1:p1 hi`", True),
+    ("bash --norc -c 'herdr pane send-text w1:p1 hi'", True),
+    ("watch -n1 'herdr pane send-text w1:p1 hi'", True),
+    ("ssh gamingpc 'herdr pane send-text w1:p2 hi'", True),
+    ("ssh -p 22 gamingpc herdr pane run w1:p2 ls", True),
+    ("ssh gamingpc 'herdr pane read w1:p1'", False),
+    ("herdr pane send-text -- w1:p1 hi", True),
+    ("herdr --machine=m pane send-text m:p9 hi", True),
+    # heredoc bodies are data unless they feed a shell
+    ("git commit -F - <<'EOF'\nfix: guard denies herdr pane send-text w1:p1 hi\nEOF", False),
+    ("git commit -F - <<'EOF'\nfix: don't run tmux send-keys anymore\nEOF", False),
+    ("cat > notes.md <<'EOF'\nUse herdr pane send-keys, don't use tmux\nEOF", False),
+    ("bash <<'EOF'\nherdr pane send-text w1:p1 hi\nEOF", True),
+    ("git commit -m 'fix herdr pane send-text bug'", False),
+    ("echo herdr pane send-text w1:p1 hi", False),
+    ("for p in w1:p1; do herdr pane send-text $p hi; done", True),
+    ("if true; then herdr pane run w1:p1 ls; fi", True),
+    ("tmux send-keys -t seat g i t Enter", True),
 ]
 
 
-def _fake_lookup(globals_: list[str], pane: str) -> str:
+def _fake_lookup(globals_: list[str], kind: str, target: str) -> str:
     table = {"w1:p1": "claude", "m:p9": "claude", "w1:p2": "", "w1:p3": "codex", "w1:p5": "claude"}
-    if pane not in table:
-        raise LookupError(pane)
-    return table[pane]
+    if kind == "agent":
+        names = {"codex-seat": "codex", "claude-seat": "claude"}
+        if target in names:
+            return names[target]
+        if target in table:
+            return table[target]
+        return ""
+    if target not in table:
+        raise LookupError(target)
+    return table[target]
 
 
 def _selftest() -> int:

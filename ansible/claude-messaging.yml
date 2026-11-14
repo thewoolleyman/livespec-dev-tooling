@@ -9,6 +9,14 @@
 #   just ansible-drift ansible/claude-messaging.yml
 #   just ansible-apply ansible/claude-messaging.yml
 #
+# ROLLBACK, removing the whole policy from a host: delete
+# /etc/claude-code/managed-settings.d/50-distributed-sendmessage.json and
+# /usr/local/lib/claude-code/pane-input-guard.py, remove the marked block from
+# /etc/claude-code/CLAUDE.md (ansible.builtin.blockinfile with state: absent
+# and the marker "<!-- {mark} ANSIBLE MANAGED claude_distributed_sendmessage -->"),
+# take the host out of interactive_claude_hosts in the same change, and restart
+# the Claude Code sessions there. Do it as a committed change, never by hand.
+#
 # Run from the control node (the dev host). A session already running keeps
 # the settings it loaded; the guard hook is read per call, but Remote Control
 # reaches a session only once it is restarted (or runs /remote-control).
