@@ -473,10 +473,18 @@ elif cq_rows="$(kc_kueue get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; 
   queues_emitted=0
   while IFS='|' read -r cq_name cq_quotas cq_usage cq_pending cq_admitted; do
     [ -n "${cq_name}" ] || continue
+    # A queue lists one churn-slot token per flavor (churn-slot-flavor, then
+    # churn-slot-worker-arm64-flavor at 0): its quota is the SUM over those
+    # tokens, never the last one, which read every arm64-carrying queue as 0.
     cq_quota=""
     for tok in ${cq_quotas}; do
       resource="${tok#*:}"
-      case "${resource}" in "${CHURN_SLOT_RESOURCE}="*) cq_quota="${resource#*=}" ;; esac
+      case "${resource}" in
+        "${CHURN_SLOT_RESOURCE}="*)
+          flavor_quota="${resource#*=}"
+          [[ "${flavor_quota}" =~ ^[0-9]+$ ]] || continue
+          cq_quota=$(( ${cq_quota:-0} + flavor_quota )) ;;
+      esac
     done
     # Not one of this pool's queues (phase1-proof-cq is cpu/memory only).
     # This is the filter that makes these rows reconcile with the sweep's
