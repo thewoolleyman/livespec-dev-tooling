@@ -29,12 +29,14 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "dev_host_memory_bounds"
 _JUSTFILE = _REPO_ROOT / "justfile"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _JINJA_EXPRESSION = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.DOTALL)
-_ENGINE_TIMEOUT_SECONDS = 600
+_ENGINE_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 # What `systemd-escape --path --suffix=mount /tmp/claude-1000` prints: ONE
 # backslash before x2d.
 _MOUNT_UNIT = "tmp-claude\\x2d1000.mount"

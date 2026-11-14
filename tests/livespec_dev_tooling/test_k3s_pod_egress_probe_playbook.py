@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 # INTEGRATION TIER, declared statically for `heading_coverage` direction 4: every
@@ -43,7 +45,7 @@ _AGENT = "egress-probe-agent"
 _NAMESPACE = "probe-under-test"
 _POD = "egress-probe"
 
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _UTC = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
 _REPORT = re.compile(
     rf"Pod egress probe namespace (?P<namespace>\S+)\s+"

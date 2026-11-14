@@ -56,6 +56,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -146,7 +148,7 @@ exit 1
 # Generous: a cold `uvx` resolves and caches ansible-core before the first play
 # runs. Bounded all the same, so a hung play fails this test rather than the
 # suite's whole budget.
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 _TASK_HEADER = re.compile(r"^TASK \[(?P<name>.+?)\] \**$")
 _HOST_STATUS = re.compile(r"^(?P<status>ok|changed|skipping|failed|fatal|unreachable): \[")

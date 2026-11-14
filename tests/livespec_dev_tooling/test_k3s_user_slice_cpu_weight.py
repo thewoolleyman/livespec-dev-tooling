@@ -28,13 +28,15 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _ROLES_PATH = _REPO_ROOT / "ansible" / "roles"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _HOST = "fixture-node"
 _TAG = "k3s_user_slice_cpu_weight"
 _VARIABLE = "k3s_config_user_slice_cpu_weight"
