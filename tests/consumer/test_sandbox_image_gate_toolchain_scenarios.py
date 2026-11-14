@@ -55,13 +55,13 @@ free to undo it.
 from __future__ import annotations
 
 import re
-import subprocess
 from itertools import takewhile
 from pathlib import Path
 
 import pytest
 
 from livespec_dev_tooling.config import load_gate_check_suite
+from tests.hang_guard import run_under_hang_guard
 
 __all__: list[str] = []
 
@@ -75,7 +75,6 @@ _WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "fabro-sandbox-image.yml"
 # The empty tree's hash — a real git object name, so the renderer's own argument
 # validation is satisfied without a repository having to exist.
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-_RUN_TIMEOUT_S = 60.0
 
 # The tool the spec names, and the member a fixture consumer invokes it from.
 # The recipe is deliberately a name no justfile in this repository carries, so a
@@ -293,12 +292,11 @@ def _render(*, repo_root: Path) -> str:
     """
     declared = load_gate_check_suite(repo_root=repo_root) or ()
     suite = [flag for recipe in declared for flag in ("--check-suite", recipe)]
-    completed = subprocess.run(
+    completed = run_under_hang_guard(
         [str(_RENDERER), "--repo-root", str(repo_root), "--tree-hash", _TREE, *suite],
         cwd=str(repo_root),
         capture_output=True,
         text=True,
-        timeout=_RUN_TIMEOUT_S,
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr

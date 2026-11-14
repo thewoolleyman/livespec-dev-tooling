@@ -16,12 +16,12 @@ from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_GATE_RUN_BODY,
     WORKTREE_PACK_FILES,
 )
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 __all__: list[str] = []
 
 _MODULE_PATH = Path(__file__).parents[2] / "livespec_dev_tooling" / "gate_runner_delegate.py"
 _RUNNER = Path("dev-tooling") / "gate-run.sh"
-_RUN_TIMEOUT_S = 15.0
 _POLL_INTERVAL_S = 0.05
 
 
@@ -214,12 +214,30 @@ def _start(*, root: Path, env: dict[str, str], args: list[str]) -> Path:
     assert launched.returncode == 0, launched.stderr
     run_id = launched.stdout.strip()
     run_dir = root / "tmp" / "gate-runs" / run_id
-    finished = any(
-        (run_dir / "exit_code").is_file() or time.sleep(_POLL_INTERVAL_S)
-        for _ in range(int(_RUN_TIMEOUT_S / _POLL_INTERVAL_S))
-    )
-    assert finished, f"gate run {run_id} did not finish"
+    _await_exit_code(run_dir=run_dir, run_id=run_id)
     return run_dir
+
+
+def _await_exit_code(
+    *, run_dir: Path, run_id: str, guard_seconds: float = HANG_GUARD_SECONDS
+) -> None:
+    """Block until the detached run records its exit code, or fail as a HANG naming the run.
+
+    The wait has no margin a loaded host can exceed: it ends when the record
+    appears, and only the repository's hang guard (tests/hang_guard.py) ends it
+    otherwise.
+    """
+    deadline = time.monotonic() + guard_seconds
+    while not (run_dir / "exit_code").is_file():
+        if time.monotonic() >= deadline:
+            pytest.fail(
+                f"HANG: the test was waiting for gate run {run_id} to record an exit code "
+                f"under {run_dir}, and it had not after {guard_seconds} s, the repository's "
+                "hang guard (tests/hang_guard.py). This is a run that never ended, not a "
+                "slow one.",
+                pytrace=False,
+            )
+        time.sleep(_POLL_INTERVAL_S)
 
 
 def _worktree_with_uncommitted_content(*, tmp_path: Path) -> tuple[Path, dict[str, str], str]:
@@ -970,3 +988,29 @@ def test_cluster_runner_cli_omits_absent_evidence_and_streams_its_detail(
     assert not (run_dir / "tree_hash").exists()
     assert not (run_dir / "job_name").exists()
     assert capsys.readouterr().err == "lost\n"
+
+
+def test_a_gate_run_that_never_records_an_exit_code_fails_as_a_hang_naming_the_run(
+    *, tmp_path: Path
+) -> None:
+    """The expiry is the outcome under test, so this one wait is bounded on purpose."""
+    run_dir = tmp_path / "run-never-finishes"
+    run_dir.mkdir()
+    with pytest.raises(pytest.fail.Exception) as raised:
+        _await_exit_code(run_dir=run_dir, run_id="run-never-finishes", guard_seconds=0.2)
+    message = str(raised.value)
+    assert message.startswith("HANG: ")
+    assert "gate run run-never-finishes" in message
+
+
+def test_a_gate_run_that_has_recorded_its_exit_code_is_returned_at_once(*, tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-done"
+    run_dir.mkdir()
+    _ = (run_dir / "exit_code").write_text("0\n", encoding="utf-8")
+    _await_exit_code(run_dir=run_dir, run_id="run-done", guard_seconds=0)
+
+
+def test_the_run_wait_is_sized_from_the_repository_hang_guard() -> None:
+    default = _await_exit_code.__kwdefaults__
+    assert default is not None
+    assert default["guard_seconds"] == HANG_GUARD_SECONDS
