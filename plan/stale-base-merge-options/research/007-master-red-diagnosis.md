@@ -61,7 +61,7 @@ Each is routed below to fleet-flaky-tests (epic livespec-dev-tooling-zwveqp) by 
 | 75e99de9c | `test_gate_run::test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process` | livespec-dev-tooling-oczx3k, closed 2026-11-13T11:12Z; its siblings x5z6ly and qohfro are also closed |
 | b082d9a87 | `test_incident_recovery_principal_target_branch::test_moved_scratch_head_without_overlap_…` | livespec-dev-tooling-63ig7h, closed 2026-11-13T20:47Z |
 | d273b7a9d | `test_incident_recovery_principal::test_genuine_overlap_with_later_work_…` | livespec-dev-tooling-vzfxlg (active): the recovery principal's tests see a "pending" outcome on a loaded runner |
-| d2f49db53 | `test_incident_recovery_principal_refusals::test_crash_before_the_commit_exists_is_provably_inert` | **No item names it.** Proposed to fleet-flaky-tests as part of vzfxlg's scope if it shares that cause, or else as a new item. Filing it is that plan's call |
+| d2f49db53 | `test_incident_recovery_principal_refusals::test_crash_before_the_commit_exists_is_provably_inert`. Its detail is "incident git diff exceeded its 10 s ceiling" (`INCIDENT_GIT_TIMEOUT_SECONDS`) | livespec-dev-tooling-vm4vcn, whose bullet 3 raises that ceiling to the hang guard in incident test worlds. fleet-flaky-tests routed it there on 2026-11-14 ~03:05Z and recorded the sighting on vm4vcn. It is not vzfxlg's forge-timeout class |
 
 ## 2. livespec-orchestrator-beads-fabro (fleet scope, as the item asks)
 
