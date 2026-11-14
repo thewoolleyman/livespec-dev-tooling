@@ -183,6 +183,47 @@
   register: dev_host_memory_bounds_rt_reconcile_dropin
   when: dev_host_memory_bounds_state == 'present'
 
+- name: Create the directory the scratch mover is installed in
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_scratch_mover_bin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - dev_host_memory_bounds_scratch_mover_enabled | bool
+
+- name: Install the scratch mover
+  # validate runs Python's parser over the staged copy, so a script that cannot
+  # be parsed is refused here rather than found as a failed timer unit.
+  ansible.builtin.copy:
+    src: claude_scratch_mover.py
+    dest: "{{ dev_host_memory_bounds_scratch_mover_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - dev_host_memory_bounds_scratch_mover_enabled | bool
+
+- name: Install the scratch mover's service and timer units
+  ansible.builtin.template:
+    src: "claude-scratch-mover.{{ item }}.j2"
+    dest: "{{ dev_host_memory_bounds_system_unit_dir }}/livespec-claude-scratch-mover.{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: dev_host_memory_bounds_rt_mover_units
+  loop: [service, timer]
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - dev_host_memory_bounds_scratch_mover_enabled | bool
+
 - name: Reload the system manager so the new units and drop-ins are read
   # A reload changes no running unit: the tmp.mount drop-in applies at the next
   # mount of /tmp, the reconcile drop-in at the next timer pass.
@@ -196,6 +237,54 @@
       or dev_host_memory_bounds_rt_stray_unit is changed
       or dev_host_memory_bounds_rt_mount_file is changed
       or dev_host_memory_bounds_rt_reconcile_dropin is changed
+      or dev_host_memory_bounds_rt_mover_units is changed
+
+- name: Arm the scratch mover timer
+  # Skipped in check mode while the timer unit is still only a would-be write.
+  ansible.builtin.systemd:
+    name: "{{ dev_host_memory_bounds_scratch_mover_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when:
+    - dev_host_memory_bounds_state == 'present'
+    - dev_host_memory_bounds_scratch_mover_enabled | bool
+    - not (ansible_check_mode and dev_host_memory_bounds_rt_mover_units is changed)
+
+- name: Stop and disable the scratch mover timer when it is withdrawn
+  ansible.builtin.systemd:
+    name: "{{ dev_host_memory_bounds_scratch_mover_timer }}"
+    enabled: false
+    state: stopped
+  become: true
+  failed_when: false
+  when: >-
+    dev_host_memory_bounds_state == 'absent'
+    or not (dev_host_memory_bounds_scratch_mover_enabled | bool)
+
+- name: Remove the scratch mover when it is withdrawn
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  register: dev_host_memory_bounds_rt_mover_removed
+  loop:
+    - "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_scratch_mover_timer }}"
+    - "{{ dev_host_memory_bounds_system_unit_dir }}/{{ dev_host_memory_bounds_scratch_mover_service }}"
+    - "{{ dev_host_memory_bounds_scratch_mover_bin }}"
+  when: >-
+    dev_host_memory_bounds_state == 'absent'
+    or not (dev_host_memory_bounds_scratch_mover_enabled | bool)
+
+- name: Reload the system manager after the scratch mover is withdrawn
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  when:
+    - >-
+      dev_host_memory_bounds_state == 'absent'
+      or not (dev_host_memory_bounds_scratch_mover_enabled | bool)
+    - dev_host_memory_bounds_rt_mover_removed is changed
 
 - name: Enable the scratchpad bind mount for every boot
   # Enabled, NOT started. Starting it is the cutover's job (see the header).
