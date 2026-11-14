@@ -44,7 +44,7 @@ __all__: list[str] = [
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-qmuk7z
 CLAIMS_RELATIVE_PATH = Path("config") / "incident-fleet-evidence.json"
 # The claims this code was released with, never a file the caller's working directory holds.
-COMMITTED_CLAIMS = Path(__file__).resolve().parents[1] / CLAIMS_RELATIVE_PATH
+COMMITTED_CLAIMS = Path(__file__).resolve().parents[1] / "config" / "incident-fleet-evidence.json"
 _CORE_REPOSITORY = "livespec"
 _MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
 _REQUIRED = (
