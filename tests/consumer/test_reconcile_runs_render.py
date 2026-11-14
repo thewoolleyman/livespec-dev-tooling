@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.consumer
@@ -33,7 +35,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _ROLES = _REPO_ROOT / "ansible" / "roles"
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "reconcile_runs_render"
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _ALERT_UNIT = "fixture-alert@.service"
 _MARKERS = "markers.txt"
 
