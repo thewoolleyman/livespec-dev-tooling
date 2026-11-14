@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,7 +53,7 @@ _VISIT = (
 _VISITED = re.compile(r'"msg": "visit (?P<unit>[^"]+)"')
 
 _UNITS = ("fabro-server", "fabro-server-mi-homelab", "fabro-server-candidate")
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 
 def _ansible_core_pin() -> str:

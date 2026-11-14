@@ -52,6 +52,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -63,7 +65,7 @@ _ANSIBLE = _REPO_ROOT / "ansible"
 _PLAYBOOK = _ANSIBLE / "dev-host.yml"
 _LEGACY_INVENTORY = _ANSIBLE / "inventory" / "legacy.yml"
 
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==\d+\.\d+\.\d+")
 _ROLE_TAG = "fabro_client"
 _OTHER_DEV_HOST_TAG = "dev_host_retention"

@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -41,7 +43,7 @@ _DROPIN_NAME = "90-dev-host-disable-proactive-compaction.conf"
 _DROPIN_LINE = "vm.compaction_proactiveness = 0"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _HOST = "synthetic-dev-host"
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 
 
 def _ansible_core_pin() -> str:
