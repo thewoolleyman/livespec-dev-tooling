@@ -173,12 +173,21 @@ def test_the_mount_unit_binds_the_disk_directory_onto_the_ram_path(
 
 
 def test_the_dispatch_slice_is_derived_from_the_fleet_cap(rendered: dict[str, str]) -> None:
-    # 18 loops x 800M steady + 4 concurrent peaks x (2560M - 800M).
-    assert rendered["dispatch_max"] == "21440M"
-    assert rendered["dispatch_high"] == "19296M"
+    # MemoryMax = loop_cap x steady + concurrent_peaks x (peak - steady), and
+    # MemoryHigh is 90% of it, both read from the committed defaults.
+    defaults = _yaml(relative="defaults/main.yml")
+    expected_max = defaults["dev_host_memory_bounds_dispatch_loop_cap"] * defaults[
+        "dev_host_memory_bounds_dispatch_loop_steady_mib"
+    ] + defaults["dev_host_memory_bounds_dispatch_concurrent_peaks"] * (
+        defaults["dev_host_memory_bounds_dispatch_loop_peak_mib"]
+        - defaults["dev_host_memory_bounds_dispatch_loop_steady_mib"]
+    )
+    expected_high = int(expected_max * 0.9)
+    assert rendered["dispatch_max"] == f"{expected_max}M"
+    assert rendered["dispatch_high"] == f"{expected_high}M"
     lines = rendered["slice_unit"].splitlines()
-    assert "MemoryMax=21440M" in lines
-    assert "MemoryHigh=19296M" in lines
+    assert f"MemoryMax={expected_max}M" in lines
+    assert f"MemoryHigh={expected_high}M" in lines
     assert "MemorySwapMax=0" in lines
 
 

@@ -12,8 +12,8 @@ OOM-killed at 15:32:41Z). The numbers and where each came from are in
 | --- | --- | --- |
 | `/tmp` cap, `size=8G,nr_inodes=2m` | `/etc/systemd/system/tmp.mount.d/zz-livespec-memory-bounds.conf` | next boot, or the live `tmp_cap` step |
 | Session scratchpads on disk: `/tmp/claude-<uid>` bind-mounts `/var/tmp/claude-<uid>` | `/etc/systemd/system/tmp-claude\x2d<uid>.mount`, enabled | next planned reboot, or the live `cutover` step |
-| `factory-dispatch.slice`, derived from the fleet cap (on the VPS: MemoryHigh 19296M / MemoryMax 21440M) | `/etc/systemd/user/` | the next launch into it |
-| the per-loop scope bound, `3500M` | `/etc/livespec/factory-dispatch-loop-memory-max` | the next launch that reads it |
+| `factory-dispatch.slice`, derived from the fleet cap (on the VPS: MemoryHigh 25747M / MemoryMax 28608M) | `/etc/systemd/user/` | the next launch into it |
+| the per-loop scope bound, `6144M` | `/etc/livespec/factory-dispatch-loop-memory-max` | the next launch that reads it |
 | `local-gate.slice`, MemoryHigh 9G / MemoryMax 10G | `/etc/systemd/user/` | the next launch into it |
 | reconcile-runs MemoryHigh 5G / MemoryMax 6G, OOMScoreAdjust 500 | `/etc/systemd/system/reconcile-runs.service.d/50-livespec-memory-bounds.conf` | the next timer pass |
 
@@ -85,11 +85,11 @@ its own `host_vars`:
 | `dev_host_memory_bounds_tmp_nr_inodes` | `2m` | The `/tmp` inode cap. |
 | `dev_host_memory_bounds_dispatch_loop_cap` | `18` | The fleet cap on dispatcher loops on this host. |
 | `dev_host_memory_bounds_dispatch_loop_steady_mib` | `800` | One loop's steady RSS, in MiB. |
-| `dev_host_memory_bounds_dispatch_loop_peak_mib` | `2560` | One loop's peak RSS (VmHWM), in MiB. |
+| `dev_host_memory_bounds_dispatch_loop_peak_mib` | `4352` | One loop's peak, in MiB: the dispatch-journal parse class (4.27G measured 2026-11-14). |
 | `dev_host_memory_bounds_dispatch_concurrent_peaks` | `4` | How many loops may peak at once. |
 | `dev_host_memory_bounds_dispatch_memory_max` | derived | `loop_cap x steady + concurrent_peaks x (peak - steady)`, in MiB. |
 | `dev_host_memory_bounds_dispatch_memory_high` | derived | 90% of the dispatch MemoryMax. |
-| `dev_host_memory_bounds_dispatch_loop_memory_max` | `3500M` | Each launcher's own scope bound: the measured peak plus its children. |
+| `dev_host_memory_bounds_dispatch_loop_memory_max` | `6144M` | Each launcher's own scope bound: the journal-parse peak plus about 40% for its children. 3500M killed a succeeded run's wrap-up. |
 | `dev_host_memory_bounds_gate_memory_high` / `_max` | `9G` / `10G` | The local-gate slice; one full suite at a time. |
 | `dev_host_memory_bounds_reconcile_memory_high` / `_max` | `5G` / `6G` | The reconcile-runs bound; the measured peak is 3.7G, and High sits above it because a stalled oneshot blocks later ticks. |
 | `dev_host_memory_bounds_memory_swap_max` | `0` | MemorySwapMax for both slices and reconcile-runs. |

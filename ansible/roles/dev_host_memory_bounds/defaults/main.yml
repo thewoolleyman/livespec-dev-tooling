@@ -67,13 +67,19 @@ dev_host_memory_bounds_user_unit_dir: /etc/systemd/user
 #   each, minutes earlier);
 # - PEAK (VmHWM) 0.46-2.53G per loop, 18.5G summed. Five loops had each peaked
 #   at 2.45-2.53G.
-# At the VPS's fleet cap of 18 the formula gives 18 x 800M + 4 x 1760M = 21440M.
 # The first draft's 12G, agreed from 5 loops at 0.29-0.78G, would have OOM-killed
 # loops in ordinary operation.
+# RE-MEASURED 2026-11-14 under the live scopes: 12 scoped loops peaked at up to
+# 2.80G (MemoryPeak), and bd-ib-2x67jz's scope was OOM-killed at its 3500M cap
+# (3.4G peak) at 03:17:28Z, in the drive's post-run wait after a SUCCEEDED run,
+# stranding the item. The cause is the drive's parse of the 413 MB dispatch
+# journal, the same parse that peaks a reconcile-runs pass at 4.27G (until the
+# journal projection lands, dznxgv / bd-ib-cwuxfi). So the per-loop peak is
+# taken as that parse class, 4352 MiB (4.25G).
 dev_host_memory_bounds_dispatch_slice: factory-dispatch.slice
 dev_host_memory_bounds_dispatch_loop_cap: 18
 dev_host_memory_bounds_dispatch_loop_steady_mib: 800
-dev_host_memory_bounds_dispatch_loop_peak_mib: 2560
+dev_host_memory_bounds_dispatch_loop_peak_mib: 4352
 dev_host_memory_bounds_dispatch_concurrent_peaks: 4
 dev_host_memory_bounds_dispatch_memory_max: >-
   {{ dev_host_memory_bounds_dispatch_loop_cap | int * dev_host_memory_bounds_dispatch_loop_steady_mib | int
@@ -83,11 +89,12 @@ dev_host_memory_bounds_dispatch_memory_high: >-
   {{ ((dev_host_memory_bounds_dispatch_memory_max | regex_replace('M$', '') | int) * 0.9) | int }}M
 
 # The bound EACH launcher puts on its own scope, so one runaway loop cannot take
-# the whole slice: the largest measured peak (VmHWM 2532M) plus room for the
-# loop's drive and preflight children. The role publishes it in
+# the whole slice: the journal-parse peak (4.27G, measured on reconcile-runs,
+# 2026-11-14) plus about 40% for the loop's drive and preflight children. 3500M
+# killed a succeeded run's wrap-up (bd-ib-2x67jz, 2026-11-14 03:17:28Z). The role publishes it in
 # `dev_host_memory_bounds_dispatch_loop_memory_max_file` so a launcher reads this
 # host's value instead of hard-coding the VPS's.
-dev_host_memory_bounds_dispatch_loop_memory_max: 3500M
+dev_host_memory_bounds_dispatch_loop_memory_max: 6144M
 dev_host_memory_bounds_dispatch_loop_memory_max_file: /etc/livespec/factory-dispatch-loop-memory-max
 
 # SWAP. The dev VPS has none, so above a slice's MemoryHigh the anonymous memory
