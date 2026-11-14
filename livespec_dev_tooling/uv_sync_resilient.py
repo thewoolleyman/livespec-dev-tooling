@@ -29,6 +29,20 @@ it was, which is why the remedy is at the level of the STEP: a fresh `uv`
 process, after a backoff, re-derives the trust store and re-opens the
 connection that the previous process could not.
 
+A THIRD recorded shape is the same mechanism as 2 reached through a different
+transport symptom: a `git+https` fetch of a git-sourced dependency
+(`livespec-runtime`) that dies MID-TRANSFER with libcurl's ``Failure when
+receiving data from the peer`` (livespec#3227, CI run 43598329598,
+2026-11-14). It is a transport corroborator of the same `git-fetch-transport`
+family, so one blip no longer fails the whole job.
+
+A git failure that is PERMANENT is never retried, however it is framed: an
+unknown commit (``couldn't find remote ref`` / ``not our ref``) and an
+authentication refusal (``Authentication failed``, an HTTP 401/403/404) carry
+the same uv frames as a transient, so uv's own `failed to fetch commit` frame
+is deliberately NOT a corroborator, and a permanent diagnosis vetoes a
+classification outright. Such a failure propagates on the FIRST attempt.
+
 ## Why this is not the forbidden retry-the-whole-job wrapper
 
 The work item is explicit that no gate may be weakened, and that a wrapper
@@ -71,6 +85,7 @@ populated the environment.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import time
@@ -117,6 +132,33 @@ class _Signature:
     corroborators: tuple[str, ...]
 
 
+# A permanent diagnosis vetoes every signature: re-attempting an unknown commit
+# or a refused credential burns CI time to reach the identical verdict.
+_PERMANENT_DIAGNOSES = (
+    "couldn't find remote ref",
+    "not our ref",
+    "Authentication failed",
+    "could not read Username",
+    "terminal prompts disabled",
+    "Repository not found",
+    "Permission denied",
+    "returned error: 401",
+    "returned error: 403",
+    "returned error: 404",
+)
+
+# The dependency a uv failure names, e.g. `livespec-runtime @ git+https://...`.
+_DEPENDENCY = re.compile(r"Failed to (?:download and build|download|build) `([^`]+)`")
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Transient:
+    """A classified transient: its family and the transport error line that proved it."""
+
+    family: str
+    transport_error: str
+
+
 _SIGNATURES = (
     _Signature(
         family="package-fetch-timeout",
@@ -134,7 +176,12 @@ _SIGNATURES = (
         marker="Git operation failed",
         corroborators=(
             "failed to clone into",
-            "failed to fetch commit",
+            "Failure when receiving data from the peer",
+            "RPC failed",
+            "early EOF",
+            "remote end hung up unexpectedly",
+            "Connection reset by peer",
+            "Connection timed out",
             "server certificate verification failed",
             "Could not resolve host",
             "unable to access",
@@ -143,14 +190,25 @@ _SIGNATURES = (
 )
 
 
-def _classify(*, output: str) -> str | None:
-    """Return the transient family `output` matches, or `None` when it is genuine."""
+def _classify(*, output: str) -> _Transient | None:
+    """Return the transient `output` matches, or `None` when it is genuine."""
+    if any(diagnosis in output for diagnosis in _PERMANENT_DIAGNOSES):
+        return None
     for signature in _SIGNATURES:
         if signature.marker not in output:
             continue
-        if any(symptom in output for symptom in signature.corroborators):
-            return signature.family
+        symptom = next((c for c in signature.corroborators if c in output), None)
+        if symptom is None:
+            continue
+        line = next(line for line in output.splitlines() if symptom in line)
+        return _Transient(family=signature.family, transport_error=line.strip())
     return None
+
+
+def _dependency(*, output: str) -> str:
+    """Return the dependency `output` says failed, or a stated unknown."""
+    named = _DEPENDENCY.findall(output)
+    return named[0] if named else "unknown dependency"
 
 
 def _run_uv_sync() -> tuple[int, str]:
@@ -194,8 +252,8 @@ def main(
                 output=output,
             )
             return 0
-        family = _classify(output=output)
-        if family is None:
+        transient = _classify(output=output)
+        if transient is None:
             log.error(
                 "dependency install failed on a genuine error; not re-attempting",
                 check_id=_CHECK_ID,
@@ -204,11 +262,15 @@ def main(
                 output=output,
             )
             return code
+        dependency = _dependency(output=output)
         if attempt >= _MAX_ATTEMPTS:
+            summary = "uv-sync-transient exhausted its re-attempts on {}: {} (after {} attempts)"
             log.error(
-                "uv-sync-transient exhausted its re-attempts",
+                summary.format(dependency, transient.transport_error, attempt),
                 check_id=_CHECK_ID,
-                family=family,
+                family=transient.family,
+                dependency=dependency,
+                transport_error=transient.transport_error,
                 attempts=attempt,
                 exit_code=code,
                 output=output,
@@ -218,7 +280,9 @@ def main(
         log.warning(
             "uv-sync-transient absorbed; re-attempting the dependency install",
             check_id=_CHECK_ID,
-            family=family,
+            family=transient.family,
+            dependency=dependency,
+            transport_error=transient.transport_error,
             attempt=attempt,
             delay_seconds=delay,
             exit_code=code,
