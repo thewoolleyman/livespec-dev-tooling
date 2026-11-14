@@ -186,6 +186,23 @@ def test_a_held_string_without_the_session_id_does_not_hold_it(tmp_path: Path) -
     assert not mover.is_referenced(directory=dead, references=references)
 
 
+def test_a_pass_keeps_only_the_session_ids_the_processes_name(tmp_path: Path) -> None:
+    _, _, proc = _roots(tmp_path)
+    _process(
+        proc=proc,
+        pid=10,
+        environ={"TMPDIR": f"/tmp/claude-1000/{_PROJECT}/{_DEAD}"},
+        cmdline=["tail", "-f", "/var/log/syslog"],
+        cwd="/srv/work",
+        fds=["/dev/null", f"/tmp/claude-1000/{_PROJECT}/{_OTHER}/tasks/out.txt"],
+        maps=["7f00-7f01 r--p 0 00:00 1 /usr/lib/libc.so.6"],
+    )
+    _process(proc=proc, pid=11, cmdline=["sleep", "1"], cwd="/")
+    references = mover.read_references(proc_root=proc)
+    assert references.paths == frozenset({_DEAD, _OTHER})
+    assert not references.scan_failed
+
+
 def test_a_recently_modified_session_is_kept(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
