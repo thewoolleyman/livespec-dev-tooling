@@ -58,6 +58,33 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.209.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.208.0...v1.209.0) (2026-11-14)
+
+
+### Features
+
+* **ansible:** force SendMessage over pane typing on the interactive Claude hosts (livespec-dev-tooling-4hkmkt) ([06f51fe](https://github.com/thewoolleyman/livespec-dev-tooling/commit/06f51fed991fd699f02d0efb0cb86766d64adf90))
+* rearm delegated gate terminal watches ([4e97c95](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4e97c95aa51976107b9893dd04d0de150fc947c5))
+* **worktree-pack:** gate-start and just check run inside the host's gate memory slice ([0de8461](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0de84610066f5329e7c753d51bf69e96f13bde72))
+
+
+### Bug Fixes
+
+* **ansible:** close pane-input guard bypasses and apply the [#4595](https://github.com/thewoolleyman/livespec-dev-tooling/issues/4595) review fixes (livespec-dev-tooling-4hkmkt) ([4d92407](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d9240781dad19889ef2430e5c3e3b6e0b516751))
+* **ansible:** give forward-only keys a blocking forced command so a session can carry TCP_NODELAY ([cff0f11](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cff0f117c7c178828ad3fe93eace06a5e3aa7506))
+* bound gate escapee cleanup ([6d41558](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d415589397bdbbde4b87482f2957edeb5d66a68))
+* bound suite-green escapee cleanup ([a4d97ac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a4d97acb911a3b96686d6c0ecf9776c6e5fc4c82))
+* **ci-runner:** every 1-slot CI queue takes a guaranteed floor of 2 inside cohort 30, so master runs stop waiting behind one admitted PR job (livespec-dev-tooling-asxhj3) ([58b3538](https://github.com/thewoolleyman/livespec-dev-tooling/commit/58b35385d5e6e772a075addb7a258bb6c6ade6ab))
+* **gate:** a stalled gate names only real session escapees, never its exited leader ([2d875a9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d875a98d9793c57d57ffe453aea9de9200d8b32))
+* **gate:** cover replay escapee cleanup ([84cdc1e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/84cdc1e4ad9086f1e4947ae69392c6a43a53ba7b))
+* **gate:** end a replay escapee orphaned before a stall ([7aa16ba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7aa16ba56f091818498683c584cb25f14af6bd64))
+* **gate:** end an escapee orphaned before a stall ([79a37ff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/79a37ff0a5d9eacfe16b1a081f4022242441b12f))
+* **gate:** reattribute escapees before kill ([3a46e8b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3a46e8b0792c6232020e8ac949a1cdddd45c61a5))
+* **incident:** refuse a symlink chain whose later link leaves the head tree ([67ab677](https://github.com/thewoolleyman/livespec-dev-tooling/commit/67ab67755ce8a36e4f88218cedfe713998f8a0af))
+* re-arm a spent delegated gate watch without sleeping ([cefb17d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cefb17db902fee030857f3fe318ded0d808eb986))
+* **retention:** trust an empty live-session set only when an environment was read ([b9f3b79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9f3b79d80100a5b9bff4d9c06031249c10a02a3))
+* stop a delegated gate wait heartbeat without relying on signal delivery ([db32d9a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/db32d9aafa545a00fea57b66a95577776a973d53))
+
 ## [1.208.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.207.0...v1.208.0) (2026-11-14)
 
 
