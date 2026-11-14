@@ -1,0 +1,19 @@
+# {{ ansible_managed }} — role dev_host_memory_bounds.
+# STOPGAP until the /tmp/claude-1000 bind is live; see HOST_VARS.md.
+[Unit]
+Description=Move dead Claude Code session scratch off the /tmp tmpfs onto disk
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/dev_host_memory_bounds/HOST_VARS.md
+
+[Service]
+Type=oneshot
+# Root, so it can read every process's references in /proc. mv keeps the
+# moved directories' owner.
+User=root
+Environment="MOVER_RAM_ROOT={{ dev_host_memory_bounds_rt_scratch_ram_dir }}"
+Environment="MOVER_DISK_ROOT={{ dev_host_memory_bounds_rt_scratch_disk_dir }}"
+Environment="MOVER_KILL_SWITCH={{ dev_host_memory_bounds_scratch_mover_kill_switch }}"
+Environment="MOVER_MIN_AGE_SECONDS={{ dev_host_memory_bounds_scratch_mover_min_age_seconds }}"
+Environment="MOVER_APPLY=1"
+ExecStart=/usr/bin/python3 -I {{ dev_host_memory_bounds_scratch_mover_bin }}
+Nice=19
+IOSchedulingClass=idle

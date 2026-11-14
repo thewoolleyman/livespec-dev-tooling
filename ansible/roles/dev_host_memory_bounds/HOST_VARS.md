@@ -175,3 +175,30 @@ unmounting it would hide the on-disk scratchpads from every running session. To
 undo it live, run `sudo umount /tmp/claude-<uid>` at a quiet moment. To undo
 the live `/tmp` cap, run
 `sudo mount -o remount,size=50%,nr_inodes=100000000 /tmp`.
+
+## Claude scratch mover (stopgap until the bind)
+
+Until the next reboot brings up the `/tmp/claude-1000` bind, Claude Code
+session scratch stays in the 8G `/tmp` tmpfs. The `livespec-claude-scratch-mover`
+timer runs `files/claude_scratch_mover.py` as root every
+`dev_host_memory_bounds_scratch_mover_interval` (15min) after the previous pass
+ends, at Nice 19 and idle IO. Each pass MOVES, and never deletes, every session
+directory that is dead and idle to the same relative path under
+`/var/tmp/claude-1000/`, which is exactly where the bind will show it.
+
+- **Dead:** no running process carries the session id in
+  `CLAUDE_CODE_SESSION_ID`, and no process references the directory through its
+  cwd, an open file, a memory map, its command line or its environment. The
+  pass reads `/proc` again just before each move.
+- **Idle:** nothing under it was modified within
+  `dev_host_memory_bounds_scratch_mover_min_age_seconds` (2h).
+- **Never overwrites:** an existing destination fails that move, leaves the
+  source, and marks the pass failed.
+- **Log:** every decision is one JSON line in
+  `journalctl -u livespec-claude-scratch-mover.service`.
+- **Kill switch:** `sudo touch /etc/livespec/claude-scratch-mover.disabled`
+  stops every pass at once without a converge; delete the file to resume. To
+  withdraw the timer, set `dev_host_memory_bounds_scratch_mover_enabled: false`
+  and converge.
+- **Retires itself:** once `/tmp/claude-1000` is a mount point the pass moves
+  nothing. Remove the mover from the role after the bind lands.

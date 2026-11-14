@@ -132,3 +132,25 @@ dev_host_memory_bounds_reconcile_oom_score_adjust: 500
 
 dev_host_memory_bounds_system_unit_dir: /etc/systemd/system
 dev_host_memory_bounds_reconcile_dropin: 50-livespec-memory-bounds.conf
+
+# --- Claude scratch mover (STOPGAP until the bind is live) --------------------
+
+# A timer pass that MOVES (never deletes) dead, idle Claude Code session scratch
+# from the RAM scratch directory to the same relative path under the on-disk
+# one, which is where the bind will show it after the next reboot. "Dead" means
+# no running process carries the session id in CLAUDE_CODE_SESSION_ID, and none
+# references the directory through its cwd, an open file, a memory map, its
+# command line or its environment. The pass reads that again just before each
+# move. It does nothing once the RAM directory is a mount point (the bind is
+# live), so it retires itself; remove it from the role after the bind lands.
+# MEASURED 2026-11-14: /tmp refilled at about 0.45G an hour under the 8G cap
+# after a manual relief that moved 2.98G of dead session scratch (coordinator
+# ruling, 2026-11-14). Set _enabled to false to withdraw the timer, or touch the
+# kill switch file to stop passes at once without a converge.
+dev_host_memory_bounds_scratch_mover_enabled: true
+dev_host_memory_bounds_scratch_mover_bin: /usr/local/libexec/livespec/claude_scratch_mover.py
+dev_host_memory_bounds_scratch_mover_min_age_seconds: 7200
+dev_host_memory_bounds_scratch_mover_interval: 15min
+dev_host_memory_bounds_scratch_mover_kill_switch: /etc/livespec/claude-scratch-mover.disabled
+dev_host_memory_bounds_scratch_mover_service: livespec-claude-scratch-mover.service
+dev_host_memory_bounds_scratch_mover_timer: livespec-claude-scratch-mover.timer

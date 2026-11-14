@@ -1,0 +1,12 @@
+# {{ ansible_managed }} — role dev_host_memory_bounds.
+# STOPGAP until the /tmp/claude-1000 bind is live; see HOST_VARS.md.
+[Unit]
+Description=Periodically move dead Claude Code session scratch onto disk
+
+[Timer]
+OnBootSec={{ dev_host_memory_bounds_scratch_mover_interval }}
+OnUnitInactiveSec={{ dev_host_memory_bounds_scratch_mover_interval }}
+Unit={{ dev_host_memory_bounds_scratch_mover_service }}
+
+[Install]
+WantedBy=timers.target
