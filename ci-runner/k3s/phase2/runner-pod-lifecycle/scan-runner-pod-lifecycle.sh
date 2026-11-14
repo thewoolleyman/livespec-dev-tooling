@@ -1209,7 +1209,7 @@ class_count() {
 
 emit_lifecycle_metrics() {
   local now_ns host_name tok c n classes metrics summary err
-  local cq_rows node_rows name quotas p a q alloc pending admitted quota_sum allocatable
+  local cq_rows node_rows name quotas p a q f alloc pending admitted quota_sum allocatable
   if [ "$NO_EMIT" != 0 ]; then
     echo "  emit: disabled (--no-emit / RPL_NO_EMIT=1); nothing posted"
     return 0
@@ -1263,10 +1263,19 @@ emit_lifecycle_metrics() {
     pending=0; admitted=0; quota_sum=0
     while IFS='|' read -r name quotas p a; do
       [ -n "$name" ] || continue
+      # One churn-slot token per flavor (churn-slot-flavor, then the arm64
+      # overflow flavor at 0): the queue's quota is their SUM, never the last
+      # token, which read every arm64-carrying queue as 0.
       q=""
-      for tok in $quotas; do case "$tok" in "ci-runner.io/churn-slot="*) q="${tok#*=}" ;; esac; done
+      for tok in $quotas; do
+        case "$tok" in
+          "ci-runner.io/churn-slot="*)
+            f="${tok#*=}"
+            [[ "$f" =~ ^[0-9]+$ ]] && q=$(( ${q:-0} + f )) ;;
+        esac
+      done
       [ -n "$q" ] || continue
-      [[ "$q" =~ ^[0-9]+$ ]] && quota_sum=$((quota_sum + q))
+      quota_sum=$((quota_sum + q))
       [[ "$p" =~ ^[0-9]+$ ]] && pending=$((pending + p))
       [[ "$a" =~ ^[0-9]+$ ]] && admitted=$((admitted + a))
     done <<< "$cq_rows"
