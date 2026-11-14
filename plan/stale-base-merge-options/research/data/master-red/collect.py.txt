@@ -1,0 +1,36 @@
+"""Collect livespec-dev-tooling master CI push runs in the throughput window, and for each
+failed check-per-file-coverage job, its failing test ids from the job log."""
+import json, re, subprocess, sys
+OWNER="thewoolleyman"; REPO=sys.argv[1] if len(sys.argv)>1 else "livespec-dev-tooling"
+OUT=f"/tmp/claude-1000/-home-ubuntu-workspace-livespec-dev-tooling/c301216a-fdcf-40fa-b269-daabdb78668e/scratchpad/diag/{REPO}.json"
+LO,HI="2026-11-06T22:05:00Z","2026-11-13T22:05:00Z"
+def gh(path):
+    p=subprocess.run(["gh","api",path],capture_output=True,text=True)
+    if p.returncode: raise SystemExit(f"gh {path}: {p.stderr[:300]}")
+    return json.loads(p.stdout)
+runs=[]; page=1
+while page<=40:
+    d=gh(f"repos/{OWNER}/{REPO}/actions/workflows/ci.yml/runs?branch=master&event=push&per_page=100&page={page}&created={LO[:10]}..{HI[:10]}")
+    rs=d["workflow_runs"]
+    if not rs: break
+    runs+= [r for r in rs if LO<=r["created_at"]<=HI]
+    page+=1
+print("runs",len(runs),flush=True)
+out=[]
+for r in sorted(runs,key=lambda r:r["created_at"]):
+    rec=dict(id=r["id"],sha=r["head_sha"],created=r["created_at"],conclusion=r["conclusion"],attempt=r["run_attempt"],title=r["display_title"][:120])
+    if r["conclusion"]=="failure":
+        jobs=gh(f"repos/{OWNER}/{REPO}/actions/runs/{r['id']}/jobs?per_page=100&filter=all")["jobs"]
+        rec["failed_jobs"]=sorted({j["name"] for j in jobs if j["conclusion"]=="failure"})
+        cov=[j for j in jobs if j["conclusion"]=="failure" and "per-file-coverage" in j["name"]]
+        tests=set()
+        for j in cov:
+            p=subprocess.run(["gh","api",f"repos/{OWNER}/{REPO}/actions/jobs/{j['id']}/logs"],capture_output=True,text=True)
+            for line in p.stdout.splitlines():
+                m=re.search(r"(FAILED|ERROR) (tests/\S+)",line)
+                if m: tests.add(m.group(2))
+            rec.setdefault("cov_log_bytes",0); rec["cov_log_bytes"]+=len(p.stdout)
+        rec["failed_tests"]=sorted(tests)
+    out.append(rec)
+json.dump(out,open(OUT,"w"),indent=1)
+print("wrote",OUT,flush=True)

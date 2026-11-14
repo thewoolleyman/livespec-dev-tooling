@@ -1,0 +1,142 @@
+[
+ {
+  "id": 42472457052,
+  "sha": "bf936399943a2c547630a96cff6533b0854242d7",
+  "created": "2026-11-08T10:41:03Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: preserve quoted check suite runner arguments",
+  "failed_jobs": [
+   "check-metadata-batch",
+   "ci-green"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 42609667915,
+  "sha": "50b966f987f6c8c64d60cbfc8ef4deb809637352",
+  "created": "2026-11-09T11:31:06Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: an incident repair whose expedited PR closed unmerged after a fa\u2026",
+  "failed_jobs": [
+   "check-per-file-coverage (nonroot)",
+   "ci-green"
+  ],
+  "cov_log_bytes": 35191,
+  "failed_tests": []
+ },
+ {
+  "id": 42659402146,
+  "sha": "5a628efd5b72457a3eb28c4480cc1fced0951898",
+  "created": "2026-11-09T16:54:18Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): propose filing-flags-a-definition-of (bd-ib-cm2k55)",
+  "failed_jobs": [
+   "check-per-file-coverage (nonroot)",
+   "ci-green"
+  ],
+  "cov_log_bytes": 40011,
+  "failed_tests": []
+ },
+ {
+  "id": 42669034432,
+  "sha": "35d0a1716bf19bdcd726b74196947e814c281069",
+  "created": "2026-11-09T17:53:46Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: count journaled failed-jobs reruns per pull request head across \u2026",
+  "failed_jobs": [],
+  "failed_tests": []
+ },
+ {
+  "id": 42672913004,
+  "sha": "cc55fc7ea9798861ddb09be51ac7fd0b762046bc",
+  "created": "2026-11-09T18:18:39Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(prompts): a fix turn grades each tree once, through its commit \u2026",
+  "failed_jobs": [],
+  "failed_tests": []
+ },
+ {
+  "id": 42674043026,
+  "sha": "fdccf17a6639a1ca06079440273e59f05d1e9a09",
+  "created": "2026-11-09T18:26:24Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: a janitor-stage refresh repair republishes over the run's own pu\u2026",
+  "failed_jobs": [],
+  "failed_tests": []
+ },
+ {
+  "id": 43094089861,
+  "sha": "8669d587d974891bb819b8a0832dbe2e7265f06a",
+  "created": "2026-11-11T20:11:03Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "fix: observe every groom judgement spawn",
+  "failed_jobs": [
+   "check-per-file-coverage-shard (nonroot, 2/4)",
+   "check-per-file-coverage-shard (nonroot, 3/4)",
+   "check-per-file-coverage-shard (nonroot, 4/4)"
+  ],
+  "cov_log_bytes": 128837,
+  "failed_tests": []
+ },
+ {
+  "id": 43249644939,
+  "sha": "0823f3d91aae2798b892609d1a84bfed378f853e",
+  "created": "2026-11-12T15:36:34Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(reconcile-runs): add a MemoryMax=8G runaway backstop above the \u2026",
+  "failed_jobs": [
+   "check-coverage (nonroot)",
+   "ci-green"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43285128569,
+  "sha": "6f7b88531170af8dcdf26d5b1250b9b922a7783e",
+  "created": "2026-11-12T18:57:12Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "docs: repoint the legacy factory-integration prose to its archive ref",
+  "failed_jobs": [
+   "check-per-file-coverage-shard (nonroot, 1/4)",
+   "check-per-file-coverage-shard (nonroot, 2/4)",
+   "ci-green"
+  ],
+  "cov_log_bytes": 34838,
+  "failed_tests": []
+ },
+ {
+  "id": 43421159704,
+  "sha": "7c4d7cafb17a4ea272e24bad889a970930756231",
+  "created": "2026-11-13T11:57:26Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): apply grade fixes to the-committed-fleet-launch-launcher\u2026",
+  "failed_jobs": [
+   "check-metadata-batch",
+   "ci-green"
+  ],
+  "failed_tests": []
+ },
+ {
+  "id": 43489676082,
+  "sha": "9a8ad7334cb00042f5f5e168108e83613982ccf8",
+  "created": "2026-11-13T19:10:30Z",
+  "conclusion": "failure",
+  "attempt": 1,
+  "title": "chore(spec): record the Scenario 370 sentence rewording in v371's pre\u2026",
+  "failed_jobs": [
+   "check-metadata-batch",
+   "ci-green"
+  ],
+  "failed_tests": []
+ }
+]
