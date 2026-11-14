@@ -114,6 +114,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI job routed to self-hosted capacity runs uv sync with the self-hosted download cap",
+    "work_item": "livespec-dev-tooling-qeou2e",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI job that re-ran no test publishes no flake-retry artifact",
     "work_item": "livespec-dev-tooling-ljea46",
     "first_seen": "2026-11-08"

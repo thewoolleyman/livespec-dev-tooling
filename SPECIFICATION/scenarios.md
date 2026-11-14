@@ -3736,6 +3736,20 @@ And a second failure of the same job at `Initialize containers` MUST NOT be re-r
 And a job that failed at a later step, or at `Initialize containers` with no registry network error, MUST NOT be re-run, and the summary MUST record it as left for its owner
 
 
+## Scenario: a CI job routed to self-hosted capacity runs uv sync with the self-hosted download cap
+
+Given livespec-dev-tooling's `CI_RUNNER_LABELS` names GitHub-hosted capacity
+
+And a `ci.yml` job routes to the self-hosted pool through `CI_COVERAGE_RUNNER_LABELS` or `CI_RUNNER_LABELS_MASTER`
+
+When that job's step that runs `uv sync` executes on a self-hosted runner
+
+Then `UV_CONCURRENT_DOWNLOADS` and `UV_HTTP_TIMEOUT` MUST resolve to the capped self-hosted pair that `ci.yml` declares
+
+And the same step executing on a GitHub-hosted runner MUST resolve them to uv's own defaults
+
+And a `ci.yml` that sets either variable at workflow or job level MUST fail the test that guards this constraint, naming the workflow file and the step
+
 ## Scenario: a CI run GitHub fails at job creation with an Internal server error is re-run with backoff
 
 Given a gating CI run of a fleet repository whose caller workflow calls `reusable-ci-infra-rerun.yml`
