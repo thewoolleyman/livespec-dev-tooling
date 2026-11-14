@@ -131,14 +131,16 @@ incident_observer_tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544
 #
 # The approved commits of the incident CI publisher,
 # .github/workflows/reusable-incident-ci-publish.yml in the publisher
-# repository. EMPTY provisions no policy, and removes one an earlier apply
+# repository. This released publisher commit provisions the production policy.
+# EMPTY explicitly provisions no policy, and removes one an earlier apply
 # installed: the controller then answers every publication with
 # identity-not-provisioned and the run is recorded unpublished. A commit is
 # listed only once it is on that repository's master, because the token's
 # job_workflow_sha names it and a pull request's own commit is rewritten by
 # rebase-merge. Rolling the publisher: list the old and the new commit, move the
 # callers' pin, then drop the old one.
-incident_observer_ci_publisher_shas: []
+incident_observer_ci_publisher_shas:
+  - 2145d1d639a398c2cc3ed68a437baf92aeec7baf
 # The repository that ships the publisher is the first inventory entry, whose
 # installation every variable above describes; the stable repository and owner
 # ids are this installation's own inventory entry. Both are read where the policy
