@@ -49,6 +49,23 @@ separate per-host SSH setup (maintainer, 2026-11-12).
 
 Only then may a blocker be recorded or carried to the maintainer.
 
+## A route is not a way to run a host proof from another host
+
+A working route lets you READ a host. It does not let you change one by
+hand. The `fleet_host_guard` hook judges every `ssh` to a fleet host and
+denies a remote command that mutates. That includes `git fetch`, a worktree
+or gate start, and any `sudo` that is not provably read-only, such as
+`sudo bpftrace`. A session that runs ON the host is not judged that way. So
+a host-captured proof that names a host (for example "On the dev VPS") is
+captured by a session running on that host, not over ssh from another one.
+
+When the plan seat lives on another host, ask the coordinator for a
+short-lived session on the named host. Do not reword the command to get it
+past the guard. Measured 2026-11-14: the dev-host-test-gate-load seat moved
+to hetzner-xubuntu, the guard denied its `git fetch` to vmi3006760 as
+"ssh+git+fetch", and legacy-coordinator-agent opened a VPS helper seat for
+the livespec-dev-tooling-ie7fas capture.
+
 ## What this cost (2026-11-12, plan homelab-k8s-worker-nodes)
 
 A session on the VPS tried `ssh macbook-m4-max` and
