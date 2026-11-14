@@ -71,7 +71,29 @@ all:
               # The control node manages itself over a local connection, so a
               # run needs no ssh credential toward this machine and no inbound
               # reachability to it.
-              ansible_connection: local
+              #
+              # A local connection runs on WHATEVER machine launched ansible,
+              # so it is guarded by the controller's identity
+              # (livespec-dev-tooling-fy6ip4). It resolves to `local` only
+              # when the controller's machine-id is the control node's
+              # (vmi3006760.contaboserver.net). On any other controller, a
+              # hetzner-xubuntu seat for instance, every play that selects
+              # `vps` fails for it before its first task and names both
+              # machine-ids, rather than converging that controller as if it
+              # were the VPS. A rebuilt VPS gets a new machine-id: re-measure
+              # `cat /etc/machine-id` on it and update this value.
+              # `control_node_identity_file` exists for the guard's own test.
+              control_node_machine_id: 22d4402d76894de4843c054c6c47ecbe
+              # The machine-id of the controller running this ansible: a lookup
+              # always runs on the controller, never on the target.
+              control_node_identity_found: >-
+                {{ lookup('ansible.builtin.file', control_node_identity_file | default('/etc/machine-id')) | trim }}
+              ansible_connection: >-
+                {{ 'local' if control_node_identity_found == control_node_machine_id
+                else undef(hint='REFUSED: the vps inventory entry uses a local connection, which is valid'
+                ~ ' only on the control node vmi3006760.contaboserver.net (machine-id '
+                ~ control_node_machine_id ~ '), and this controller has machine-id '
+                ~ control_node_identity_found ~ '. Run plays that select vps from the control node.') }}
         ci_pool:
           hosts:
             poweredge-xubuntu:
