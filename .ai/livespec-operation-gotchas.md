@@ -124,6 +124,37 @@ In livespec-family repositories that enforce red-green-replay, `feat:` and
 commit hook rejects the prefix, the commit did not happen; choose the correct
 prefix and rerun `git commit` rather than amending a nonexistent commit.
 
+## A Non-`.py` Implementation Beside A New Test Commits As ONE Commit
+
+When the implementation is not `.py` (ansible YAML, shell, a justfile) but the
+change carries a new pytest test, stage the test AND the implementation
+together in one `fix:` or `feat:` commit. The `red_green_replay` hook sees a
+non-`.py` implementation beside the test, routes the commit to its
+green-verified leg, and stamps `TDD-Suite-Green-*` trailers.
+
+Do NOT split it into a Red (the test alone) and a Green amend. The Green leg
+only stamps when a `.py` implementation is staged, so the amend lands with Red
+trailers and no Green trailers.
+
+Follow-up test edits on the same branch hit two more refusals:
+
+- An amend that stages only test files is classified as a new Red, which
+  allows one test file: two test files refuse with
+  `red-green-replay-multi-test-file`.
+- A `fix:` test-only commit whose tests already pass refuses with
+  `test-passed-at-red`.
+
+Land each such edit as its own `chore(test):` commit with ONE test file. A
+non-`fix`/`feat` prefix over a passing test is a test-only cleanup, rule 3 of
+`livespec_dev_tooling/checks/red_green_replay.py`'s decision tree. A test file
+staged together with a YAML change under `chore(...)` also takes the
+green-verified leg.
+
+Measured 2026-11-14 on livespec-dev-tooling-fy6ip4 (livespec-dev-tooling#4666):
+each wrong shape cost one full delegated gate cycle, three in all, before the
+right shape landed. Decide the commit shape from the staged file types BEFORE
+the first `just gate-start`.
+
 ## `ls` Is Aliased To lsd — Never Capture A Path From It
 
 HOST-WIDE, not role-scoped: on this machine `ls` is an alias for
