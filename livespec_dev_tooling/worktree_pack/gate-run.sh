@@ -132,6 +132,7 @@
 #   75       DIED_WITHOUT_VERDICT (EX_TEMPFAIL) — the gate did not finish;
 #            this is NOT a failing verdict and NOT a pass
 #   64       usage error (EX_USAGE)
+#   69       the gate venue selector cannot be imported (EX_UNAVAILABLE)
 #   70       the runner itself could not launch the gate (EX_SOFTWARE)
 #
 # `set -euo pipefail` (errexit): a runner whose own bookkeeping fails
@@ -143,6 +144,7 @@
 set -euo pipefail
 
 readonly EX_USAGE=64
+readonly EX_UNAVAILABLE=69
 readonly EX_SOFTWARE=70
 readonly EX_NO_VERDICT=75
 readonly SIGNAL_EXIT_FLOOR=128
@@ -237,6 +239,7 @@ run_gate_with_stall_bound() {
     local grace="${GATE_STALL_KILL_GRACE_SECONDS:-30}"
     local stamp="$dir/progress.stamp"
     local observed="$dir/progress.observed"
+    local quiet_ticks="$dir/quiet.ticks"
     : >"$stamp"
     : >"$observed"
     set -m
@@ -245,12 +248,16 @@ run_gate_with_stall_bound() {
     set +m
     # Opened after the gate launches, so the gate inherits nothing of ours.
     open_idle_fd || true
-    local quiet_since=$SECONDS ended
+    local quiet_since=$SECONDS quiet_tick_count=0 ended
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ "$dir/output.log" -nt "$observed" || "$stamp" -nt "$observed" ]]; then
             : >"$observed"
             quiet_since=$SECONDS
-        elif (( SECONDS - quiet_since >= stall )); then
+        else
+            quiet_tick_count=$((quiet_tick_count + 1))
+            printf '%s\n' "$quiet_tick_count" >"$quiet_ticks"
+        fi
+        if (( SECONDS - quiet_since >= stall )); then
             printf '\ngate-run: no output for %ss, the stall window (LIVESPEC_SUITE_GREEN_STALL_SECONDS); ending the gate'"'"'s whole process group, workers included — not a pass\n' \
                 "$stall" >>"$dir/output.log"
             kill -TERM -- "-$gate_pid" 2>/dev/null || true
@@ -404,6 +411,44 @@ derive_state_into() {
 derive_state() {
     derive_state_into "$1"
     printf '%s' "$STATE"
+}
+
+# The list path already selected directories from the store, and prints only
+# a state word. Avoid the general reader's extra directory probe while still
+# preserving its exact state derivation for each record.
+derive_list_state_into() {
+    local dir="$1" code="" pid=""
+    if [[ -f "$dir/exit_code" && -r "$dir/exit_code" ]]; then
+        read -r code <"$dir/exit_code" || code=""
+        if [[ "$code" == "0" ]]; then
+            STATE='PASSED'
+        elif [[ "$code" -eq "$EX_NO_VERDICT" || "$code" -ge "$SIGNAL_EXIT_FLOOR" ]]; then
+            STATE='DIED_WITHOUT_VERDICT'
+        else
+            STATE='FAILED'
+        fi
+        return
+    fi
+    if [[ -f "$dir/pid" && -r "$dir/pid" ]]; then
+        read -r pid <"$dir/pid" || pid=""
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            STATE='RUNNING'
+            return
+        fi
+    fi
+    STATE='DIED_WITHOUT_VERDICT'
+}
+
+# `list` needs only the command field. Its narrow reader avoids the generic
+# report reader's separate regular-file and readability probes for every row.
+list_command_into() {
+    local __name="$1" __file="$2" __value=""
+    if [[ ! -f "$__file" || ! -r "$__file" ]]; then
+        printf -v "$__name" '%s' '?'
+        return
+    fi
+    IFS= read -r -d '' __value <"$__file" || true
+    printf -v "$__name" '%s' "$__value"
 }
 
 # ---------------------------------------------------------------------
@@ -806,35 +851,95 @@ cmd_start() {
 
     ensure_worktree_pack "$(repo_root)"
 
-    local venue_fields=()
-    if [[ "$force_local" == "true" ]]; then
-        mapfile -t venue_fields < <(
-            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" 2>/dev/null
-        )
+    # Selecting a venue before creating the run directory preserves the
+    # distinction between a runner fault and a gate that was actually started.
+    # The installed pack can outlive its package pin, so try both the project
+    # environment and the host interpreter before asking either to select.
+    local selector_probe_dir uv_import_status=0 python_import_status=0
+    selector_probe_dir="$(mktemp -d)"
+    if uv run --no-sync python -c 'import livespec_dev_tooling' \
+        >/dev/null 2>"$selector_probe_dir/uv-import.stderr"; then
+        :
     else
-        mapfile -t venue_fields < <(
-            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" 2>/dev/null
-        )
+        uv_import_status=$?
+    fi
+    if python3 -c 'import livespec_dev_tooling' \
+        >/dev/null 2>"$selector_probe_dir/python-import.stderr"; then
+        :
+    else
+        python_import_status=$?
+    fi
+    if [[ "$uv_import_status" -ne 0 && "$python_import_status" -ne 0 ]]; then
+        printf '%s\n' 'ERROR: gate venue selector could not be imported through either `uv run --no-sync python` or `python3`.' >&2
+        printf '%s\n' 'Remedy: run `uv sync` or `just bootstrap` in that checkout; when the installed pack is older than the pinned package, run `just install-worktree-pack`.' >&2
+        cat "$selector_probe_dir/uv-import.stderr" >&2
+        cat "$selector_probe_dir/python-import.stderr" >&2
+        rm -rf "$selector_probe_dir"
+        return "$EX_UNAVAILABLE"
+    fi
+    local venue_fields=()
+    if [[ "$uv_import_status" -eq 0 && "$force_local" == "true" ]]; then
+        if uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+            >"$selector_probe_dir/uv-selector.stdout" \
+            2>"$selector_probe_dir/uv-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/uv-selector.stdout"
+    elif [[ "$uv_import_status" -eq 0 ]]; then
+        if uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+            >"$selector_probe_dir/uv-selector.stdout" \
+            2>"$selector_probe_dir/uv-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/uv-selector.stdout"
+    elif [[ "$force_local" == "true" ]]; then
+        if python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+            >"$selector_probe_dir/python-selector.stdout" \
+            2>"$selector_probe_dir/python-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
+    else
+        if python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+            >"$selector_probe_dir/python-selector.stdout" \
+            2>"$selector_probe_dir/python-selector.stderr"; then
+            :
+        fi
+        mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
     fi
     # Consumer worktrees normally have their pinned environment ready, but a
     # source checkout with an importable package and no initialized project
     # environment can still select locally through the interpreter that made
     # the package importable.
-    if [[ "${#venue_fields[@]}" != "2" ]]; then
+    if [[ "${#venue_fields[@]}" != "2" && "$uv_import_status" -eq 0 ]]; then
         if [[ "$force_local" == "true" ]]; then
-            mapfile -t venue_fields < <(
-                python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
-            )
+            if python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" \
+                >"$selector_probe_dir/python-selector.stdout" \
+                2>"$selector_probe_dir/python-selector.stderr"; then
+                :
+            fi
+            mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
         else
-            mapfile -t venue_fields < <(
-                python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@"
-            )
+            if python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@" \
+                >"$selector_probe_dir/python-selector.stdout" \
+                2>"$selector_probe_dir/python-selector.stderr"; then
+                :
+            fi
+            mapfile -t venue_fields <"$selector_probe_dir/python-selector.stdout"
         fi
     fi
     [[ "${#venue_fields[@]}" == "2" ]] || {
         printf 'ERROR: gate venue selection did not return a venue and reason\n' >&2
+        if [[ -s "$selector_probe_dir/uv-selector.stderr" ]]; then
+            cat "$selector_probe_dir/uv-selector.stderr" >&2
+        fi
+        if [[ -s "$selector_probe_dir/python-selector.stderr" ]]; then
+            cat "$selector_probe_dir/python-selector.stderr" >&2
+        fi
+        rm -rf "$selector_probe_dir"
         return "$EX_SOFTWARE"
     }
+    rm -rf "$selector_probe_dir"
     local venue="${venue_fields[0]}"
     local venue_reason="${venue_fields[1]}"
 
@@ -1213,18 +1318,43 @@ cmd_wait() {
 }
 
 cmd_list() {
-    local root
+    local all=false root
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all) all=true ;;
+            *) usage ;;
+        esac
+        shift
+    done
     root="$(runs_root)"
     if [[ ! -d "$root" ]]; then
         printf 'no gate runs recorded\n'
         return 0
     fi
-    local run_id dir
-    for run_id in $(ls -1 "$root" 2>/dev/null | sort); do
-        dir="$root/$run_id"
+    # Bash expands globs in lexical order, which is chronological for run ids.
+    # Keep directories in an array so the normal view can omit all but the
+    # fifty newest without invoking external directory utilities. Per-record state and
+    # command reads remain builtins: a large host store must not turn one list
+    # operation into thousands of child processes.
+    local -a dirs=()
+    local dir run_id state command index start=0 count nullglob_was_set=false
+    shopt -q nullglob && nullglob_was_set=true
+    shopt -s nullglob
+    dirs=("$root"/*/)
+    [[ "$nullglob_was_set" == true ]] || shopt -u nullglob
+    count="${#dirs[@]}"
+    if [[ "$all" != true && "$count" -gt 50 ]]; then
+        start=$((count - 50))
+    fi
+    for ((index = start; index < count; index++)); do
+        dir="${dirs[index]%/}"
+        run_id="${dir##*/}"
+        derive_list_state_into "$dir"
+        state="$STATE"
+        list_command_into command "$dir/command"
+        command="${command//$'\n'/ }"
         printf '%-24s  %-20s  %s\n' \
-            "$run_id" "$(derive_state "$dir")" \
-            "$(tr '\n' ' ' <"$dir/command" 2>/dev/null || echo '?')"
+            "$run_id" "$state" "$command"
     done
 }
 

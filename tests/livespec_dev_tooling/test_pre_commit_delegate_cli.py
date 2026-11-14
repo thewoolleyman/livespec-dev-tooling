@@ -291,6 +291,7 @@ def test_a_submitted_job_that_falls_back_locally_names_the_job_and_staged_tree(
 )
 def test_main_narrates_the_selected_route(
     *,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     verdict: str,
@@ -323,6 +324,7 @@ def test_main_narrates_the_selected_route(
             exit_status=1,
         ),
     }
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(module, "run_pre_commit", lambda **_kwargs: routes[verdict])
     monkeypatch.setattr("sys.argv", ["pre_commit_delegate.py", "run"])
 
@@ -339,10 +341,11 @@ def test_main_narrates_the_selected_route(
 
 
 def test_main_is_silent_for_a_repository_that_did_not_opt_in(
-    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The default local path keeps hook output unchanged."""
     module = _module()
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         module,
         "run_pre_commit",

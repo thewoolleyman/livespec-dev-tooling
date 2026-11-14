@@ -195,6 +195,7 @@ def await_slot(
             return fd
         if rounds % _HEARTBEAT_ROUNDS == 0:
             _announce_wait(limit=limit, slot_dir=slot_dir)
+            _renew_gate_run_progress()
         rounds += 1
         sleep(POLL_SECONDS)
 
@@ -322,6 +323,17 @@ def _announce_wait(*, limit: int, slot_dir: Path) -> None:
         slots=str(slot_dir),
         poll_seconds=POLL_SECONDS,
     )
+
+
+def _renew_gate_run_progress() -> None:
+    """Renew an enclosing detached gate's stall window while this session queues.
+
+    A local slot wait is real forward progress: the session is still waiting to
+    start its first test, and cannot emit test output until the host admits it.
+    The detached gate runner exports this optional path to distinguish that
+    queue from a process that has stopped making progress altogether.
+    """
+    Path(os.environ.get("LIVESPEC_GATE_RUN_PROGRESS_STAMP", os.devnull)).touch()
 
 
 def _slot_paths(*, slot_dir: Path, limit: int) -> list[Path]:

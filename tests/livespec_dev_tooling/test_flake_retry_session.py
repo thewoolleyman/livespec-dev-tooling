@@ -34,29 +34,112 @@ _FLAKY_TEST = (
 # Committed into the base, so the change set never contains it: it only takes
 # the minute out of the retry delay for this throwaway session.
 _NO_DELAY_CONFTEST = "import livespec_dev_tooling.flake_retry as flake_retry\n\nflake_retry.RETRY_DELAY_SECONDS = 0\n"
+_PYPROJECT = "[project]\nname = 'retry-fixture'\nversion = '{version}'\n"
+_UV_LOCK = "version = 1\n\n[[package]]\nname = 'retry-fixture'\nversion = '{version}'\n"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_flake_retry_session_state(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give each in-process hook call its own copy of the plugin's session state.
+
+    The plugin keeps the RUNNING session's retry state in module globals, and this
+    suite's own pytest session loads the same module. A test that drives a hook
+    in-process without this fixture clears the real session's failed node ids and
+    leaves a fixture repository's withholding reason in it. The CI log then says
+    no failing test was retried (fleet-flaky-tests, livespec-dev-tooling-zwveqp),
+    and any later summary test in the same worker fails depending on test order.
+    """
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    monkeypatch.setattr(plugin, "_FAILED_NODEIDS", set[str]())
+    monkeypatch.setattr(plugin, "_SESSION_WITHHELD", list[str]())
+    monkeypatch.setattr(plugin, "_WITHHELD_BY_NODEID", dict[str, str]())
 
 
 def _git(*, repo: Path, args: list[str]) -> None:
     _ = subprocess.run(["git", *_GIT_IDENTITY, *args], cwd=repo, check=True, capture_output=True)
 
 
-def _flaky_repository(*, root: Path, touch_test: bool) -> Path:
+def _flaky_repository(
+    *,
+    root: Path,
+    touch_test: bool,
+    release: bool = False,
+    path_expression: str = "",
+    failure_text: str = "first attempt fails",
+) -> Path:
     repo = root / "repo"
     repo.mkdir()
     _git(repo=repo, args=["init", "-q", "-b", "master", "."])
-    _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST, encoding="utf-8")
+    test_source = _FLAKY_TEST.replace("first attempt fails", failure_text) + path_expression
+    _ = (repo / "test_flaky.py").write_text(test_source, encoding="utf-8")
     _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
     _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
+    _ = (repo / "pyproject.toml").write_text(_PYPROJECT.format(version="0.1.0"), encoding="utf-8")
+    _ = (repo / "uv.lock").write_text(_UV_LOCK.format(version="0.1.0"), encoding="utf-8")
     _git(repo=repo, args=["add", "-A"])
     _git(repo=repo, args=["commit", "-qm", "base"])
     _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
     if touch_test:
-        _ = (repo / "test_flaky.py").write_text(_FLAKY_TEST + "# touched\n", encoding="utf-8")
+        _ = (repo / "test_flaky.py").write_text(test_source + "# touched\n", encoding="utf-8")
+    elif release:
+        _ = (repo / "pyproject.toml").write_text(
+            _PYPROJECT.format(version="0.1.1"), encoding="utf-8"
+        )
+        _ = (repo / "uv.lock").write_text(_UV_LOCK.format(version="0.1.1"), encoding="utf-8")
+        _git(repo=repo, args=["add", "pyproject.toml", "uv.lock"])
+        _git(repo=repo, args=["commit", "-qm", "release"])
     else:
         _ = (repo / "README.md").write_text("unrelated\n", encoding="utf-8")
         _git(repo=repo, args=["add", "README.md"])
         _git(repo=repo, args=["commit", "-qm", "unrelated change"])
     return repo
+
+
+def _touched_flaky_repository(*, root: Path, kind: str) -> Path:
+    """Create a failing test with one changed closure module or named path."""
+    repo = root / "repo"
+    _init_repo(repo=repo)
+    _write_touched_flaky_base(repo=repo, kind=kind)
+    _git(repo=repo, args=["add", "-A"])
+    _git(repo=repo, args=["commit", "-qm", "failing test base"])
+    _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    if kind == "module":
+        _ = (repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+        changed_path = "app.py"
+    elif kind == "literal":
+        _ = (repo / "fixture-data.json").write_text("changed\n", encoding="utf-8")
+        changed_path = "fixture-data.json"
+    else:
+        _ = (repo / "fixtures" / "changed.json").write_text("changed\n", encoding="utf-8")
+        changed_path = "fixtures/changed.json"
+    _commit_touched_path(repo=repo, path=changed_path)
+    return repo
+
+
+def _write_touched_flaky_base(*, repo: Path, kind: str) -> None:
+    """Write a clean base whose later change is the touched closure evidence."""
+    test_source = _FLAKY_TEST
+    if kind == "module":
+        _ = (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+        test_source = "import app\n\n" + test_source
+    elif kind == "literal":
+        test_source = "DATA_FILE = 'fixture-data.json'\n\n" + test_source
+        _ = (repo / "fixture-data.json").write_text("base\n", encoding="utf-8")
+    else:
+        test_source = "FIXTURES = 'fixtures'\n\n" + test_source
+        fixtures = repo / "fixtures"
+        fixtures.mkdir()
+        _ = (fixtures / "base.json").write_text("base\n", encoding="utf-8")
+    _ = (repo / "test_flaky.py").write_text(test_source, encoding="utf-8")
+    _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
+    _ = (repo / ".gitignore").write_text("seen\ntmp/\n", encoding="utf-8")
+
+
+def _commit_touched_path(*, repo: Path, path: str) -> None:
+    """Commit the one changed closure path after recording the fixture's base."""
+    _git(repo=repo, args=["add", path])
+    _git(repo=repo, args=["commit", "-qm", "touched closure"])
 
 
 def _fixture_finalizer_repository(
@@ -196,9 +279,69 @@ def test_an_untouched_failing_test_is_retried_on_its_own_and_reported_as_a_flake
     assert "FLAKE-RETRIED" in completed.stdout
     assert "test_flaky.py::test_flaky: 2 attempts, passed" in completed.stdout
     records = (repo / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
-    assert [json.loads(line) for line in records.splitlines()] == [
-        {"attempts": 2, "nodeid": "test_flaky.py::test_flaky", "outcome": "passed"}
-    ]
+    assert len(records.splitlines()) == 1
+    record = json.loads(records)
+    assert record["attempts"] == 2
+    assert record["nodeid"] == "test_flaky.py::test_flaky"
+    assert record["outcome"] == "passed"
+    assert record["failures"][0]["cut"] is False
+    assert "AssertionError: first attempt fails" in record["failures"][0]["text"]
+
+
+@pytest.mark.integration
+def test_a_rerun_record_and_summary_carry_a_long_failed_attempt_text(*, tmp_path: Path) -> None:
+    """The record keeps the first 4000 characters and the summary its first non-empty line."""
+    failure_text = "retry-failure-" + "x" * 4_096
+    repo = _flaky_repository(root=tmp_path, touch_test=False, failure_text=failure_text)
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    record = json.loads((repo / "tmp" / "flake-retries" / "retries.jsonl").read_text())
+    recorded_failure = record["failures"][0]
+    recorded_text = recorded_failure["text"]
+    assert recorded_failure["cut"] is True
+    assert len(recorded_text) == 4_000
+    first_line = next(line for line in recorded_text.splitlines() if line)
+    assert "def test_flaky" in first_line
+    assert f"  {first_line}" in completed.stdout.splitlines()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "path_expression",
+    [
+        "\nif False:\n    _ = tmp_path / 'state' / name\n",
+        "\nif False:\n    _ = home / '.config' / name\n",
+        "\nif False:\n    _ = state_root / 'runs' / run_id\n",
+    ],
+)
+def test_a_non_repository_dynamic_path_still_retries_an_untouched_failure(
+    *, tmp_path: Path, path_expression: str
+) -> None:
+    """Temporary, home, and state paths cannot make a test count as touched."""
+    repo = _flaky_repository(
+        root=tmp_path,
+        touch_test=False,
+        path_expression=path_expression,
+    )
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "FLAKE-RETRIED" in completed.stdout
+
+
+@pytest.mark.integration
+def test_a_version_only_release_change_retries_an_untouched_failing_test(*, tmp_path: Path) -> None:
+    """Release metadata alone does not make every failing test look touched."""
+    repo = _flaky_repository(root=tmp_path, touch_test=False, release=True)
+
+    completed = _run_session(repo=repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "1 passed, 1 rerun" in completed.stdout
+    assert "FLAKE-RETRY-WITHHELD" not in completed.stdout
 
 
 @pytest.mark.integration
@@ -213,6 +356,167 @@ def test_a_failing_test_the_run_touched_fails_at_once_with_no_retry(*, tmp_path:
     assert "rerun" not in completed.stdout
     assert "FLAKE-RETRIED" not in completed.stdout
     assert not (repo / "tmp" / "flake-retries").exists()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("kind", "expected_evidence"),
+    [
+        ("module", "changed closure module app.py"),
+        ("literal", "closure string literal 'fixture-data.json'"),
+        ("directory", "closure string literal 'fixtures'"),
+    ],
+)
+def test_a_failing_touched_test_names_the_evidence_that_withheld_its_retry(
+    *, tmp_path: Path, kind: str, expected_evidence: str
+) -> None:
+    """A touched failure names the module, literal, or directory behind the hold."""
+    repo = _touched_flaky_repository(root=tmp_path, kind=kind)
+
+    completed = _run_session(repo=repo)
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 1, output
+    assert "FLAKE-RETRY-WITHHELD" in output
+    assert "test_flaky.py::test_flaky" in output
+    assert expected_evidence in output
+    assert "rerun" not in output
+
+
+@pytest.mark.integration
+def test_a_touched_failure_reaches_the_xdist_controller_with_a_github_annotation(
+    *, tmp_path: Path
+) -> None:
+    """A worker's touched hold reaches the controller and GitHub Actions output."""
+    repo = _touched_flaky_repository(root=tmp_path, kind="module")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:livespec_flake_retry",
+            "-p",
+            "livespec_dev_tooling.flake_retry",
+            "-n",
+            "2",
+            "test_flaky.py",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+        env={**_environ_without_github(), "GITHUB_ACTIONS": "true"},
+    )
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 1, output
+    assert "FLAKE-RETRY-WITHHELD" in output
+    assert "test_flaky.py::test_flaky" in output
+    assert "changed closure module app.py" in output
+    assert "::warning::FLAKE-RETRY-WITHHELD test_flaky.py::test_flaky" in output
+
+
+def test_a_safe_closure_still_has_no_withheld_reason_without_change_paths(
+    *, tmp_path: Path
+) -> None:
+    """The optional reason API preserves its uncertainty-only caller behavior."""
+    test_path = tmp_path / "test_example.py"
+    _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
+    decisions = importlib.import_module("livespec_dev_tooling.flake_retry_decisions")
+
+    assert (
+        decisions.retry_withheld_reason_for(
+            repo_root=tmp_path,
+            test_path=test_path,
+            memo={},
+            change_paths=None,
+        )
+        is None
+    )
+
+
+@pytest.mark.integration
+def test_indeterminable_or_unparseable_closures_withhold_only_their_own_failures(
+    *, tmp_path: Path
+) -> None:
+    """Closure uncertainty treats its own test as touched without stopping other retries."""
+    indeterminable_root = tmp_path / "indeterminable"
+    _ = indeterminable_root.mkdir()
+    indeterminable = _flaky_repository(root=indeterminable_root, touch_test=False)
+    _ = (indeterminable / "test_indeterminable.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_indeterminable_path() -> None:\n"
+        "    segment = 'unknown'\n"
+        "    _ = Path(__file__).parent / 'known' / segment\n"
+        "    assert False\n",
+        encoding="utf-8",
+    )
+
+    failed = _run_session(
+        repo=indeterminable,
+        test_paths=("test_indeterminable.py", "test_flaky.py"),
+    )
+    failed_output = failed.stdout + failed.stderr
+
+    assert failed.returncode == 1, failed_output
+    assert "test_flaky.py::test_flaky: 2 attempts, passed" in failed_output
+    assert "FLAKE-RETRIED" in failed_output
+    assert "FLAKE-RETRY-WITHHELD" in failed_output
+    assert "test_indeterminable.py::test_indeterminable_path" in failed_output
+    assert "an indeterminable path in a closure module" in failed_output
+
+    passing_root = tmp_path / "passing"
+    _ = passing_root.mkdir()
+    passing = _flaky_repository(root=passing_root, touch_test=False)
+    _ = (passing / "test_indeterminable.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def test_indeterminable_path() -> None:\n"
+        "    segment = 'unknown'\n"
+        "    _ = Path(__file__).parent / 'known' / segment\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    no_failure = _run_session(repo=passing, test_paths=("test_indeterminable.py",))
+
+    assert no_failure.returncode == 0, no_failure.stdout + no_failure.stderr
+    assert "FLAKE-RETRY-WITHHELD" not in no_failure.stdout
+
+    unparseable_root = tmp_path / "unparseable"
+    _ = unparseable_root.mkdir()
+    unparseable = _flaky_repository(root=unparseable_root, touch_test=False)
+    _ = (unparseable / "broken.py").write_text("def (:\n", encoding="utf-8")
+    _ = (unparseable / "test_unparseable.py").write_text(
+        "from typing import TYPE_CHECKING\n"
+        "\n"
+        "if TYPE_CHECKING:\n"
+        "    import broken\n"
+        "\n"
+        "\n"
+        "def test_unparseable_closure() -> None:\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    passed = _run_session(
+        repo=unparseable,
+        test_paths=("test_unparseable.py", "test_flaky.py"),
+    )
+    passed_output = passed.stdout + passed.stderr
+
+    assert passed.returncode == 0, passed_output
+    assert "test_flaky.py::test_flaky: 2 attempts, passed" in passed_output
+    assert "FLAKE-RETRIED" in passed_output
 
 
 @pytest.mark.integration
@@ -398,7 +702,12 @@ def test_the_report_hook_counts_every_attempt_of_a_retried_test(
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
 
     def report(outcome: str, when: str = "call") -> object:
-        return SimpleNamespace(when=when, nodeid="t.py::t", outcome=outcome)
+        return SimpleNamespace(
+            when=when,
+            nodeid="t.py::t",
+            outcome=outcome,
+            longrepr="AssertionError: a failed retry" if outcome == "rerun" else "",
+        )
 
     plugin.pytest_runtest_logreport(report("passed", when="setup"))
     plugin.pytest_runtest_logreport(report("passed"))
@@ -409,9 +718,24 @@ def test_the_report_hook_counts_every_attempt_of_a_retried_test(
     reporter = _capturing_reporter(into=written)
     plugin.pytest_terminal_summary(reporter, 0, SimpleNamespace(rootpath=tmp_path))
 
-    assert written == ["FLAKE-RETRIED", "t.py::t: 4 attempts, passed"]
+    assert written == [
+        "FLAKE-RETRIED",
+        "t.py::t: 4 attempts, passed",
+        "  AssertionError: a failed retry",
+        "  AssertionError: a failed retry",
+        "  AssertionError: a failed retry",
+    ]
     records = (tmp_path / "tmp" / "flake-retries" / "retries.jsonl").read_text(encoding="utf-8")
-    assert json.loads(records) == {"attempts": 4, "nodeid": "t.py::t", "outcome": "passed"}
+    assert json.loads(records) == {
+        "attempts": 4,
+        "failures": [
+            {"cut": False, "text": "AssertionError: a failed retry"},
+            {"cut": False, "text": "AssertionError: a failed retry"},
+            {"cut": False, "text": "AssertionError: a failed retry"},
+        ],
+        "nodeid": "t.py::t",
+        "outcome": "passed",
+    }
 
 
 def test_the_summary_hook_is_silent_when_nothing_was_retried(
@@ -427,6 +751,64 @@ def test_the_summary_hook_is_silent_when_nothing_was_retried(
 
     assert written == []
     assert not (tmp_path / "tmp").exists()
+
+
+def test_the_summary_names_only_failed_per_test_closure_holds(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closure hold is reported only for its failed node, including from xdist."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    nodeid = "test_indeterminable.py::test_indeterminable_path"
+    reason = "an indeterminable path in a closure module"
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    monkeypatch.setattr(plugin, "_FAILED_NODEIDS", set())
+    monkeypatch.setattr(plugin, "_SESSION_WITHHELD", [])
+    monkeypatch.setattr(plugin, "_WITHHELD_BY_NODEID", {})
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    plugin.pytest_testnodedown(
+        SimpleNamespace(
+            workeroutput={
+                "livespec_flake_retry_withheld": {"session": None, "nodes": {nodeid: reason}}
+            }
+        ),
+        None,
+    )
+    plugin.pytest_runtest_logreport(SimpleNamespace(when="call", nodeid=nodeid, outcome="failed"))
+    written: list[str] = []
+
+    plugin.pytest_terminal_summary(
+        _capturing_reporter(into=written), 1, SimpleNamespace(rootpath=tmp_path)
+    )
+
+    assert written == [
+        "FLAKE-RETRY-WITHHELD",
+        f"{nodeid}: {reason}",
+        f"::warning::FLAKE-RETRY-WITHHELD {nodeid}: {reason}",
+    ]
+
+
+def test_the_withheld_renderer_annotates_each_failing_node(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every failed node listed in a per-test hold receives its own annotation."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    written: list[str] = []
+
+    plugin.announce_retries(
+        terminalreporter=_capturing_reporter(into=written),
+        root=tmp_path,
+        withheld_by_nodeid={
+            "test_first.py::test_first": "an indeterminable path in a closure module",
+            "test_second.py::test_second": "an unparseable closure module",
+        },
+    )
+
+    assert written == [
+        "FLAKE-RETRY-WITHHELD",
+        "test_first.py::test_first: an indeterminable path in a closure module",
+        "test_second.py::test_second: an unparseable closure module",
+    ]
 
 
 @pytest.mark.integration
@@ -624,8 +1006,10 @@ def test_an_existing_segmented_directory_does_not_name_its_parent(*, tmp_path: P
     assert marker("livespec_dev_tooling/_vendor/structlog/__init__.py") is None
 
 
-def test_a_partly_dynamic_path_expression_means_touched(*, tmp_path: Path) -> None:
-    """A path expression with a dynamic segment cannot safely receive a retry."""
+def test_an_unbound_dynamic_root_path_expression_is_not_a_repository_path(
+    *, tmp_path: Path
+) -> None:
+    """An unbound root cannot make a dynamic segment name repository code."""
     plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
     test_path = tmp_path / "test_dynamic.py"
     _ = test_path.write_text(
@@ -636,14 +1020,11 @@ def test_a_partly_dynamic_path_expression_means_touched(*, tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    assert (
-        plugin.retry_marker_for(
-            repo_root=tmp_path,
-            test_path=test_path,
-            change_paths={Path("README.md")},
-        )
-        is None
-    )
+    assert plugin.retry_marker_for(
+        repo_root=tmp_path,
+        test_path=test_path,
+        change_paths={Path("README.md")},
+    ) == {"reruns": 3, "reruns_delay": 60}
 
 
 def test_a_change_to_the_plugin_itself_disables_every_retry(*, tmp_path: Path) -> None:

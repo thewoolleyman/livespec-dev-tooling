@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 from livespec_dev_tooling._incident_ci_types import (
     CiAuthority,
+    CiConditional,
     CiDeferral,
     CiEvent,
     CiPlan,
@@ -18,7 +19,18 @@ from livespec_dev_tooling._incident_ci_types import (
 from livespec_dev_tooling.incident_execution import ExecutionContext, ExecutionMode, Invocation
 from livespec_dev_tooling.incident_transport import child_environment
 
-__all__: list[str] = ["build_plan", "event_key", "select_incident_targets"]
+__all__: list[str] = [
+    "NOT_RUN",
+    "build_plan",
+    "event_key",
+    "execution_view",
+    "select_incident_targets",
+]
+
+NOT_RUN = (
+    "job may not run on this event: its if: names the triggering event or ref, which"
+    " the incident entrance does not evaluate, so the entrance does not run its members"
+)
 
 _COVERAGE = ("check-coverage", "check-per-file-coverage", "check-check-coverage-incremental")
 _SPEC = ("check-heading-coverage", "check-doctor", "check-spec-", "check-no-todo-registry")
@@ -32,6 +44,51 @@ def event_key(*, event: CiEvent, incident_label: str) -> tuple[object, ...]:
         event.head_sha,
         event.pr_number,
         event.kind == "pull_request" and incident_label in event.labels,
+    )
+
+
+def execution_view(
+    *, targets: tuple[CiTarget, ...]
+) -> (
+    tuple[
+        tuple[CiTarget, ...],
+        tuple[CiConditional, ...],
+        tuple[tuple[str, tuple[str, ...]], ...],
+    ]
+    | None
+):
+    """One execution target per slug, the conditional-job lines, and every slug's jobs.
+
+    A slug runs at most once however many unconditional jobs declare it, so
+    those jobs must agree on its policy; a disagreement returns None and the
+    caller refuses. Members of a conditional job are never executed: they are
+    listed per job. Every declaring job, conditional or not, is attributed.
+    """
+    if len({(t.batch, t.name) for t in targets}) != len(targets):
+        return None
+    execution: dict[str, CiTarget] = {}
+    jobs: dict[str, list[str]] = {}
+    lines: dict[str, list[str]] = {}
+    for target in targets:
+        jobs.setdefault(target.name, []).append(target.batch)
+        if target.conditional:
+            lines.setdefault(target.batch, []).append(target.name)
+            continue
+        first = execution.setdefault(target.name, target)
+        if (first.classification, first.needs, first.produces, first.consumes) != (
+            target.classification,
+            target.needs,
+            target.produces,
+            target.consumes,
+        ):
+            return None
+    return (
+        tuple(execution.values()),
+        tuple(
+            CiConditional(job=job, names=tuple(names), reason=NOT_RUN)
+            for job, names in lines.items()
+        ),
+        tuple((name, tuple(declaring)) for name, declaring in jobs.items()),
     )
 
 
@@ -103,6 +160,8 @@ def build_plan(
             identity=None,
         )
     )
+    view = execution_view(targets=targets)
+    conditional, attribution = ((), ()) if view is None else (view[1], view[2])
     # Environment values can contain secrets: they never enter the public scope digest.
     payload = {
         "schema": 1,
@@ -127,4 +186,6 @@ def build_plan(
         environment=tuple(sorted(environment.items())),
         authority=authority,
         incident_label=incident_label,
+        attribution=attribution,
+        conditional=conditional,
     )

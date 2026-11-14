@@ -176,58 +176,6 @@ data:
       }
     }
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  # Mounted read-only into every workflow pod by arc/hook-pod-template.yaml.
-  # The wrapper is deliberately inert off hp-xubuntu: full-facilities nodes
-  # retain their private seeded uv generation, while runner-only hp reads this
-  # host-served source over the pool network. It changes a checkout's lock only
-  # while `uv sync` runs, restoring it even when uv fails. A failed /health
-  # probe leaves the lock untouched and runs uv against public PyPI.
-  name: pypi-proxy-uv-wrapper
-  namespace: ci-warm-cache
-data:
-  uv: |
-    #!/bin/sh
-    set -u
-
-    real_uv="${CI_RUNNER_REAL_UV:-/root/.local/share/mise/installs/uv/0.9.26/uv-x86_64-unknown-linux-musl/uv}"
-    proxy="${PYPI_FILES_PROXY:-http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081}"
-    lock="${PWD}/uv.lock"
-
-    direct() {
-      exec "${real_uv}" "$@"
-    }
-
-    # `uv sync` is the one workflow install step. Other uv commands retain
-    # their normal semantics, and non-hp nodes keep their seeded-cache path.
-    if [ "${CI_RUNNER_NODE_NAME:-}" != "hp-xubuntu" ] || [ "${1:-}" != "sync" ] || [ ! -f "${lock}" ]; then
-      direct "$@"
-    fi
-
-    if ! command -v curl >/dev/null 2>&1 || ! curl --silent --fail --max-time 2 "${proxy}/health" >/dev/null 2>&1; then
-      printf '%s\n' "ci-runner: PyPI files proxy unavailable; installing from public PyPI" >&2
-      direct "$@"
-    fi
-
-    original="$(mktemp "${PWD}/.uv.lock.pypi-proxy.XXXXXX")" || direct "$@"
-    rewritten="${original}.rewritten"
-    cleanup() {
-      mv -f "${original}" "${lock}" 2>/dev/null || :
-      rm -f "${rewritten}"
-    }
-    trap cleanup EXIT HUP INT TERM
-    cp "${lock}" "${original}" || direct "$@"
-    if ! sed "s#https://files.pythonhosted.org/packages/#${proxy}/packages/#g" "${original}" > "${rewritten}"; then
-      direct "$@"
-    fi
-    mv "${rewritten}" "${lock}" || direct "$@"
-    printf '%s\n' "ci-runner: locked Python packages through ${proxy}/packages/" >&2
-    "${real_uv}" "$@"
-    result=$?
-    exit "${result}"
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

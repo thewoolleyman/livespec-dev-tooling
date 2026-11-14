@@ -201,6 +201,19 @@
     - "{{ incident_observer_reference_dir }}/.beads/metadata.json"
   register: incident_observer_scratch_path_stats
 
+- name: Read every link below the scratch reference clone's git directory
+  # `git` writes objects and refs below .git, so guarding only .git itself
+  # leaves a nested link able to redirect the clone write into another tree.
+  ansible.builtin.find:
+    paths: "{{ incident_observer_reference_dir }}/.git"
+    file_type: link
+    recurse: true
+    follow: false
+  become: true
+  register: incident_observer_scratch_reference_git_links
+  check_mode: false
+  when: incident_observer_scratch_path_stats.results[10].stat.exists
+
 - name: Refuse a scratch path that is a symbolic link on the host
   # A link at the scratch root could point into production's receipts; the
   # apply's directory and file tasks would follow it. A path that does not
@@ -212,9 +225,13 @@
         incident_observer_scratch_path_stats.results
         | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')
         | list | length == 0
+      - >-
+        incident_observer_scratch_reference_git_links.matched | default(0) | int == 0
     fail_msg: >-
-      {{ incident_observer_scratch_path_stats.results | selectattr('stat.islnk', 'defined')
-         | selectattr('stat.islnk') | map(attribute='item') | list }}
+      {{ (incident_observer_scratch_path_stats.results | selectattr('stat.islnk', 'defined')
+          | selectattr('stat.islnk') | map(attribute='item') | list)
+         + (incident_observer_scratch_reference_git_links.files | default([])
+            | map(attribute='path') | list) }}
       is a symbolic link on the host; a scratch path must be a real directory or
       file, or not exist. Nothing has been written, stopped or removed.
     success_msg: no scratch path is a link on the host

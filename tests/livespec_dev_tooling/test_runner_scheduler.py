@@ -32,9 +32,34 @@ _STACK = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 _UNIT_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
 _ARC = _PHASE2 / "arc"
 _SCHEDULER = "ci-runner-scheduler"
-# Scale sets that name the runner scheduler before its fail-open reconciler is
-# live: exactly one canary (legacy-coordinator-agent, R301, 2026-11-04).
-_CANARY = {"values-livespec-dev-tooling.yaml"}
+# Scale sets that name the runner scheduler. R301 (legacy-coordinator-agent,
+# 2026-11-04) held it to one canary until the fail-open reconciler was live;
+# that was proven 2026-11-09 (gate 20261109T083643Z-3789908 drill,
+# livespec-dev-tooling-mtvxde), runtime followed 2026-11-11, and on 2026-11-13
+# the coordinator widened it to EVERY scale set whose runner pods request a
+# churn slot: with two schedulers binding churn-slot pods from separate caches,
+# both bound into a node's last free slot and the kubelet refused the loser
+# (OutOfci-runner.io/churn-slot). The template names it so a new repository's
+# set joins the one scheduler. The host-unique sets (poweredge-xubuntu-k3s and
+# arc/worker/) request no churn slot and stay on the default scheduler.
+_RUNNER_SCHEDULER_SETS = {
+    "values-EXAMPLE-repo.yaml",
+    "values-fabro.yaml",
+    "values-livespec-console-beads-fabro.yaml",
+    "values-livespec-dev-tooling-arm64.yaml",
+    "values-livespec-dev-tooling-master.yaml",
+    "values-livespec-dev-tooling.yaml",
+    "values-livespec-driver-claude.yaml",
+    "values-livespec-driver-codex.yaml",
+    "values-livespec-driver-pi.yaml",
+    "values-livespec-orchestrator-beads-fabro.yaml",
+    "values-livespec-orchestrator-git-jsonl.yaml",
+    "values-livespec-orchestrator-master.yaml",
+    "values-livespec-overseer.yaml",
+    "values-livespec-runtime.yaml",
+    "values-livespec.yaml",
+}
+_CHURN_SLOT = "ci-runner.io/churn-slot"
 
 
 def _docs() -> list[dict]:
@@ -101,16 +126,30 @@ def test_the_deployment_runs_two_replicas_on_the_runner_profile_config() -> None
     assert "schedulerName" not in pod, "the scheduler itself is placed by the default scheduler"
 
 
-def test_only_the_canary_scale_set_names_the_runner_scheduler() -> None:
-    """Until the fail-open reconciler is live a dead scheduler must strand one lane at most."""
-    naming = set()
-    for values in sorted(_ARC.glob("values-*.yaml")):
-        spec = (yaml.safe_load(values.read_text(encoding="utf-8")).get("template") or {}).get(
-            "spec"
-        ) or {}
-        if spec.get("schedulerName") == _SCHEDULER:
-            naming.add(values.name)
-    assert naming == _CANARY, f"scale sets naming {_SCHEDULER}: {sorted(naming)}"
+def _template_spec(values: Path) -> dict:
+    return (yaml.safe_load(values.read_text(encoding="utf-8")).get("template") or {}).get(
+        "spec"
+    ) or {}
+
+
+def test_every_churn_slot_scale_set_names_the_runner_scheduler() -> None:
+    """One scheduler binds every churn-slot runner pod, so no two caches race for a slot."""
+    naming = {
+        values.name
+        for values in sorted(_ARC.glob("values-*.yaml"))
+        if _template_spec(values).get("schedulerName") == _SCHEDULER
+    }
+    assert naming == _RUNNER_SCHEDULER_SETS, f"scale sets naming {_SCHEDULER}: {sorted(naming)}"
+
+
+def test_a_set_names_the_runner_scheduler_exactly_when_its_runner_requests_a_churn_slot() -> None:
+    for values in sorted([*_ARC.glob("values-*.yaml"), *(_ARC / "worker").glob("values-*.yaml")]):
+        spec = _template_spec(values)
+        runner = [c for c in spec.get("containers") or [] if c.get("name") == "runner"]
+        requests = ((runner[0].get("resources") or {}).get("requests") or {}) if runner else {}
+        assert (spec.get("schedulerName") == _SCHEDULER) == (
+            _CHURN_SLOT in requests
+        ), f"{values.name}: a churn-slot runner must name {_SCHEDULER}, and only such a runner"
 
 
 def test_the_stack_converge_applies_the_scheduler_before_the_scale_sets() -> None:

@@ -18,7 +18,11 @@
 # --peer-node, both ways: each client downloads a 32 MiB file and times it
 # inside the pod with /proc/uptime, so the caller's exec round trip is not in
 # the number. Each direction prints `PROOF-INFO throughput-<direction> <KiB/s>
-# KiB/s (...)`, or `... unmeasured <reason>`. A measurement never decides the
+# KiB/s (...)`, or `... unmeasured <reason>`. The same 32 MiB transfer is also
+# timed over the UNDERLAY: a hostNetwork server/client pair on each node over
+# the nodes' InternalIPs (port UNDERLAY_PORT, default 18089), printed as
+# `throughput-underlay-<direction>`, so a slow path is placed either in the
+# node network or in the pod network (VXLAN). A measurement never decides the
 # proof: the 4 MiB transfers above prove bytes arrive, and this says how fast
 # (added 2026-11-11 after the M4's gate fetch-tree took 88 s for ~32 MiB while
 # the 4 MiB check passed; plan homelab-k8s-worker-nodes).
@@ -121,6 +125,33 @@ spec:
 EOF
 }
 
+# hostpod <name> <node> <shell command>: a pod on the node's own network, for
+# the underlay measurement (no VXLAN, no pod network).
+hostpod() {
+  cat <<EOF
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: $1
+  namespace: $ns
+spec:
+  nodeName: $2
+  hostNetwork: true
+  tolerations:
+    - key: homelab-worker.livespec.dev/admission
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: main
+      image: $busybox
+      command: [sh, -c, "$3"]
+EOF
+}
+
+underlay_port="${UNDERLAY_PORT:-18089}"
+host_server_cmd="mkdir -p /www && dd if=/dev/zero of=/www/huge bs=1024 count=32768 2>/dev/null && exec httpd -f -p $underlay_port -h /www"
+
 server_cmd="mkdir -p /www && echo proof-ok > /www/index.html && dd if=/dev/zero of=/www/big bs=1024 count=4096 2>/dev/null && dd if=/dev/zero of=/www/huge bs=1024 count=32768 2>/dev/null && exec httpd -f -p 8080 -h /www"
 throughput_kib=32768
 client_cmd="echo proof-ready && exec sleep 3600"
@@ -130,6 +161,8 @@ client_cmd="echo proof-ready && exec sleep 3600"
   pod server-peer "$peer" server-peer "$server_cmd"
   pod client-worker "$worker" client "$client_cmd"
   pod client-peer "$peer" client "$client_cmd"
+  hostpod host-worker "$worker" "$host_server_cmd"
+  hostpod host-peer "$peer" "$host_server_cmd"
   for app in server-worker server-peer; do
     printf -- '---\napiVersion: v1\nkind: Service\nmetadata:\n  name: %s\n  namespace: %s\nspec:\n  selector:\n    app: %s\n  ports:\n    - port: 8080\n' "$app" "$ns" "$app"
   done
@@ -185,6 +218,10 @@ else
   expect large-icmp-worker-to-peer ok kubectl exec --namespace "$ns" client-worker -- ping -c 3 -W 5 -s 1400 "$ip_peer"
   throughput worker-to-peer client-worker "http://$ip_peer:8080/huge"
   throughput peer-to-worker client-peer "http://$ip_worker:8080/huge"
+  node_ip_worker="$(kubectl get node "$worker" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')"
+  node_ip_peer="$(kubectl get node "$peer" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')"
+  throughput underlay-worker-to-peer host-worker "http://$node_ip_peer:$underlay_port/huge"
+  throughput underlay-peer-to-worker host-peer "http://$node_ip_worker:$underlay_port/huge"
   expect clusterip-and-dns-from-worker ok kubectl exec --namespace "$ns" client-worker -- wget -qO- -T 5 "http://server-peer.$ns.svc.cluster.local:8080/"
   expect cluster-dns-from-worker ok kubectl exec --namespace "$ns" client-worker -- nslookup kubernetes.default.svc.cluster.local "$cluster_dns"
   kubectl apply -f - >/dev/null <<EOF

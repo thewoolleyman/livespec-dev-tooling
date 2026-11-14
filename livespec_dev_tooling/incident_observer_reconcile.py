@@ -10,7 +10,9 @@ state and takes no receipt from the caller: the receipt comes from the principal
 available. The retained intent then runs through the same principal under the
 repository lock. Exactly one revert per action is the principal's rule, kept by its
 durable publication ledger: an open attempt re-sends its one recorded commit, and a
-new attempt starts only when no earlier one can have landed.
+new attempt starts only when no earlier one can have landed. `clear_sweep` is an
+operator's explicit reset after repairing a quarantined entry or diagnosing a terminal
+one; it clears the action's sweep bookkeeping and quarantine entry before reconciliation.
 
 The reply's receipt is not yet canonical. Recording a revert receipt in the incident's
 chain is the orchestrator's `record-revert-receipt` action, which this route does not
@@ -46,6 +48,7 @@ from livespec_dev_tooling._incident_recovery_journal_cause import (
     decode_completion,
     decode_regression,
 )
+from livespec_dev_tooling._incident_recovery_publication import PublicationLedger
 from livespec_dev_tooling.incident_conflict_chain import ConflictChain, is_conflict_receipt
 from livespec_dev_tooling.incident_conflict_publication import ConflictPublication
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
@@ -57,10 +60,12 @@ __all__: list[str] = ["ObserverReconcile"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gho3w4
 _FIELDS = frozenset({"repository", "action_id", "retry_publish"})
+_CLEAR_SWEEP = "clear_sweep"
 _ACTION_ID = re.compile(r"[0-9a-f]{64}")
 # An operator is waiting and no first failure is racing this call, so it outwaits the
 # fifteen seconds the first-failure callback allows a principal call.
 _PRINCIPAL_TIMEOUT_SECONDS = 45
+_QUARANTINE = "sweep_quarantine"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -72,17 +77,71 @@ class ObserverReconcile:
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         del path
-        action_id, retry = payload.get("action_id"), payload.get("retry_publish")
+        action_id, retry, clear_sweep = (
+            payload.get("action_id"),
+            payload.get("retry_publish"),
+            payload.get(_CLEAR_SWEEP, False),
+        )
         if (
-            frozenset(payload) != _FIELDS
+            frozenset(payload) not in (_FIELDS, _FIELDS | {_CLEAR_SWEEP})
             or not isinstance(action_id, str)
             or _ACTION_ID.fullmatch(action_id) is None
             or type(retry) is not bool
+            or type(clear_sweep) is not bool
         ):
             return _refused(reason="exact repository, action_id and retry_publish required")
-        return asdict(self.settle(action_id=action_id, retry=retry, automatic=False))
+        return asdict(
+            self.settle(
+                action_id=action_id,
+                retry=retry,
+                automatic=False,
+                clear_sweep=clear_sweep,
+            )
+        )
 
-    def settle(self, *, action_id: str, retry: bool, automatic: bool) -> ObserverResult:
+    def resume_prepared(self) -> tuple[ObserverResult, ...]:
+        """Retry only durable prepared publications after the controller starts.
+
+        A prepared commit is the one immutable publication intent that may be
+        resumed safely. ``settle`` re-enters the principal through its normal
+        expected-head compare-and-swap path, which records a receipt, recomputes
+        after head movement, or leaves the prepared attempt recoverable.
+        """
+        resumed: list[ObserverResult] = []
+        for action_id in self._prepared_action_ids():
+            try:
+                resumed.append(self.settle(action_id=action_id, retry=True, automatic=True))
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+        return tuple(resumed)
+
+    def _prepared_action_ids(self) -> tuple[str, ...]:
+        settings = self.installation
+        with repository_lock(directory=settings.state, repository=settings.repository) as path:
+            actions = _actions(record=load_record(path=path))
+            candidates = tuple(
+                action_id
+                for action_id, action in actions.items()
+                if _ACTION_ID.fullmatch(action_id) is not None
+                and action.get("status") == "pending"
+                and action.get("receipt") is None
+            )
+        ledger = PublicationLedger(directory=settings.state / "recovery-journal")
+        prepared: list[str] = []
+        for action_id in candidates:
+            try:
+                with ledger.hold(action_id=action_id):
+                    publication = ledger.load(action_id=action_id)
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+            attempt = publication.open_attempt
+            if publication.receipt is None and attempt is not None and attempt.status == "prepared":
+                prepared.append(action_id)
+        return tuple(prepared)
+
+    def settle(
+        self, *, action_id: str, retry: bool, automatic: bool, clear_sweep: bool = False
+    ) -> ObserverResult:
         """Settle one retained action's receipt, then write a conflict receipt to the chain."""
         settings = self.installation
         with repository_lock(directory=settings.state, repository=settings.repository) as path_:
@@ -92,6 +151,8 @@ class ObserverReconcile:
         intent = _retained_intent(action_id=action_id, action=action)
         if intent is None:
             return ObserverResult(status="refused", reason="missing immutable action authority")
+        if clear_sweep:
+            self.clear_sweep_state(action_id=action_id)
         forge = ProcessInverseForge(
             command=settings.principal, timeout_seconds=_PRINCIPAL_TIMEOUT_SECONDS
         )
@@ -109,6 +170,10 @@ class ObserverReconcile:
         receipt = result.receipt
         if result.status == "reconciled" or not is_conflict_receipt(receipt=receipt):
             return result
+        if clear_sweep:
+            # Publishing would record an attempt and recreate the sweep state just cleared;
+            # the cleared action is left to the next sweep to publish.
+            return result
         published = ConflictPublication(
             state=settings.state,
             repository=settings.repository,
@@ -122,6 +187,27 @@ class ObserverReconcile:
             status="reconciled" if published.status == "reconciled" else result.status,
             reason=f"rollback-conflict {published.status}: {published.reason}",
         )
+
+    def clear_sweep_state(self, *, action_id: str) -> None:
+        """Reset a repaired action so the automatic sweep can consider it again."""
+        settings = self.installation
+        with repository_lock(directory=settings.state, repository=settings.repository) as path:
+            record = load_record(path=path)
+            action = _actions(record=record).get(action_id)
+            if action is None:
+                return
+            changed = action.pop("sweep", None) is not None
+            held = record.get(_QUARANTINE)
+            if isinstance(held, dict) and action_id in held:
+                quarantine = dict(cast("dict[str, object]", held))
+                del quarantine[action_id]
+                if quarantine:
+                    record[_QUARANTINE] = quarantine
+                else:
+                    _ = record.pop(_QUARANTINE)
+                changed = True
+            if changed:
+                save_record(path=path, record=record)
 
     def _retry(self, *, intent: RecoveryIntent, forge: ProcessInverseForge) -> ObserverResult:
         settings = self.installation

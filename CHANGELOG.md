@@ -58,6 +58,301 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.207.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.206.0...v1.207.0) (2026-11-13)
+
+
+### Features
+
+* declare consumed config API ([b528c05](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b528c0533abef2efc98b98f5a72c849a6c20ec9e))
+* export coverage reuse telemetry ([546db93](https://github.com/thewoolleyman/livespec-dev-tooling/commit/546db936ab9423d16c79aa1cc4a87be318a4a080))
+* record coverage reuse outcomes ([700d188](https://github.com/thewoolleyman/livespec-dev-tooling/commit/700d188dc4c5a0c0925f75571c03d5ed303284bc))
+
+
+### Bug Fixes
+
+* **ansible:** the retired-environment delete sends the revision Fabro requires as If-Match (livespec-dev-tooling-lmuhvi) ([bd3a639](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd3a639aa2f9c373f4ee5d6fdf5e276d57fa591c))
+* **gates:** a delegated gate Job relocks uv.lock outside the checkout and refuses a dirty tree by name (livespec-dev-tooling-o4hkgh) ([1abfc77](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1abfc77f88720e24de11dd6e838542b7cc985302))
+* **homelab-worker:** hold the combined host collector until the split config is pinned ([4504747](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4504747b8ecbc8d7c2ed2819491945525906339b))
+* run the Python telemetry exporter so the coverage reuse outcome reaches the export ([71220a7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/71220a770cca6beb0fb945545b90da2a67c45be8))
+
+## [1.206.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.205.0...v1.206.0) (2026-11-13)
+
+
+### Features
+
+* alarm on unread gate lane readings ([f46ee8a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f46ee8a9036187571cff3a4955b6483995cc8fac))
+* cover factory sandbox loss drill ([a08e2ec](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a08e2ecdba6a32b5b7bf948f0a51661982d82ee8))
+* **incident:** the controller records an incident CI job's published PASSED aggregate on its incident item (livespec-dev-tooling-bqnzcm.4) ([dadc673](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dadc67377c891a3d007f19a910bf1468a00fd456))
+* **incident:** the incident CI publisher posts the PASSED aggregate to the controller under its OIDC identity (livespec-dev-tooling-bqnzcm.4) ([140a1d0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/140a1d0f4995fc4a2c93867195d80a895d812f8b))
+
+
+### Bug Fixes
+
+* **ansible:** issue the sandbox loss drill delete with a real UID precondition ([cd6dc61](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd6dc611dcbdaf4db9d09087b4837692cfe42ea4))
+* **ansible:** retirement guard asks for removing runs and refuses an unreadable listing (livespec-dev-tooling-lmuhvi) ([f30bcdd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f30bcdd9eaddcaf63e19b01926b4f16f3ec5b53c))
+* **ansible:** retirement guard reads every run and filters non-terminal client-side (livespec-dev-tooling-lmuhvi) ([d20c51d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d20c51d4860ccf6f4fea50c456216a46de6db599))
+* **ansible:** stamp loss-drill delete and UID-gone times at the events they report ([3207cdc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3207cdcaf37bd4e2d8d2d16a09883855406d761f))
+* **ansible:** the retirement guard reads a run's environment at run.environment.id (livespec-dev-tooling-lmuhvi) ([3d57011](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3d57011a4607871f271508e48c855880310f0be9))
+* **flake-retry:** a __file__-relative directory is a named repository path (livespec-dev-tooling-4ai5ao) ([18bdbef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/18bdbef4952380ea3398e8cddd4ff508ff307201))
+* **flake-retry:** a path on a non-rooted base names no repository path (livespec-dev-tooling-bob7iv, livespec-dev-tooling-jfy23q) ([869a2d0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/869a2d0f107a82fb4de3b12f1ec374a04fec205e))
+* **flake-retry:** a repository-rooted path with only computed segments is undeterminable (livespec-dev-tooling-4ai5ao) ([3341a09](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3341a09ea97d4552331fe4d58afe6eb5dffb65c6))
+* **flake-retry:** a request path outside its own test module keeps the test touched (livespec-dev-tooling-4ai5ao) ([461280b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/461280b9092393f7198d918f0a8311e86dd82870))
+* **flake-retry:** an unresolved or class-held root keeps the test touched (livespec-dev-tooling-bob7iv, livespec-dev-tooling-4ai5ao) ([674ece6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/674ece60b08393daeaacadf5d1b698db16c96993))
+* **flake-retry:** an upward step widens a request-path span (livespec-dev-tooling-4ai5ao) ([139062d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/139062dbd7e01fefbdc081f6534e1572cfba5cd9))
+* **flake-retry:** solve each test path's closure once per session (livespec-dev-tooling-4ai5ao) ([1672814](https://github.com/thewoolleyman/livespec-dev-tooling/commit/16728140ecae8dfe4904e23639a20554ac3ed18a))
+* **flake-retry:** the closure solve ends on a cycle of bindings (livespec-dev-tooling-4ai5ao) ([231edca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/231edca389c1ca5c4b1a24e398bfe1b38f0330bf))
+* **flake-retry:** the plugin fits its line budget after the rebase, and the real-repository pin asserts only its change set's attribution (livespec-dev-tooling-4ai5ao) ([90fedac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90fedaccfb9f223f702ef2a254f2997218a8290a))
+* **incident:** /ci/publish verifies the identity token before it reads or writes any controller state (livespec-dev-tooling-bqnzcm.4) ([e78a84e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e78a84e82032919c584113a65f57105cf9b307c6))
+* **incident:** a conditional-job line says the job may not run on this event (livespec-dev-tooling-yzr6ad) ([1f2a846](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1f2a846a5b638c29980c34bc17858786b230c630))
+* **incident:** key released incident CI inventory members by job and check slug (livespec-dev-tooling-yzr6ad) ([1fc5122](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1fc51220dd69aec2db8a9200e9568df56e48e949))
+* **incident:** the aggregate refuses a plan over an inventory with no runnable execution view (livespec-dev-tooling-yzr6ad) ([f813765](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f8137655e9f2c15eb612e9f62125e690b3aa359a))
+* **incident:** the inventory render script refuses a wrong clone by name and never truncates a committed entry (livespec-dev-tooling-6xd3dz) ([23d49c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/23d49c2ae784cae482f90401c125cd0c8aa1fc0b))
+* **incident:** the job-level if read fails closed on a commented job key, an escaped quote and an alias (livespec-dev-tooling-yzr6ad) ([55d5d4c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55d5d4c4e5805b20385fb81b4d28af44054bed84))
+* **incident:** the job-level if read sees block scalars, multi-line values, ref_* tokens and the bracket form (livespec-dev-tooling-yzr6ad) ([94b0be6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/94b0be62d9b96770b2074e26b03236b68579edb9))
+* **incident:** this repository's released CI inventory refuses a source, and the undeclared refusal is asserted in full (livespec-dev-tooling-6xd3dz) ([8563607](https://github.com/thewoolleyman/livespec-dev-tooling/commit/85636075362e1410a7664b70b13583ee11b1a1eb))
+* **rule26:** bind mutation evidence to executing engine source (livespec-dev-tooling-he7huy) ([b022088](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b02208847d1b25699512e65e3d30143e2c28271b))
+
+## [1.205.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.204.0...v1.205.0) (2026-11-13)
+
+
+### Features
+
+* **incident:** a deliberately-normal fleet row classifies from the ruling it cites, not a serving read (livespec-dev-tooling-kddu2b) ([356eff4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/356eff4a380e242e6438dffe4bea2be2229f93fb))
+* **incident:** the fleet audit counts the forge-read Action's files in the incident label workflow's surface (livespec-dev-tooling-pwabtl) ([057ae69](https://github.com/thewoolleyman/livespec-dev-tooling/commit/057ae69a83604c2b93a3ed4bb11596853544c1b3))
+
+
+### Bug Fixes
+
+* **ci-runner:** keep 25% of gamingpc-xubuntu free for local sessions (livespec-dev-tooling-wsjl7j) ([fb61657](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb61657a7dedc77cf9211f98238afbd46a8d2f7f))
+* **ci:** the incident label workflow makes every forge call through the released retrying livespec-forge-read (livespec-dev-tooling-pwabtl) ([838a4e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/838a4e5453d71bdbe8748086678decab27505d27))
+* **incident:** exdkra's enablement test patches the inventory loader the entrance now calls (livespec-dev-tooling-3hilpy) ([785e0b9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/785e0b96397445c83c5948a5bd4adb2ed3195d34))
+* reuse test-only suite probe ([517f396](https://github.com/thewoolleyman/livespec-dev-tooling/commit/517f396ffef7e46f013e86a794bdc0185f1cd03a))
+* the incident hook reads every inventory member and refuses one it cannot run (livespec-dev-tooling-dixgta) ([e21764b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e21764b21f68e0c58e8eff93e879b2be87abb828))
+
+## [1.204.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.203.0...v1.204.0) (2026-11-13)
+
+
+### Features
+
+* **incident:** the controller holds the incident enablement record, its fence and its query (livespec-dev-tooling-qmuk7z) ([19f7159](https://github.com/thewoolleyman/livespec-dev-tooling/commit/19f7159ef7a4270053550d217e11bcd8326fc152))
+* **incident:** the enablement step writes through the serving controller's route (livespec-dev-tooling-qmuk7z) ([6814db0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6814db061af2d1eaffa36d82b33157a319208c8d))
+
+
+### Bug Fixes
+
+* **ci-runner:** pin the warm-cache budget derivation ([34809e4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34809e489b0fa54fdd9ff05c4998eb86541700c9))
+* **incident:** the enablement controller itself refuses another repository's operation (livespec-dev-tooling-qmuk7z) ([6d69698](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d69698457d3995a6a25629497c46f0668ff7b4e))
+
+## [1.203.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.202.0...v1.203.0) (2026-11-13)
+
+
+### Features
+
+* cover compilation cache warm lag transitions ([6e3637c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6e3637c7d0440d77a4bc0d88086492d7860d926d))
+* **fabro:** point PATH client at current carrier ([d285833](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d285833df28e1fd613794682454fca56720e76ed))
+* **homelab-worker:** a committed departure drill for a container worker (livespec-dev-tooling-p4cv4l) ([c7cce5f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7cce5fa6573c73cdb66656155e798d18950875e))
+* **incident:** an incident forge call retries an unusable answer under one rule, and the entrance's pull-request read refuses naming the read (livespec-dev-tooling-levu6j) ([8b3c067](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8b3c0678786e9db46c25a4a0fddf4ed4eb14b7a3))
+* **incident:** the controller records each expedited pull-request CI run on its incident work item (livespec-dev-tooling-bqnzcm.4) ([26c9256](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26c9256463fc61362b4ada472c032721b9ac7a9b))
+* **incident:** the fleet audit counts the forge-read Action's files among every surface served from ci.yml (livespec-dev-tooling-levu6j) ([f563d29](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f563d297f9141b6bff2bf832f2eecdee9863c465))
+
+
+### Bug Fixes
+
+* a Fabro-pass deferral keeps the busy count, the busy streak and the lag start (livespec-dev-tooling-uyevam) ([7f16309](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f163099d7dcce5a25f9d6ef10276850c4427940))
+* **ansible:** a failed read never passes evacuate's post-condition (livespec-dev-tooling-acgcwp) ([68fd1b0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/68fd1b04cb7d78b021d6e867f371a586d65617c1))
+* **ansible:** k3s-window-drain.yml gains evacuate and clear-lost, so a powered-off node no longer strands its ARC listeners (livespec-dev-tooling-acgcwp) ([0caaa99](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0caaa99c947576ee7bf90c89bc0a655044db3be6))
+* **ansible:** uncordon needs the node confirmed by name, like evacuate and clear-lost (livespec-dev-tooling-acgcwp) ([5576f68](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5576f68337d38d02565a5878576d5d0400958737))
+* derive warm-set lag bounds from the populate schedule and start lag on failed builds (livespec-dev-tooling-uyevam) ([57908f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/57908f01031bb54a56fc762c394f9455004e406a))
+* **flake-retry:** bind an annotated repository root as a repository-path anchor (livespec-dev-tooling-ra5o2l) ([f1049c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1049c22f3b5be4fa2b8a9cbd695499bc65f169f))
+* **flake-retry:** resolve global and nonlocal root names through the scope chain (livespec-dev-tooling-ra5o2l) ([8026dba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8026dba3f2149fbc5dcfdfccae4a6a91bdba5799))
+* **flake-retry:** restore the flake_retry_paths module docstring (livespec-dev-tooling-ra5o2l) ([182c6d6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/182c6d641fccf0906d5addaa12a05b2bb82250ed))
+* **homelab-worker:** the departure drill needs a node confirmation and reads the work again after the rejoin (livespec-dev-tooling-p4cv4l) ([6a66377](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a6637704c02634e95d8dcacf9bbe66c2c984e19))
+* **incident:** an expedited pull-request run record names identity-not-provisioned, waits a bounded time for the fence, and records pull-request runs only (livespec-dev-tooling-bqnzcm.4) ([24f60a0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/24f60a0ea74c0c0b2a9f1b1242c62d4b5fe44d43))
+* **incident:** the entrance's forge call hands the retry rule the real status and headers of every answer (livespec-dev-tooling-levu6j) ([94adcf0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/94adcf0f5d0efcb84a6711fda591e8c565d27fe8))
+* **otel-collector:** restart the collector when its OTLP pods endpoint changes ([4b1e163](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b1e1638d3957f3a3c4b12fba5a06a3df778aa84))
+
+## [1.202.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.201.0...v1.202.0) (2026-11-12)
+
+
+### Features
+
+* add consumer import declaration checks (livespec-dev-tooling-vobfwi) ([2d1f912](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d1f9126c287c8c31f3778cfeca61c44747c33b3))
+* preserve flake retry failures ([a40979f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a40979f41aa2a43c4d7c99161b79f17c19f75e28))
+* report flake retry failures ([1869763](https://github.com/thewoolleyman/livespec-dev-tooling/commit/18697630a2d5eae6a760b392668024641fc14bbc))
+* resume prepared recovery publication on startup ([b18871a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b18871a6607b1356ed1d4bdbb44afb0631a462cd))
+
+
+### Bug Fixes
+
+* **ansible:** retain sessions held through proc links (livespec-dev-tooling-ovnrsv) ([3a8dee5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3a8dee57540627f71606b537af718c83f1b6bafc))
+* **ci-runner:** routed CI jobs mount the pypi-proxy uv wrapper from arc-runners (livespec-dev-tooling-rpdowy) ([4793883](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4793883d85b2008ba0aa4b6bf8bf6fc32d3b8312))
+* **ci-runner:** the CI stack converge upgrades each homelab worker's runner set ([b9838b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9838b28cc262b41070c8797e7b591453c8c7930))
+* derive k3s collector pods endpoint ([ef0fb83](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ef0fb8364ffcaeae9143425ec6273adc6a2fe92c))
+* detach runner cache postStart work ([0543f12](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0543f12704228b039d72f1085c3d5f3b34cd4e5b))
+* exclude generated installed files from the dev-tooling import oracle (livespec-dev-tooling-vobfwi) ([46c2058](https://github.com/thewoolleyman/livespec-dev-tooling/commit/46c2058c85eabba6e1c12efdd529d5cc74e4f084))
+* **incident:** leave invalid release claims unclassified ([254743e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/254743e7fb2a419430734d7290d1543bb011d39c))
+* **otel-collector:** restart the collector when its OTLP pods endpoint changes ([b23d0e0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b23d0e042179a23b497039df3ed4237841f6898c))
+* route flake root-fixes through capture ([2a4314a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2a4314a5b03dace843ba610b092b6ce9e7328571))
+* the rule-26 kill matrix re-runs unreported tests together, never one process each (livespec-dev-tooling-74i52a) ([5adf35c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5adf35cc6e3c4a5bed855865297b4c0fb6b29f51))
+* the rule-26 kill-matrix plugin records each file that fails to collect (livespec-dev-tooling-74i52a) ([384d179](https://github.com/thewoolleyman/livespec-dev-tooling/commit/384d1794f18f86a92913af62c69aa3b0d578fef2))
+
+## [1.201.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.200.0...v1.201.0) (2026-11-12)
+
+
+### Features
+
+* add CI run telemetry exporter test ([09c5f2a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/09c5f2a394b743433cea8bb87b295adaa5e7e124))
+* add CI run telemetry exporter test ([fc488b0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fc488b047f34e78b5013f8e290b69ddce2542910))
+* cover CI run telemetry edge cases ([986a4a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/986a4a6ee8d80015f7da56aa690173e066905e4b))
+* **fabro-server:** cover resolved settings drift ([c4d7c22](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c4d7c220c76e98444ac73c0f8aba1c98bef95293))
+* **homelab-worker:** a committed removal route and a committed admission-hold lift for a container worker (livespec-dev-tooling-nxxqf5) ([76c9f36](https://github.com/thewoolleyman/livespec-dev-tooling/commit/76c9f36d3901a747310a98b8943495841888c2ac))
+
+
+### Bug Fixes
+
+* a resumed rule-26 kill-matrix run re-judges the baseline failures it reuses (livespec-dev-tooling-pk2ekq) ([04e46e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/04e46e3260dbf1baf30e28fa4d9cd144256a31ce))
+* a resumed rule-26 kill-matrix run reuses the stored per-test coverage and skips the measure stage (livespec-dev-tooling-pk2ekq) ([915fda9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/915fda97aeedb83b467de8e563dcc39eb97b3cae))
+* a reused rule-26 baseline measurement judges its stored failures again (livespec-dev-tooling-pk2ekq) ([044ed25](https://github.com/thewoolleyman/livespec-dev-tooling/commit/044ed2599350df80a94995cb22deb093eeb291ca))
+* authenticate the settings read and unwrap the settings envelope ([f404181](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f40418197e5e8cc6815eb395692f0dd64f9e2c39))
+* harden foreground pytest guard ([d737f65](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d737f655ee3a13267aad1c0a53d4a832587aef68))
+* read and report the settings endpoint of a stopped Fabro instance ([b9455e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9455e9b461ec23cabf17158bf4a26fbca433e33))
+* **spec:** point Fabro drift scenario at its test ([7aede4d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7aede4dea56155885dea37c5e55192e1acb5e59f))
+* the rule-26 kill matrix can store its baseline measurement beside the result cache (livespec-dev-tooling-pk2ekq) ([f61331c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f61331c85fb965fc17a25b12821ce58df8758525))
+* the rule-26 kill-matrix cache save syncs before its rename and uses its own temporary file (livespec-dev-tooling-pk2ekq) ([90a41e1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90a41e1cfa063783abf04bb975bd5743437d0248))
+
+## [1.200.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.199.0...v1.200.0) (2026-11-12)
+
+
+### Features
+
+* **ci-runner:** combine API request histogram series ([f5d2be9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f5d2be9e2378d09df77a44f7c09e0bdc0e5b6bee))
+* **ci-runner:** cover absent handler timeouts ([f22c691](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f22c69189fe708b08833b6a0265f99b7e37d757c))
+* **ci-runner:** cover API server handler timeouts ([eb2253a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb2253abba4e2e826d90aad9f22c6e31886cc5c7))
+* **ci-runner:** cover API server request latency ([5a5ab5a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a5ab5a357a13d9a1141a39c2237ad1a5727f828))
+* confirm reused delegated gate evidence ([9f7fdb0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9f7fdb0a993098a734f9940cff7f94e9dd545b25))
+
+
+### Bug Fixes
+
+* **ci-runner:** the rule-26 kill-matrix Job keeps one result cache on the PVC across run ids (livespec-dev-tooling-oi2two) ([6a35f37](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a35f37d5e5c95a3ad3a0f7f547b4a87154eee6c))
+* report the Job conditions on a pre-push outcome disagreement ([5d29344](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5d293448ee2438f830d0bff0cd7206957ef02ae1))
+* the rule-26 kill matrix checkpoints its result cache while it runs, so a deadline kill keeps finished mutants (livespec-dev-tooling-oi2two) ([9dca815](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9dca815937774390deadf89dffa1200571ee5800))
+
+## [1.199.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.198.0...v1.199.0) (2026-11-12)
+
+
+### Features
+
+* **ansible:** retire hp-xubuntu's legacy Fabro carrier leftovers: the docker sandbox image warm and the :32276-:32278 serve ports (bd-ib-iud52v) ([e3529f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e3529f82d0767405900195f23a58ed58a96d586c))
+* **ci:** retry registry failures before containers initialize ([2b624f2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b624f2d4dc4295674ca882107698c2457e32516))
+* cover declared gate Job resources ([d307885](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d307885bf5f4e9c8b9d04b9396346ac4bd9c8d5f))
+* cover gate resource consumer scenarios ([b2139eb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2139eb7bc10d4ef3415e7820deea200127978d1))
+* **gate_repro:** an operator reproduction route submits one diagnosed gate Job onto a named lane (livespec-dev-tooling-pkmxgu) ([323d37e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/323d37ed89f7324f21e1e74b171529bde18a0758))
+* rearm delegated gate terminal watch ([0f7707f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f7707f1ac7d1f29813b68ce8aa066277f41465e))
+* type delegated terminal watch seams ([cda46e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cda46e506580e23f1302f5267c7d11275e0bedba))
+* watch delegated gate terminal state ([0d3f2b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d3f2b240eb603e6b4bd53b8a9baf6dc2ddc0fd8))
+
+
+### Bug Fixes
+
+* a release-keyed claim is judged against the release it names, so a later release that touches no surface file leaves it classified (livespec-dev-tooling-ri2lwi) ([b1a2f1f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b1a2f1f32fbb46f4465b526932c31735f57b0bd7))
+* **ansible:** refuse a published-and-retired tailscale port before the publish path, bound every tailscale call, and test hp's retired ports by invariant (bd-ib-iud52v) ([53b9786](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53b9786aacf7526b89351f09626e2932558149e7))
+* **ansible:** the converge unit installs the Fabro warm-cache manifest and script the converge reads (livespec-dev-tooling-m5m2dl) ([c3d4a34](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c3d4a34e1c3fed678aec0a621a32062300520948))
+* **ci-infra-rerun:** an unreadable earlier log must not consume the one-rerun cap ([c895de8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c895de85c23dbba4dad61e5f3eda239f808a7292))
+* **ci-infra-rerun:** count only registry-signature failures toward the one-rerun cap ([44ea958](https://github.com/thewoolleyman/livespec-dev-tooling/commit/44ea958d1ee0c20c46e9dda9b052f51686835c49))
+* **ci-runner:** a separately budgeted populator warms the thewoolleyman/fabro fork's sccache keys (livespec-dev-tooling-m5m2dl) ([8e46221](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8e46221b62fab14e6d12b9ee942f4a59451c5262))
+* each unclassified incident fleet row names its specific missing evidence (livespec-dev-tooling-v46q5g) ([5bec420](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5bec4204949d01670371f70e236fb5f135816a3e))
+* **fleet:** canonical-check-slugs-wired judges a fan-out member against its pinned release's canonical inventory (livespec-dev-tooling-szjpez) ([d626b4b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d626b4b1bd4a71b255446eae892ca3700518b5d6))
+* permit version-only flake retry releases ([0ad26e6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0ad26e64c5b1ea3b308f85010987c20acf01673c))
+* scope closure retry withholding to failing tests ([2ff0d9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2ff0d9cc2e20d151673fd7e4601a2be1c8deb738))
+* the incident fleet audit keys a self-serving checkout's rows to their newest release ancestor, judged per surface, not to its own HEAD (livespec-dev-tooling-ri2lwi) ([f72c45b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f72c45b29507a03384b2aacb3151efaa1e1bd72b))
+
+## [1.198.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.197.0...v1.198.0) (2026-11-11)
+
+
+### Features
+
+* fail a CI workflow that declares more than one container image (livespec-dev-tooling-kzhduc) ([ae33b79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae33b7997f011239bfdc946e7b7f5249a10a8f88))
+* **gates:** a declared gate request that no committed gates-cq lane admits is refused naming the largest lane (livespec-dev-tooling-yznwz7) ([f7c8bda](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f7c8bda1b2355fee05c5629e1f5d0912ae3e3b7e))
+* **gates:** a failed gate Job's verdict names the resource kill that ended its pod (livespec-dev-tooling-lfkkaf) ([c2e1302](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2e1302c02992c35da8e2322cf2ba311a4f3efc4))
+* **gates:** a gate request sized by its caller replaces the declared resources, which are still validated (livespec-dev-tooling-lfkkaf) ([d76234e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d76234e64a242a5bf8fc591917beef254b8452ce))
+* **gates:** a one-file Red or Green replay Job requests 2 cpu, 3Gi and one worker, and suite-green keeps the declared size (livespec-dev-tooling-lfkkaf) ([f83f072](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f83f072fdcd6bdd4d2ce5a41261e0d9c49377199))
+* **gates:** a one-file replay Job killed for memory or evicted is an absent verdict, never a valid Red (livespec-dev-tooling-lfkkaf) ([e39650e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e39650e251a42801416bd042257789f47ea96994))
+* **gates:** a repository declares its gate Job's cpu, memory and test parallelism (livespec-dev-tooling-c3nd2h) ([683ed67](https://github.com/thewoolleyman/livespec-dev-tooling/commit/683ed6796dd249fa3e6cc187f08177012fe13666))
+
+
+### Bug Fixes
+
+* **ci-runner:** an unknown in-scope pressure reading raises a named alarm instead of disabling the steer silently (bd-ib-nmuyjc) ([044d052](https://github.com/thewoolleyman/livespec-dev-tooling/commit/044d052eaa47ea41bc849e98ebd59a749011d4ad))
+* **ci-runner:** the factory pressure reconciler compares only nodes the sandbox pods can schedule on (bd-ib-nmuyjc) ([cd9066b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd9066bd81f74a06935cbd924f5ad78aee7e141b))
+* **ci-runner:** the factory pressure reconciler leaves a node the sandbox pods' nodeSelector rejects out of scope (bd-ib-nmuyjc) ([72d1b33](https://github.com/thewoolleyman/livespec-dev-tooling/commit/72d1b33abb711eb4f9781527d2380466566dd8c9))
+* classify relayed git 5xx failures (livespec-dev-tooling-t26bbr) ([d359904](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d359904d106a537384ae15a95de5adb37424a967))
+* cover bare CI infrastructure Python environment ([26285a1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26285a189024168306ed9a0c81acd08cf12a34d4))
+* cover delayed node registration probe ([7375c45](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7375c4577039bcf6e88b83d996b445930d96fc36))
+* detect idle xdist coverage controller ([22d5851](https://github.com/thewoolleyman/livespec-dev-tooling/commit/22d58516a12ad979d32b3a5a32c28ca010872949))
+* **fleet:** a gh 5xx is a server error only when gh relays it as an HTTP status (livespec-dev-tooling-t26bbr) ([d8d23ca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d8d23caec1ec979c16bc3c00f13046874f95d735))
+* **fleet:** the gh 5xx marker fix covers its empty-stderr fast path (livespec-dev-tooling-t26bbr) ([dfef576](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dfef576569dac103098322639d79b4034db79af1))
+* forward gate-list arguments ([7f34fc7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f34fc78f4376f9f95ea250ae4d75c8203037bd1))
+* **gate:** bound default gate list ([0224123](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0224123983bb28405401bb79405bfacea9d63d1d))
+* **gate:** refresh queued slot progress (livespec-dev-tooling-5cgqgw) ([5547552](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55475522dd1796d79acfd4776bc0522773a32065))
+* **gates:** a commit-time replay refused by its gate resource declaration says it was refused, not that no verdict arrived (livespec-dev-tooling-c3nd2h) ([ecb9124](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ecb9124b15b5e8f891271ec58c7d0dccd13ca710))
+* **gates:** a delegated pre-commit refuses an unusable gate resource declaration instead of gating locally (livespec-dev-tooling-c3nd2h) ([66cda87](https://github.com/thewoolleyman/livespec-dev-tooling/commit/66cda8752688765b7fff2dba0e12278f78163337))
+* **gates:** a gate-runner run refused by its gate resource declaration ends FAILED, not without a verdict (livespec-dev-tooling-c3nd2h) ([4d0bef5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d0bef5082d392fa9c465e91d5d67e48d73c5b77))
+* **gates:** a refused Red or Green replay refuses the commit instead of running the leg locally (livespec-dev-tooling-c3nd2h) ([606e477](https://github.com/thewoolleyman/livespec-dev-tooling/commit/606e477c5c9421675d2797794e21a956f57e21ae))
+* **gates:** a refused suite-green replay refuses the commit instead of running the suite locally (livespec-dev-tooling-c3nd2h) ([8703d69](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8703d6931b8c2c296f97b41ac0789582188b2074))
+* **gates:** gate_cpu is a positive integer, and gate_memory takes every Kubernetes unit suffix (livespec-dev-tooling-c3nd2h) ([c2e613e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2e613e967c8729f4ff3149d5a0bcd0993e5a5de))
+* guard platform-specific type checks ([0117426](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0117426c6df4a66971669cec6bd32e8128c9c5b1))
+* **hooks:** stream hook member output (livespec-dev-tooling-5cgqgw) ([ef7d074](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ef7d074c9a8ed67db4fff2c6c642252a96e81874))
+* require HTTP markers for gh statuses (livespec-dev-tooling-t26bbr) ([02adb9d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/02adb9dbf0907465beb9ee6a831df6e8329139f5))
+* the flake retry self-guard covers the decision module ([8271a8b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8271a8b7d7e91e37b816e1444f9ab94e222dc564))
+
+
+### Performance
+
+* reduce gate-list record probes ([b1b2138](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b1b2138b53cc605de15b515faeb5625987410931))
+
+
+### Reverts
+
+* revert this commit and re-apply the factory_pressure_placement tag. ([cd9066b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd9066bd81f74a06935cbd924f5ad78aee7e141b))
+
+## [1.197.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.196.0...v1.197.0) (2026-11-11)
+
+
+### Features
+
+* **ci:** a CI job killed at Set up job by an action-download 429 is re-run with growing waits (livespec-dev-tooling-cetyrq) ([db81437](https://github.com/thewoolleyman/livespec-dev-tooling/commit/db814375cbcbf16dd8d86ecd3edf3cffb3dc95e5))
+
+## [1.196.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.195.0...v1.196.0) (2026-11-11)
+
+
+### Features
+
+* a push of a tree whose delegated pre-commit aggregate passed submits no gate Job (livespec-dev-tooling-73ocxb) ([b39ea81](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b39ea818a31031a8d0c16ad25cb0869bf1f130f7))
+
+## [1.195.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.194.0...v1.195.0) (2026-11-11)
+
+
+### Features
+
+* refuse unstamped CI coverage artifacts ([90b6c76](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90b6c765d866af4b5b890edd39009f8392c577e5))
+* reject stale CI coverage data ([7057cb0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7057cb0a367d1181078e2d5058bfb4d948669196))
+
+
+### Bug Fixes
+
+* **ansible:** order arq_smb_source's openssl rand options before the byte count ([14e1ee5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14e1ee5fe350f33d2ddae7a66825031dde17257c))
+* **ci-runner:** the rule-26 kill-matrix Job puts the engine clone on PYTHONPATH so a target venv re-sync cannot swap it out (livespec-dev-tooling-oi2two) ([15b0414](https://github.com/thewoolleyman/livespec-dev-tooling/commit/15b0414176e088e25a35e991da8b3958fa118fec))
+* **incident:** /arm and the collector agree on renames, and a head can only widen its source prefixes (livespec-dev-tooling-6ou5m2) ([9cb7863](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9cb78633f207e6c236e2daa237c2cef700d93d14))
+* **incident:** /arm compares the focused-evidence record with the head's changed product files (livespec-dev-tooling-6ou5m2) ([101b1f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/101b1f031b954922868366a1217cd603c1883912))
+* **incident:** a genuine inverse overlap reaches the incident chain as rollback-conflict, outside the observer fence, and the item blocks (livespec-dev-tooling-fdquen) ([2b159ed](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b159ed1c99b9ea2dd84590ec52e41d2e3468da2))
+* **incident:** a journaled rollback-conflict reaches the chain automatically, bounded and outside the fence (livespec-dev-tooling-fdquen) ([ba7c62a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ba7c62a1453bf8e9292d08c40001a7f765d8fd21))
+* **incident:** a regression reopen that never took the item's claim is a named half-reopen, not two days of retries (livespec-dev-tooling-fdquen) ([c95c027](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c95c027dd5052f270f1cb70d6e8fd436d0076e8d))
+* **incident:** a tenant outage defers a rollback-conflict instead of ending it, and a half-reopen needs proof (livespec-dev-tooling-fdquen) ([c11bdd5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c11bdd531e2dc3b85553809a25dd581f437bbef9))
+* **incident:** an authority outage is told apart from a decision by one shared predicate (livespec-dev-tooling-fdquen) ([f46eaf0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f46eaf06c1792ea9b3223c86dcc9b5d7b782d06b))
+* **incident:** the conflict sweep quarantines an action entry it cannot read instead of crashing on it (livespec-dev-tooling-fdquen) ([33db50c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/33db50ca9e2ad4f8f7220e9c5733ddcecd151e11))
+* remember filed flake-retry records so a closed root fix is not re-filed ([dceb909](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dceb909fba4a4efceffc60eef72c69eacbda3d0e))
+
 ## [1.194.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.193.0...v1.194.0) (2026-11-11)
 
 

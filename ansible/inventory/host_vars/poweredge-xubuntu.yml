@@ -27,6 +27,7 @@ lan_ssh_fallback_must_stay_running:
 # `systemd/otel-collector.ci-runner-host.service` in thewoolleyman/otel-collector,
 # which the fleet host guard now refuses to let anyone run.
 otel_collector_config_file: config.ci-runner-host.yaml
+otel_collector_pod_config_file: config.ci-runner-host-pods.yaml
 otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true
@@ -74,4 +75,31 @@ pressure_telemetry_cgroups:
 # is 15, matching fleet 12 + candidate 1 + mi-homelab 2. The budget was raised
 # first and the cap after. TRIPWIRE: if avg60 passes 30 at any read, lower the
 # fleet cap to 9 FIRST, then set this to 6 (role HOST_VARS.md).
+# 2026-11-11: 9 -> 11, a measured STEP (coordinator legacy-coordinator-agent
+# 5bf269cf, ~18:03Z; orchestrator bd-ib-nmuyjc). PR check-python and the batch
+# checks moved to hosted runners at 16:04:39Z, so this node no longer carries
+# all PR CI; the 9 dated from when it did. Meanwhile the overflow path drove
+# gmktec-xubuntu (the smaller node, the only one still admitting) to about 4%
+# idle and forced the fleet-cap cut 18 -> 16. Before the step (17:53-17:54Z):
+# idle 3.09%, CI BestEffort cpu.pressure some avg60 2.17 (avg300 5.81).
+# REVERT TRIGGER, at once, back to 9: poweredge idle under 5% AND
+# kubepods-besteffort cpu.pressure avg60 over 30 on two consecutive reads, or a
+# master or coverage CI p95 job duration rise of more than 20% against the 24 h
+# before this change. REVERT: factory_pod_budget: 9
+# 2026-11-13: 11 -> 9, the re-grade FAIL act (coordinator legacy-coordinator-agent
+# ruling 2026-11-12 ~23:40Z, condition 2; orchestrator bd-ib-nmuyjc). Master
+# check-coverage reached n=20 admitted samples (each job wholly inside a
+# poweredge 10-11 factory-pod window with no dispatcher pause overlapping) with
+# p95 142 s against its 128.4 s line (1.2x the 107 s master baseline of
+# 2026-11-10T17:53Z..11-11T17:53Z); the 20th sample is the 05:18:54Z job.
+# check-python-batch is also over its line (244 s against 196.8 s, n=15). The
+# fleet cap went 20 -> 18 first, by the same act.
 factory_pod_budget: 9
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:v3I/O4FRyavIf0kN40Tpb639hEW+X6yGES1j/rNlqfc. Verified 2026-11-11: the
+# key the control node already trusted (a hand entry) equals the key the host
+# presented live; its info repository records no fingerprint.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEfDCrV8q/TFCEDdGsvS8Rr0vH19hEEERqTik5eLpQ0/"

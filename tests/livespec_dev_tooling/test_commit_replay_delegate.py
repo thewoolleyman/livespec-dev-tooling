@@ -127,6 +127,42 @@ def test_an_absent_remote_verdict_is_never_a_pass_or_a_failure(
     assert verdict.reason == "the gate Job reached no verdict"
 
 
+def test_an_unusable_gate_resource_declaration_refuses_the_replay_instead_of_an_absent_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused resource declaration is a refusal, not an absent verdict (c3nd2h).
+
+    Its consumers must refuse the commit naming the key rather than run the leg
+    locally, so the verdict must say it was refused, and no Job may be pushed.
+    """
+    from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\ngate_cpu = 0\n",
+        encoding="utf-8",
+    )
+    pushed: list[object] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: declared_gate_job_resources(repo_root=kwargs["repo_root"]),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: pushed.append(kwargs))
+
+    verdict = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/test_x.py"])
+
+    assert verdict.refused is True
+    assert verdict.local is False
+    assert verdict.exit_status is None
+    assert "gate_cpu" in verdict.reason
+    assert "pyproject.toml" in verdict.reason
+    assert pushed == []
+
+
 def test_a_tree_that_cannot_be_read_returns_an_absent_verdict(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -346,3 +382,109 @@ def test_a_staged_tree_that_cannot_be_committed_is_an_explicit_no_verdict(
     assert verdict.job_name is None
     assert verdict.tree_hash == "a" * 40
     assert verdict.reason == "the staged tree could not be committed for the gate"
+
+
+def test_a_refused_replay_verdict_stops_the_commit_naming_its_reason(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused verdict ends the commit with exit 1 and its reason on stderr (c3nd2h)."""
+    module = _module()
+    refused = module.ReplayVerdict(
+        local=False,
+        reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
+        refused=True,
+    )
+
+    with pytest.raises(SystemExit) as stopped:
+        _ = module.unrefused(verdict=refused)
+
+    assert stopped.value.code == 1
+    assert "`gate_cpu` must be a positive integer" in capsys.readouterr().err
+
+
+def test_an_unrefused_replay_verdict_passes_through_unchanged() -> None:
+    """Any verdict that is not a refusal is handed back as it came (c3nd2h)."""
+    module = _module()
+    verdict = module.ReplayVerdict(local=True, reason="gates kubeconfig is not readable")
+
+    assert module.unrefused(verdict=verdict) is verdict
+
+
+def test_a_one_file_replay_job_is_sized_by_the_replay_contract_and_suite_green_by_the_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Red or Green leg's Job takes 2 cpu / 3Gi / 1 worker; suite-green keeps the declaration (lfkkaf).
+
+    The one-file legs run one recorded test module with no worker count, so
+    they must not spend a full-suite gate unit of quota. The suite-green leg
+    runs the suite, so it keeps the repository's declared size or the default.
+    """
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\ngate_cpu = 9\n",
+        encoding="utf-8",
+    )
+    requested: list[object] = []
+
+    def request(**kwargs: object) -> object:
+        requested.append(kwargs.get("resources"))
+        return Failure(GateStepFailed(step="render", argv=(), returncode=1, detail="stopped"))
+
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", request)
+
+    _ = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/test_x.py"], single_test=True)
+    _ = module.run_replay(repo_root=tmp_path, pytest_argv=["tests/"])
+
+    assert requested == [("--cpu", "2", "--memory", "3Gi", "--parallelism", "1"), None]
+
+
+def test_a_one_file_replay_job_killed_for_resources_is_an_absent_verdict_and_suite_green_stays_red(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Red or Green leg whose Job ended OOMKilled or evicted proved nothing about its test (lfkkaf).
+
+    Read as a failed run, a memory kill would pass as a valid failing Red, so a
+    one-file leg reads it as an absent verdict and its consumer runs the test
+    locally. A suite-green leg's kill stays a red verdict.
+    """
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED, GateVerdict
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    request = GateRunRequest(
+        repo_root=tmp_path, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    killed = GateVerdict(
+        state=GATE_FAILED,
+        detail="the gate Job gate-replay-oom ended Failed",
+        token_written=False,
+        job_name="gate-replay-oom",
+        output_checksum="sha256:0",
+        resource_kill="OOMKilled",
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", lambda **_kwargs: Success(request))
+    monkeypatch.setattr(
+        module, "default_gate_command_runner", _git_runner(calls=[], commit_works=True)
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **_kwargs: killed)
+
+    one_file = module.run_one_test(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_x.py"])
+    suite = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/"])
+
+    assert (one_file.local, one_file.exit_status, suite.exit_status) == (False, None, 1)
+    assert "OOMKilled" in one_file.reason

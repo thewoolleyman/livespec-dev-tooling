@@ -65,9 +65,12 @@ reads THAT; a config-file string match must never stand in for it.
 
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import cast
 
@@ -78,9 +81,11 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.fleet._ensure_plugin_commands import (  # noqa: E402
+    PluginCommandOutcome,
     PluginCommandRunner,
     enabled_plugin_names,
     plugin_command_answer,
@@ -92,7 +97,12 @@ from livespec_dev_tooling.fleet._plugin_settings import vacuity_findings  # noqa
 __all__: list[str] = [
     "CODEX_PROGRAM",
     "CODEX_SETTINGS",
+    "CONFIG_LOCK_WAIT_SECONDS",
+    "LOCK_NOT_OBTAINED",
+    "codex_home",
+    "config_lock_path",
     "ensure",
+    "locked_runner",
     "main",
     "planned_commands",
     "settings_findings",
@@ -107,6 +117,88 @@ CODEX_SETTINGS = ".codex/settings.json"
 # The Codex CLI program name, named once so the PATH probe and the emitted argv
 # cannot drift apart.
 CODEX_PROGRAM = "codex"
+
+# How long a Codex write waits for the config lock before it refuses. The same
+# bound the Driver's own writer (`dev-tooling/codex_config_write.py`,
+# `CONFIG_LOCK_WAIT_SECONDS`) uses, so provisioning gives up no sooner and waits
+# no longer than the writers it is serialized against.
+CONFIG_LOCK_WAIT_SECONDS = 10.0
+
+# The `InvocationNotPerformed.kind` for a Codex write that never ran because
+# the config lock could not be had.
+LOCK_NOT_OBTAINED = "lock_not_obtained"
+
+# Appended to the resolved real path of `config.toml` to name the lock file the
+# Driver's writers take with `flock(LOCK_EX)`. Codex itself takes no lock, so
+# holding this one around a Codex CLI write is the only serialization
+# provisioning can offer against the observer and the reconciler.
+_CONFIG_LOCK_SUFFIX = ".livespec-lock"
+
+_LOCK_POLL_SECONDS = 0.01
+
+
+def codex_home() -> Path:
+    """The operator's Codex home: `CODEX_HOME` when set, else `~/.codex`."""
+    configured = os.environ.get("CODEX_HOME")
+    return Path(configured) if configured else Path.home() / ".codex"
+
+
+def config_lock_path(*, codex_home: Path) -> Path:
+    """The Driver's lock file for this home's `config.toml`, keyed on its REAL path.
+
+    Resolved through symlinks so that a symlinked `config.toml` and its target
+    share one lock with every Driver writer.
+    """
+    return Path(f"{os.path.realpath(codex_home / 'config.toml')}{_CONFIG_LOCK_SUFFIX}")
+
+
+def _acquire_lock(*, lock_path: Path, wait_seconds: float) -> int | None:
+    """Take the exclusive flock within the bounded wait; `None` when it was not had."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                os.close(descriptor)
+                return None
+            time.sleep(_LOCK_POLL_SECONDS)
+        else:
+            return descriptor
+
+
+def locked_runner(
+    *, runner: PluginCommandRunner, lock_path: Path, wait_seconds: float
+) -> PluginCommandRunner:
+    """Wrap `runner` so every command runs while holding the config lock.
+
+    Every command this module plans writes `config.toml`, so none is exempt. A
+    lock not obtained within `wait_seconds` is a command that NEVER RAN: it
+    travels the failure track naming the lock file and the wrapped runner is not
+    called, so no Codex command writes the configuration unserialized.
+    """
+
+    def run(*, args: tuple[str, ...]) -> PluginCommandOutcome:
+        try:
+            descriptor = _acquire_lock(lock_path=lock_path, wait_seconds=wait_seconds)
+        except OSError as unopenable:
+            detail = f"could not open lock file {lock_path}: {unopenable}"
+            return IOFailure(
+                InvocationNotPerformed(argv=args, kind=LOCK_NOT_OBTAINED, detail=detail)
+            )
+        if descriptor is None:
+            detail = f"exclusive lock on {lock_path} not obtained within {wait_seconds:g}s"
+            return IOFailure(
+                InvocationNotPerformed(argv=args, kind=LOCK_NOT_OBTAINED, detail=detail)
+            )
+        try:
+            return runner(args=args)
+        finally:
+            os.close(descriptor)
+
+    return run
 
 
 def settings_findings(*, settings_text: str) -> tuple[str, ...]:
@@ -233,7 +325,12 @@ def main() -> int:  # pragma: no cover
         _ = sys.stderr.write(f"ensure_codex_plugins: {finding}\n")
     if precondition:
         return 3
-    findings = ensure(settings_text=settings_text, runner=subprocess_runner)
+    runner = locked_runner(
+        runner=subprocess_runner,
+        lock_path=config_lock_path(codex_home=codex_home()),
+        wait_seconds=CONFIG_LOCK_WAIT_SECONDS,
+    )
+    findings = ensure(settings_text=settings_text, runner=runner)
     for finding in findings:
         _ = sys.stderr.write(f"ensure_codex_plugins: {finding}\n")
     return 4 if findings else 0

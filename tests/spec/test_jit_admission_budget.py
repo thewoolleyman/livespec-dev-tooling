@@ -75,6 +75,9 @@ _RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
     # The rule's 2x multiple with its floor of 6 waived: a ~100 GiB work volume
     # per job (DERIVATION.md "The fabro fork scale set (2026-11-05)").
     "fabro-cq": 2,
+    # The dedicated master-push lane caps at the measured four coverage shards,
+    # rather than the ordinary six-runner floor.
+    "livespec-orchestrator-master-cq": 4,
 }
 
 # Each exception's row in DERIVATION.md "Recorded exceptions to the rule":
@@ -87,7 +90,10 @@ _EXCEPTION_ROW = re.compile(
     re.MULTILINE,
 )
 _EXCEPTIONS_HEADING = "### Recorded exceptions to the rule"
-_EXCEPTION_QUEUES = {"fabro": "fabro-cq"}
+_EXCEPTION_QUEUES = {
+    "fabro": "fabro-cq",
+    "livespec-orchestrator-master": "livespec-orchestrator-master-cq",
+}
 
 # The physical invariant, stated in the section itself.
 _PHYSICAL_CAP = 482
@@ -242,8 +248,9 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 9,
-        "livespec-dev-tooling-cq": 9,
+        "livespec-orchestrator-beads-fabro-cq": 7,
+        "livespec-orchestrator-master-cq": 1,
+        "livespec-dev-tooling-cq": 10,
         "livespec-dev-tooling-master-cq": 3,
         "livespec-cq": 1,
         "livespec-overseer-cq": 1,
@@ -262,7 +269,12 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "SUM(duration_ms) / 3,600,000" in derivation
     assert "deducts one from `livespec-orchestrator-beads-fabro` (30 → 29)" in derivation
     assert "## The master-push slice for livespec-dev-tooling (2026-11-03)" in derivation
+    assert (
+        "## The master-push slice for livespec-orchestrator-beads-fabro (2026-11-12)" in derivation
+    )
     assert "## The fabro fork scale set (2026-11-05)" in derivation
+    assert "## gamingpc-xubuntu joins: cohort 31 (2026-11-11)" in derivation
+    assert "## Per-node CPU budget cut: cohort 30 (2026-11-13)" in derivation
 
 
 def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
@@ -278,15 +290,16 @@ def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
         if (document_name := _NAME.search(document)) is not None
         and (limit := _LENDING_LIMIT.search(document)) is not None
     }
-    assert lending == {"livespec-dev-tooling-master-cq": "0"}
-    master = next(
-        document
-        for document in _documents()
-        if (found := _NAME.search(document)) is not None
-        and found.group("name") == "livespec-dev-tooling-master-cq"
-    )
-    for setting in ("reclaimWithinCohort: Never", "policy: Never", "withinClusterQueue: Never"):
-        assert setting in master
+    masters = {"livespec-dev-tooling-master-cq", "livespec-orchestrator-master-cq"}
+    assert lending == {name: "0" for name in masters}
+    for name in masters:
+        master = next(
+            document
+            for document in _documents()
+            if (found := _NAME.search(document)) is not None and found.group("name") == name
+        )
+        for setting in ("reclaimWithinCohort: Never", "policy: Never", "withinClusterQueue: Never"):
+            assert setting in master
 
 
 def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None:
@@ -296,7 +309,7 @@ def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None
     rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
     derivation = _DERIVATION.read_text(encoding="utf-8")
 
-    assert rule_value == 18
+    assert rule_value == 14
     assert rule_value >= 12
     # Its DERIVATION.md row is gone with it: every row there must match an
     # exception here (test_every_recorded_exception_is_a_derivation_row_...).

@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against stub executables
@@ -102,9 +104,12 @@ case "$1" in
       "tailscale up "*) if [ -f "$s/ts-after-up" ]; then cp "$s/ts-after-up" "$s/ts-status"; fi ;;
       "tailscale set "*) printf '%s\\n' "$*" >> "$s/ts-set.log" ;;
       "systemctl start kubelet") : ;;
+      "systemctl start otel-collector") printf 'start otel-collector\\n' >> "$s/collector.log" ;;
       "stat -c %d /var/lib/tailscale") cat "$s/ctr-dev" ;;
       "ip -4 -o addr show dev cni0") cat "$s/cni0" 2>/dev/null ;;
+      "cat /run/flannel/subnet.env") cat "$s/flannel-subnet.env" 2>/dev/null || exit 1 ;;
       "systemctl restart otel-collector") printf 'restart otel-collector\\n' >> "$s/collector.log" ;;
+      "systemctl restart otel-collector-pods") printf 'restart otel-collector-pods\\n' >> "$s/collector.log" ;;
       *) exit 2 ;;
     esac ;;
   restart) : ;;
@@ -187,7 +192,7 @@ def vm(tmp_path: Path) -> _Vm:
 
 
 def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root), *extra],
         capture_output=True,
         text=True,
@@ -201,7 +206,6 @@ def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess
             "POLL_SECONDS": "1",
         },
         check=False,
-        timeout=60,
     )
 
 
@@ -241,13 +245,12 @@ def test_a_new_worker_runs_systemd_in_a_container_with_its_state_on_the_data_dis
 def test_an_image_not_pinned_by_digest_is_refused_before_any_container_change(
     vm: _Vm, tmp_path: Path
 ) -> None:
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, "ghcr.io/x/y:latest", str(tmp_path)],
         capture_output=True,
         text=True,
         env={"PATH": f"{vm.bin_dir}:/usr/bin:/bin", "STUB_STATE": str(vm.state)},
         check=False,
-        timeout=60,
     )
     assert result.returncode != 0
     assert "is not pinned by digest" in result.stderr
@@ -461,7 +464,7 @@ def test_br_netfilter_is_loaded_and_persisted_before_the_worker_starts(vm: _Vm) 
 def test_a_kernel_without_bridge_netfilter_is_refused_before_any_container_change(
     vm: _Vm,
 ) -> None:
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root)],
         capture_output=True,
         text=True,
@@ -476,7 +479,6 @@ def test_a_kernel_without_bridge_netfilter_is_refused_before_any_container_chang
             "POLL_SECONDS": "1",
         },
         check=False,
-        timeout=60,
     )
     assert result.returncode != 0
     assert "br_netfilter" in result.stderr
@@ -579,10 +581,14 @@ def test_a_running_worker_with_a_read_only_securityfs_bind_is_replaced(vm: _Vm) 
     assert len(_calls(vm=vm, verb="rm")) == 1
 
 
-def _deliver_telemetry(*, vm: _Vm, key: bool = True) -> None:
+def _deliver_telemetry(*, vm: _Vm, key: bool = True, split: bool = True) -> None:
     telemetry = vm.root / "telemetry"
     telemetry.mkdir(parents=True, exist_ok=True)
     (telemetry / "config.yaml").write_text("# mocked collector configuration\n", encoding="utf-8")
+    if split:
+        (telemetry / "pods-config.yaml").write_text(
+            "# mocked pod-span collector configuration\n", encoding="utf-8"
+        )
     if key:
         (telemetry / ".env").write_text("HONEYCOMB_INGEST_KEY_LIVESPEC=x\n", encoding="utf-8")
 
@@ -604,11 +610,60 @@ def test_a_delivered_collector_gets_its_node_values_and_is_restarted(vm: _Vm) ->
     assert result.returncode == 0, result.stdout + result.stderr
     node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
     assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
-    assert (vm.state / "collector.log").read_text(encoding="utf-8") == "restart otel-collector\n"
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == (
+        "start otel-collector\nrestart otel-collector-pods\n"
+    )
+
+
+def test_a_delivered_host_collector_starts_without_a_cni0_bridge(vm: _Vm) -> None:
+    """Cordoning the worker may remove cni0, but must not remove hostmetrics."""
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text(
+        "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.5.1/24\nFLANNEL_MTU=1450\n",
+        encoding="utf-8",
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == (
+        "start otel-collector\nrestart otel-collector-pods\n"
+    )
+
+
+def test_the_pod_span_unit_gets_the_flannel_gateway_while_cni0_is_absent(vm: _Vm) -> None:
+    """The unit must fail and retry on the bind, not sit inactive with no node.env."""
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text(
+        "FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET=10.42.5.1/24\nFLANNEL_MTU=1450\n",
+        encoding="utf-8",
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.5.1:4319\n"
+
+
+def test_cni0_takes_precedence_over_the_flannel_subnet_for_the_pod_span_bind(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text("FLANNEL_SUBNET=10.42.5.1/24\n", encoding="utf-8")
+    (vm.state / "cni0").write_text(
+        "5: cni0    inet 10.99.7.1/24 brd 10.99.7.255 scope global cni0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
+
+
+def test_a_worker_with_no_pod_network_gateway_yet_still_exports_host_metrics(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm)
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == "start otel-collector\n"
+    assert not (vm.root / "telemetry" / "node.env").exists()
 
 
 @pytest.mark.parametrize(("key", "bridge"), [(False, True), (True, False)])
-def test_the_collector_stays_off_without_its_key_or_the_bridge(
+def test_only_a_delivered_key_lets_the_collectors_start(
     vm: _Vm, *, key: bool, bridge: bool
 ) -> None:
     _deliver_telemetry(vm=vm, key=key)
@@ -618,9 +673,33 @@ def test_the_collector_stays_off_without_its_key_or_the_bridge(
         )
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert not (vm.state / "collector.log").exists()
+    if key:
+        assert (vm.state / "collector.log").read_text(encoding="utf-8") == "start otel-collector\n"
+    else:
+        assert not (vm.state / "collector.log").exists()
     assert not (vm.root / "telemetry" / "node.env").exists()
     assert "collector" in result.stdout
+
+
+def test_a_combined_pinned_config_keeps_the_host_collector_off_until_cni0_exists(vm: _Vm) -> None:
+    """Until the split pod-span config is pinned, the combined config needs node.env."""
+    _deliver_telemetry(vm=vm, split=False)
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (vm.state / "collector.log").exists()
+    assert not (vm.root / "telemetry" / "node.env").exists()
+
+
+def test_a_combined_pinned_config_restarts_the_host_collector_once_cni0_exists(vm: _Vm) -> None:
+    _deliver_telemetry(vm=vm, split=False)
+    (vm.state / "cni0").write_text(
+        "5: cni0    inet 10.99.7.1/24 brd 10.99.7.255 scope global cni0\n", encoding="utf-8"
+    )
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
+    assert (vm.state / "collector.log").read_text(encoding="utf-8") == "restart otel-collector\n"
 
 
 def test_the_pool_binaries_are_bound_read_only_from_the_data_disk(vm: _Vm) -> None:

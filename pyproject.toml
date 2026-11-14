@@ -23,7 +23,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "livespec-dev-tooling"
-version = "1.194.0"
+version = "1.207.0"
 description = "Shared enforcement-suite library for livespec-governed projects: ruff/pyright/coverage gates, AST checks, CI-alignment checks, red-green-replay discipline. Python package plus composite Actions and reusable workflows."
 requires-python = ">=3.10.16"
 authors = [
@@ -86,9 +86,12 @@ packages = ["livespec_dev_tooling"]
 # Hatchling preserves each source's mode, so the renderer lands executable
 # (verified 0755 against a real `uv build`, 2026-10-20).
 [tool.hatch.build.targets.wheel.force-include]
+"livespec_dev_tooling/data/cross_repo_public_api.json" = "livespec_dev_tooling/data/cross_repo_public_api.json"
 "ci-runner/k3s/phase2/gates/render-gate-job.sh" = "livespec_dev_tooling/gates/render-gate-job.sh"
 "ci-runner/k3s/phase2/gates/gate-job-template.yaml" = "livespec_dev_tooling/gates/gate-job-template.yaml"
 "ci-runner/k3s/phase2/gates/mint-private-sibling-token.sh" = "livespec_dev_tooling/gates/mint-private-sibling-token.sh"
+"ci-runner/k3s/phase2/gates/forge-retry.sh" = "livespec_dev_tooling/gates/forge-retry.sh"
+"ci-runner/k3s/phase2/kueue/cluster-queue-gates.yaml" = "livespec_dev_tooling/gates/cluster-queue-gates.yaml"
 "ci-runner/k3s/phase2/workload-arch.conf" = "livespec_dev_tooling/workload-arch.conf"
 "livespec_dev_tooling/data/config_value_fast_path.toml" = "livespec_dev_tooling/data/config_value_fast_path.toml"
 
@@ -102,6 +105,10 @@ packages = ["livespec_dev_tooling"]
 dev = [
     "ruff==0.8.6",
     "pyright==1.1.391",
+    # pyright's node comes from this pinned wheel, never from nodeenv: on a cold
+    # cache nodeenv resolves the head of nodejs.org/dist/index.json, which
+    # broke check-metadata-batch on hosted runners on 2026-11-11 (v27 alpha).
+    "nodejs-wheel-binaries==24.19.0",
     "pytest==8.3.4",
     "pytest-rerunfailures==14.0",
     "pytest-cov==6.0.0",
@@ -327,6 +334,13 @@ cross_repo_public_api = [
     { file = "livespec_dev_tooling/canonical_checks.py", function = "canonical_check_slugs", reason = "product import: livespec's canonical_slugs_projection.py, copier_template_smoke_canonical.py and doctor/static/wiring_completeness_cross_repo.py" },
     { file = "livespec_dev_tooling/fleet/contract.py", function = "parse_manifest", reason = "product import: livespec-orchestrator-beads-fabro's .claude-plugin/hooks/codex_yolo_gate.py — the dx8l consumer" },
     { file = "livespec_dev_tooling/fleet/worktree_pack_wiring.py", function = "worktree_pack_wiring_gaps", reason = "cross-repo test import: livespec's copier-template lockstep test renders the impl-plugin template and asserts the rendered shape carries zero worktree-pack wiring gaps. DECLARED WITH THE PREDICATE rather than after that test lands: the function was made public FOR that consumer (which is why the module is public rather than a `_rows_*` sibling), so declaring it later would leave the omission this key exists to prevent open across the window between the two repos' commits" },
+    { file = "livespec_dev_tooling/config.py", function = "load_delegated_gate", reason = "cross-repo test imports: livespec-orchestrator-beads-fabro's tests/integration/test_delegated_pre_push_gate.py, livespec-driver-claude's tests/hooks/test_check_pre_push_delegation.py, livespec-overseer's tests/test_pre_push_delegated_gate.py, livespec's tests/test_delegated_pre_push_gate_wiring.py and livespec-orchestrator-git-jsonl's tests/integration/test_pre_push_delegated_gate.py each assert the bool | None result is True; no `is None` guard" },
+    { file = "livespec_dev_tooling/config.py", function = "load_delegated_pre_commit", reason = "cross-repo test imports: livespec-orchestrator-beads-fabro's tests/test_delegated_pre_commit.py, livespec-driver-claude's tests/hooks/test_delegated_pre_commit.py, livespec-overseer's tests/test_pre_commit_gate_shape.py, livespec's tests/test_delegated_pre_commit_wiring.py and livespec-driver-codex's tests/integration/test_delegated_pre_commit.py each assert the bool | None result is True; no `is None` guard" },
+    { file = "livespec_dev_tooling/config.py", function = "load_gate_check_suite", reason = "cross-repo test imports: livespec-orchestrator-beads-fabro's tests/integration/test_delegated_pre_push_gate.py, livespec-orchestrator-beads-fabro's tests/test_delegated_pre_commit.py, livespec-driver-claude's tests/hooks/test_delegated_pre_commit.py and livespec-overseer's tests/test_pre_commit_gate_shape.py each assert the tuple | None result equals the expected suite; no `is None` guard" },
+    { file = "livespec_dev_tooling/config.py", function = "load_config", reason = "cross-repo imports: livespec-orchestrator-beads-fabro's .claude/hooks/livespec_tdd_order_guard.py and livespec-orchestrator-beads-fabro's tests/integration/test_incident_lifecycle_walk.py pass its Config return directly to derive_source_prefixes; Config return, not Result | None" },
+    { file = "livespec_dev_tooling/config.py", function = "derive_source_prefixes", reason = "cross-repo imports: livespec-orchestrator-beads-fabro's .claude/hooks/livespec_tdd_order_guard.py and livespec-orchestrator-beads-fabro's tests/integration/test_incident_lifecycle_walk.py use the tuple return as product-path prefixes; no Result | None guard" },
+    { file = "livespec_dev_tooling/config.py", function = "is_vendored_path", reason = "cross-repo import: livespec-orchestrator-beads-fabro's .claude/hooks/livespec_tdd_order_policy.py negates the bool result in its product-path predicate; no Result | None guard" },
+    { file = "livespec_dev_tooling/config.py", function = "iter_first_party_py_files", reason = "cross-repo import: livespec-orchestrator-git-jsonl's tests/test_no_buffer_write_dodge.py iterates the tuple[Path, ...] result in its first-party source list; no Result | None guard" },
     # Arrived with the delegated-gate fleet rollout (plan delegated-gate-fleet-rollout):
     # livespec-driver-codex e46ee51 (2026-10-28T22:22Z) and livespec-driver-pi e011242
     # (2026-10-28T22:56Z), after this repo's last green fleet-conformance run (f57b373,
@@ -334,6 +348,13 @@ cross_repo_public_api = [
     # BEFORE DECLARING: both consumers assert `delegated_gate_enabled(...) is True` on the
     # plain `bool` return, with no `is None` guard, so the Result-vs-None hazard does not apply.
     { file = "livespec_dev_tooling/gate_remote_delegate.py", function = "delegated_gate_enabled", reason = "cross-repo test import: livespec-driver-codex's and livespec-driver-pi's tests/integration/test_delegated_pre_push.py assert `gate_remote_delegate.delegated_gate_enabled(repo_root=_REPO_ROOT) is True` in-process; bool return, no `is None` guard at either site" },
+    # Arrived with the krc2yd purity slice of livespec-orchestrator-git-jsonl
+    # (commits 32f4360 / 4a64604, 2026-11-12T01:12:34Z, factory run 9fd23816),
+    # after this repo's last green fleet-conformance run, so the gap opened in the
+    # fleet rather than in any one PR here. GUARD READ BEFORE DECLARING: the
+    # consumer calls `green_token_main()` for its INT exit code, and `main` is a
+    # supervisor entry point that `supervisor_entry_files` exempts (member 4).
+    { file = "livespec_dev_tooling/green_token.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-git-jsonl tests/integration/test_pre_push_delegated_gate.py (krc2yd purity slice) imports `main as green_token_main` and reads its int exit code; supervisor entry point, exempt as member 4 via supervisor_entry_files" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "test_workflow_full_round_trip", reason = "cross-repo test import: the e2e round-trip suites of both Drivers and both orchestrators" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "assert_coverage", reason = "cross-repo test import: livespec-driver-codex's tests/e2e-cli/test_cli_e2e.py" },
     # Arrived with livespec-driver-pi's progressive-guidance witnesses (e7e0bbb..d114f96,
@@ -518,17 +539,24 @@ supervisor_entry_files = [
     "livespec_dev_tooling/fleet/_git_identity_host_probe.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
     "livespec_dev_tooling/red_leg_scope.py",
-    # WHAT IT NEEDS, and only this one: `no_write_direct`. The `world-reading`
-    # and `undeclared` subcommands emit one check-target name per line on
-    # stdout, which `scripts/just/check.sh` and `scripts/just/check-pre-push.sh`
-    # read back — a report surface, exactly the category the three entries above
-    # were declared for. MEASURED for the other three: the file carries no broad
-    # `except Exception`, so `no_except_outside_io` is unused; its
+    # WHAT IT NEEDS: `no_write_direct` and, since 2026-11-12,
+    # `public_api_result_typed`. The `world-reading` and `undeclared`
+    # subcommands emit one check-target name per line on stdout, which
+    # `scripts/just/check.sh` and `scripts/just/check-pre-push.sh` read back — a
+    # report surface, exactly the category the three entries above were declared
+    # for. Its `main() -> int` is now consumed across a boundary
+    # (livespec-orchestrator-git-jsonl's tests/integration/test_pre_push_delegated_gate.py
+    # imports it), so it is declared in `cross_repo_public_api` above, and this
+    # entry grants it the ratified livespec v177 member-4 supervisor exemption it
+    # qualifies for: a `main() -> int`, a `__main__` guard, a
+    # `raise SystemExit(main())` tail, and a real PROCESS invocation
+    # (`uv run python -m livespec_dev_tooling.green_token` from
+    # `scripts/just/check.sh`). MEASURED for the other two: the file carries no
+    # broad `except Exception`, so `no_except_outside_io` is unused, and its
     # `raise SystemExit(main())` tail is already tolerated by
-    # `supervisor_discipline` outside the plugin-scripts tree; and its
-    # `main() -> int` is not consumed across any boundary, so
-    # `public_api_result_typed` is unused. The cost of the three it does not
-    # need is the same whole-file widening the block above records.
+    # `supervisor_discipline` outside the plugin-scripts tree. The cost of the
+    # two it does not need is the same whole-file widening the block above
+    # records.
     "livespec_dev_tooling/green_token.py",
     # WHAT IT NEEDS, and only this one: `no_write_direct`. The `members`
     # subcommand emits one check-target name per line on stdout, which
@@ -742,6 +770,12 @@ scenario_tiers = ["tests.consumer"]
 # behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
+    # livespec-dev-tooling-73qw6g: the reusable workflow invokes the CI
+    # infrastructure re-run planner with a system `python3` and only the
+    # checkout on PYTHONPATH. Only a fresh interpreter proves that vendored
+    # structlog is bootstrapped in that environment; the test uses a hardcoded
+    # PATH/HOME/PYTHONPATH environment, so coverage startup cannot reach it.
+    "tests/livespec_dev_tooling/test_ci_infra_rerun.py",
     # livespec-dev-tooling-wj45qt: the bare `pytest --cov` spelling fails in
     # pytest-cov's combine step only when a test subprocess runs with a cwd
     # that has no pyproject in view, which exists only across a real pytest
@@ -755,6 +789,13 @@ subprocess_spawn_allowlist = [
     # cannot observe. The test scrubs COVERAGE_PROCESS_START + COV_CORE_* + COVERAGE_*
     # from the child env.
     "tests/livespec_dev_tooling/test_incident_fleet_cli.py",
+    # livespec-dev-tooling-kddu2b: the v207 scenario "a consumer ruled
+    # deliberately-normal classifies from claims citing the ruling, with no
+    # installation serving it" is the same CLI-binary behavior: the operator runs
+    # `just incident-fleet-audit`, and only a fresh `python -I` interpreter shows
+    # its exit status and printed rows. The test scrubs COVERAGE_PROCESS_START +
+    # COV_CORE_* + COVERAGE_* from the child env.
+    "tests/livespec_dev_tooling/test_incident_fleet_deliberately_normal.py",
     # livespec-dev-tooling-dkgwsm: the rule-26 kill-matrix scenarios run the
     # engine as a consumer does, `python -m ...mutation_kill_matrix_runner`, and
     # the engine itself starts the mutmut stand-in and pytest per mutant; only a
@@ -788,6 +829,17 @@ subprocess_spawn_allowlist = [
     "tests/consumer/test_delegated_gate_check_suite.py",
     "tests/consumer/test_delegated_job_authority_skip.py",
     "tests/consumer/test_ci_matrix_completeness_consumer_levers.py",
+    # livespec-dev-tooling-ixtdx7: this fixture must run its real `just check`
+    # aggregate. An in-process `green_token.main()` call could classify the
+    # members but cannot prove the downstream shell aggregate gives it the full
+    # list, refuses before dispatch, or invokes the member recipes after the
+    # annotation is added. Its child environments scrub COVERAGE_PROCESS_START
+    # and COV_CORE_* before they start the Python CLI.
+    "tests/consumer/test_check_aggregate_purity_declarations.py",
+    # The consumer-tier authorized_keys scenarios execute the committed role
+    # against a temporary account fixture using the exact ansible-core pin that
+    # the drift recipe uses; the child process is the behaviour under test.
+    "tests/consumer/test_authorized_keys_managed.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed
     # in pytest's already-imported process; the exact test file scrubs coverage
@@ -874,6 +926,8 @@ subprocess_spawn_allowlist = [
 repo_local_ci_skips = [
     { slug = "check-ansible-lint", reason = "PROVISIONAL — declared, not adjudicated. Lints `ansible/`, the LEGACY-ONLY host-provisioning tree (livespec-sab5gn.4) that no CI job deploys from or imports. The recipe resolves ansible-lint 26.8.0 + ansible-core 2.21.4 through `uvx` against its own interpreter because ansible-core 2.21 requires Python >=3.12 while this repo's `requires-python` floor is >=3.10.16 (the justfile records that reasoning), so a CI leg would provision a second toolchain per run for a tree CI never executes. Enforced at pre-push today; the wire-vs-allowlist call is referred to this repo's own arming PR per the 2026-09-09 ruling on livespec-dev-tooling-8o8e.18." },
     { slug = "check-ansible-hostname-free", reason = "PROVISIONAL, same venue as check-ansible-lint: it guards `ansible/`, the LEGACY-ONLY host-provisioning tree that no CI job deploys from or imports, and is enforced at pre-push. Wiring it into a ci.yml matrix leg is a `.github/workflows/` edit, which check-no-workflow-edits reserves for a human-authorized change, so it is filed as its own needs-human follow-up rather than made by the agent that added the check (livespec-dev-tooling-prdxxe)." },
+    { slug = "check-ansible-get-url-checksum", reason = "PROVISIONAL, same venue as check-ansible-hostname-free: it guards `ansible/`, the LEGACY-ONLY host-provisioning tree that no CI job deploys from or imports, and is enforced at pre-push. Wiring it into a ci.yml matrix leg is a `.github/workflows/` edit, which check-no-workflow-edits reserves for a human-authorized change, so it is filed as its own needs-human follow-up rather than made by the agent that added the check (livespec-dev-tooling-7g5qba)." },
+    { slug = "check-ansible-authorized-keys-managed", reason = "PROVISIONAL, same venue as check-ansible-get-url-checksum: it guards `ansible/`, the LEGACY-ONLY host-provisioning tree that no CI job deploys from or imports, by converging the authorized_keys_managed role against fixtures, and is enforced at pre-push. Wiring it into a ci.yml matrix leg is a `.github/workflows/` edit, which check-no-workflow-edits reserves for a human-authorized change, so it is filed as its own needs-human follow-up, livespec-dev-tooling-kn7w7t, rather than made by the agent that added the check (livespec-dev-tooling-sr46h2)." },
     { slug = "check-dev-host-fabro-client-bins-declared", reason = "PROVISIONAL, same venue as check-ansible-hostname-free: it asserts that every committed `dispatcher.factories.<name>.bin` in this repository's root `.livespec.jsonc` names a declared `fabro_client_builds` path (non-functional-requirements.md §\"Dev host Fabro client builds\", v088), and is enforced at pre-push. Wiring it into a ci.yml matrix leg is a `.github/workflows/` edit, which check-no-workflow-edits reserves for a human-authorized change, so it is filed as its own needs-human follow-up rather than made by the agent that added the check (livespec-dev-tooling-ovevhu)." },
     { slug = "check-fleet-conformance-admin", reason = "Wrong venue permanently: it reads secret names and branch protection across every fleet member under the OPERATOR's ADMIN-scoped `gh` credential. Under a per-PR CI token both rows are out-of-vantage and the check reports that as BLIND at error severity, exit 4 — never as a pass, and livespec-dev-tooling-29qo forbids any lever demoting it — so a CI leg would be red by construction. ci.yml already records the split: the App-token job runs `just check-fleet-conformance`, and this admin lane enforces at pre-push." },
     { slug = "check-no-workflow-edits", reason = "Wrong venue twice over. It is the factory-branch boundary guard (fail a branch that changes .github/workflows/** without human authorization), which the justfile records as 'never mirrored into CI: the guard is a CI-venue no-op by design'. Its body is also dev-tooling/check-no-workflow-edits.sh, a GITIGNORED file the worktree pack installs, and no CI job runs `just install-worktree-pack` — so a matrix entry would report on a missing file rather than on a workflow edit." },
@@ -1152,6 +1206,7 @@ addopts = [
 markers = [
     "consumer: consumer-tier check-runner test exercising a shipped check against a fixture project (scenarios.md coverage)",
     "integration: integration-tier test driving a shipped check's `main()` end-to-end against a real git repository fixture (scenarios.md coverage)",
+    "real_gate_job: a test that deliberately reaches a real gate Job submission; without it the conftest guard fails the test (livespec-dev-tooling-qpgiip)",
 ]
 
 # ---------------------------------------------------------------------------

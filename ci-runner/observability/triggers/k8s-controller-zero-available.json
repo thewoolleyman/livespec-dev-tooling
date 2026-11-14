@@ -2,10 +2,16 @@
   "name": "k8s controllers — ARC, Kueue, CoreDNS or local-path-provisioner has zero available replicas for 5 min",
   "description": "Fires, per Deployment, when MAX(k8s.deployment.available) over the trailing 5 min is below 1 for arc-gha-rs-controller (arc-systems), kueue-controller-manager (kueue-system), coredns, local-path-provisioner or ci-runner-scheduler (kube-system). No job is admitted, no name resolves and no work volume is provisioned while one of the first four is at zero; at zero ci-runner-scheduler, runner pods fail open to the default scheduler. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get deploy -A; kubectl -n <namespace> describe deploy <name>; kubectl -n <namespace> get events --sort-by=.lastTimestamp. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
   "query": {
+    "calculated_fields": [
+      {
+        "name": "deployment_available_shortfall",
+        "expression": "SUB(1, $k8s.deployment.available)"
+      }
+    ],
     "calculations": [
       {
-        "op": "MAX",
-        "column": "k8s.deployment.available"
+        "op": "MIN",
+        "column": "deployment_available_shortfall"
       }
     ],
     "filters": [
@@ -19,6 +25,10 @@
           "local-path-provisioner",
           "ci-runner-scheduler"
         ]
+      },
+      {
+        "column": "k8s.deployment.available",
+        "op": "exists"
       }
     ],
     "breakdowns": [
@@ -28,8 +38,8 @@
     "time_range": 300
   },
   "threshold": {
-    "op": "<",
-    "value": 1,
+    "op": ">",
+    "value": 0,
     "exceeded_limit": 1
   },
   "frequency": 300,

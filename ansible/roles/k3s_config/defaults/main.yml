@@ -36,6 +36,24 @@ k3s_config_node_taint_drop_in: /etc/rancher/k3s/config.yaml.d/10-node-taint.yaml
 # The arithmetic and the resulting pod-allocatable figures are recorded in
 # ../HOST_VARS.md, beside the role that renders them.
 k3s_config_kubelet_args_drop_in: /etc/rancher/k3s/config.yaml.d/20-kubelet-args.yaml
+# THE SERVER's datastore selection: embedded etcd (livespec-dev-tooling-qy2nzf,
+# plan k3s-embedded-etcd-datastore). The committed file
+# ci-runner/k3s/phase2/k3s-config/config.yaml.d/50-embedded-etcd.yaml is copied
+# here ONLY when k3s_config_embedded_etcd is true. That is never true by default,
+# and never on an agent. Its `cluster-init` converts the SQLite datastore at the
+# next k3s start, so no routine apply may arm it. The cut-over window sets
+# `-e k3s_config_embedded_etcd=true`, and the host_vars flip commits the same
+# value in that window.
+#
+# FALSE LEAVES AN EXISTING DROP-IN IN PLACE. A false-default apply after the
+# cut-over, from any seat that has not seen the flip, must not change the
+# server's datastore selection. Every later boot needs `cluster-init` to
+# initialize the fresh etcd on the emptied tmpfs. Removal is a separate,
+# explicit act: `k3s_config_embedded_etcd_rollback`, used only by the rollback
+# in plan note 003.
+k3s_config_embedded_etcd: false
+k3s_config_embedded_etcd_rollback: false
+k3s_config_embedded_etcd_drop_in: /etc/rancher/k3s/config.yaml.d/50-embedded-etcd.yaml
 # The node's data directory, from the profile's NODE_DATA_DIR, and the systemd
 # drop-in that refuses to start the agent before the volume holding it is
 # mounted. `--data-dir` itself is in the unit's ExecStart from the install — it
@@ -104,6 +122,24 @@ k3s_config_cpu_weight_unit_drop_in_dir: >-
 k3s_config_system_slice_cpu_weight: ""
 k3s_config_system_slice_cpu_weight_drop_in: 50-cpu-weight.conf
 k3s_config_system_slice_drop_in_dir: /etc/systemd/system/system.slice.d
+
+# The systemd CPUWeight= (1 to 10000) of user.slice on this node: the share
+# LOCAL LOGIN SESSIONS hold at the cgroup root against kubepods.slice (weighted
+# by the kubelet from allocatable CPU) and system.slice. It is for a node that
+# is also somebody's workstation, where an interactive session must stay
+# responsive beside a full pod load. Like every CFS weight it is a share: it
+# never keeps a core idle, it only decides who wins when demand exceeds cores.
+# Empty, the default, manages no weight and removes a drop-in an earlier
+# converge wrote, so the slice falls back to systemd's default of 100. Set per
+# host in host_vars; see HOST_VARS.md, "user.slice CPU weight"
+# (livespec-dev-tooling-wsjl7j). Applied by a daemon-reload, never a restart.
+k3s_config_user_slice_cpu_weight: ""
+k3s_config_user_slice_cpu_weight_drop_in: 50-cpu-weight.conf
+k3s_config_user_slice_drop_in_dir: /etc/systemd/system/user.slice.d
+# The owner and group of that drop-in and its directory. root on every host;
+# they are variables only so the role's tests can run it unprivileged.
+k3s_config_user_slice_drop_in_owner: root
+k3s_config_user_slice_drop_in_group: root
 
 # How many CoreDNS replicas the cluster runs. k3s ships its CoreDNS Deployment
 # (the packaged `coredns` addon) with ONE replica, and its manifest sets no

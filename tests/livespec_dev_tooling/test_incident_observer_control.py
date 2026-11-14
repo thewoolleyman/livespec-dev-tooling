@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from livespec_dev_tooling import _incident_observer_dispatch as dispatch_module
 from livespec_dev_tooling import incident_observer_control as control
 from livespec_dev_tooling import incident_observer_service as service
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
@@ -348,7 +349,7 @@ def test_dispatch_uses_public_protocol_and_always_closes_request(monkeypatch):
         def start(self):
             self.target(**self.kwargs)
 
-    monkeypatch.setattr(service, "Thread", Thread)
+    monkeypatch.setattr(dispatch_module, "Thread", Thread)
     dispatch(request, "client")
     assert calls == [("timeout", 10), ("finish", "client"), "closed"]
 

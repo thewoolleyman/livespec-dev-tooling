@@ -27,13 +27,14 @@ are the deliverable.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_dev_tooling import check_purity
+from livespec_dev_tooling import check_purity, green_token
 from livespec_dev_tooling.canonical_checks import world_gate_check_slugs
 
 __all__: list[str] = []
@@ -45,6 +46,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # work-item records: a push landing on a red master on the strength of a
 # weeks-old observation.
 _LIVE_RISK_GATES = ("check-branch-protection-alignment", "check-master-ci-green")
+_HOST_OR_PARENT_READING_GATES = (
+    "check-shell-quality",
+    "check-heading-coverage-debt-register",
+    "check-no-todo-registry",
+)
 
 
 def _aggregate_members() -> tuple[str, ...]:
@@ -76,6 +82,26 @@ def test_the_two_gates_the_token_memoized_on_a_maintainer_host_are_world_reading
         f"neither verdict is a function of the pushed tree, so neither may be memoized by a "
         f"tree-keyed token; audit={audit}"
     )
+
+
+def test_host_or_parent_reading_checks_are_world_reading_in_a_consumer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Shipped declarations outrank a consumer inventory that omits these members."""
+    _ = (tmp_path / "check-targets.txt").write_text(
+        "check-local-pure  # purity: tree-pure\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys, "argv", ["green-token", "world-reading", *_HOST_OR_PARENT_READING_GATES]
+    )
+
+    assert green_token.main() == 0
+    assert capsys.readouterr().out.splitlines() == list(_HOST_OR_PARENT_READING_GATES)
+
+    monkeypatch.setattr(sys, "argv", ["green-token", "undeclared", *_HOST_OR_PARENT_READING_GATES])
+    assert green_token.main() == 0
+    assert capsys.readouterr().out == ""
 
 
 def test_every_world_gate_slug_is_declared_world_reading() -> None:

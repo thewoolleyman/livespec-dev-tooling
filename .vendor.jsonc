@@ -67,6 +67,23 @@
 // name substitution, and re-stamping this entry; the beside-test
 // `test_the_budgeted_client_is_vendored_rather_than_a_runtime_dependency`
 // is what catches it if you forget. Landed by livespec-dev-tooling-z69s.
+//
+// `pyyaml` is vendored for Lane capacity (SPECIFICATION/contracts.md
+// "Delegated pre-push gate", Declared gate resources, v192): the installed
+// gate client parses `cluster-queue-gates.yaml` with a YAML parser this
+// package carries, because the wheel's runtime dependencies are only anyio
+// and typing-extensions. ⚠️ THE ON-DISK DIRECTORY IS
+// `_vendor/livespec_yaml/`, NOT `_vendor/yaml/`: every module here puts
+// `_vendor/` at sys.path[0], so a vendored top-level `yaml` would shadow a
+// consuming process's own PyYAML, which v192 forbids. Upstream's modules
+// import each other relatively, so the rename needs no source edit. Only
+// the pure-Python `lib/yaml` is copied, WITHOUT `cyaml.py`: that module
+// imports `yaml._yaml` absolutely, and leaving it out keeps
+// `__with_libyaml__` False and the package self-contained. Re-vendor by
+// hand: copy `lib/yaml/*.py` except `cyaml.py` and the root `LICENSE` from
+// the tag into `_vendor/livespec_yaml/`, then re-stamp this entry.
+// `vendor_update pyyaml` refuses, because the clone has no top-level
+// `pyyaml/` directory. Landed by livespec-dev-tooling-yznwz7.
 {
   "libraries": [
     {
@@ -99,6 +116,12 @@
       "upstream_url": "https://github.com/thewoolleyman/livespec-runtime",
       "upstream_ref": "4c2f5e84015309894647a83dfa2c4b85a4b8ebf7",
       "vendored_at": "2026-09-12T02:33:00Z"
+    },
+    {
+      "name": "pyyaml",
+      "upstream_url": "https://github.com/yaml/pyyaml",
+      "upstream_ref": "6.0.3",
+      "vendored_at": "2026-11-11T16:56:13Z"
     }
   ]
 }

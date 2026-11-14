@@ -1,0 +1,30 @@
+---
+# Group variables for `fabro_dispatch_clients`: hosts where a Dispatcher runs
+# natively but whose OWN provisioning lives in another repository. Each one
+# needs a dev-token login for every registered factory and nothing else from
+# this tree (livespec-dev-tooling-yyadq6).
+#
+# WHY THE LOGIN IS MADE FROM HERE. Each token is read from the factory
+# instance's own `server.env` on the factory host. That read uses the factory
+# host's administration identity, which only this repository's control node
+# holds. A dispatch host's own provisioning must not hold or exercise it, so
+# this tree makes the login and the dispatch host's tree makes everything else.
+#
+# WHAT IT DOES NOT GET. No `/etc/livespec/fabro-factories.json` and no fleet
+# limits: the host's own provisioning renders its registry from the pinned
+# inventory, so this tree rendering a second copy would give that file two
+# owners. Once a Dispatcher runs natively on such a host, the render that
+# §"Fabro factory registry" owes there is met by that host's own provisioning,
+# so turning the switch below on would give the file a second writer
+# (coordinator ruling on livespec-dev-tooling-yyadq6, 2026-11-13).
+
+fabro_factory_registry_render: false
+fabro_factory_registry_client_login: true
+
+# THE REGISTRY IS STILL DECLARED ONCE, in `group_vars/dev_hosts.yml`, where
+# §"Fabro factory registry" places it. This group reads that one declaration
+# through the group's first host rather than restating it, so registering a new
+# factory there logs every dispatch client in to it on the next converge.
+fabro_factory_registry_entries: >-
+  {{ hostvars[groups['dev_hosts'] | first].fabro_factory_registry
+     | default({}) | dict2items }}

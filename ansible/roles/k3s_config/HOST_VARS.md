@@ -183,3 +183,47 @@ container in a Lima VM, is not in `ci_pool`, and is owned by plan
 Moving k3s into a slice of its own, or `--kube-reserved` / `--system-reserved`,
 would each need a k3s restart; this drop-in does not. `--reserved-cpus` (a cpuset
 pin) is ruled out.
+
+## user.slice CPU weight
+
+`k3s_config_user_slice_cpu_weight` (default `""`) is the systemd `CPUWeight=`
+(1 to 10000) of `user.slice`, which is the share local login sessions get at the
+cgroup ROOT against `kubepods.slice` and `system.slice`. It is for a pool node
+that is also somebody's workstation. The role writes it as
+`/etc/systemd/system/user.slice.d/50-cpu-weight.conf` (a `[Slice]` section) and
+runs one `systemctl daemon-reload` when the drop-in changed, which applies the
+weight to the running slice. It never restarts k3s, and it pins no CPU: it is a
+share that only decides who wins when demand exceeds cores, so pods still use
+every core a local session leaves idle. Empty removes a drop-in an earlier
+converge wrote, which is the revert.
+
+| variable | default | meaning |
+| --- | --- | --- |
+| `k3s_config_user_slice_cpu_weight` | `""` | the weight; empty manages none and removes the drop-in |
+| `k3s_config_user_slice_cpu_weight_drop_in` | `50-cpu-weight.conf` | the drop-in's file name |
+| `k3s_config_user_slice_drop_in_dir` | `/etc/systemd/system/user.slice.d` | the drop-in's directory |
+| `k3s_config_user_slice_drop_in_owner`, `k3s_config_user_slice_drop_in_group` | `root` | owner and group of both; variables only so the role's tests run unprivileged |
+
+`gamingpc-xubuntu` declares it (work-item `livespec-dev-tooling-wsjl7j`), on the
+maintainer's direction of 2026-11-13 to leave about 25% of that workstation for
+local sessions and processes. Measured there that day: `kubepods.slice` at
+`cpu.weight` 567, `system.slice` 100 and `user.slice` 100, so a local session was
+entitled to 100/767, or 13%, under full contention. The value and its arithmetic
+are in `ansible/inventory/host_vars/gamingpc-xubuntu.yml`, beside the key. It is
+derived from two other figures, and must be re-derived when either moves:
+
+- the node's allocatable CPU, which sets `kubepods.slice`'s weight
+  (`1 + ((cpus x 1024 - 2) x 9999) / 262142`) and comes from `KUBELET_ARGS` in the
+  node's profile;
+- `system.slice`'s weight. The section above raises it on the other agents;
+  doing so on a node that declares a `user.slice` weight dilutes that share.
+
+The node's kubelet reservations are the other half of the same headroom: they
+bound the pods' memory absolutely and their CPU requests, and are recorded in
+the profile's own comment. Apply the weight alone, and revert it by removing the
+key and running the same two commands:
+
+```bash
+just ansible-drift ansible/ci-pool.yml --limit <host> --tags k3s_user_slice_cpu_weight
+just ansible-apply ansible/ci-pool.yml --limit <host> --tags k3s_user_slice_cpu_weight
+```

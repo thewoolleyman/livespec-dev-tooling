@@ -1,0 +1,34 @@
+import subprocess, re, json, collections, sys
+FLEET=["livespec","livespec-dev-tooling","livespec-driver-claude","livespec-driver-codex","livespec-driver-pi","livespec-orchestrator-beads-fabro","livespec-orchestrator-git-jsonl","livespec-runtime","livespec-console-beads-fabro","livespec-overseer"]
+OUTSIDE=["openbrain","dolt-server","resume","homelab","hetzner-xubuntu-info","vps-info","poweredge-xubuntu-info","gmktec-xubuntu-info","hp-xubuntu-info","fabro-hosts","otel-collector","local-llm","1password-env-wrapper","petri","fabro","sandbox-driver-kubernetes"]
+FL="|".join(re.escape(r) for r in FLEET)
+pat_fleet=re.compile(r"thewoolleyman/("+FL+r")\b")
+pat_owner=re.compile(r"""['"]thewoolleyman['"]""")
+def cat(path,line):
+    p=path.lower(); l=line
+    if re.search(r"github\.repository(_owner)?\s*[!=]=|==\s*['\"]thewoolleyman|!=\s*['\"]thewoolleyman|startswith\(\s*['\"]thewoolleyman|repository_owner",l): return "A-identity-compare (silent break)"
+    if re.search(r"uses:\s*['\"]?thewoolleyman/",l): return "B-actions-uses (verify)"
+    if re.search(r"(^|/)(docs|plan|research|\.ai|specification|history|changelog)(/|$)|\.md$|changelog",p) : return "D-docs/spec/plans (cosmetic)"
+    if re.search(r"(^|/)tests?/",p): return "E-tests/fixtures"
+    if p.endswith((".json",".jsonc",".toml",".yaml",".yml",".cfg",".ini")) and ".github/workflows" not in p: return "C-config data (must change)"
+    if re.search(r"github\.com/thewoolleyman/|repos/thewoolleyman/|(-R|--repo)[ =]thewoolleyman/|git@github",l): return "F-url/api (redirects)"
+    return "G-code/workflow other (review)"
+res={}
+for group,repos in (("fleet",FLEET),("outside",OUTSIDE)):
+    for r in repos:
+        g=f"/data/projects/{r}"
+        out=subprocess.run(["git","-C",g,"grep","-I","-n","-E","thewoolleyman/("+FL+r")|['\"]thewoolleyman['\"]","--",".",":!*.lock",":!**/history/**",":!plan/archive/**",":!archive/**"],capture_output=True,text=True).stdout
+        c=collections.Counter(); ex=collections.defaultdict(list)
+        for ln in out.splitlines():
+            path,_,rest=ln.partition(":"); _,_,line=rest.partition(":")
+            k=cat(path,line) if pat_fleet.search(line) else ("H-bare owner literal 'thewoolleyman'" if pat_owner.search(line) else None)
+            if k is None: continue
+            c[k]+=1
+            if len(ex[k])<4: ex[k].append(f"{path}: {line.strip()[:140]}")
+        res[r]={"group":group,"counts":dict(c),"examples":dict(ex)}
+json.dump(res,open(sys.argv[1],"w"),indent=1)
+tot=collections.Counter()
+for r,v in res.items():
+    if v["counts"]: print(v["group"],r,dict(sorted(v["counts"].items())))
+    for k,n in v["counts"].items(): tot[(v["group"],k)]+=n
+print("TOTALS"); [print(k,n) for k,n in sorted(tot.items())]

@@ -1,10 +1,14 @@
 """The ONE budgeted `gh` read boundary for this package's first-party code.
 
-Every first-party GitHub read in `livespec_dev_tooling` goes through
-`GithubBudgetedClient` rather than spawning `gh` at the call site, so the
-conditional-read, pacing, backoff and reserved-floor policies that client
-implements apply uniformly rather than to whichever caller remembered to
-ask (livespec core epic livespec-httc; retrofit livespec-dev-tooling-z69s).
+Every first-party GitHub call in `livespec_dev_tooling` goes through this
+module rather than spawning `gh` at the call site. A read goes through
+`GithubBudgetedClient`, so the conditional-read, pacing, backoff and
+reserved-floor policies that client implements apply uniformly rather than to
+whichever caller remembered to ask (livespec core epic livespec-httc;
+retrofit livespec-dev-tooling-z69s). The one exception is `forge_call`, the
+incident forge call: the incident retry rule owns its own waits and budget and
+must see each answer's real status and headers, so it spawns its `gh api
+--include` attempts here directly (livespec-dev-tooling-levu6j).
 
 The client is VENDORED from livespec-runtime under `_vendor/`, the same
 source-copy pattern `returns`, `structlog` and `tomli` already use here,
@@ -58,9 +62,19 @@ from __future__ import annotations
 import shlex
 import subprocess
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+
+from livespec_dev_tooling._forge_policy import (
+    ATTEMPT_TIMEOUT_SECONDS,
+    Attempt,
+    CallResult,
+    parse_included,
+    run_call,
+)
 
 # `returns` and the budget client are VENDORED, not installed; a bare
 # import here would resolve only when some earlier import in the process
@@ -81,6 +95,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 __all__: list[str] = [
     "GhRead",
+    "forge_call",
     "gh_read",
     "github_api_url",
 ]
@@ -180,6 +195,47 @@ def gh_read(
         returncode=invocation.returncode,
         stdout=invocation.stdout,
         stderr=invocation.stderr,
+    )
+
+
+def forge_call(  # noqa: PLR0913  — the call's identity plus its three injected effects.
+    *,
+    name: str,
+    endpoint: str,
+    method: str = "GET",
+    idempotent: bool = False,
+    execute: GhExecutor | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.time,
+) -> CallResult:
+    """One forge call under the incident retry rule, through this read boundary.
+
+    The released incident CI entrance's side of the rule in
+    `SPECIFICATION/contracts.md`'s expedited incident execution rules (work item
+    livespec-dev-tooling-levu6j). Each attempt is one `gh api --include` call
+    stopped at 30 seconds, and `_forge_policy.run_call` decides every retry from
+    the status and headers the answer really carried. Workflow steps get the
+    same rule from the composite Action `forge-read`.
+
+    ⚠️ The attempt is spawned here, NOT through `gh_read`'s budget client. That
+    client reads `x-ratelimit-*` headers and turns an answer it reads as limited
+    into a refusal with no status. Every real GitHub 403 carries those headers,
+    so through the client a secondary-limit 403 lost its reset wait and a
+    permission 403 was retried, which the rule forbids
+    (legacy-coordinator-agent's grade of livespec-dev-tooling#4401). The rule
+    owns its own waits and budget, so it needs the raw answer.
+    """
+    spawn = execute or partial(_spawn_gh, cwd=None, timeout=ATTEMPT_TIMEOUT_SECONDS)
+    argv = ["gh", "api", "--include", "--method", method, endpoint]
+
+    def attempt() -> Attempt:
+        invocation = spawn(argv=argv)
+        if invocation.unspawnable is not None:
+            return Attempt(status=None, headers={}, body="", stderr=invocation.unspawnable)
+        return parse_included(stdout=invocation.stdout, stderr=invocation.stderr)
+
+    return run_call(
+        name=name, method=method, idempotent=idempotent, attempt=attempt, sleep=sleep, now=now
     )
 
 

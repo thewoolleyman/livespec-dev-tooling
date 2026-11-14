@@ -55,6 +55,17 @@ fabro_server_host_checkout: /data/projects/livespec-orchestrator-beads-fabro
 # vps declares what gmktec-xubuntu declares (plan ci-pool-provisioning-leftovers,
 # ruling 2026-11-05): the role writes each instance's settings.toml, which was
 # hand-maintained here until livespec-dev-tooling-jxw2ve.
+#
+# BOTH INSTANCES PARKED 2026-11-12 (livespec-dev-tooling-gxepwl; maintainer,
+# relayed by legacy-coordinator-agent: "approved shutting down the fabro on
+# vps."). No factory routes here any more: /etc/livespec/fabro-factories.json
+# points every factory, mi-homelab included, at gmktec-xubuntu. The fabro-server
+# journal, which reaches back to 2026-10-30, holds no run creation. Its only
+# traffic was bare `fabro ps` reads hitting the CLI's 127.0.0.1:32276 default,
+# which got a stale legacy board back. Parked rather than deleted: each unit is
+# stopped and disabled, and its binary, settings.toml and state directory are
+# all KEPT. To bring one back, flip its `service_state` to running and re-apply.
+# Removing the instances is a later, separate decision.
 fabro_server_manage_settings: true
 fabro_server_instances:
   - unit_name: fabro-server
@@ -95,6 +106,9 @@ fabro_server_instances:
     binary_path: /home/ubuntu/.fabro/bin/fabro
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
     binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+    # PARKED 2026-11-12 (livespec-dev-tooling-gxepwl): see the note above
+    # fabro_server_manage_settings. REVERT: set running and re-apply.
+    service_state: stopped
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/ubuntu/.fabro-mi-homelab
     port: 32277
@@ -121,6 +135,9 @@ fabro_server_instances:
     binary_path: /home/ubuntu/.fabro/bin/fabro
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
     binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+    # PARKED 2026-11-12 (livespec-dev-tooling-gxepwl). mi-homelab's live
+    # factory is gmktec-xubuntu:32277. REVERT: set running and re-apply.
+    service_state: stopped
 
 # --- gha_runner ---
 gha_runner_user: ubuntu
@@ -161,12 +178,116 @@ incident_observer_candidate_user: ubuntu
 otel_collector_env_from_controller:
   - HONEYCOMB_INGEST_KEY_LIVESPEC
 
+# --- reconcile_runs ---
+# Every tenant this host's dispatcher seat tickets, in sweep order (by the seat's
+# 7-day launch volume, 2026-11-13). Each wrapper is the tenant's committed
+# .livespec.jsonc credential_wrapper. The coordinator's duty-cycle ruling
+# (2026-11-13): the orchestrator alone is enabled first, as the hand-installed
+# unit was; the other thirteen are installed and held, and are widened only
+# after one measured pass is recorded on livespec-dev-tooling-oxwre7.
+reconcile_runs_enabled: true
+reconcile_runs_tenants:
+  - name: livespec-orchestrator-beads-fabro
+    unit: reconcile-runs
+    repo: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-dev-tooling
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-dev-tooling
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-overseer
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-overseer
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-driver-codex
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-driver-codex
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-runtime
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-runtime
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: livespec-driver-claude
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-driver-claude
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: hetzner-xubuntu-info
+    enabled: false
+    repo: /home/ubuntu/workspace/hetzner-xubuntu-info
+    credential_wrapper: [./with-hetzner-xubuntu-credentials.sh, "--"]
+  - name: livespec-console-beads-fabro
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-console-beads-fabro
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: homelab
+    enabled: false
+    repo: /home/ubuntu/workspace/homelab
+    credential_wrapper:
+      - /usr/local/bin/with-homelab-aws.sh
+      - --role
+      - homelab-workload
+      - /home/ubuntu/.nix-profile/bin/hl
+      - param
+      - run
+      - --bind
+      - BEADS_DOLT_PASSWORD=/homelab/v1/services/dolt/production/beads-password
+      - --bind
+      - GITHUB_APP_ID=/homelab/v1/providers/github/mi-homelab-factory-bot/app-id
+      - --bind
+      - GITHUB_PRIVATE_KEY=/homelab/v1/providers/github/mi-homelab-factory-bot/private-key
+      - --bind
+      - CLAUDE_CODE_OAUTH_TOKEN=/homelab/v1/providers/anthropic/claude-code/oauth-token
+      - "--"
+  - name: livespec-orchestrator-git-jsonl
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-orchestrator-git-jsonl
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: dolt-server
+    enabled: false
+    repo: /home/ubuntu/workspace/dolt-server
+    credential_wrapper: [/usr/local/bin/with-dolt-server-env.sh, "--"]
+  - name: livespec-driver-pi
+    enabled: false
+    repo: /home/ubuntu/workspace/livespec-driver-pi
+    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
+  - name: openbrain
+    enabled: false
+    repo: /home/ubuntu/workspace/openbrain
+    credential_wrapper: [/data/projects/1password-env-wrapper/with-openbrain-env.sh, "--"]
+# One enabled tenant: its pass (at most the 1800 s bound), the 10 min interval
+# and one more pass. Raise it with each tenant the sweep gains.
+reconcile_runs_stale_after_seconds: 5400
+# This host emits no reconcile-runs gauge, so a stale tenant alerts through the
+# same proven unit-failure path as the dolt-server units (ntfy, plus a Honeycomb
+# event its trigger turns into email), once per stale episode.
+reconcile_runs_staleness_on_failure: dolt-backup-alert@%n.service
+
 # --- ssh_hardening ---
 ssh_hardening_public_address: 66.94.121.15
 ssh_hardening_password_user: ubuntu
 ssh_hardening_negative_control_addresses:
   - 127.0.0.1
   - 100.89.189.118
+
+# --- authorized_keys_managed ---
+authorized_keys_managed_user: ubuntu
+authorized_keys_managed_group: ubuntu
+authorized_keys_managed_path: /home/ubuntu/.ssh/authorized_keys
+authorized_keys_managed_entries:
+  - name: hetzner-xubuntu-dolt-tunnel
+    public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 hetzner-xubuntu dolt-tunnel
+    permitopen: 127.0.0.1:3307
+# Retired by key blob (type + base64), never by its options or comment: the
+# hand-placed `homelab-debug-tunnel` entry (permitlisten 127.0.0.1:2223), the
+# landing for homelab's archived nixos-era hardware-capture debug-tunnel.sh.
+# Coordinator ruling on homelab hl-rz6pdp (2026-11-12): RETIRE. Reopen only if
+# that channel is revived, as a managed entry with permitopen="invalid.invalid:1".
+authorized_keys_managed_retired_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB2ePKejdt1cOuPPNnb6IlyV6U2Pja9wgI8JbJUY7yJO
 
 # --- storage_reclaim ---
 storage_reclaim_canonical_host: vps.perch-rudd.ts.net
@@ -192,12 +313,26 @@ storage_reclaim_checkout_roots: /data/projects
 # additive and touches only the ports declared here, so this host's other
 # hand-made mappings (8010, 8443) are left as they are.
 tailscale_serve_mappings:
-  - https_port: 32276
-    backend: http://127.0.0.1:32276
-  - https_port: 32277
-    backend: http://127.0.0.1:32277
   - https_port: 8765
     backend: http://127.0.0.1:8765
+  # The tailnet fronts of the further production observer installations
+  # (roles/incident_observer/defaults/main.yml `incident_observer_installations`,
+  # livespec-dev-tooling-lqp2qx): each fronts its own installation's loopback
+  # listener and no other, for livespec, livespec-orchestrator-beads-fabro and
+  # livespec-overseer in turn.
+  - https_port: 8770
+    backend: http://127.0.0.1:8770
+  - https_port: 8771
+    backend: http://127.0.0.1:8771
+  - https_port: 8772
+    backend: http://127.0.0.1:8772
+# RETIRED 2026-11-12 (livespec-dev-tooling-gxepwl): the 32276 and 32277 fronts of
+# the two Fabro instances parked above. Each port the node still serves is turned
+# off with `tailscale serve --https=<port> off`. To bring an instance back, move
+# its port from this list back into tailscale_serve_mappings.
+tailscale_serve_retired_ports:
+  - 32276
+  - 32277
 
 # --- vnc_desktop ---
 vnc_desktop_tailscale_ip: 100.89.189.118

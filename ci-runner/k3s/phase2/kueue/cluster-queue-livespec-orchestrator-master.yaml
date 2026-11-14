@@ -1,0 +1,38 @@
+# Dedicated master-push Kueue lane for livespec-orchestrator-beads-fabro.
+# Its one reserved slot comes from the ordinary orchestrator queue (9 -> 8),
+# not from livespec-dev-tooling-master-cq.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: livespec-orchestrator-master-cq
+spec:
+  cohortName: fleet-ci-runner-pool
+  namespaceSelector: {}
+  fairSharing:
+    weight: 1
+  preemption:
+    reclaimWithinCohort: Never
+    borrowWithinCohort:
+      policy: Never
+    withinClusterQueue: Never
+  resourceGroups:
+    - coveredResources: ["ci-runner.io/churn-slot"]
+      flavors:
+        - name: churn-slot-flavor
+          resources:
+            - name: "ci-runner.io/churn-slot"
+              nominalQuota: 1
+              # Reclaim is Never, so lending this slot could delay master CI.
+              lendingLimit: 0
+        - name: churn-slot-worker-arm64-flavor
+          resources:
+            - name: "ci-runner.io/churn-slot"
+              nominalQuota: 0
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: livespec-orchestrator-master-lq
+  namespace: arc-runners
+spec:
+  clusterQueue: livespec-orchestrator-master-cq

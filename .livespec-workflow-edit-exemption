@@ -1,2 +1,41 @@
-work_item=livespec-dev-tooling-jpfdcx
-reason=MAINTAINER tier (approval:workflow-edit). The maintainer approved this specific edit on 2026-11-10 (verbatim: "I approve the workflow change."), given in the plan owner's session after the 2-line expression edit was described to them; the plan owner set approval:workflow-edit on livespec-dev-tooling-jpfdcx and recorded the approval there. It implements the maintainer's route ruling on the same item (option A, 2026-11-10T20:42:11Z): the reconciler reads a NEW reconciler-only observer URL variable, and incident-ci on k3s keeps LIVESPEC_INCIDENT_OBSERVER_URL and CONNECT_ADDR unchanged. The edit is to .github/workflows/reusable-master-health-reconcile.yml only, in the step "Ask the incident observer who owns this step". Two env lines are modified: LIVESPEC_INCIDENT_OBSERVER_URL becomes `vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL || vars.LIVESPEC_INCIDENT_OBSERVER_URL`, and LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR becomes `!vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL && vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || ''`. Seven comment lines are added above the step. With the new variable unset, both lines evaluate to exactly what they read before, so no repository's behaviour changes until the variable is set. No job, step, check or quality gate is removed or reduced, and CI runtime is unchanged. ci.yml (incident-ci) is not touched. 9 lines added and 2 modified against the merge base. The canonical body in livespec_dev_tooling/fleet/_reconciler_shim.py changes in the same commit, and the byte comparator holds. actionlint -shellcheck= exits 0 on the file.
+# Workflow-edit exemption — one exemption binds to one reviewed change.
+#
+# The change: .github/workflows/ci.yml's incident-ci step gains five lines that
+# print ONLY the enablement reading the released plan recorded (one json.dumps of
+# the plan's "enablement" field, then one echo), right after the step reads the
+# plan's mode. The whole plan is never printed: it carries an environment map. No
+# existing workflow line is deleted or modified; no job, trigger, permission,
+# runner, concurrency group or required check changes; the added work is one
+# in-process JSON read, so CI runtime does not change.
+#
+# The maintainer approved this change in session on 2026-11-13 ("Yes I approve the
+# CI change"; relayed by legacy-coordinator-agent as "I approved A"), recorded on
+# the work item with the approval:workflow-edit-additive label.
+work_item=livespec-dev-tooling-ahl6vz
+change=additive
+ci_runtime=no-significant-increase
+reason=ADDITIVE tier (approval:workflow-edit-additive), maintainer-approved 2026-11-13: incident-ci prints only the released plan's enablement reading to its step log, so the exdkra CI-plan vantage can be read back from the run (contracts.md, expedited incident execution). Five added lines; no existing workflow line changes.
+#
+# ---- Preceding entry, kept beside this one as the coordinator directed (2026-11-13) ----
+# The guard (dev-tooling/check-no-workflow-edits.sh) parses exactly ONE live work_item= and
+# reason= line, and a declaration inherited from the base authorizes nothing, so the
+# bqnzcm.4 slice 2a entry is preserved verbatim below as comments, not as a second live
+# declaration.
+# | # Workflow-edit exemption — one exemption binds to one reviewed change.
+# | #
+# | # The change: ONE NEW FILE, .github/workflows/reusable-incident-ci-publish.yml,
+# | # the incident CI publisher of livespec-dev-tooling-bqnzcm.4 (slice 2a). No
+# | # existing workflow line is deleted or modified. The workflow is called only by
+# | # `workflow_call`, and nothing calls it until slice 2b pins ci.yml to the master
+# | # commit that carries it, so CI runtime does not change.
+# | #
+# | # Its one job holds only `id-token: write` (top-level `permissions: {}`): that
+# | # permission lets the job request its own OIDC identity token, which the
+# | # independent controller verifies against its pinned CI identity policy. It is
+# | # not a workflow write scope and grants no credential beyond the job's own
+# | # identity. No secret is passed in.
+# | work_item=livespec-dev-tooling-bqnzcm.4
+# | change=additive
+# | ci_runtime=no-significant-increase
+# | reason=ADDITIVE tier (approval:workflow-edit-additive), under legacy-coordinator-agent's delegated authorization: adds the new reusable workflow reusable-incident-ci-publish.yml, whose single publish job holds only id-token: write and posts a PASSED incident CI aggregate to the controller's /ci/publish (spec v207, an-expedited-pull-request-s). No existing workflow line changes, and nothing calls it until slice 2b.
+# | #

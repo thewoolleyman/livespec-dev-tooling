@@ -230,90 +230,41 @@ def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> 
     assert f'"+{_GATE_REF_TOKEN}:{_GATE_REF_TOKEN}"' in joined
 
 
-def test_stand_in_proxy_readiness_bounds_a_blocked_tcp_connect() -> None:
-    """A full listen backlog cannot hold the fixture's readiness check forever.
+def test_stand_in_proxy_readiness_reports_its_child_exit() -> None:
+    """A stand-in that exits before writing readiness makes its case fail.
 
-    The exit suite opens its stand-in proxy before exercising proxy routing. A
-    TCP connect to a listener whose backlog is full can block before any HTTP
-    request is sent, so the helper must bound that connect itself and report
-    the fixture failure instead of letting a watchdog kill the suite.
+    The child exit is the negative readiness signal.  It is deterministic even
+    when the runner delays every stand-in and avoids turning elapsed time into
+    the verdict.
     """
-    listener_ready_deadline_seconds = 10
-    listener_ready_poll_interval_seconds = 0.01
-    stand_in_proxy_ready_deadline_seconds = 1
-    subprocess_timeout_margin_seconds = 5
-    subprocess_timeout_seconds = (
-        listener_ready_deadline_seconds
-        + stand_in_proxy_ready_deadline_seconds
-        + subprocess_timeout_margin_seconds
-    )
     script = r"""
 set -u
 helper="$(sed -n '/^wait_for_stand_in_proxy() {/,/^}/p' "$1")"
 eval "${helper}"
-listener_ready_deadline_seconds="$2"
-listener_ready_poll_interval_seconds="$3"
-stand_in_proxy_ready_deadline_seconds="$4"
 failures=0
 fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
-port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 ready="$(mktemp)"
-python3 - "${port}" "${ready}" <<'PY' &
-import socket
-import sys
-import time
-
-listener = socket.socket()
-listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-listener.bind(("127.0.0.1", int(sys.argv[1])))
-listener.listen(1)
-with open(sys.argv[2], "w", encoding="utf-8") as output:
-    output.write("ready\n")
-clients = []
-for _ in range(128):
-    client = socket.socket()
-    client.setblocking(False)
-    try:
-        client.connect(("127.0.0.1", int(sys.argv[1])))
-    except BlockingIOError:
-        pass
-    clients.append(client)
-time.sleep(10)
-PY
-listener_pid=$!
-trap 'kill "${listener_pid}" 2>/dev/null || true; wait "${listener_pid}" 2>/dev/null || true; rm -f "${ready}"' EXIT
-listener_ready_started_at="${SECONDS}"
-while ! [ -s "${ready}" ]; do
-  if [ $((SECONDS - listener_ready_started_at)) -ge "${listener_ready_deadline_seconds}" ]; then
-    printf 'fixture listener did not write its ready file within %s s\n' "${listener_ready_deadline_seconds}" >&2
-    exit 2
-  fi
-  sleep "${listener_ready_poll_interval_seconds}"
-done
-STAND_IN_PROXY_READY_DEADLINE_SECONDS="${stand_in_proxy_ready_deadline_seconds}" wait_for_stand_in_proxy "${port}"
-exit $?
+rm -f "${ready}"
+trap 'rm -f "${ready}"' EXIT
+(exit 7) &
+child_pid=$!
+if STAND_IN_PROXY_READY_DEADLINE_SECONDS=0 wait_for_stand_in_proxy "${child_pid}" "${ready}"; then
+  printf 'readiness accepted an exited child\n' >&2
+  exit 1
+fi
+exit 1
 """
     completed = subprocess.run(
-        [
-            "bash",
-            "-c",
-            script,
-            "--",
-            str(_EXIT_TESTS),
-            str(listener_ready_deadline_seconds),
-            str(listener_ready_poll_interval_seconds),
-            str(stand_in_proxy_ready_deadline_seconds),
-        ],
+        ["bash", "-c", script, "--", str(_EXIT_TESTS)],
         cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
-        timeout=subprocess_timeout_seconds,
+        timeout=5,
     )
 
     assert completed.returncode == 1, completed.stdout + completed.stderr
-    assert "FAIL  the stand-in proxy on port" in completed.stdout
-    assert "never answered HTTP within 1 s" in completed.stdout
+    assert "FAIL  the stand-in proxy child" in completed.stdout
 
 
 def test_the_base_companion_ref_lands_where_every_range_member_looks_for_it() -> None:

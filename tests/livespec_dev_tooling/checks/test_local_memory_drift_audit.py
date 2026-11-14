@@ -48,9 +48,8 @@ def _run_check(
     module = _load_check_module()
     monkeypatch.chdir(cwd)
     monkeypatch.setattr(sys, "argv", ["local_memory_drift_audit"])
-    for key in tuple(os.environ):
-        if key.startswith("LIVESPEC_LOCAL_MEMORY_"):
-            monkeypatch.delenv(key, raising=False)
+    delete = monkeypatch.delenv
+    _ = [delete(key) for key in os.environ.copy() if key.startswith("LIVESPEC_LOCAL_MEMORY_")]
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     rc = module.main()

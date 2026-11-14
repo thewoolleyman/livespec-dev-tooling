@@ -1,0 +1,33 @@
+# The committed per-node CPU budget of the self-hosted pool: the gate lanes.
+#
+# This file is the AUTHORITY for each committed gate lane's cpu (`gate_cpu`).
+# The pending proposal per-node-cpu-budget-honest-requests requires every lane
+# in kueue/cluster-queue-gates.yaml to equal it. The values below are TODAY's
+# committed lanes. Work item livespec-dev-tooling-wirn53 moves them, together
+# with the lanes and the gate-unit annotation, in one commit (target
+# 9 / 21 / 3 / 3; NODE-CPU-BUDGET.md gives the rule).
+#
+# It owns nothing else. Churn slots (phase0-bare-metal/profiles/<node>.env
+# ADMISSION_CAPACITY_C) and factory pod budgets (ansible/inventory/host_vars/
+# <node>.yml factory_pod_budget) live only in their own files.
+# converge-worker-queues.sh derives a container worker's lane from the gate
+# unit, so no worker appears here.
+#
+# allocatable_cpu is the kubelet's reported allocatable, recorded for reference.
+# It was read with `kubectl get nodes` on 2026-11-13T23:33:37Z (capacity /
+# allocatable): gmktec 32/32, poweredge 72/72, hp 16/14500m, gamingpc 16/12.
+# Units are CPU cores.
+
+nodes:
+  gmktec-xubuntu:
+    allocatable_cpu: 32
+    gate_cpu: 15            # gates-flavor
+  poweredge-xubuntu:
+    allocatable_cpu: 72
+    gate_cpu: 30            # gates-poweredge-flavor
+  hp-xubuntu:
+    allocatable_cpu: 14.5
+    gate_cpu: 5             # gates-hp-flavor
+  gamingpc-xubuntu:
+    allocatable_cpu: 12     # capacity 16; kubelet reserves take 4
+    gate_cpu: 5             # gates-gamingpc-flavor

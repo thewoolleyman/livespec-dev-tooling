@@ -396,7 +396,7 @@
           # Written by the node_status_credential Ansible role. Read by
           # refresh-node-status-kubeconfig at runtime. Carries no secret.
           NODE_STATUS_NODE_NAME={{ node_status_credential_node }}
-          NODE_STATUS_REMOTE_HOST={{ node_status_credential_server_host }}
+          NODE_STATUS_REMOTE_HOST={{ node_status_credential_remote_login }}
           NODE_STATUS_REMOTE_KUBECONFIG={{ node_status_credential_render_path }}
           NODE_STATUS_KUBECONFIG={{ node_status_credential_target }}
           NODE_STATUS_SSH_USER={{ node_status_credential_ssh_user }}

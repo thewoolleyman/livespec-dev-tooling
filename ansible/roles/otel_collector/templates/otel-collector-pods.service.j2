@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+# otel-collector-pods.service -- keyless pod-span receiver, deliberately
+# separate from the hostmetrics collector. A k3s node does not create cni0
+# until it receives its first pod, so this unit may fail its bind and retry
+# while otel-collector.service continues exporting host telemetry.
+[Unit]
+Description={{ otel_collector_pod_unit_description }}
+Documentation=https://github.com/thewoolleyman/otel-collector
+After={{ otel_collector_unit_after }}
+Wants={{ otel_collector_unit_wants }}
+
+[Service]
+Type=simple
+User={{ otel_collector_user }}
+Group={{ otel_collector_group }}
+{% for extra_environment_file in otel_collector_extra_environment_files %}
+EnvironmentFile={{ extra_environment_file }}
+{% endfor %}
+EnvironmentFile={{ otel_collector_environment_path }}
+ExecStart={{ otel_collector_binary }} --config={{ otel_collector_pod_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+{% if otel_collector_hardened %}
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths={{ otel_collector_etc_dir }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,59 @@
+---
+# A further production incident observer installation beside livespec-dev-tooling's
+# on the dev host: the one serving `incident_observer_installation_name`, the
+# repository (without its owner) of one entry of the role's committed inventory,
+# `incident_observer_installations` (roles/incident_observer/defaults/main.yml).
+# livespec-dev-tooling-lqp2qx.
+#
+# The same role as ansible/dev-host.yml's `incident_observer`, applied with the
+# variable set in roles/incident_observer/vars/installation.yml: its own
+# controller.json naming its repository and required jobs, its own manifest
+# whose principal argv ends in THAT controller.json, its own state directory,
+# reference clone of its repository, reader credential for its tenant, loopback
+# port and systemd units, and its public routes on the role's one funnel port at
+# /<name>/callback and /<name>/ordinary-action. It shares livespec-dev-tooling's
+# account, venv, reader clone, secret files and recovery App credential
+# read-only, writes none of them, and never restarts livespec-dev-tooling's unit.
+#
+# Converge livespec-dev-tooling's installation first, at the same release: the
+# apply refuses a venv that does not already serve `incident_observer_release`.
+# Declare the repository in the inventory first (a committed change).
+#
+# The reader credential: the credential wrapper projects one BEADS_DOLT_PASSWORD,
+# the same from every checkout; the tenant it opens is the one the served
+# repository's reference clone commits in `.beads/config.yaml`, and the apply
+# proves the credential opens THAT tenant before the installation serves. Drift
+# first, one installation per run (`<name>` is the repository without its owner):
+#
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-drift \
+#     ansible/incident-observer-installation.yml -e incident_observer_installation_name=<name>
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-apply \
+#     ansible/incident-observer-installation.yml -e incident_observer_installation_name=<name>
+#
+# Then converge the tailnet fronts (ansible/dev-host.yml --tags tailscale_serve),
+# whose host_vars declare one front per installation port.
+#
+# Remove it with ansible/incident-observer-installation-teardown.yml.
+- name: Further production incident observer installation beside livespec-dev-tooling's
+  hosts: dev_hosts
+  gather_facts: true
+  vars_files:
+    - roles/incident_observer/vars/installation.yml
+  pre_tasks:
+    - name: Refuse this installation playbook without an installation name, or in scratch mode
+      # The FIRST task, outside the role and its conditionals: without a name the
+      # play would otherwise fall to livespec-dev-tooling's path.
+      ansible.builtin.assert:
+        that:
+          - incident_observer_installation_name is defined
+          - incident_observer_installation_name | string | length > 0
+          - incident_observer_installation_name != 'livespec-dev-tooling'
+          - not (incident_observer_scratch | default(false) | bool)
+        fail_msg: >-
+          this playbook converges one further installation: pass
+          -e incident_observer_installation_name=<name> naming a repository the
+          inventory declares, other than livespec-dev-tooling (ansible/dev-host.yml
+          converges that one). Nothing has been written, stopped or removed.
+        success_msg: the installation is {{ incident_observer_installation_name }}
+  roles:
+    - role: incident_observer

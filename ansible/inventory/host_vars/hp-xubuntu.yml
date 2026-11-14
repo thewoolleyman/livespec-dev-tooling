@@ -50,6 +50,7 @@ lan_ssh_fallback_must_stay_running:
 # thewoolleyman/otel-collector, which the fleet host guard now refuses to let
 # anyone run. Its start order and its Wants are the role's defaults already.
 otel_collector_config_file: config.hp-factory.yaml
+otel_collector_pod_config_file: config.hp-factory-pods.yaml
 otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true
@@ -110,10 +111,42 @@ sccache_redis_state: absent
 # ansible/former-sandbox-hosts.yml. This host carries no interactive worktrees.
 storage_reclaim_state: absent
 
+# --- tailscale_serve ---
+# RETIRED legacy Fabro serve ports (bd-ib-iud52v, the legacy Fabro carrier
+# retirement). hp's fabro-server stopped on 2026-11-02, but tailscaled still
+# served these three hand-made mappings with nothing behind them. hp publishes
+# nothing; ansible/former-sandbox-hosts.yml runs the role for it.
+tailscale_serve_retired_ports:
+  - 32276
+  - 32277
+  - 32278
+
 # --- factory_budget_reconciler ---
-# No factory sandbox pods: FACTORY_NODE=false since 2026-11-03. Declared so the
-# intent can be read here (role HOST_VARS.md).
-factory_pod_budget: 0
+# Two factory sandbox pods: legacy-coordinator-agent ruling 245a3c34
+# (2026-11-12, via gate-job-resources on livespec-dev-tooling-ukoeah), on the
+# rule K stranded-capacity read. livespec-dev-tooling#4302 shrank hp's gate
+# lane to ONE gate, and the gates-cq read-back at 2026-11-12T12:27Z shows
+# gates-hp-flavor at 5 cpu / 8Gi. Allocatable 14.5 cpu / 27.2 GiB, less that one
+# gate (5 / 8) and warm-uv-cache (0.7 / 0.7), against a 3 cpu / 7.45 GiB sandbox
+# pod: cpu (14.5 - 5 - 0.7) / 3 = 2.93, memory (27.2 - 8 - 0.7) / 7.45 = 2.48,
+# so 2. CONDITION: at the first moment hp holds 1 gate + 2 factory pods, the
+# kubernetes-sandbox-backend seat reads the node and reverts to 1 if node CPU
+# idle < 5% AND kubepods-besteffort.slice cpu.pressure some avg60 > 30.
+# REVERT: factory_pod_budget: 1
+#
+# History: FACTORY TRIAL, 2026-11-11: at most 1 factory sandbox pod (sandbox pods only,
+# no Fabro server). Lowered 2 -> 1 at ~05:15Z on 2026-11-11 under the trial's
+# GATES-FIRST rule: legacy-coordinator-agent measured gates-cq with 3 pending
+# while gates-hp-flavor held 5 cpu of quota idle (05:08:46Z); hp's requests
+# were 11.7 of 14.5 cpu and 21.6 of 27.2Gi, leaving 2.8 cpu / 5.6Gi, below one
+# 5 cpu / 6Gi gate, with the 2 sandboxes holding 6 cpu / 14.9Gi. If gates
+# still queue on hp at 1, the next step is 0. FACTORY_NODE=true again in the profile for this trial,
+# decided by legacy-coordinator-agent consistent with the maintainer's pick
+# (epic livespec-dev-tooling-ko26ez); it was 0 since FACTORY_NODE=false on
+# 2026-11-03. Memory binds first (7.6 GiB per pod against 27 GiB allocatable).
+# Judged on factory runs per hour, green rate and hp CI p95. Revert: 0 here and
+# FACTORY_NODE=false in the profile (see the profile's FACTORY TRIAL block).
+factory_pod_budget: 2
 
 # --- k3s_config ---
 # system.slice's root-level CPU share against kubepods.slice (567 on this 16-CPU
@@ -125,3 +158,11 @@ factory_pod_budget: 0
 # Applied by a daemon-reload, no k3s restart; revert by removing this key and
 # re-applying --tags k3s_system_slice_cpu_weight.
 k3s_config_system_slice_cpu_weight: 1000
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:YEq8NepgBNWE+WKJ4VVuy6ZUXNsySXjVFBYLNvYjJdQ. Verified 2026-11-11: the
+# key the control node already trusted (a hand entry) equals the key the host
+# presented live; its info repository records no fingerprint.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMV5bdzm23d1z8RlkYoq9Flrx+tn5n5CqyDi8xN1x2FV"

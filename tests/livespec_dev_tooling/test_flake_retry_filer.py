@@ -6,6 +6,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from returns.result import Failure, Success
@@ -66,9 +67,7 @@ def test_the_reader_skips_an_open_root_fix_and_files_the_other_nodeid(*, tmp_pat
                     stderr="",
                 )
             )
-        if argv[1] == "create":
-            return _ok(stdout=json.dumps({"id": "dt-new"}))
-        return _ok()
+        return _ok(stdout="dt-new\n")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
@@ -79,12 +78,11 @@ def test_the_reader_skips_an_open_root_fix_and_files_the_other_nodeid(*, tmp_pat
     assert filed == (nodeid_without_fix,)
     assert [call[:3] for call in calls] == [
         ["bd", "list", "--status"],
-        ["bd", "create", f"root-fix: {nodeid_without_fix}"],
-        ["python3", "-c", calls[2][2]],
+        ["python3", "-c", calls[1][2]],
     ]
-    assert "--json" in calls[1]
-    assert "apply_intake_dor" in calls[2][2]
-    assert calls[2][3:] == [str(_PLUGIN_ROOT), "dt-new"]
+    assert "file_captured_work_item" in calls[1][2]
+    assert calls[1][3:5] == [str(_PLUGIN_ROOT), nodeid_without_fix]
+    assert not any(call[:2] == ["bd", "create"] for call in calls)
 
 
 def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_path: Path) -> None:
@@ -102,7 +100,7 @@ def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_
     def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
         del cwd
         calls.append(argv)
-        return _ok(stdout=json.dumps({"id": "dt-new"}) if argv[1] == "create" else "[]")
+        return _ok(stdout="dt-new\n" if argv[1] == "-c" else "[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
@@ -110,8 +108,8 @@ def test_a_filed_root_fix_carries_a_definition_of_done_naming_the_nodeid(*, tmp_
         repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
     ) == (nodeid,)
 
-    create = next(call for call in calls if call[1] == "create")
-    description = create[create.index("--description") + 1]
+    filing = next(call for call in calls if call[1] == "-c")
+    description = filing[-1]
     assert description == (
         f"Root-cause fix for retried test node id: {nodeid}\n"
         "\n"
@@ -178,16 +176,14 @@ def test_the_reader_ignores_closed_and_non_root_fix_ledger_rows(*, tmp_path: Pat
                     stderr="",
                 )
             )
-        if argv[1] == "create":
-            return _ok(stdout=json.dumps([{"id": "dt-new"}]))
-        return _ok()
+        return _ok(stdout="dt-new\n")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
     assert filer.file_root_fixes(
         repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=tmp_path / "state"
     ) == (nodeid,)
-    assert calls[1][2] == f"root-fix: {nodeid}"
+    assert calls[1][4] == nodeid
 
 
 @pytest.mark.parametrize(
@@ -270,6 +266,33 @@ def test_the_host_cli_reports_the_nodeids_it_files(
     )
 
 
+def test_the_host_cli_uses_an_explicit_fixture_plugin_root(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An injected root bypasses HOME registry lookup for a fixture-only host run."""
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    observed_roots: list[Path] = []
+
+    def capture_plugin_root(*, plugin_root: Path, **_: object) -> tuple[str, ...]:
+        observed_roots.append(plugin_root)
+        return ()
+
+    override = tmp_path / "fixture-plugin"
+    registry_must_not_run = Mock()
+    monkeypatch.setattr(filer, "file_root_fixes", capture_plugin_root)
+    monkeypatch.setattr(filer, "registered_plugin_root", registry_must_not_run)
+
+    assert (
+        filer.main(
+            argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")],
+            plugin_root=override,
+        )
+        == 0
+    )
+    assert observed_roots == [override]
+    registry_must_not_run.assert_not_called()
+
+
 def test_the_host_cli_marks_a_completed_reader_pass(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -329,20 +352,17 @@ def test_the_dev_host_role_arms_the_reader_and_its_staleness_signal() -> None:
     assert "--check-staleness" in staleness_service
 
 
-def test_each_filed_root_fix_is_routed_through_intake_by_its_own_id(*, tmp_path: Path) -> None:
-    """Every created item is triaged by the orchestrator, never left in backlog."""
+def test_each_filed_root_fix_uses_the_capture_seam(*, tmp_path: Path) -> None:
+    """Every created item is filed and triaged by the orchestrator in one call."""
     nodeids = ("tests/test_a.py::test_one", "tests/test_b.py::test_two")
     _write_records(repo_root=tmp_path, nodeids=nodeids)
-    created: list[str] = []
-    routed: list[str] = []
+    filings: list[list[str]] = []
 
     def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
         del cwd
-        if argv[1] == "create":
-            created.append(argv[2])
-            return _ok(stdout=json.dumps({"id": f"dt-{len(created)}"}))
         if argv[1] == "-c":
-            routed.append(argv[4])
+            filings.append(argv)
+            return _ok(stdout=f"dt-{len(filings)}\n")
         return _ok(stdout="[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
@@ -352,19 +372,20 @@ def test_each_filed_root_fix_is_routed_through_intake_by_its_own_id(*, tmp_path:
     )
 
     assert filed == nodeids
-    assert routed == ["dt-1", "dt-2"]
+    assert [call[4] for call in filings] == list(nodeids)
+    assert all("file_captured_work_item" in call[2] for call in filings)
 
 
-@pytest.mark.parametrize("created_body", ["{}", "[]", '{"id": 7}', '"dt-1"'])
-def test_the_reader_refuses_a_create_response_without_an_item_id(
-    *, tmp_path: Path, created_body: str
+@pytest.mark.parametrize("filing_body", ["", " \n"])
+def test_the_reader_refuses_a_capture_response_without_an_item_id(
+    *, tmp_path: Path, filing_body: str
 ) -> None:
-    """An item whose id cannot be read cannot be triaged, so the filing stops loudly."""
+    """An item whose capture receipt lacks an id cannot be remembered as filed."""
     _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
 
     def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
         del cwd
-        return _ok(stdout=created_body if argv[1] == "create" else "[]")
+        return _ok(stdout=filing_body if argv[1] == "-c" else "[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
@@ -385,17 +406,184 @@ def test_the_reader_refuses_an_intake_routing_that_did_not_succeed(*, tmp_path: 
         del cwd
         if argv[1] == "-c":
             return Success(GateCommandResult(returncode=1, stdout="", stderr="refused"))
-        return _ok(stdout=json.dumps({"id": "dt-1"}) if argv[1] == "create" else "[]")
+        return _ok(stdout="[]")
 
     filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
 
-    with pytest.raises(OSError, match="^$"):
+    with pytest.raises(OSError, match="refused"):
         _ = filer.file_root_fixes(
             repo_root=tmp_path,
             runner=runner,
             plugin_root=_PLUGIN_ROOT,
             state_dir=tmp_path / "state",
         )
+
+
+def test_a_refused_intake_route_makes_the_host_pass_name_the_item_and_refusal(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The timer's non-zero pass gives operators the item id and intake's refusal."""
+    _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        return Success(
+            GateCommandResult(
+                returncode=1,
+                stdout="",
+                stderr="dt-1: intake (route:ready) refused: claim-token-missing",
+            )
+        )
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "default_gate_command_runner", runner)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+
+    assert (
+        filer.main(argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]) == 1
+    )
+    output = capsys.readouterr().err
+    assert "dt-1" in output
+    assert "claim-token-missing" in output
+
+
+def test_a_refusal_continues_the_pass_and_omits_an_uncreated_item_id(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One refused capture does not hide a later node or invent an item id."""
+    refused = "tests/test_a.py::test_refused"
+    routed = "tests/test_b.py::test_routed"
+    _write_records(repo_root=tmp_path, nodeids=(refused, routed))
+    filings: list[str] = []
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        nodeid = argv[4]
+        filings.append(nodeid)
+        if nodeid == refused:
+            return Success(
+                GateCommandResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="intake (route:ready) refused: claim-token-missing",
+                )
+            )
+        return _ok(stdout="dt-routed\n")
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    monkeypatch.setattr(filer, "default_gate_command_runner", runner)
+    monkeypatch.setattr(filer, "registered_plugin_root", _fixed_plugin_root)
+
+    assert (
+        filer.main(argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]) == 1
+    )
+    output = capsys.readouterr().err
+    assert filings == [refused, routed]
+    assert "claim-token-missing" in output
+    assert "dt-refused" not in output
+
+
+def test_an_open_root_fix_is_routed_only_until_intake_marks_it_triaged(*, tmp_path: Path) -> None:
+    """A later record re-routes a stranded item once, never a triaged item."""
+    nodeid = "tests/test_a.py::test_one"
+    items = [
+        {
+            "id": "dt-untriaged",
+            "status": "backlog",
+            "title": f"root-fix: {nodeid}",
+            "labels": [],
+        }
+    ]
+    routed: list[str] = []
+    _write_records(repo_root=tmp_path, nodeids=(nodeid,))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout=json.dumps(items))
+        routed.append(argv[4])
+        return _ok()
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    state_dir = tmp_path / "state"
+
+    assert filer.file_root_fixes(
+        repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=state_dir
+    ) == (nodeid,)
+    items[0]["labels"] = ["intake:triaged"]
+    _append_record(repo_root=tmp_path, record={"nodeid": nodeid, "attempts": 2})
+
+    assert (
+        filer.file_root_fixes(
+            repo_root=tmp_path, runner=runner, plugin_root=_PLUGIN_ROOT, state_dir=state_dir
+        )
+        == ()
+    )
+    assert routed == ["dt-untriaged"]
+
+
+def test_a_capture_command_that_did_not_run_keeps_its_diagnostic(*, tmp_path: Path) -> None:
+    """A missing capture command is surfaced instead of becoming a blank reader failure."""
+    _write_records(repo_root=tmp_path, nodeids=("tests/test_a.py::test_one",))
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> object:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout="[]")
+        return Failure(GateCommandNotRun(argv=tuple(argv), detail="python3 not on PATH"))
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+
+    with pytest.raises(OSError, match="python3 not on PATH"):
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=tmp_path / "state",
+        )
+
+
+def test_a_refused_route_is_retried_before_its_record_is_remembered(*, tmp_path: Path) -> None:
+    """A failed route remains eligible for the next timer pass instead of becoming silent."""
+    nodeid = "tests/test_a.py::test_one"
+    _write_records(repo_root=tmp_path, nodeids=(nodeid,))
+    items: list[dict[str, str]] = []
+    route_attempts: list[str] = []
+
+    def runner(*, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        if argv[1] == "list":
+            return _ok(stdout=json.dumps(items))
+        if "file_captured_work_item" in argv[2]:
+            items.append({"id": "dt-1", "status": "backlog", "title": f"root-fix: {nodeid}"})
+            route_attempts.append("dt-1")
+            return Success(GateCommandResult(returncode=1, stdout="", stderr="dt-1: refused"))
+        route_attempts.append(argv[4])
+        return _ok()
+
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    state_dir = tmp_path / "state"
+
+    with pytest.raises(OSError, match="dt-1: refused"):
+        _ = filer.file_root_fixes(
+            repo_root=tmp_path,
+            runner=runner,
+            plugin_root=_PLUGIN_ROOT,
+            state_dir=state_dir,
+        )
+    assert not (state_dir / "filed-records").exists()
+
+    assert filer.file_root_fixes(
+        repo_root=tmp_path,
+        runner=runner,
+        plugin_root=_PLUGIN_ROOT,
+        state_dir=state_dir,
+    ) == (nodeid,)
+    assert route_attempts == ["dt-1", "dt-1"]
 
 
 class _FakeLedger:
@@ -409,11 +597,10 @@ class _FakeLedger:
         del cwd
         if argv[1] == "list":
             return _ok(stdout=json.dumps(self.items))
-        if argv[1] == "create":
-            self.items.append({"status": "ready", "title": argv[2]})
-            self.created.append(argv[2])
-            return _ok(stdout=json.dumps({"id": f"dt-{len(self.created)}"}))
-        return _ok()
+        title = f"root-fix: {argv[4]}"
+        self.items.append({"status": "ready", "title": title})
+        self.created.append(title)
+        return _ok(stdout=f"dt-{len(self.created)}\n")
 
     def close_all(self) -> None:
         for item in self.items:
@@ -567,3 +754,198 @@ def test_the_registered_plugin_root_refuses_a_repository_with_no_install(*, tmp_
 
     with pytest.raises(OSError, match="^$"):
         _ = filer.registered_plugin_root(repo_root=tmp_path, registry=registry)
+
+
+_SCENARIO_COVERAGE = _REPO_ROOT / "tests" / "heading-coverage.json"
+_SCENARIO_EVERY_RETRIED_FAILURE = "## Scenario: every retried failure files one root-fix work item"
+_SCENARIO_CLAIM_TOKEN = (
+    "## Scenario: a root-fix item the reader files in a claim-token tenant names its claim token "
+    "in the creating write"
+)
+_SCENARIO_REFUSED_ROUTE = (
+    "## Scenario: a root-fix item whose intake routing is refused is routed again on the reader's "
+    "next pass"
+)
+
+
+def _scenario_test(*, heading: str) -> str:
+    """Return the registered test node id for one acceptance scenario."""
+    rows = json.loads(_SCENARIO_COVERAGE.read_text(encoding="utf-8"))
+    row = next(row for row in rows if row.get("heading") == heading)
+    return str(row["test"])
+
+
+def _fixture_host(*, tmp_path: Path) -> tuple[Path, Path]:
+    """Return a fixture HOME whose plugin registry records a fixture build for ``tmp_path``."""
+    home = tmp_path / "fixture-home"
+    plugin_root = tmp_path / "fixture-plugin"
+    registry = home / ".claude" / "plugins" / "installed_plugins.json"
+    _ = registry.parent.mkdir(parents=True)
+    _ = plugin_root.mkdir()
+    _write_registry(
+        path=registry,
+        entries={_PLUGIN_KEY: [{"projectPath": str(tmp_path), "installPath": str(plugin_root)}]},
+    )
+    return home, plugin_root
+
+
+class _ScenarioLedger:
+    """Fixture intake store that records capture, routing, and prohibited raw writes."""
+
+    def __init__(self, *, refusal_nodeid: str | None = None) -> None:
+        self.refusal_nodeid = refusal_nodeid
+        self.items: list[dict[str, object]] = []
+        self.captures: list[str] = []
+        self.commands: list[list[str]] = []
+        self.routes: list[str] = []
+
+    def __call__(self, *, argv: list[str], cwd: Path, **_: object) -> Success[GateCommandResult]:
+        del cwd
+        self.commands.append(argv)
+        if argv[:2] == ["bd", "list"]:
+            return _ok(stdout=json.dumps(self.items))
+        if "file_captured_work_item" in argv[2]:
+            return self._capture(argv=argv)
+        return self._route(argv=argv)
+
+    def plugin_roots(self) -> set[str]:
+        """Return every plugin root the reader passed to an intake program."""
+        return {command[3] for command in self.commands if command[0] == "python3"}
+
+    def _capture(self, *, argv: list[str]) -> Success[GateCommandResult]:
+        nodeid = argv[4]
+        item_id = f"dt-{len(self.items) + 1}"
+        item: dict[str, object] = {
+            "id": item_id,
+            "labels": [],
+            "status": "backlog",
+            "title": f"root-fix: {nodeid}",
+        }
+        self.items.append(item)
+        self.captures.append(nodeid)
+        if nodeid == self.refusal_nodeid:
+            return Success(
+                GateCommandResult(
+                    returncode=1,
+                    stdout="",
+                    stderr=f"{item_id}: intake refused: claim-token-missing",
+                )
+            )
+        item["labels"] = ["intake:triaged"]
+        item["status"] = "ready"
+        return _ok(stdout=f"{item_id}\n")
+
+    def _route(self, *, argv: list[str]) -> Success[GateCommandResult]:
+        item_id = argv[4]
+        item = next(item for item in self.items if item["id"] == item_id)
+        item["labels"] = ["intake:triaged"]
+        item["status"] = "ready"
+        self.routes.append(item_id)
+        return _ok()
+
+
+@pytest.mark.integration
+def test_the_host_reader_files_only_the_untracked_retry_record_through_main(
+    *, tmp_path: Path
+) -> None:
+    """The host entry point skips an open root fix and captures the other retry record."""
+    expected_test = (
+        "tests.livespec_dev_tooling.test_flake_retry_filer."
+        "test_the_host_reader_files_only_the_untracked_retry_record_through_main"
+    )
+    assert _scenario_test(heading=_SCENARIO_EVERY_RETRIED_FAILURE) == expected_test
+
+    tracked = "tests/test_flakes.py::test_tracked"
+    untracked = "tests/test_flakes.py::test_untracked"
+    _write_records(repo_root=tmp_path, nodeids=(tracked, untracked))
+    ledger = _ScenarioLedger()
+    ledger.items.append(
+        {
+            "id": "dt-existing",
+            "labels": ["intake:triaged"],
+            "status": "ready",
+            "title": f"root-fix: {tracked}",
+        }
+    )
+    home, plugin_root = _fixture_host(tmp_path=tmp_path)
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+
+    assert (
+        filer.main(
+            argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")],
+            runner=ledger,
+            home=home,
+        )
+        == 0
+    )
+    assert ledger.plugin_roots() == {str(plugin_root)}
+    assert ledger.captures == [untracked]
+    assert not any(command[:2] == ["bd", "create"] for command in ledger.commands)
+
+
+@pytest.mark.integration
+def test_the_host_reader_retries_a_refused_route_without_refiling(
+    *, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A refused capture route leaves its item for the next host-reader pass."""
+    expected_test = (
+        "tests.livespec_dev_tooling.test_flake_retry_filer."
+        "test_the_host_reader_retries_a_refused_route_without_refiling"
+    )
+    assert _scenario_test(heading=_SCENARIO_REFUSED_ROUTE) == expected_test
+
+    refused = "tests/test_flakes.py::test_a_refused"
+    routed = "tests/test_flakes.py::test_b_routed"
+    _write_records(repo_root=tmp_path, nodeids=(refused, routed))
+    ledger = _ScenarioLedger(refusal_nodeid=refused)
+    home, plugin_root = _fixture_host(tmp_path=tmp_path)
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+    argv = ["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")]
+
+    assert filer.main(argv=argv, runner=ledger, home=home) == 1
+    assert "dt-1: intake refused: claim-token-missing" in capsys.readouterr().err
+    assert ledger.captures == [refused, routed]
+    assert ledger.items[0]["status"] == "backlog"
+    assert ledger.items[1]["status"] == "ready"
+
+    assert filer.main(argv=argv, runner=ledger, home=home) == 0
+    assert ledger.captures == [refused, routed]
+    assert ledger.routes == ["dt-1"]
+    assert ledger.plugin_roots() == {str(plugin_root)}
+    assert ledger.items[0]["status"] == "ready"
+
+
+@pytest.mark.integration
+def test_the_host_reader_uses_capture_and_leaves_the_item_intake_triaged(*, tmp_path: Path) -> None:
+    """The reader delegates creating writes to intake's capture path, never raw create."""
+    expected_test = (
+        "tests.livespec_dev_tooling.test_flake_retry_filer."
+        "test_the_host_reader_uses_capture_and_leaves_the_item_intake_triaged"
+    )
+    assert _scenario_test(heading=_SCENARIO_CLAIM_TOKEN) == expected_test
+
+    nodeid = "tests/test_flakes.py::test_claim_token_tenant"
+    _write_records(repo_root=tmp_path, nodeids=(nodeid,))
+    ledger = _ScenarioLedger()
+    home, plugin_root = _fixture_host(tmp_path=tmp_path)
+    filer = importlib.import_module("livespec_dev_tooling.flake_retry_filer")
+
+    assert (
+        filer.main(
+            argv=["--repo-root", str(tmp_path), "--state-dir", str(tmp_path / "state")],
+            runner=ledger,
+            home=home,
+        )
+        == 0
+    )
+    assert ledger.plugin_roots() == {str(plugin_root)}
+    assert ledger.captures == [nodeid]
+    assert not any(command[:2] == ["bd", "create"] for command in ledger.commands)
+    assert ledger.items == [
+        {
+            "id": "dt-1",
+            "labels": ["intake:triaged"],
+            "status": "ready",
+            "title": f"root-fix: {nodeid}",
+        }
+    ]

@@ -73,6 +73,18 @@ helm upgrade --install arc \
 kubectl -n "$CONTROLLER_NAMESPACE" rollout status deployment -l app.kubernetes.io/name=gha-rs-controller --timeout=120s
 
 # ---------------------------------------------------------------------------
+# The scale set's listener pod selects on `ci-runner.io/always-on=true`
+# (arc/values-host-unique.yaml `listenerTemplate`; livespec-dev-tooling-crvvxt).
+# With no node carrying that label the listener can be placed nowhere and the
+# set takes no jobs, so stop here, before the install, on an empty answer and
+# on a read that failed (a failed read is never an empty answer). The label
+# comes from the node's committed profile: provision-k3s.sh registers it, and
+# `just ansible-apply ansible/ci-pool.yml --tags node_labels` reconciles it.
+always_on_nodes="$(kubectl get nodes -l ci-runner.io/always-on=true -o name)" \
+  || { echo "FATAL: could not read which nodes carry ci-runner.io/always-on=true, so it is not established that the listener pod can be placed. Not installing the scale set." >&2; exit 1; }
+[ -n "${always_on_nodes}" ] \
+  || { echo "FATAL: no node carries ci-runner.io/always-on=true, so the listener pod would stay Pending and the scale set would take no jobs. Not installing the scale set. Set the label from the committed profiles first (just ansible-apply ansible/ci-pool.yml --tags node_labels)." >&2; exit 1; }
+
 log "2. Install/upgrade the host-unique runner scale set (poweredge-xubuntu-k3s)"
 # The shared-pool-label release `local-ci-k3s` that phase 1 installed first
 # in this step was retired under livespec-s43svm.28 — see the header.
@@ -82,30 +94,11 @@ helm upgrade --install poweredge-xubuntu-k3s \
   -f "${SCRIPT_DIR}/arc/values-host-unique.yaml" \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 
-# ---------------------------------------------------------------------------
-log "2b. Install/upgrade each homelab worker's host-unique arm64 runner scale set"
-# One release per arc/values-<host>-homelab-worker.yaml (plan
-# homelab-k8s-worker-nodes, research/009): runner pods only on that worker,
-# listener on the fleet's amd64 nodes, minRunners 0. CI reaches the worker only
-# after an operator lifts its admission hold. Each set runs in the fleet's
-# container mode, so its values name the hook pod template revision: publish
-# that revision (idempotent) and render the placeholder, as the phase-2
-# converge does for the fleet sets.
-hook_converge="${SCRIPT_DIR}/phase2/arc/converge-hook-pod-template.sh"
-rendered_dir="$(mktemp -d)"
-trap 'rm -rf "$rendered_dir"' EXIT
-for values in "${SCRIPT_DIR}"/arc/values-*-homelab-worker.yaml; do
-  [ -e "$values" ] || continue
-  release="$(basename "$values" .yaml)"
-  release="${release#values-}-k3s"
-  "$hook_converge" --publish
-  "$hook_converge" --render-values "$values" "$rendered_dir/${values##*/}"
-  helm upgrade --install "$release" \
-    --namespace "$RUNNERS_NAMESPACE" --create-namespace \
-    --version "$ARC_CHART_VERSION" \
-    -f "$rendered_dir/${values##*/}" \
-    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
-done
+# The homelab workers' host-unique arm64 sets (step 2b here until 2026-11-12)
+# are installed and kept current by phase2/reconstruct/converge-ci-stack.sh
+# step 7, from phase2/arc/worker/values-*-homelab-worker.yaml. This script ran
+# only at first install, so a set it installed kept the hook-template revision
+# of that day through every later hook change.
 
 # ---------------------------------------------------------------------------
 log "3. Verify the scale set is healthy (minRunners: 0 is expected — no idle pods yet)"

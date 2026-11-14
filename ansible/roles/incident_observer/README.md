@@ -20,8 +20,8 @@ at its first task and names the variables; nothing is written.
 The role runs on the `dev_hosts` group, whose one member is **`vps`**. Of the
 four inventory hosts it is the only one that already runs always-on fleet
 control services behind a tailnet TLS front — `tailscale serve` publishes its
-two Fabro servers and two further loopback services at `vps.perch-rudd.ts.net`
-— and that is in neither `ci_pool` (the k3s CI nodes, whose runners are the
+loopback services at `vps.perch-rudd.ts.net` (its two legacy Fabro servers
+were parked on 2026-11-12, livespec-dev-tooling-gxepwl) — and that is in neither `ci_pool` (the k3s CI nodes, whose runners are the
 observer's callers) nor `sandbox_hosts` (the Fabro factory host `gmktec-xubuntu`,
 which runs the petri server but executes candidate code in its sandboxes).
 The controller's directory must live outside candidate checkouts, the tenant,

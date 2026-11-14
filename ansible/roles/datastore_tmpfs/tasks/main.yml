@@ -1,6 +1,9 @@
 ---
-# datastore_tmpfs — the tmpfs mount unit for the k3s kine/SQLite datastore,
-# ENABLED for the next boot and NEVER started.
+# datastore_tmpfs — the tmpfs mount unit for the k3s datastore (embedded etcd
+# since livespec-dev-tooling-qy2nzf; kine/SQLite before it), ENABLED for the
+# next boot and NEVER started. A size change in the committed unit is applied to
+# an already-mounted tmpfs by `mount -o remount`, which keeps its contents (see
+# the remount block below); the unit itself is never stopped or restarted.
 #
 # Replaces ci-runner/k3s/phase2/datastore-tmpfs/install-datastore-tmpfs.sh.
 #
@@ -77,6 +80,94 @@
 
 - name: Publish a changed unit before enabling it
   ansible.builtin.meta: flush_handlers
+
+# A CHANGED SIZE REACHES THE MOUNTED TMPFS BY REMOUNT, NEVER BY A UNIT RESTART.
+# A daemon-reload (the handler above) does not remount an active mount, so a size
+# change in the committed unit would otherwise wait for the next boot. Stopping
+# or restarting the unit would unmount the tmpfs and empty the datastore, and the
+# k3s drop-in's RequiresMountsFor= would stop k3s with it. `mount -o remount,
+# size=` changes only the ceiling and keeps every file (livespec-dev-tooling-qy2nzf,
+# coordinator ruling 2026-11-11). Nothing here notifies a handler.
+- name: Read the mounted datastore tmpfs and its size
+  ansible.builtin.command:
+    argv: [findmnt, -bno, "FSTYPE,SIZE", --mountpoint, "{{ datastore_tmpfs_mount_point }}"]
+  register: datastore_tmpfs_mounted
+  check_mode: false
+  changed_when: false
+  failed_when: datastore_tmpfs_mounted.rc not in [0, 1]
+  become: true
+
+- name: Derive whether the mounted tmpfs needs the committed size
+  ansible.builtin.set_fact:
+    datastore_tmpfs_size_bytes: "{{ datastore_tmpfs_size | human_to_bytes }}"
+    datastore_tmpfs_resize_needed: >-
+      {{ datastore_tmpfs_mounted.rc == 0
+         and (datastore_tmpfs_mounted.stdout.split() | first) == 'tmpfs'
+         and (datastore_tmpfs_mounted.stdout.split() | last | int) != (datastore_tmpfs_size | human_to_bytes | int) }}
+
+- name: Read the datastore file before the remount
+  ansible.builtin.stat:
+    path: "{{ datastore_tmpfs_mount_point }}/state.db"
+    get_checksum: false
+  register: datastore_tmpfs_state_before
+  check_mode: false
+  become: true
+  when: datastore_tmpfs_resize_needed | bool
+
+- name: Report the remount a check run would apply
+  ansible.builtin.debug:
+    msg: >-
+      Would remount {{ datastore_tmpfs_mount_point }} from
+      {{ datastore_tmpfs_mounted.stdout.split() | last }} bytes to size={{ datastore_tmpfs_size }}
+      ({{ datastore_tmpfs_size_bytes }} bytes) with `mount -o remount`; the mount unit is
+      neither stopped nor restarted.
+  changed_when: true
+  when: datastore_tmpfs_resize_needed | bool and ansible_check_mode
+
+- name: Remount the datastore tmpfs at the committed size, keeping its contents
+  ansible.builtin.command:
+    argv: [mount, -o, "remount,size={{ datastore_tmpfs_size }}", "{{ datastore_tmpfs_mount_point }}"]
+  changed_when: true
+  become: true
+  when: datastore_tmpfs_resize_needed | bool and not ansible_check_mode
+
+- name: Read the remounted tmpfs size and the datastore file back
+  ansible.builtin.command:
+    argv: [findmnt, -bno, "FSTYPE,SIZE", --mountpoint, "{{ datastore_tmpfs_mount_point }}"]
+  register: datastore_tmpfs_remounted
+  check_mode: false
+  changed_when: false
+  become: true
+  when: datastore_tmpfs_resize_needed | bool and not ansible_check_mode
+
+- name: Read the datastore file after the remount
+  ansible.builtin.stat:
+    path: "{{ datastore_tmpfs_mount_point }}/state.db"
+    get_checksum: false
+  register: datastore_tmpfs_state_after
+  check_mode: false
+  become: true
+  when: datastore_tmpfs_resize_needed | bool and not ansible_check_mode
+
+- name: Refuse a remount that did not take the size or did not keep the datastore
+  ansible.builtin.assert:
+    that:
+      - (datastore_tmpfs_remounted.stdout.split() | first) == 'tmpfs'
+      - (datastore_tmpfs_remounted.stdout.split() | last | int) == (datastore_tmpfs_size_bytes | int)
+      - (not datastore_tmpfs_state_before.stat.exists) or datastore_tmpfs_state_after.stat.exists
+      - >-
+        (not datastore_tmpfs_state_before.stat.exists)
+        or datastore_tmpfs_state_after.stat.inode == datastore_tmpfs_state_before.stat.inode
+    fail_msg: >-
+      The remount of {{ datastore_tmpfs_mount_point }} read back
+      '{{ datastore_tmpfs_remounted.stdout }}' against {{ datastore_tmpfs_size_bytes }} bytes, or
+      state.db did not survive it (before: {{ datastore_tmpfs_state_before.stat | default({}) }}).
+    success_msg: >-
+      {{ datastore_tmpfs_mount_point }} is tmpfs at {{ datastore_tmpfs_remounted.stdout.split() | last }}
+      bytes; state.db kept inode {{ datastore_tmpfs_state_after.stat.inode | default('n/a') }}
+      ({{ datastore_tmpfs_state_before.stat.size | default('absent') }} bytes before,
+      {{ datastore_tmpfs_state_after.stat.size | default('absent') }} after)
+  when: datastore_tmpfs_resize_needed | bool and not ansible_check_mode
 
 - name: Enable the datastore mount for the next boot
   # `enabled: true` and NO `state:`. Anything that started this mount now would

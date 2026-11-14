@@ -33,6 +33,16 @@ CLI:
                   must run the full aggregate.
         Never blocks a push — any error exits 1 (triggers full run).
 
+    python -m livespec_dev_tooling.green_token write --pre-commit-hook
+        As `write`, from the pre-commit hook's local aggregate: writes
+        nothing in a repository that sets both `delegated_gate` and
+        `delegated_pre_commit`.
+
+    python -m livespec_dev_tooling.green_token pre-push-evidence
+        Exit 0 and print the gate Job, the tree and each member it ran
+        and passed, one per line, when a delegated pre-commit verdict
+        qualifies for this push; exit 1 otherwise.
+
     python -m livespec_dev_tooling.green_token world-reading TARGET ...
         Print, one per line, exactly those given targets that are
         declared world-reading or carry no purity declaration — the
@@ -79,10 +89,22 @@ from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
     is_normal_validation,
     load_tree_hash,
     persist_pre_commit_evidence,
-    read_evidence,
 )
 from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
     index_tree_hash as _index_tree_hash,
+)
+from livespec_dev_tooling._green_token_evidence import (  # noqa: E402
+    read_evidence as _read_pre_commit_evidence,
+)
+from livespec_dev_tooling._green_token_git import (  # noqa: E402
+    git_dir,
+    head_tree_hash,
+    worktree_is_clean,
+)
+from livespec_dev_tooling._pre_push_evidence import (  # noqa: E402
+    accepted_lines,
+    pre_commit_hook_writes_no_token,
+    refuses_pre_commit_token,
 )
 
 __all__: list[str] = []
@@ -93,48 +115,14 @@ _WRITE_PRE_COMMIT = "write-pre-commit"
 _CHECK = "check"
 _WORLD_READING = "world-reading"
 _UNDECLARED = "undeclared"
+_PRE_PUSH_EVIDENCE = "pre-push-evidence"
 _PRE_COMMIT_ARGUMENT_COUNT = 2
-
-
-def _git_dir(*, cwd: Path) -> Path:
-    """Return the per-worktree git directory (always absolute path)."""
-    result = subprocess.run(  # noqa: S603
-        ["git", "rev-parse", "--absolute-git-dir"],  # noqa: S607
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return Path(result.stdout.strip())
-
-
-def _head_tree_hash(*, cwd: Path) -> str:
-    """Return the tree SHA of the current HEAD commit."""
-    result = subprocess.run(  # noqa: S603
-        ["git", "rev-parse", "HEAD^{tree}"],  # noqa: S607
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
-
-
-def _worktree_is_clean(*, cwd: Path) -> bool:
-    """Return True when the worktree has no uncommitted modifications."""
-    result = subprocess.run(  # noqa: S603
-        ["git", "status", "--porcelain"],  # noqa: S607
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip() == ""
+_COMMANDS = (_WRITE, _WRITE_PRE_COMMIT, _CHECK, _WORLD_READING, _UNDECLARED, _PRE_PUSH_EVIDENCE)
 
 
 def _token_path(*, cwd: Path) -> Path:
     """Return the absolute path to the green token file for this worktree."""
-    return _git_dir(cwd=cwd) / _TOKEN_FILE
+    return git_dir(cwd=cwd) / _TOKEN_FILE
 
 
 def _load_stored_tree_hash(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> str | None:
@@ -147,17 +135,30 @@ def write_token(
     cwd: Path,
     log: structlog.stdlib.BoundLogger,
     validation: ValidationScope = NORMAL_VALIDATION,
+    pre_commit_hook: bool = False,
 ) -> int:
     """Write a green token for the current HEAD tree to the git dir.
 
     Returns 0 on success and also on any error — a failed write must
     never abort a successful check aggregate (strictly advisory-local).
+
+    `pre_commit_hook` is the marker the pre-commit hook's local aggregate
+    carries. In a repository that sets both `delegated_gate` and
+    `delegated_pre_commit` that aggregate writes no token, because there a
+    local pre-commit pass never stands in for the pre-push gate; everywhere
+    else the marker changes nothing.
     """
     if not is_normal_validation(mode=validation.mode, scope=validation.scope):
         log.warning("green token write refused: normal full-suite evidence required")
         return 1
+    if pre_commit_hook and pre_commit_hook_writes_no_token(cwd=cwd):
+        log.info(
+            "green token not written by the pre-commit hook's local aggregate",
+            reason="both delegated keys are set: no local pre-commit pass stands in for pre-push",
+        )
+        return 0
     try:
-        tree_hash = _head_tree_hash(cwd=cwd)
+        tree_hash = head_tree_hash(cwd=cwd)
         path = _token_path(cwd=cwd)
         _ = path.write_text(
             json.dumps({"tree_hash": tree_hash, "mode": "normal", "scope": "full-suite"}),
@@ -203,7 +204,7 @@ def write_pre_commit_evidence(
 
 def read_pre_commit_evidence(*, cwd: Path) -> PreCommitAggregateEvidence | None:
     """Return valid full pre-commit evidence, or None when it cannot be established."""
-    return read_evidence(path=_token_path(cwd=cwd))
+    return _read_pre_commit_evidence(path=_token_path(cwd=cwd))
 
 
 def check_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
@@ -213,10 +214,16 @@ def check_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     Returns 1 when the token is absent, stale, or the worktree is dirty
     (caller must run the full aggregate).
     """
+    if refuses_pre_commit_token(cwd=cwd, token_path=_token_path(cwd=cwd)):
+        log.info(
+            "green token check: the token is pre-commit aggregate evidence; running full aggregate",
+            reason="both delegated keys are set, so no pre-commit evidence stands in for pre-push",
+        )
+        return 1
     stored = _load_stored_tree_hash(cwd=cwd, log=log)
     if stored is None:
         return 1
-    current = _head_tree_hash(cwd=cwd)
+    current = head_tree_hash(cwd=cwd)
     if current != stored:
         log.info(
             "green token check: tree hash mismatch; running full aggregate",
@@ -224,7 +231,7 @@ def check_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
             current_tree_hash=current,
         )
         return 1
-    if not _worktree_is_clean(cwd=cwd):
+    if not worktree_is_clean(cwd=cwd):
         log.info(
             "green token check: worktree has uncommitted changes; running full aggregate",
         )
@@ -343,7 +350,7 @@ def main() -> int:
     )
     _ = parser.add_argument(
         "command",
-        choices=[_WRITE, _WRITE_PRE_COMMIT, _CHECK, _WORLD_READING, _UNDECLARED],
+        choices=_COMMANDS,
         help=(
             "'write' records a green token; 'check' tests if the token is valid; "
             "'world-reading' prints the given targets a token match may not stand in "
@@ -356,12 +363,21 @@ def main() -> int:
         default=[],
         help="The caller's own check target names, for the two purity subcommands.",
     )
+    _ = parser.add_argument(
+        "--pre-commit-hook",
+        action="store_true",
+        help="'write' only: the pre-commit hook's local aggregate is the caller.",
+    )
     parsed = parser.parse_args()
     cwd = Path.cwd()
     targets: list[str] = list(parsed.targets)
 
     if parsed.command == _WRITE:
-        return write_token(cwd=cwd, log=log)
+        return write_token(cwd=cwd, log=log, pre_commit_hook=bool(parsed.pre_commit_hook))
+    if parsed.command == _PRE_PUSH_EVIDENCE:
+        lines = accepted_lines(cwd=cwd, log=log)
+        _write(text="".join(f"{line}\n" for line in lines or ()))
+        return 1 if lines is None else 0
     if parsed.command == _WRITE_PRE_COMMIT:
         if len(targets) != _PRE_COMMIT_ARGUMENT_COUNT:
             parser.error("write-pre-commit needs RUN_ID and OUTPUT_CHECKSUM")

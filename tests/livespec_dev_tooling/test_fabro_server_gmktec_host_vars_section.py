@@ -84,7 +84,9 @@ _DEPLOYED_COMMIT = "9f6c38f"
 # the fleet instance is pinned to it too.
 # 2026-11-06: every gmktec instance is pinned to bbe6938, 85af354 plus the
 # Petri c6bfd5e3 output-drain fix (thewoolleyman/fabro#33).
-_FLEET_COMMIT = "bbe6938"
+# 2026-11-12: every gmktec instance is pinned to d22808f, the 0.408 build the
+# candidate proved (bd-ib-tcdmkr).
+_FLEET_COMMIT = "d22808f"
 # The candidate's build: the carrier tip on that branch, the fleet build plus the
 # node name on run_turn spans (thewoolleyman/fabro#14). The maintainer ruled it
 # onto the candidate and fabro-server-mi-homelab on 2026-11-02 (plan
@@ -95,7 +97,10 @@ _FLEET_COMMIT = "bbe6938"
 # 2026-11-09: the candidate alone runs 85071c8, Fabro 0.408.0-nightly.0, the carrier
 # rebased onto upstream v0.408.0-nightly.0 (livespec-orchestrator-beads-fabro
 # bd-ib-qx45e6, plan fabro-currency), ahead of the fleet instance.
-_CANDIDATE_COMMIT = "85071c8"
+# 2026-11-11: briefly back on bbe6938 for sandbox-driver-kubernetes v0.8.3's one-pod
+# parity sample (bd-ib-u4fp5z); after it passed, the candidate returned to 85071c8.
+# 2026-11-12: d22808f, 85071c8 plus the sqlx patch for RUSTSEC-2026-0459 (bd-ib-tcdmkr).
+_CANDIDATE_COMMIT = "d22808f"
 _PINNED_COMMIT = {"fabro-server": _FLEET_COMMIT, "fabro-server-candidate": _CANDIDATE_COMMIT}
 _SUPERSEDED_CARRIER = "adeefec"
 _SUPERSEDED_BUILD_REFERENCE = "#1048"
@@ -150,6 +155,18 @@ def _environment_ids(*, body: str) -> list[str]:
     ids = re.findall(r"^      - id: (?P<id>\S+)$", body, re.MULTILINE)
     assert ids, f"{_HOST_VARS} must declare at least one environment for this instance"
     return ids
+
+
+def _retired_environment_ids(*, body: str) -> list[str]:
+    """Every deliberately retired catalog id an instance block declares."""
+    declared = re.search(
+        r"^    retired_environments:\n(?P<ids>(?:      - \S+\n)*)", body, re.MULTILINE
+    )
+    assert declared is not None, (
+        f"{_HOST_VARS} must declare `retired_environments` when an instance deliberately "
+        "removes catalog entries"
+    )
+    return re.findall(r"^      - (?P<id>\S+)$", declared["ids"], re.MULTILINE)
 
 
 def test_the_section_describes_both_instances_the_host_vars_declare() -> None:
@@ -228,7 +245,7 @@ def test_the_section_states_the_fleet_instances_concurrency_and_environment_ids(
         f"{runs} for `{_FLEET_UNIT}`; {_HOST_VARS} declares it, and the section's previous "
         f"figure was the one two directives ago"
     )
-    for environment in ("livespec-ci", "livespec-ci-rust", "livespec-ci-k8s"):
+    for environment in ("factory-python", "factory-python-rust"):
         assert environment in _environment_ids(body=body), (
             f"{_HOST_VARS} must still declare the `{environment}` environment for "
             f"`{_FLEET_UNIT}`: the prose below states that it does"
@@ -237,6 +254,15 @@ def test_the_section_states_the_fleet_instances_concurrency_and_environment_ids(
             f"the {_HOST_SECTION} section must state the environment id `{environment}` "
             f"that {_HOST_VARS} declares for `{_FLEET_UNIT}`: a dispatch reaches this "
             f"instance only through a factory entry naming one of them"
+        )
+    for environment in ("livespec-ci", "livespec-ci-rust", "livespec-ci-k8s"):
+        assert environment in _retired_environment_ids(body=body), (
+            f"{_HOST_VARS} must list the retired `{environment}` catalog id for "
+            f"`{_FLEET_UNIT}`: deleting it is an explicit, run-guarded action"
+        )
+        assert f"`{environment}`" in section and "retired" in section, (
+            f"the {_HOST_SECTION} section must describe `{environment}` as retired, "
+            "rather than leaving an operator to mistake it for an active environment"
         )
 
 

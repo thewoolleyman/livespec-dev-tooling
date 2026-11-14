@@ -11,6 +11,7 @@ import importlib.util
 import inspect
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import structlog
@@ -153,6 +154,12 @@ def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
     monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "same-tree")
     suite_runs: list[object] = []
     monkeypatch.setattr(mod, "run_suite", lambda **kwargs: suite_runs.append(kwargs))
+    telemetry: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        mod,
+        "emit_suite_green_outcome",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("refactor: behaviour-preserving change\n", encoding="utf-8")
 
@@ -168,6 +175,53 @@ def test_same_tree_full_pre_commit_evidence_reuses_the_aggregate_run(
     message = msg_path.read_text(encoding="utf-8")
     assert "TDD-Suite-Green-Output-Checksum: sha256:aggregate-output" in message
     assert "TDD-Suite-Green-Producer: pre-commit-aggregate:run-123" in message
+    assert {key: value for key, value in telemetry[0].items() if key != "duration_seconds"} == {
+        "cwd": str(tmp_path),
+        "tree_hash": "same-tree",
+        "mode": "reused",
+        "scope": "full-suite",
+        "outcome": "green",
+    }
+    assert isinstance(telemetry[0]["duration_seconds"], float)
+
+
+def test_suite_green_telemetry_stays_fail_soft_when_git_probes_are_unavailable(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A receiver event never changes a suite-green leg's own result."""
+
+    from livespec_dev_tooling import gate_outcome_telemetry
+
+    delivered: list[dict[str, Any]] = []
+
+    def unavailable(*args: object, **kwargs: object) -> object:
+        _ = (args, kwargs)
+        raise OSError("git unavailable")
+
+    def record(*, endpoint: str, payload: dict[str, object]) -> None:
+        delivered.append({"endpoint": endpoint, "payload": payload})
+
+    monkeypatch.setattr(gate_outcome_telemetry.subprocess, "run", unavailable)
+    monkeypatch.setattr(gate_outcome_telemetry, "post_span", record)
+    monkeypatch.delenv(gate_outcome_telemetry.ENDPOINT_ENV, raising=False)
+    monkeypatch.delenv("LIVESPEC_SANDBOX_OTEL_ENDPOINT", raising=False)
+
+    gate_outcome_telemetry.emit_suite_green_outcome(
+        cwd=str(tmp_path),
+        duration_seconds=None,
+        mode="ran",
+        outcome="green",
+        scope="full-suite",
+        tree_hash="same-tree",
+    )
+
+    attributes = delivered[0]["payload"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0][
+        "attributes"
+    ]
+    keys = {attribute["key"] for attribute in attributes}
+    assert delivered[0]["endpoint"] == gate_outcome_telemetry.DEFAULT_ENDPOINT
+    assert "repo" not in keys
+    assert "duration_ms" not in keys
 
 
 @pytest.mark.parametrize("evidence_tree", [None, "different-tree"])
@@ -348,6 +402,62 @@ def test_suite_green_uses_job_evidence_and_falls_back_when_it_has_no_verdict(
     ]
 
 
+def test_test_only_probe_reuses_its_delegated_verdict_for_suite_green_trailers(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A passing test-only commit delegates once and retains that Job evidence.
+
+    The routing probe distinguishes a Red candidate from a passing test-only
+    cleanup.  Its staged-test verdict is already exactly the suite-green
+    verdict, so the suite-green leg must consume it rather than run pytest a
+    second time on either the committing host or another gate Job.
+    """
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    assert hasattr(mod, "run_staged_tests_probe")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    replay_argvs: list[list[str]] = []
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **kwargs: (
+            replay_argvs.append(kwargs["pytest_argv"])
+            or ReplayVerdict(
+                local=False,
+                reason="the Job passed",
+                job_name="gate-staged-tests-1",
+                tree_hash="b" * 40,
+                exit_status=0,
+                output_checksum="sha256:delegated-output",
+            )
+        ),
+    )
+    monkeypatch.setattr(mod, "run_suite", lambda **_kwargs: pytest.fail("pytest ran locally"))
+    monkeypatch.setattr(mod, "staged_tree_hash", lambda **_kwargs: "b" * 40)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: tidy a test\n", encoding="utf-8")
+    log = _RecordingLog()
+
+    probe = mod.run_staged_tests_probe(log=log, tests_paths=["tests/test_changed.py"])
+
+    assert (
+        mod.handle_suite_green_mode(
+            msg_path=message,
+            log=log,
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+            precomputed_run=probe,
+        )
+        == 0
+    )
+    assert replay_argvs == [["pytest", "tests/test_changed.py"]]
+    final_message = message.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Scope: staged-tests" in final_message
+    assert "TDD-Suite-Green-Gate-Job: gate-staged-tests-1" in final_message
+
+
 def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -390,6 +500,47 @@ def test_silent_suite_green_stall_names_the_window_and_missing_test_completion(
     assert fields["stall_seconds"] == 900
     assert "900s" in event
     assert "no test had completed" in event
+
+
+def test_a_refused_suite_green_replay_refuses_the_commit_instead_of_running_the_suite_locally(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused resource declaration refuses suite-green; it is no absent verdict (c3nd2h).
+
+    Rerunning the suite on the committing host would let an unusable
+    declaration pass as a green commit, so the leg stops before any suite run
+    and before any trailer is written.
+    """
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(
+            local=False,
+            reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
+            refused=True,
+        ),
+    )
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+    # A local suite run fails the test outright: the refusal must come first.
+    monkeypatch.setattr(mod, "run_suite", lambda **_kwargs: pytest.fail("the suite ran locally"))
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: suite green\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as stopped:
+        _ = mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=_RecordingLog(),
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+        )
+
+    assert stopped.value.code == 1
+    assert "TDD-Suite-Green" not in message.read_text(encoding="utf-8")
+    assert "gate_cpu" in capsys.readouterr().err
 
 
 class _RecordingLog:

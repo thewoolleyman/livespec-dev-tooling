@@ -9,6 +9,7 @@ import importlib.util
 import inspect
 import os
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -127,24 +128,80 @@ def test_run_suite_captures_output_and_returncode() -> None:
     assert "err" in run.output
 
 
-def test_interactive_collection_and_worker_startup_output_renews_the_stall_window() -> None:
-    """A terminal-aware pytest session reports work before any test completes."""
+# The child declares the run's time itself and moves it only after the runner
+# has received its previous line: the verdict rests on output renewing the
+# window, never on how fast the host starts a process or schedules a thread.
+_RENDEZVOUS_CHILD = """
+import os, sys, time
+
+now_path, seen_path, polls_path = sys.argv[1:4]
+
+
+def read(path):
+    with open(path) as handle:
+        return float(handle.read())
+
+
+def put(path, value):
+    with open(path + ".tmp", "w") as handle:
+        handle.write(value)
+    os.replace(path + ".tmp", path)
+
+
+liveness_deadline = time.monotonic() + 120
+
+
+def wait_past(path, count):
+    while read(path) <= count:
+        if time.monotonic() > liveness_deadline:
+            sys.exit(3)
+        time.sleep(0.01)
+
+
+assert sys.stdout.isatty()
+for now, line in (("0", "collecting tests"), ("1.5", "bringing up xdist workers"), ("3", ".")):
+    put(now_path, now)
+    seen = read(seen_path)
+    print(line, flush=True)
+    wait_past(seen_path, seen)
+wait_past(polls_path, read(polls_path))
+"""
+
+
+def _bump(*, counter: Path) -> None:
+    staged = counter.with_name(counter.name + ".tmp")
+    _ = staged.write_text(str(int(float(counter.read_text())) + 1))
+    _ = staged.replace(counter)
+
+
+def test_interactive_collection_and_worker_startup_output_renews_the_stall_window(
+    *, tmp_path: Path
+) -> None:
+    """A terminal-aware pytest session reports work before any test completes.
+
+    The clock reads the time the child declares. The child moves it 1.5 s per
+    line, and only once the runner has stamped its previous line, so the run
+    spans 3 s against a 2 s window. It survives only because each line renewed
+    the window, and it then waits for one more stall check at the 3 s mark.
+    """
     mod = _load()
+    now, seen, polls = tmp_path / "now", tmp_path / "seen", tmp_path / "polls"
+    for path in (now, seen, polls):
+        _ = path.write_text("0")
+    runner_thread = threading.get_ident()
+
+    def clock() -> float:
+        reading = float(now.read_text())
+        _bump(counter=polls if threading.get_ident() == runner_thread else seen)
+        return reading
+
     run = mod.run_suite(
-        argv=[
-            sys.executable,
-            "-c",
-            "import sys, time; "
-            "assert sys.stdout.isatty(); "
-            "print('collecting tests', flush=True); "
-            "time.sleep(1.25); "
-            "print('bringing up xdist workers', flush=True); "
-            "time.sleep(1.25); "
-            "print('.', flush=True)",
-        ],
+        argv=[sys.executable, "-c", _RENDEZVOUS_CHILD, str(now), str(seen), str(polls)],
         bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+        clock=clock,
     )
 
+    assert run.kill_reason is None
     assert run.returncode == 0
     assert run.timed_out is False
     assert "collecting tests" in run.output

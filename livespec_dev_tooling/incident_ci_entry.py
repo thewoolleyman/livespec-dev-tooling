@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from livespec_dev_tooling._check_target_runner import (
     BLOCKED,
@@ -22,10 +23,17 @@ from livespec_dev_tooling._dispatcher_coverage_namespaces import (
     COVERAGE_CONSUMERS,
     isolated_environments,
 )
+from livespec_dev_tooling._incident_enablement_reading import (
+    REVERT_PHASES,
+    EnablementReader,
+    fence_refusal,
+)
+from livespec_dev_tooling._pyright_warmup import warm_locked_pyright
 from livespec_dev_tooling.allowed_cpus import current_allowed_cpu_count
 from livespec_dev_tooling.incident_ci_authority import CiAuthorityBoundary
 from livespec_dev_tooling.incident_ci_payload import decode_authority, decode_outcome, query_for
 from livespec_dev_tooling.incident_ci_policy import (
+    CiAuthority,
     CiEvent,
     CiOutcome,
     CiPlan,
@@ -34,7 +42,7 @@ from livespec_dev_tooling.incident_ci_policy import (
     aggregate_ci_results,
     select_ci_plan,
 )
-from livespec_dev_tooling.incident_execution import IncidentConfigurationRefusal
+from livespec_dev_tooling.incident_execution import IncidentConfigurationRefusal, OperationIdentity
 from livespec_dev_tooling.incident_transport import normal_child_environment
 
 __all__: list[str] = ["CiEntry"]
@@ -79,6 +87,7 @@ class _SharedAdmission:
 
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 @dataclass(frozen=True, kw_only=True)
 class CiEntry:
     """Bind each invocation and result to independently authenticated current policy."""
@@ -87,6 +96,7 @@ class CiEntry:
     targets: tuple[CiTarget, ...]
     current: Callable[..., bool] | None = None
     observer: Callable[..., bool] | None = None
+    enablement: EnablementReader | None = None
     admission_window_seconds: float = _ADMISSION_WINDOW_SECONDS
 
     def plan(self, *, event: CiEvent, payload: str, environ: Mapping[str, str]) -> CiPlan | None:
@@ -96,12 +106,14 @@ class CiEntry:
         if not normal and authority is None:
             return None
         trust = CiTrust(current=lambda _: False, observer=lambda _authority, _event: False)
+        read: EnablementReader | None = None
         if authority is not None:
             boundary = CiAuthorityBoundary(
                 observer_url=environ.get("LIVESPEC_INCIDENT_OBSERVER_URL", ""),
                 observer_token=environ.get("LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN", ""),
             )
             current, observer = self.current or boundary.current, self.observer or boundary.admitted
+            read = self.enablement or boundary.enablement
             query = query_for(authority=authority)
             trust = CiTrust(
                 current=lambda _: current(query=query),
@@ -114,7 +126,9 @@ class CiEntry:
             trust=trust,
             environ=normal_child_environment(environ=environ) if normal else environ,
         )
-        return result if isinstance(result, CiPlan) else None
+        if not isinstance(result, CiPlan):
+            return None
+        return result if authority is None or read is None else _fenced(plan=result, read=read)
 
     def execute(
         self,
@@ -157,6 +171,16 @@ class CiEntry:
         )
         if not admit():
             return 2
+        # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-xdt4ue
+        # Members fan out in parallel, so locked pyright is provisioned serially
+        # first, exactly as the normal parallel dispatcher does before it fans out:
+        # two pyright members started on a cold cache type-check against a
+        # half-written typeshed. A failed provisioning launches no member.
+        warmed = environ.get("LIVESPEC_PYRIGHT_WARMED") == "1"
+        if warm_locked_pyright(cwd=self.repo, already_warmed=warmed) != 0:
+            if echo is not None:
+                echo(text="::: pyright provisioning failed; no selected member launched\n")
+            return 1
 
         def echo_completed(*, outcome: TargetOutcome) -> None:
             code = _member_code(outcome=outcome)
@@ -226,6 +250,20 @@ class CiEntry:
         if isinstance(result, IncidentConfigurationRefusal):
             return {"status": "refused", "reason": result.detail}
         return {"status": "passed" if result.successful else "failed", **asdict(result)}
+
+
+def _fenced(*, plan: CiPlan, read: EnablementReader) -> CiPlan | None:
+    """Record the plan-time enablement reading; refuse what an armed answer requires."""
+    # Only an incident plan, whose authority binds a validated identity, is fenced.
+    identity = cast("OperationIdentity", cast("CiAuthority", plan.authority).context.identity)
+    reading = read(repository=identity.repository)
+    refusal = fence_refusal(
+        reading=reading, repository=identity.repository, revert=identity.phase in REVERT_PHASES
+    )
+    if refusal is not None:
+        _ = sys.stderr.write("incident-ci-refused: incident-not-enabled: " + refusal + "\n")
+        return None
+    return replace(plan, enablement=reading.record())
 
 
 def _member_code(*, outcome: TargetOutcome) -> int | None:

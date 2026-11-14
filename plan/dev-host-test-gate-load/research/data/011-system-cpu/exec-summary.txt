@@ -1,0 +1,32 @@
+execs in 20 s: 9074 (454/s); top (new comm <- parent comm):
+    1356  awk                <- bash
+     933  bash               <- bash
+     857  basename           <- bash
+     787  crictl             <- bash
+     436  cat                <- bash
+     408  tr                 <- bash
+     307  sed                <- bash
+     297  date               <- bash
+     265  mkdir              <- bash
+     218  tail               <- bash
+     209  grep               <- bash
+     166  uname              <- bash
+     140  bash               <- [pytest-xdist r
+     133  mv                 <- bash
+     133  git                <- tokio-runtime-w
+     133  curl               <- bash
+     131  flock              <- bash
+     118  git                <- bd-real
+CPU of processes that EXITED in 20 s: 6.92 cores; top:
+   2.32  bash
+   1.32  python3
+   0.43  kworker/12:1H
+   0.31  awk
+   0.28  basename
+   0.21  python
+   0.19  pgrep
+   0.18  tr
+   0.16  python3.14
+   0.15  cat
+   0.13  date
+   0.12  ps

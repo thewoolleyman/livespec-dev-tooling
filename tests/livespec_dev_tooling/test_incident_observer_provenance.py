@@ -255,6 +255,13 @@ _DECODER_USERS = frozenset(
     {"livespec_dev_tooling/_incident_provenance_protocol.py", _PROVENANCE_READER}
 )
 
+# A module may name the decoder's FILE as a repo-relative path literal without decoding
+# anything: the incident fleet audit's surface-roots table lists the files a surface is
+# served from. Such a module is allowed that path (and its f-string pieces) and nothing
+# else, so an import, alias, attribute or call of the decoder still flags it.
+_DECODER_PATH = "livespec_dev_tooling/_incident_provenance_protocol.py"
+_DECODER_PATH_NAMERS = frozenset({"livespec_dev_tooling/_incident_fleet_surface_files.py"})
+
 _AUTHORITY_USERS = frozenset(
     {
         "livespec_dev_tooling/_incident_original_run_ports.py",
@@ -393,8 +400,11 @@ def _identifiers(node: ast.AST) -> set[str]:
     return words
 
 
-def _signals(source: str) -> set[str]:
-    """Name which of the history, decoder and authority signals `source` carries."""
+def _signals(source: str, *, path_named: bool = False) -> set[str]:
+    """Name which of the history, decoder and authority signals `source` carries.
+
+    `path_named` allows the decoder's file path, and only it, as a string value.
+    """
     tree = ast.parse(source)
     docstrings = _docstring_ids(tree=tree)
     names = _bound_names(tree=tree)
@@ -405,7 +415,8 @@ def _signals(source: str) -> set[str]:
         tokens = {token for value in strings for token in value.split()}
         if _HISTORY_ACTION in strings or _HISTORY_ACTION in tokens:
             found.add("history")
-        if words & _DECODER_WORDS or any(w in v for v in strings for w in _DECODER_WORDS):
+        decoder_strings = {v for v in strings if not (path_named and _DECODER_PATH.endswith(v))}
+        if words & _DECODER_WORDS or any(w in v for v in decoder_strings for w in _DECODER_WORDS):
             found.add("decoder")
         if (
             words & _AUTHORITY_WORDS
@@ -437,7 +448,9 @@ def _scanned_modules(*, root: Path) -> dict[str, str]:
 
 def _modules_carrying(*, root: Path, signal: str) -> set[str]:
     return {
-        rel for rel, source in _scanned_modules(root=root).items() if signal in _signals(source)
+        rel
+        for rel, source in _scanned_modules(root=root).items()
+        if signal in _signals(source, path_named=rel in _DECODER_PATH_NAMERS)
     }
 
 
@@ -550,6 +563,18 @@ _SECOND_READERS: dict[str, tuple[str, str]] = {
 def test_the_guard_flags_a_second_reader_in_every_known_shape(shape: str) -> None:
     source, signal = _SECOND_READERS[shape]
     assert signal in _signals(source)
+
+
+_PATH_ONLY = '_P = "livespec_dev_tooling/"\nROOTS = (f"{_P}_incident_provenance_protocol.py",)\n'
+
+
+@pytest.mark.parametrize(
+    "shape", sorted(shape for shape, (_, signal) in _SECOND_READERS.items() if signal == "decoder")
+)
+def test_a_module_allowed_the_decoder_path_is_still_caught_using_the_decoder(shape: str) -> None:
+    assert "decoder" in _signals(_PATH_ONLY)
+    assert "decoder" not in _signals(_PATH_ONLY, path_named=True)
+    assert "decoder" in _signals(_PATH_ONLY + _SECOND_READERS[shape][0], path_named=True)
 
 
 @pytest.mark.parametrize(

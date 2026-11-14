@@ -59,17 +59,63 @@ fi
 
 ref_updates=0
 deleted_refs=0
-while IFS=' ' read -r local_ref local_oid _; do
+seed_or_preserve_only=1
+seed_or_preserve_refs=()
+while IFS=' ' read -r local_ref local_oid remote_ref remote_oid trailing; do
     [ -n "${local_ref}" ] || continue
     ref_updates=$((ref_updates + 1))
     case "${local_oid}" in
-        "" | *[!0]*) ;;
-        *) deleted_refs=$((deleted_refs + 1)) ;;
+        "" | *[!0]*)
+            if [ -z "${remote_ref}" ] || [ -n "${trailing}" ] \
+                || [[ ! "${local_oid}" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]] \
+                || [[ ! "${remote_oid}" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]; then
+                seed_or_preserve_only=0
+                continue
+            fi
+            case "${remote_ref}" in
+                refs/heads/needs-human/* | refs/heads/preserve/*)
+                    seed_or_preserve_refs+=("${remote_ref}") ;;
+                *) seed_or_preserve_only=0 ;;
+            esac
+            ;;
+        *)
+            deleted_refs=$((deleted_refs + 1))
+            # A deletion publishes no tree. It therefore neither needs an
+            # authorization check nor changes the classification of a push
+            # that does publish seed or preserve refs.
+            ;;
     esac
 done <<<"${push_refs}"
 
 if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; then
     echo ":: pre-push: skipping the gate - this push only deletes refs (${deleted_refs}), and a deletion publishes no tree to check"
+    exit 0
+fi
+
+# Seed and preserve refs are not merge candidates, but their declarations may
+# still require host-held authorization. A malformed ref list remains fully
+# gated; every declared authorization member runs before this path succeeds.
+if [ "${ref_updates}" -gt 0 ] && [ "${deleted_refs}" -lt "${ref_updates}" ] \
+    && [ "${seed_or_preserve_only}" -eq 1 ]; then
+    if ! authority_members="$(uv run python -m livespec_dev_tooling.check_authority members)"; then
+        echo "ERROR: pre-push could not resolve authorization-reading members for seed or preserve refs; refusing without the test aggregate" >&2
+        exit 1
+    fi
+    authority_status=0
+    while IFS= read -r authority_member; do
+        [ -n "${authority_member}" ] || continue
+        echo ":: pre-push: running authorization-reading member ${authority_member} on the pushing host for seed or preserve refs"
+        member_status=0
+        just "${authority_member}" || member_status=$?
+        if [ "${member_status}" -ne 0 ] && [ "${authority_status}" -eq 0 ]; then
+            authority_status="${member_status}"
+        fi
+    done <<<"${authority_members}"
+    if [ "${authority_status}" -ne 0 ]; then
+        echo ":: pre-push: refusing seed or preserve refs (${seed_or_preserve_refs[*]}) because an authorization-reading member failed; the test aggregate was not run" >&2
+        exit "${authority_status}"
+    fi
+    echo ":: pre-push: pushed only seed or preserve refs (${seed_or_preserve_refs[*]}); authorization-reading members passed and the test aggregate was not run"
     exit 0
 fi
 
@@ -99,6 +145,33 @@ fi
 if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     echo ":: pre-push: green token matched - tree byte-identical to last green check, so the token stands in for this tree's TREE-PURE members only; the world-reading members run here (CI is authoritative)"
     exec just hook_gate=1 token_match=1 check
+fi
+
+# THE SAME-TREE DELEGATED PRE-COMMIT VERDICT (livespec-dev-tooling-73ocxb; this
+# repo's SPECIFICATION/contracts.md §"Delegated pre-push gate", **Same-tree
+# delegated pre-commit verdict**). In a repository that sets both delegated_gate
+# and delegated_pre_commit, a pre-commit hook whose gate Job passed the FULL
+# aggregate of a clean staged tree recorded pre-push evidence naming that tree,
+# the Job, and the members the Job ran and passed. `green_token pre-push-evidence`
+# accepts it only while this worktree is clean and its HEAD tree is that tree,
+# and prints the Job, the tree and those members.
+#
+# Accepted, this push submits no gate Job and runs no full fall-through: the
+# aggregate runs on this host only the members that verdict does not cover, every
+# world-reading member and every authorization-reading member, and its exit
+# status refuses the push when one of them fails. A pre-commit aggregate that ran
+# on the committing host never records this evidence, so it never lands here.
+#
+# Below the green-token match on purpose: in such a repository the token can be
+# written only by a full `just check` outside the pre-commit hook, or by a
+# delegated pre-push pass, and either one is the Explicit local route.
+if pre_push_evidence="$(uv run python -m livespec_dev_tooling.green_token pre-push-evidence)"; then
+    LIVESPEC_PRE_PUSH_EVIDENCE_JOB="$(sed -n 1p <<<"${pre_push_evidence}")"
+    LIVESPEC_PRE_PUSH_EVIDENCE_TREE="$(sed -n 2p <<<"${pre_push_evidence}")"
+    LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS="$(sed -n '3,$p' <<<"${pre_push_evidence}" | tr '\n' ' ')"
+    export LIVESPEC_PRE_PUSH_EVIDENCE_JOB LIVESPEC_PRE_PUSH_EVIDENCE_TREE LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS
+    echo ":: pre-push: accepted the delegated pre-commit verdict of gate Job ${LIVESPEC_PRE_PUSH_EVIDENCE_JOB} for tree ${LIVESPEC_PRE_PUSH_EVIDENCE_TREE}; submitting no gate Job, and running here only the members it did not cover, every world-reading member and every authorization-reading member"
+    exec just hook_gate=1 check
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec

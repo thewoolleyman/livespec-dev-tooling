@@ -55,6 +55,9 @@ pytestmark = pytest.mark.consumer
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RENDERER = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "gates" / "render-gate-job.sh"
 _TEMPLATE = _RENDERER.parent / "gate-job-template.yaml"
+# The bounded forge-read retry the renderer inlines into the gate container; a
+# clone line extracted from the manifest runs through its `forge_retry`.
+_FORGE_RETRY = _RENDERER.parent / "forge-retry.sh"
 
 # The empty tree's hash — a real git object name, and the one the canned
 # `rev-parse HEAD^{tree}` below answers with.
@@ -250,6 +253,11 @@ fi
 [ "${3:-}" = "rev-parse" ] && echo "0000000000000000000000000000000000000000"
 exit 0
 """
+
+# The comparison of the checkout with the pushed tree the pod makes after its
+# preflight and before any recipe (livespec-dev-tooling-o4hkgh). The stub `git`
+# answers it with an empty status, which is a checkout still as pushed.
+_CHECKOUT_COMPARISON = "git status --porcelain"
 
 
 def _cross_repo_targets_block(*, siblings: tuple[tuple[str, str], ...]) -> str:
@@ -712,6 +720,7 @@ def test_a_pinned_pyright_is_warmed_serially_before_the_gate_recipe(*, tmp_path:
     )
     assert unpinned_invocations == [
         f"just --show {_CONSUMER_RECIPE}",
+        _CHECKOUT_COMPARISON,
         f"just {_CONSUMER_RECIPE}",
     ]
 
@@ -1160,7 +1169,7 @@ def test_the_gate_job_provisions_the_sibling_clones_the_consumers_checks_read(
         assert "@" not in command, f"a credential rides the {name} clone: {command}"
 
     assert [
-        command.split("'")[1]
+        next(token for token in command.split("'") if token.startswith("https://"))
         for command in _sibling_clone_commands(manifest=_rendered_for(repo_root=other))
     ] == [url for _name, url in _GADGET_SIBLINGS], (
         "a second declaration renders the same clones, so the set is a constant "
@@ -1455,9 +1464,15 @@ def test_a_private_sibling_clones_with_basic_x_access_token_not_a_bearer_header(
     (stub / "git").chmod(0o755)
     # The clone is the subject of an `if ! … ; then`, so the extracted line is
     # completed into a whole statement rather than having its wrapper stripped:
-    # the shape the renderer emits is then what runs.
+    # the shape the renderer emits is then what runs. It runs through the
+    # committed `forge_retry`, sourced exactly as the renderer inlines it, which
+    # hands git's own output to stderr beside its per-attempt log line.
     sent = subprocess.run(
-        ["bash", "-c", f"{private_clone.replace(mount, str(mounted))}\n  :\nfi\n"],
+        [
+            "bash",
+            "-c",
+            f"source '{_FORGE_RETRY}'\n{private_clone.replace(mount, str(mounted))}\n  :\nfi\n",
+        ],
         env={**os.environ, "PATH": f"{stub}:{os.environ['PATH']}"},
         capture_output=True,
         text=True,
@@ -1466,9 +1481,9 @@ def test_a_private_sibling_clones_with_basic_x_access_token_not_a_bearer_header(
 
     assert sent.returncode == 0, sent.stdout + sent.stderr
     expected = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    assert sent.stdout == f"Authorization: Basic {expected}", (
+    assert f"Authorization: Basic {expected}" in sent.stderr.splitlines(), (
         "the header the pod sends github.com is not Basic with the username "
-        f"x-access-token and the token as the password: {sent.stdout!r}"
+        f"x-access-token and the token as the password: {sent.stderr!r}"
     )
 
 
@@ -1518,7 +1533,11 @@ def test_a_red_members_verdict_names_the_member_not_a_fatal_from_its_own_output(
 
     # The Given, asserted rather than assumed: the recipe RAN, and the fixture
     # `FATAL:` really is inside that member's own captured output.
-    assert invoked == [f"just --show {_CONSUMER_RECIPE}", f"just {_CONSUMER_RECIPE}"]
+    assert invoked == [
+        f"just --show {_CONSUMER_RECIPE}",
+        _CHECKOUT_COMPARISON,
+        f"just {_CONSUMER_RECIPE}",
+    ]
     assert _MEMBER_FIXTURE_FATAL in stdout
     # The verdict STATE and the exit status are untouched by this item.
     assert returncode == 1
@@ -1618,7 +1637,11 @@ def test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape(
         summary_sequence=summary_sequence,
     )
 
-    assert invoked == [f"just --show {_CONSUMER_RECIPE}", f"just {_CONSUMER_RECIPE}"]
+    assert invoked == [
+        f"just --show {_CONSUMER_RECIPE}",
+        _CHECKOUT_COMPARISON,
+        f"just {_CONSUMER_RECIPE}",
+    ]
     assert returncode == 1
     assert "without naming a failing member" not in stderr, stderr
     verdict_line = next(

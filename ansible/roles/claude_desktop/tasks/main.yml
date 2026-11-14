@@ -35,9 +35,16 @@
   # Stored ASCII-armored. apt has accepted armored keyrings through signed-by
   # since 1.4, so unlike the 1Password path there is no dearmor step and no
   # second binary copy of the same key to keep in step.
+  #
+  # Pinned so that a host whose key already matches reports ok under --check and
+  # on apply: with no checksum get_url compares the existing file against an
+  # empty temporary file under --check and reports changed
+  # (livespec-dev-tooling-7g5qba). A vendor key rotation fails here loudly; bump
+  # claude_desktop_key_sha256 after verifying the new key.
   ansible.builtin.get_url:
     url: "{{ claude_desktop_key_url }}"
     dest: "{{ claude_desktop_keyring }}"
+    checksum: "sha256:{{ claude_desktop_key_sha256 }}"
     owner: root
     group: root
     mode: "0644"

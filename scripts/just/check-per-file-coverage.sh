@@ -44,10 +44,79 @@ coverage_file="${COVERAGE_FILE:-.coverage}"
 reuse_stamp="$(dirname "$coverage_file")/.livespec-coverage-reuse-token"
 failure_receipt="$(dirname "$coverage_file")/.livespec-coverage-failure-receipt"
 rm -f "$reuse_stamp" "$failure_receipt"
+
+# pytest-xdist's controller remains the process the shell launches; workers are
+# its direct children.  pytest-cov's combine and session-finish work happens in
+# that controller after those children exit.  Watch its CPU ticks during that
+# phase so a controller blocked with no workers cannot hold this gate forever.
+# Keep the production limit literal and unconfigurable: a caller must never be
+# able to turn a failing gate back into an unbounded wait.
+xdist_controller_idle_limit_seconds=600
+xdist_controller_watchdog_poll_seconds=5
+
+controller_cpu_ticks() {
+    local controller_pid="$1"
+    local controller_stat
+    local -a stat_fields
+
+    controller_stat="$(<"/proc/$controller_pid/stat")" || return 1
+    controller_stat="${controller_stat##*) }"
+    read -r -a stat_fields <<< "$controller_stat"
+    printf '%s\n' "$((stat_fields[11] + stat_fields[12]))"
+}
+
+watch_xdist_controller() {
+    local controller_pid="$1"
+    local watchdog_failure_file="$2"
+    local workers_seen=0
+    local idle_since=''
+    local last_cpu_ticks=''
+    local current_cpu_ticks
+    local now
+    local elapsed
+
+    while kill -0 "$controller_pid" 2>/dev/null; do
+        current_cpu_ticks="$(controller_cpu_ticks "$controller_pid" || true)"
+        if pgrep -P "$controller_pid" >/dev/null 2>&1; then
+            workers_seen=1
+            idle_since=''
+            last_cpu_ticks="$current_cpu_ticks"
+        elif [[ "$workers_seen" -eq 1 ]]; then
+            now="$(date +%s)"
+            if [[ -z "$idle_since" || "$current_cpu_ticks" != "$last_cpu_ticks" ]]; then
+                idle_since="$now"
+                last_cpu_ticks="$current_cpu_ticks"
+            else
+                elapsed=$((now - idle_since))
+                if ((elapsed >= xdist_controller_idle_limit_seconds)); then
+                    printf '%s\n' \
+                        "::error::check-per-file-coverage: pytest controller pid $controller_pid stalled after xdist workers exited; idle for ${elapsed} seconds" \
+                        > "$watchdog_failure_file"
+                    kill "$controller_pid" 2>/dev/null || true
+                    return
+                fi
+            fi
+        fi
+        sleep "$xdist_controller_watchdog_poll_seconds"
+    done
+}
+
+watchdog_failure_file="$(mktemp "${TMPDIR:-/tmp}/check-per-file-coverage-watchdog.XXXXXX")"
 status=0
 env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
     uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30 \
-    || status=$?
+    &
+pytest_controller_pid=$!
+watch_xdist_controller "$pytest_controller_pid" "$watchdog_failure_file" &
+watchdog_pid=$!
+wait "$pytest_controller_pid" || status=$?
+kill "$watchdog_pid" 2>/dev/null || true
+wait "$watchdog_pid" || true
+if [[ -s "$watchdog_failure_file" ]]; then
+    cat "$watchdog_failure_file" >&2
+    status=1
+fi
+rm -f "$watchdog_failure_file"
 if [[ "$status" -ne 0 ]]; then
     if failure_id="$(scripts/just/coverage-reuse-id.sh failure)"; then
         printf '%s %s\n' "$failure_id" "$status" > "$failure_receipt"

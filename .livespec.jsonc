@@ -142,7 +142,8 @@
       "SPECIFICATION/non-functional-requirements.md §\"Toolchain pins\""
     ],
     "livespec-orchestrator-beads-fabro": [
-      "SPECIFICATION/contracts.md §\"Factory addresses resolved from a host registry\""
+      "SPECIFICATION/contracts.md §\"Factory addresses resolved from a host registry\"",
+      "SPECIFICATION/contracts.md §\"`capture-work-item`\""
     ],
     "livespec-driver-codex": [
       "SPECIFICATION/contracts.md §\"Codex hook-cache compatibility\""
@@ -174,12 +175,12 @@
       // currently fires `warn` against "master" pins, which is expected
       // during bootstrap.
       "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "v0.47.3"
+      "pinned": "v0.47.5"
     }
   },
   "livespec-orchestrator-beads-fabro": {
     "format": "beads",
-    "compat": { "livespec": ">=0.1.0,<1.0.0", "pinned": "v0.47.3" },
+    "compat": { "livespec": ">=0.1.0,<1.0.0", "pinned": "v0.47.5" },
     // Per-repo beads tenant CONNECTION block. tenant==database==server_user is the load-bearing
     // tenant identity (one ≤32-char Dolt name serving all three). The beads issue-ID `prefix` is
     // bd's server-stored create-prefix — a short alias that MAY be DECOUPLED from the tenant DB
@@ -218,13 +219,6 @@
       // be closed, regroomed, dispatched or parented; only record_detection_run
       // may append comments to it.
       "detection_coverage_anchor": "livespec-dev-tooling-7bmx5e",
-      // INTERIM (2026-11-04, legacy-coordinator-agent ruling under R493; plan
-      // stall-watchdog-false-kills, bd-ib-laf735): petri `fabro events` reads of long
-      // runs exceed the watchdog probe timeout, and a failed read is counted as quiet
-      // time, so the 7200 s default cancels runs that are still progressing (4 of 4
-      // petri cancels on 2026-11-04 were false kills). 21600 s leaves a silent run to
-      // the whole-run wall budget. REVERT this key once bd-ib-snq7o6 is released.
-      "stall_timeout_seconds": 21600,
       // CUTOVER (2026-11-06, livespec-dev-tooling-truk55). With this key true every
       // claim writer of this tenant (every Dispatcher, intake, the human valves and
       // reconciliation) changes an item's status, `fabro` assignee or run stamp only
@@ -566,7 +560,7 @@
         "proof_grade_route": 600
       },
 
-      "wip_cap": 10,
+      "wip_cap": 14,
       // ONE registry-backed entry, naming no machine. The Dispatcher resolves
       // `petri` by name from `/etc/livespec/fabro-factories.json`, which this
       // repository's own `fabro_factory_registry` role renders on every

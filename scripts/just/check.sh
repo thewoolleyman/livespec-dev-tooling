@@ -13,6 +13,28 @@ if [ -n "${EXPEDITED_INCIDENT_RESPONSE:-}${EXPEDITED_INCIDENT_RESPONSE_REVERT:-}
     unset EXPEDITED_INCIDENT_RESPONSE EXPEDITED_INCIDENT_RESPONSE_REVERT
 fi
 
+# TWO CALLER MARKERS, read once and UNSET before anything else runs, so no member
+# this aggregate dispatches inherits either one (livespec-dev-tooling-73ocxb).
+#
+# LIVESPEC_PRE_COMMIT_HOOK is set by scripts/just/check-pre-commit.sh, and by
+# nothing else, on the local `just check` the pre-commit hook runs. In a
+# repository that sets both `delegated_gate` and `delegated_pre_commit`, that run
+# writes no green token: there a local pre-commit pass never stands in for the
+# pre-push gate (SPECIFICATION/contracts.md §"Delegated pre-push gate",
+# **Explicit local route**). `green_token write --pre-commit-hook` decides it, so
+# every other repository keeps writing the token exactly as before.
+#
+# LIVESPEC_PRE_PUSH_EVIDENCE_{JOB,TREE,MEMBERS} are set by
+# scripts/just/check-pre-push.sh, and by nothing else, when it accepts a delegated
+# pre-commit gate Job's verdict for this clean worktree's HEAD tree (**Same-tree
+# delegated pre-commit verdict**). See the evidence block below.
+pre_commit_hook_marker="${LIVESPEC_PRE_COMMIT_HOOK:-}"
+evidence_job="${LIVESPEC_PRE_PUSH_EVIDENCE_JOB:-}"
+evidence_tree="${LIVESPEC_PRE_PUSH_EVIDENCE_TREE:-}"
+evidence_members="${LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS:-}"
+unset LIVESPEC_PRE_COMMIT_HOOK LIVESPEC_PRE_PUSH_EVIDENCE_JOB \
+    LIVESPEC_PRE_PUSH_EVIDENCE_TREE LIVESPEC_PRE_PUSH_EVIDENCE_MEMBERS
+
 mapfile -t targets < <(
     sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt \
         | grep -E '^check-' || true
@@ -213,6 +235,50 @@ if [[ -n "${token_match:-}" ]]; then
         "${memoized}"
 fi
 
+# THE ACCEPTED DELEGATED PRE-COMMIT VERDICT. A gate Job ran the full pre-commit
+# aggregate on this exact tree and reported each member it ran and passed, so this
+# run skips exactly those members and runs on the pushing host every other member
+# of its check set: each member that verdict does not name, every world-reading
+# member (the token-memoization rule), and every member that reads an
+# authorization held outside the tree. A member it runs that fails refuses the
+# push, through this aggregate's own exit status.
+#
+# FAIL-CLOSED on either resolver, for the reason the token-match block gives: an
+# answer that cannot be trusted must stop the run rather than narrow it.
+if [[ -n "${evidence_job}" ]]; then
+    gated=()
+    for target in "${targets[@]}"; do
+        case " ${effective_skip} " in
+            *" ${target} "*) continue ;;
+        esac
+        gated+=("${target}")
+    done
+    if ! world_reading_members=$(uv run python -m livespec_dev_tooling.green_token \
+        world-reading "${gated[@]}"); then
+        echo "ERROR: could not resolve which members read state outside the tree; refusing to accept the delegated pre-commit verdict for any of them" >&2
+        exit 1
+    fi
+    if ! authority_members=$(uv run python -m livespec_dev_tooling.check_authority members); then
+        echo "ERROR: could not resolve which members read an authorization held outside the tree; refusing to accept the delegated pre-commit verdict for any of them" >&2
+        exit 1
+    fi
+    covered=0
+    ran_members=()
+    for target in "${gated[@]}"; do
+        if [[ $'\n'"${world_reading_members}"$'\n' == *$'\n'"${target}"$'\n'* ]] \
+            || [[ $'\n'"${authority_members}"$'\n' == *$'\n'"${target}"$'\n'* ]] \
+            || [[ " ${evidence_members} " != *" ${target} "* ]]; then
+            printf ':: delegated pre-commit verdict accepted: running member %s on the pushing host\n' "${target}"
+            ran_members+=("${target}")
+        else
+            effective_skip="${effective_skip} ${target}"
+            covered=$((covered + 1))
+        fi
+    done
+    printf ':: delegated pre-commit verdict accepted: gate Job %s, tree %s; ran %d member(s) on the pushing host (%s); skipped %d member(s) that verdict covered\n' \
+        "${evidence_job}" "${evidence_tree}" "${#ran_members[@]}" "${ran_members[*]}" "${covered}"
+fi
+
 LIVESPEC_PYRIGHT_WARMED=1 uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
 
 # `hook_gate` is deliberately NOT disqualifying here, unlike `skip` and
@@ -228,6 +294,14 @@ LIVESPEC_PYRIGHT_WARMED=1 uv run python -m livespec_dev_tooling.parallel_check_d
 # that is why the run took this path at all — so there is nothing to record,
 # and a partial run must never be the thing that stamps the marker standing for
 # a whole one.
-if [[ -z "${skip:-}" && -z "${red_staged:-}" && -z "${token_match:-}" ]]; then
-    uv run python -m livespec_dev_tooling.green_token write || true
+#
+# An accepted delegated pre-commit verdict is disqualifying for the same reason:
+# that run executed only part of the check set.
+#
+# The pre-commit hook's marker is passed on rather than decided here, so the one
+# rule (a both-keys repository's local pre-commit aggregate writes no token)
+# lives in `green_token write`, beside the token it governs.
+if [[ -z "${skip:-}" && -z "${red_staged:-}" && -z "${token_match:-}" && -z "${evidence_job}" ]]; then
+    uv run python -m livespec_dev_tooling.green_token write \
+        ${pre_commit_hook_marker:+--pre-commit-hook} || true
 fi

@@ -3,9 +3,35 @@
 `python -m livespec_dev_tooling.incident_ci_process` exposes `plan`, `run` and
 `aggregate`. A run names members with repeated `--target check-name` arguments;
 it accepts no caller command or inventory path. The `--repo`, `--report` and
-`--reports` paths are supplied by the trusted workflow entrance. The packaged
-inventory contains the full existing normal workflow's members, their batches,
-their timing classes and the coverage producer/consumer dependency. It derives
+`--reports` paths are supplied by the trusted workflow entrance.
+
+The release carries ONE INVENTORY PER ADOPTING REPOSITORY, at
+`livespec_dev_tooling/data/incident-ci-inventory/<owner>/<repo>.json`, and
+livespec-dev-tooling's own at `livespec_dev_tooling/data/incident-ci-inventory.json`. The
+entrance looks one up by the repository its authenticated pull-request read
+names (the read's base repository must equal the job's repository, or no event
+is produced), never by a candidate-supplied path or the candidate tree, and a
+repository the release carries no inventory for is refused with
+`incident-inventory-undeclared: <owner>/<repo> has no incident CI inventory in
+this livespec-dev-tooling release`: nothing is selected and nothing runs.
+livespec-dev-tooling's own entry is rendered from this tree. An adopter's entry
+is rendered at build time from the adopter's OWN `.github/workflows/ci.yml` and
+`check-targets.txt` at a commit of its default branch, read from a local clone
+with `just render-incident-ci-inventory <owner/repo> <clone> <commit>`, and the
+file records that commit as its `source`. Rerun it on a newer default-branch
+commit when the adopter adds, removes or renames a target or changes a timing
+annotation; the change reaches CI with the next release. An adopter with no
+committed `check-targets.txt` cannot be rendered, so it stays undeclared. The
+script also keeps the exact source bytes it rendered from, with their git blob
+ids at that commit, under `tests/fixtures/incident_ci_inventory_sources/`, and
+`tests/livespec_dev_tooling/test_incident_ci_inventory_sources.py` proves each
+released entry equals a fresh render of them. The released entries are
+livespec, livespec-orchestrator-beads-fabro and livespec-overseer
+(livespec-dev-tooling-k5nzpk).
+
+Each inventory contains its repository's full normal workflow's members, their
+batches, their timing classes and the coverage producer/consumer dependency
+(wired only when both coverage members exist). It derives
 only from the workflow's contributed check-target set and from each member's
 `# incident-timing:` annotation in `check-targets.txt`, never from whole-file
 bytes: a ci.yml edit that leaves that set unchanged, such as a runs-on or step

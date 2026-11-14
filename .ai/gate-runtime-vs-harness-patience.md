@@ -27,7 +27,7 @@ Those two states demand **opposite** responses:
 
 | what happened | what it means | what to do |
 |---|---|---|
-| the gate **refused** | a real verdict — a check failed | fix the cause; never retry blind |
+| the gate **refused** | a real verdict — a check failed | fix the cause, or relaunch a flake you have read (coordinator-duties §2); never retry blind |
 | the gate **did not finish** | no verdict exists | re-run it; conclude nothing |
 
 Reading a kill as a refusal sends you hunting a defect that does not
@@ -107,6 +107,72 @@ message, and the Green amend crashed with `IsADirectoryError`. On
 launched with `-F /dev/stdin`. Plan `gmktec-factory-placement` (epic
 `livespec-dev-tooling-me5aqz`) caught it mid-run, and the gate was
 stopped and relaunched with a message file.
+
+### A workflow-touching commit needs the credential wrapper INSIDE `gate-start`
+
+`check-no-workflow-edits` runs on the pushing host, not in the gate Job,
+because it reads the work item's ledger-held workflow-edit approval
+through `bd`. A bare `gate-start -- mise exec -- git commit ...` carries
+no `BEADS_DOLT_PASSWORD`, so `bd show` answers `Error 1045` and the check
+FAILS CLOSED with exit 2. That happens only AFTER the gate Job has run the
+whole aggregate green, so one full gate cycle is spent first.
+
+```bash
+# right, for any tree that touches .github/workflows/
+mise exec -- just gate-start -- /usr/local/bin/with-livespec-env.sh -- mise exec -- git commit --amend --no-edit
+```
+
+Read `tmp/gate-runs/<run-id>/command` right after launching to confirm the
+wrapper is there. Measured 2026-11-11 on the kzhduc Green amend: gate
+`20261111T123641Z-1307890` passed every aggregate member in its Job and
+was still refused for the missing credential (plan `ci-runtime-and-cost`,
+epic `livespec-dev-tooling-ib3oe3`).
+
+### A launched gate cannot be called back: SIGINT does not stop it
+
+The runner has no stop verb, and signalling the gate's `__child` process
+group does not stop a DELEGATED gate. The pre-commit or pre-push hook that
+does the work runs under lefthook, which gives each hook its own session,
+so a signal sent to the child's group never reaches it (the same session
+split is behind the SIGHUP note in `.ai/independent-host-replay-identity.md`).
+The gate runs on, records its verdict, and, if that verdict is a pass,
+finishes the commit or the push.
+
+Measured 2026-11-11 (plan `ci-runtime-and-cost`, epic
+`livespec-dev-tooling-ib3oe3`): a docs push gate was relaunched past a test
+flake, which coordinator-duties §2 then forbade. SIGINT was sent to its
+`__child` group to take the relaunch back. The gate ran on, PASSED and
+pushed the branch, and the breach was self-reported to the coordinator.
+
+Since the maintainer's 2026-11-13 ruling a flake MAY be retried, so a
+relaunch after a flake is allowed (coordinator-duties §2, within its
+bounds). Relaunch only after the previous run has ended, with its
+`gate-wait` verdict or exit 75, never while it still runs: two live gates
+on one tree can both commit or both push.
+
+Decide BEFORE `gate-start`. Treat a launched push gate as one that will
+push if it passes, and a launched commit gate as one that will commit. If
+you need to undo it, undo the result, the commit or the pushed branch,
+after the verdict lands. Do not read a quiet gate after a signal as a
+stopped one: read its `VERDICT` line through `gate-status`.
+
+### Do not commit in a worktree while its push gate runs
+
+A delegated pre-push gate gates the tree it captured at launch. When it
+finishes, it compares that tree with the worktree's HEAD. If HEAD has moved,
+it refuses the push even though every target passed: "the gate passed on tree
+X, but HEAD now resolves to Y; that tree was never gated, so no token was
+written". Nothing is pushed, and the whole aggregate has to run again.
+
+Measured 2026-11-13 (plan `dev-host-disk-retention`,
+`livespec-dev-tooling-qgwxo4`): a pre-push gate on
+`fix/memory-bounds-mount-unit-name` passed all 86 targets (12248 tests) in
+37 minutes. It then refused the push, because a test commit had been made in
+the same worktree while it ran. The re-push cost a second full gate.
+
+Finish every commit a branch needs BEFORE you launch its push gate. If a
+commit has to land while the gate runs, make it after the verdict, then push
+again.
 
 ### What this does NOT change
 

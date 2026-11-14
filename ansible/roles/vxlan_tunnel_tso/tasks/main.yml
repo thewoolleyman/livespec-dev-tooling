@@ -1,0 +1,122 @@
+---
+# vxlan_tunnel_tso — turn TCP segmentation offload OFF on the flannel VXLAN
+# interface of a node whose physical NIC mis-segments encapsulated TCP.
+#
+# WHY (plan homelab-k8s-worker-nodes, epic livespec-dev-tooling-ko26ez; measured
+# 2026-11-11/12). poweredge-xubuntu's NIC is a Broadcom BCM57800 (driver bnx2x)
+# with tx-udp_tnl-segmentation and tx-udp_tnl-csum-segmentation on. Its driver
+# miscalculates the header length it hands the NIC for encapsulated TSO, so the
+# NIC emits VXLAN frames whose outer IPv4 header declares 1514 bytes while the
+# frame carries 1500. A Linux receiver drops such a packet (IpExtInTruncatedPkts)
+# and the TCP flow inside the tunnel collapses: pod traffic from poweredge INTO
+# macbook-m4-max-homelab-worker ran at about 500 KiB/s while the same path from
+# the three r8169 nodes ran at 70-100 MiB/s, and the malformed frames were also
+# captured arriving at gmktec-xubuntu. Upstream fix: Linux commit 4fc1d5bb448d,
+# "bnx2x: fix header length calculation for encapsulated TSO"; kernels
+# 7.0.0-38 and 7.0.0-43 on poweredge do not carry it.
+#
+# WHAT. With tso off on the VXLAN interface the kernel segments TCP in software
+# BEFORE encapsulation, so the NIC never sees an encapsulated TSO request. This
+# keeps the vxlan backend and changes nothing about the physical NIC (a feature
+# change on a bnx2x port reloads the NIC, i.e. a link flap on the k3s server).
+#
+# SELF-GATED ON THE DRIVER, not on a hostname: the role reads the driver of the
+# node's default-route interface and acts only when it is in
+# `vxlan_tunnel_tso_affected_drivers`. Every other node is a no-op.
+#
+# PERSISTENCE. flannel recreates flannel.1 at every k3s start, so a one-shot
+# ethtool call would be lost at the next restart or reboot. The udev rule
+# re-applies the setting whenever the interface is added.
+#
+# RETIRE this role's bnx2x entry once the node runs a kernel carrying
+# 4fc1d5bb448d and an overlay throughput proof passes with tso back on.
+
+- name: Read the driver of the default-route interface
+  # FAIL-SAFE: a host with no default route, or with no ethtool, is treated as
+  # not affected and falls through to the removal task. Neither aborts the play.
+  ansible.builtin.command:
+    argv:
+      - "{{ vxlan_tunnel_tso_ethtool }}"
+      - -i
+      - "{{ vxlan_tunnel_tso_uplink }}"
+  register: vxlan_tunnel_tso_driver_read
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: vxlan_tunnel_tso_uplink | length > 0
+
+- name: Decide whether this node's NIC is affected
+  ansible.builtin.set_fact:
+    vxlan_tunnel_tso_affected: >-
+      {{ (vxlan_tunnel_tso_driver_read.stdout | default('')
+          | regex_search('^driver: (\S+)', '\1', multiline=True)
+          | default([''], true) | first)
+         in vxlan_tunnel_tso_affected_drivers }}
+
+- name: Install the udev rule that turns tso off whenever the VXLAN interface is added
+  ansible.builtin.copy:
+    dest: "{{ vxlan_tunnel_tso_udev_rule }}"
+    mode: "0644"
+    content: |
+      # Managed by ansible role vxlan_tunnel_tso (livespec-dev-tooling). Do not hand-edit.
+      # This node's NIC mis-segments VXLAN-encapsulated TCP; see the role's tasks/main.yml.
+      {{ vxlan_tunnel_tso_udev_match }}, RUN+="{{ vxlan_tunnel_tso_udev_run }}"
+  become: true
+  when: vxlan_tunnel_tso_affected | bool
+
+- name: Remove the udev rule from a node whose NIC is not affected
+  ansible.builtin.file:
+    path: "{{ vxlan_tunnel_tso_udev_rule }}"
+    state: absent
+  become: true
+  when: not (vxlan_tunnel_tso_affected | bool)
+
+- name: Probe the live tso state of the VXLAN interface
+  # A READ that carries the drift verdict: the reconciling command below is
+  # skipped under --check, so without this computed `changed_when` a drift
+  # report would print `skipping` over a real pending change (the node_taints
+  # lesson, livespec-dev-tooling-ewjby3).
+  ansible.builtin.command:
+    argv:
+      - "{{ vxlan_tunnel_tso_ethtool }}"
+      - -k
+      - "{{ vxlan_tunnel_tso_interface }}"
+  register: vxlan_tunnel_tso_live
+  check_mode: false
+  failed_when: false
+  changed_when: >-
+    ansible_check_mode
+    and vxlan_tunnel_tso_live.rc == 0
+    and vxlan_tunnel_tso_live.stdout is ansible.builtin.search('tcp-segmentation-offload: on')
+  when: vxlan_tunnel_tso_affected | bool
+
+- name: Turn tso off on the live VXLAN interface
+  ansible.builtin.command:
+    argv:
+      - "{{ vxlan_tunnel_tso_ethtool }}"
+      - -K
+      - "{{ vxlan_tunnel_tso_interface }}"
+      - tso
+      - "off"
+  become: true
+  changed_when: true
+  when:
+    - vxlan_tunnel_tso_affected | bool
+    - vxlan_tunnel_tso_live.rc == 0
+    - "vxlan_tunnel_tso_live.stdout is ansible.builtin.search('tcp-segmentation-offload: on')"
+
+- name: Verify tso is off on the live VXLAN interface
+  ansible.builtin.command:
+    argv:
+      - "{{ vxlan_tunnel_tso_ethtool }}"
+      - -k
+      - "{{ vxlan_tunnel_tso_interface }}"
+  register: vxlan_tunnel_tso_after
+  changed_when: false
+  failed_when: >-
+    vxlan_tunnel_tso_after.rc != 0
+    or vxlan_tunnel_tso_after.stdout is not ansible.builtin.search('tcp-segmentation-offload: off')
+  when:
+    - vxlan_tunnel_tso_affected | bool
+    - not ansible_check_mode
+    - vxlan_tunnel_tso_live.rc == 0

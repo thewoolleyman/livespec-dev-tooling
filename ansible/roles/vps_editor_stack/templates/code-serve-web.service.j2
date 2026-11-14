@@ -1,0 +1,18 @@
+[Unit]
+Description=VS Code serve-web (loopback, fronted by the PWA proxy)
+Documentation=https://code.visualstudio.com/docs/remote/vscode-server
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User={{ vps_editor_stack_user }}
+Group={{ vps_editor_stack_group }}
+Environment=HOME={{ vps_editor_stack_home }}
+WorkingDirectory={{ vps_editor_stack_home }}
+ExecStart=/usr/bin/code serve-web --host 127.0.0.1 --port 8000 --without-connection-token --accept-server-license-terms
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

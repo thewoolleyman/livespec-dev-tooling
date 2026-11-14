@@ -59,7 +59,11 @@ spec:
             - |
               set -euo pipefail
               out=/data/@@RUN@@
-              mkdir -p "$out" /data/scratch
+              # One result cache for every run on this PVC, outside any run's own
+              # directory: the engine checkpoints it while it runs, so a run its
+              # deadline ends leaves its finished mutants for the next run id.
+              cache=/data/cache/mutation-kill-matrix-cache.json
+              mkdir -p "$out" /data/scratch /data/cache
               exec > >(tee -a "$out/run.log") 2>&1
               echo ":: start $(date -u +%FT%TZ) on $(hostname)"
               rm -rf /data/orchestrator /data/dev-tooling
@@ -84,9 +88,9 @@ spec:
               rc=0
               .venv/bin/python -B -m livespec_dev_tooling.mutation_kill_matrix_runner /data/orchestrator \
                 --workers @@WORKERS@@ --timeout 120 --workspace /data/scratch \
-                --cache "$out/mutation-kill-matrix-cache.json" || rc=$?
+                --cache "${cache}" || rc=$?
               echo ":: engine end $(date -u +%FT%TZ) rc=${rc} elapsed_s=$(( $(date +%s) - s ))"
-              cp -f reports/mutation-kill-matrix.json "$out/" 2>/dev/null || true
+              cp -f reports/mutation-kill-matrix.json "${cache}" "$out/" 2>/dev/null || true
               exit "${rc}"
           env:
             # The clones on the PVC are fresh checkouts that carry a

@@ -25,6 +25,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-check-tools",
     "check-ci-gate-parity",
     "check-ci-matrix-completeness",
+    "check-ci-single-container-image",
     "check-claude-md-coverage",
     "check-codex-hook-reconcilable",
     "check-comment-line-anchors",

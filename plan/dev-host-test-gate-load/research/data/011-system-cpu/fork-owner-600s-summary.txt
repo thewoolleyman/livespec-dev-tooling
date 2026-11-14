@@ -1,0 +1,35 @@
+600 s fork count 2026-11-11T06:44:03Z-06:54:03Z: 183999 forks, 307/s. Owner = the seat (claude session title) that started the process tree, including detached scripts it launched.
+    86.9/s  28.3%  legacy-dispatcher-agent
+            25.6/s  in-session tool shells and scripts
+            22.2/s  detached: bash -c bash turn-watch.sh 2>&1 | grep --line-buffered -v 'b
+            15.6/s  detached: bash /data/projects/livespec-orchestrator-beads-fabro/tmp/pe
+    52.3/s  17.1%  (unattributed)
+            52.3/s  ancestor chain longer than 14 or gone
+    22.9/s   7.5%  implement-test-performance
+            20.4/s  in-session tool shells and scripts
+             2.0/s  detached: bash /home/ubuntu/.worktrees/livespec-dev-tooling/proof/73oc
+             0.4/s  claude CLI itself
+    15.6/s   5.1%  dispatch-payload-packaging
+            15.2/s  detached: bash /home/ubuntu/.worktrees/livespec-orchestrator-beads-fab
+             0.3/s  claude CLI itself
+             0.1/s  in-session tool shells and scripts
+    11.8/s   3.9%  fleet-flaky-tests
+            11.1/s  in-session tool shells and scripts
+             0.6/s  claude CLI itself
+             0.2/s  detached: --session
+    11.2/s   3.6%  claude (exited before mapping)
+             9.8/s  in-session tool shells and scripts
+             1.4/s  claude CLI itself
+     9.7/s   3.2%  sandbox-commit-gate-ceiling
+             9.2/s  in-session tool shells and scripts
+             0.5/s  claude CLI itself
+     8.2/s   2.7%  gate-job-resources
+             6.2/s  in-session tool shells and scripts
+             1.6/s  detached: bash /home/ubuntu/.worktrees/livespec-dev-tooling/feat/gate-
+             0.5/s  claude CLI itself
+     5.5/s   1.8%  ci-runtime-and-cost
+             3.8/s  in-session tool shells and scripts
+             1.3/s  detached: bash /home/ubuntu/.worktrees/livespec-dev-tooling/chore/pyri
+             0.4/s  claude CLI itself
+     5.2/s   1.7%  other: /usr/bin/zsh 
+claude CLI processes themselves: 12.7/s (4.1%) over 34 sessions.

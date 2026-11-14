@@ -40,8 +40,8 @@ from livespec_dev_tooling.checks import _role_key_gate, public_api_result_typed
 from livespec_dev_tooling.checks._work_item_liveness import LedgerUnreachable
 from tests.consumer.role_key_fixture import (
     ROLE_KEY_SPELLING_FIELD,
+    complete_block_declaring,
     records_from,
-    union_key_block,
     write_consumer,
 )
 
@@ -98,7 +98,7 @@ def _drive(
     monkeypatch.setattr(_role_key_gate, "bd_status_reader", _read)
     root = write_consumer(
         root=tmp_path / "consumer",
-        block=union_key_block(
+        block=complete_block_declaring(
             key=_UNION_KEY, value=f'{{ unarmed_until = "{_LEDGER_ID}" }}', comment=_COMMENT
         ),
     )

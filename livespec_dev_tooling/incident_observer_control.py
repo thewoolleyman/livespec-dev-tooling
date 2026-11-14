@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from livespec_dev_tooling._incident_enablement_fence import controller_fence
 from livespec_dev_tooling._incident_observer_store import (
     load_record,
     read_observer_arm,
@@ -14,6 +15,8 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_enablement import IdentitySource, production_identity_source
+from livespec_dev_tooling.incident_focused_changes import changed_product_files
 from livespec_dev_tooling.incident_forge_reads import ForgeReads
 from livespec_dev_tooling.incident_observer_admission import (
     arm_before_merge,
@@ -29,6 +32,8 @@ __all__: list[str] = ["ObserverControl"]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-4aksht
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-6ou5m2
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-exdkra
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -36,6 +41,7 @@ class ObserverControl:
     """Use canonical authority and host-owned identity, never request capabilities."""
 
     installation: ControllerInstallation
+    source: IdentitySource = field(default_factory=production_identity_source)
 
     def execute(self, *, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         settings = self.installation
@@ -116,6 +122,13 @@ class ObserverControl:
         )
         if arm is None or (expected is not None and not isinstance(expected, str)):
             return {"status": "refused", "reason": "invalid exact observer arm"}
+        # The arm consults the enablement record first and its receipt records the reading.
+        reading, fenced = controller_fence(
+            installation=settings, source=self.source, phase=arm.phase, shadow=True
+        )
+        enablement = None if reading is None else reading.record()
+        if fenced is not None:
+            return {"status": "refused", "reason": fenced, "enablement": enablement}
         refusal = FocusedEvidenceGate(
             command=settings.reader,
             repo=settings.repo,
@@ -123,6 +136,9 @@ class ObserverControl:
             installed_reader_approved=lambda release, command: (release, command)
             == (settings.reader_release, settings.reader),
             read=ForgeReads.installed(installation=settings),
+            changed=lambda head: changed_product_files(
+                repo=settings.repo, target_branch=settings.target_branch, head=head
+            ),
         )(arm)
         if refusal is not None:
             return {"status": "refused", "reason": refusal}
@@ -133,13 +149,16 @@ class ObserverControl:
             installed_reader_approved=lambda release, command: (release, command)
             == (settings.reader_release, settings.reader),
         )
-        return asdict(
-            arm_before_merge(
-                directory=settings.state,
-                arm=arm,
-                expected_arm_id=expected,
-                authorize_current=reader,
-                released_controller=lambda release, revision: (release, revision)
-                == (settings.release, settings.revision),
-            )
-        )
+        return {
+            **asdict(
+                arm_before_merge(
+                    directory=settings.state,
+                    arm=arm,
+                    expected_arm_id=expected,
+                    authorize_current=reader,
+                    released_controller=lambda release, revision: (release, revision)
+                    == (settings.release, settings.revision),
+                )
+            ),
+            "enablement": enablement,
+        }

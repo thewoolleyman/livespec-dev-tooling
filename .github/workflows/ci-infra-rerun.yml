@@ -1,0 +1,31 @@
+# ci-infra-rerun.yml — caller of the CI infrastructure re-run reconciler.
+#
+# Per SPECIFICATION/contracts.md §"Reusable workflows wire contract": a fleet
+# repository adopts reusable-ci-infra-rerun.yml through one caller workflow
+# that carries no classification logic of its own, so a second repository
+# adopts it with this file unchanged apart from its name. When the gating CI
+# workflow completes with a failure, the reconciler re-runs only the jobs whose
+# failure matches a re-run signature non-functional-requirements.md §"Hooks and
+# CI" names (livespec-dev-tooling-cetyrq).
+#
+# The `@master` ref is the bootstrap-discipline ref; the bump-pin automation
+# rewrites it to a tag on the next release.
+
+name: CI infrastructure re-run
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  reconcile:
+    if: github.event.workflow_run.conclusion == 'failure'
+    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-ci-infra-rerun.yml@master
+    secrets: inherit
+    with:
+      run_id: ${{ github.event.workflow_run.id }}

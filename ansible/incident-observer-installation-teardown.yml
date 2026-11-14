@@ -1,0 +1,36 @@
+---
+# The committed teardown of a further production incident observer installation
+# that ansible/incident-observer-installation.yml converges.
+# livespec-dev-tooling-lqp2qx.
+#
+# Unpublishes its /<name>/ routes, stops and disables its observer unit and
+# reference fetch timer, removes their unit files, its controller.json, manifest
+# and reader credential, and reads livespec-dev-tooling's installation back
+# byte-identical. The installation root (receipts and reference clone) is kept
+# as evidence unless `-e incident_observer_installation_teardown_purge=true`.
+#
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-installation-teardown.yml -e incident_observer_installation_name=<name>
+#   /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-installation-teardown.yml -e incident_observer_installation_name=<name>
+- name: Tear down a further production incident observer installation
+  hosts: dev_hosts
+  gather_facts: false
+  vars_files:
+    - roles/incident_observer/vars/installation.yml
+  pre_tasks:
+    - name: Refuse this installation playbook without an installation name, or in scratch mode
+      ansible.builtin.assert:
+        that:
+          - incident_observer_installation_name is defined
+          - incident_observer_installation_name | string | length > 0
+          - incident_observer_installation_name != 'livespec-dev-tooling'
+          - not (incident_observer_scratch | default(false) | bool)
+        fail_msg: >-
+          this playbook removes one further installation: pass
+          -e incident_observer_installation_name=<name>, never livespec-dev-tooling.
+          Nothing has been written, stopped or removed.
+        success_msg: the installation is {{ incident_observer_installation_name }}
+  tasks:
+    - name: Remove every installation artifact and leave livespec-dev-tooling's installation byte-identical
+      ansible.builtin.include_role:
+        name: incident_observer
+        tasks_from: installation_teardown

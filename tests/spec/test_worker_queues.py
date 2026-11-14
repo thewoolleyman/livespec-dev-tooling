@@ -25,6 +25,10 @@ _SCRIPT = _KUEUE / "converge-worker-queues.sh"
 
 _STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
+# A real `kubectl apply -f -` reads its stdin. A stub that does not lets the
+# script's `printf ... | kubectl apply -f -` die of SIGPIPE (141 under
+# pipefail) whenever the stub exits before printf writes.
+case " $* " in *" -f - "*) cat >/dev/null ;; esac
 case "$*" in
   *"kubernetes.io/arch=arm64"*) printf '%b' "$ARM64_SLOTS" ;;
   *"kubernetes.io/arch=amd64"*) printf '%b' "$AMD64_SLOTS" ;;
@@ -128,13 +132,20 @@ def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
 
 _GATES_STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
+# A real `kubectl apply -f -` reads its stdin. A stub that does not lets the
+# script's `printf ... | kubectl apply -f -` die of SIGPIPE (141 under
+# pipefail) whenever the stub exits before printf writes.
+case " $* " in *" -f - "*) cat >/dev/null ;; esac
 case "$*" in
   *"gate-share-millicores"*) printf '%b' "$GATE_SHARES" ;;
   *"get clusterqueue gates-cq"*) [ -n "$NO_GATES_CQ" ] && exit 1; printf '%s' "$GATES_CQ" ;;
 esac
 """
 
+_GATE_UNIT = {"ci-runner.io/gate-unit-cpu": "5", "ci-runner.io/gate-unit-memory": "8Gi"}
+
 _FLEET_GATES_CQ = {
+    "metadata": {"name": "gates-cq", "annotations": _GATE_UNIT},
     "spec": {
         "resourceGroups": [
             {
@@ -146,12 +157,18 @@ _FLEET_GATES_CQ = {
                 ],
             }
         ]
-    }
+    },
 }
 
 
 def _render_gates(
-    *, tmp_path: Path, shares: str, no_gates_cq: bool = False, dry_run: bool = True
+    *,
+    tmp_path: Path,
+    shares: str,
+    no_gates_cq: bool = False,
+    dry_run: bool = True,
+    gates_cq: dict[str, object] | None = None,
+    queue_file: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -173,8 +190,9 @@ def _render_gates(
             "STUB_LOG": str(log),
             "WORKER_QUEUE_DIR": str(worker),
             "GATE_SHARES": shares,
-            "GATES_CQ": json.dumps(_FLEET_GATES_CQ),
+            "GATES_CQ": json.dumps(_FLEET_GATES_CQ if gates_cq is None else gates_cq),
             "NO_GATES_CQ": "1" if no_gates_cq else "",
+            **({"GATE_UNIT_QUEUE_FILE": str(queue_file)} if queue_file else {}),
         },
         check=False,
         timeout=30,
@@ -213,6 +231,109 @@ def test_the_worker_gate_quota_is_whole_gates_of_the_enrolled_shares(
             ],
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("unit_cpu", "unit_memory", "gates"),
+    [("5", "8Gi", 2), ("4", "6Gi", 3), ("6", "10Gi", 2)],
+)
+def test_the_worker_gate_quota_counts_gates_in_the_unit_gates_cq_declares(
+    tmp_path: Path, unit_cpu: str, unit_memory: str, gates: int
+) -> None:
+    # One 12-cpu share: 2 gates of 5 cpu, 3 of 4, 2 of 6. The unit is read off
+    # gates-cq, so changing it there moves the worker quota with no script edit.
+    queue = {
+        **_FLEET_GATES_CQ,
+        "metadata": {
+            "name": "gates-cq",
+            "annotations": {
+                "ci-runner.io/gate-unit-cpu": unit_cpu,
+                "ci-runner.io/gate-unit-memory": unit_memory,
+            },
+        },
+    }
+    result, _ = _render_gates(tmp_path=tmp_path, shares="arm64 12000\n", gates_cq=queue)
+    assert result.returncode == 0, result.stderr
+    [worker] = [
+        f
+        for f in _gates_patch(stdout=result.stdout)
+        if f["name"] == "gates-worker-taint-arm64-flavor"
+    ]
+    assert worker["resources"] == [
+        {"name": "cpu", "nominalQuota": gates * int(unit_cpu)},
+        {"name": "memory", "nominalQuota": f"{gates * int(unit_memory[:-2])}Gi"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "annotations",
+    [
+        {},
+        {"ci-runner.io/gate-unit-cpu": "5"},
+        {"ci-runner.io/gate-unit-cpu": "0", "ci-runner.io/gate-unit-memory": "8Gi"},
+        {"ci-runner.io/gate-unit-cpu": "5", "ci-runner.io/gate-unit-memory": "8G"},
+    ],
+)
+def test_a_gates_cq_without_a_usable_gate_unit_patches_nothing_and_fails(
+    tmp_path: Path, annotations: dict[str, str]
+) -> None:
+    queue = {**_FLEET_GATES_CQ, "metadata": {"name": "gates-cq", "annotations": annotations}}
+    result, calls = _render_gates(
+        tmp_path=tmp_path,
+        shares="arm64 4000\n",
+        gates_cq=queue,
+        dry_run=False,
+        queue_file=tmp_path / "absent-cluster-queue-gates.yaml",
+    )
+    assert result.returncode == 1
+    assert "ci-runner.io/gate-unit-cpu" in result.stderr
+    assert not [c for c in calls if " patch " in c or " apply " in c]
+
+
+_UNANNOTATED_GATES_CQ = {**_FLEET_GATES_CQ, "metadata": {"name": "gates-cq"}}
+
+
+def _worker_quota(*, stdout: str) -> list[object]:
+    [worker] = [
+        f for f in _gates_patch(stdout=stdout) if f["name"] == "gates-worker-taint-arm64-flavor"
+    ]
+    return list(worker["resources"])  # type: ignore[arg-type]
+
+
+def test_a_live_gates_cq_not_yet_annotated_takes_the_unit_from_the_committed_file(
+    tmp_path: Path,
+) -> None:
+    # A node joined through enroll-workload-classes.sh before the annotated queue
+    # file reached the cluster: the converge reads the committed file instead of
+    # refusing, so a join never fails on rollout order.
+    committed = tmp_path / "cluster-queue-gates.yaml"
+    committed.write_text(
+        'metadata:\n  annotations:\n    ci-runner.io/gate-unit-cpu: "4"\n'
+        '    ci-runner.io/gate-unit-memory: "6Gi"\n',
+        encoding="utf-8",
+    )
+    result, _ = _render_gates(
+        tmp_path=tmp_path,
+        shares="arm64 12000\n",
+        gates_cq=_UNANNOTATED_GATES_CQ,
+        queue_file=committed,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"using 4/6Gi from {committed}" in result.stderr
+    assert _worker_quota(stdout=result.stdout) == [
+        {"name": "cpu", "nominalQuota": 12},
+        {"name": "memory", "nominalQuota": "18Gi"},
+    ]
+
+
+def test_the_default_fallback_is_the_committed_queue_file_beside_the_script(
+    tmp_path: Path,
+) -> None:
+    result, _ = _render_gates(
+        tmp_path=tmp_path, shares="arm64 4000\n", gates_cq=_UNANNOTATED_GATES_CQ
+    )
+    assert result.returncode == 0, result.stderr
+    assert str(_KUEUE / "cluster-queue-gates.yaml") in result.stderr
 
 
 def test_the_worker_flavors_come_first_and_the_fleet_gate_flavors_keep_their_order(

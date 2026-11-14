@@ -55,3 +55,10 @@ Environment="LIVESPEC_SANDBOX_IMAGE_WARM_STORE={{ sandbox_image_warm_store }}"
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL={{ sandbox_image_warm_crictl }}"
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS={{ sandbox_image_warm_process_spec_urls | join(' ') }}"
 {% endif %}
+{#
+  Only a workflow-sourced warm renders this line, so every existing unit renders
+  byte-identical to its form before the source existed.
+-#}
+{% if sandbox_image_warm_workflow_urls | length > 0 %}
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_WORKFLOW_URLS={{ sandbox_image_warm_workflow_urls | join(' ') }}"
+{% endif %}

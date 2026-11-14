@@ -1,0 +1,41 @@
+---
+# DELETE is deliberately idempotent. The catalog itself is authoritative about
+# presence: 204 removed the id and reports a change; 404 proves a prior converge
+# already removed it and reports no change.
+#
+# Fabro's DELETE /api/v1/environments/{id} REQUIRES an If-Match header carrying
+# the entry's current revision, and answers 428 Precondition Required without
+# one (the same optimistic-concurrency check the replace PUT in environment.yml
+# carries). So the task first reads the entry: a 404 there is the already-
+# retired converge and sends no DELETE at all; a 200 yields the revision the
+# DELETE then sends. If anything rewrote the entry between the read and the
+# delete, Fabro answers 409 and the task fails rather than reporting the id
+# retired. Any other read answer is printed as read-<status> and fails too.
+
+- name: Delete this retired environment from the instance's catalog
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      token="$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)"
+      entry="$(mktemp)"
+      trap 'rm -f "${entry}"' EXIT
+      read_status="$(printf 'Authorization: Bearer %s\n' "${token}" |
+        curl --silent --show-error --output "${entry}" --write-out '%{http_code}' \
+          --header @- --header 'Accept: application/json' "${FABRO_ENVIRONMENT_URL}")"
+      case "${read_status}" in
+        404) printf '404\n'; exit 0 ;;
+        200) ;;
+        *) printf 'read-%s\n' "${read_status}"; exit 0 ;;
+      esac
+      revision="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["revision"])' < "${entry}")"
+      printf 'Authorization: Bearer %s\nIf-Match: "%s"\n' "${token}" "${revision}" |
+        curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+          --header @- --request DELETE "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}/{{ fabro_server_retired_environment }}"
+  register: fabro_server_retired_environment_delete
+  changed_when: (fabro_server_retired_environment_delete.stdout | trim) == '204'
+  failed_when: (fabro_server_retired_environment_delete.stdout | trim) not in ['204', '404']

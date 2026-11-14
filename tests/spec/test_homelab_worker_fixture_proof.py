@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 
@@ -111,7 +113,7 @@ def mac(tmp_path: Path) -> _Mac:
 def _prove(
     *, mac: _Mac, mode: str, tunnel_only: str, enforced: str = "1", dns: str = "1", mtu: str = "1"
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _HOST, mode],
         capture_output=True,
         text=True,
@@ -126,7 +128,6 @@ def _prove(
             "POLICY_SETTLE_SECONDS": "0",
         },
         check=False,
-        timeout=120,
     )
 
 
@@ -162,7 +163,7 @@ def test_the_disabled_mode_runs_the_full_proof_inside_the_fixture(mac: _Mac) -> 
     )
     assert any(" sh -c kubectl port-forward " in c for c in calls)
     applied = (mac.state / "applied.yaml").read_text(encoding="utf-8")
-    assert applied.count("nodeName: k3d-hw-fixture-agent-0") == 2
+    assert applied.count("nodeName: k3d-hw-fixture-agent-0") == 3
 
 
 def test_the_disabled_mode_fails_when_the_worker_is_unreachable(mac: _Mac) -> None:
@@ -179,7 +180,7 @@ def test_the_disabled_mode_fails_when_the_worker_is_unreachable(mac: _Mac) -> No
 def test_an_undeclared_host_or_unknown_mode_is_refused_before_any_cluster_call(
     mac: _Mac, args: list[str], message: str
 ) -> None:
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
@@ -189,7 +190,6 @@ def test_an_undeclared_host_or_unknown_mode_is_refused_before_any_cluster_call(
             "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(mac.state, _HOST)),
         },
         check=False,
-        timeout=60,
     )
     assert result.returncode != 0
     assert message in result.stderr

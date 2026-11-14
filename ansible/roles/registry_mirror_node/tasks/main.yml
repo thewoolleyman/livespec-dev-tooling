@@ -1,0 +1,173 @@
+---
+# registry_mirror_node — install /etc/rancher/k3s/registries.yaml, the node half
+# of the ghcr pull-through cache (warm-cache/registry-mirror/), on EVERY ci_pool
+# node (livespec-dev-tooling-e2gv6n). Until this role, nothing committed
+# installed it: poweredge-xubuntu carried a file installed by hand on
+# 2026-09-08, and hp-xubuntu and gmktec-xubuntu carried none, so every ghcr pull
+# on them went to ghcr.io directly (warm-cache/README.md, "The half that is
+# open"; livespec-dev-tooling-y1t5).
+#
+# IT WRAPS THE COMMITTED INSTALLER rather than re-rendering its template. The
+# installer owns three facts this role must not restate: the endpoint
+# derivation by role (server: http://127.0.0.1:5001, the carrier is itself;
+# agent: the host of the profile's CLUSTER_JOIN_ADDRESS), the marker line that
+# tells its own file from a hand-written one, and the REFUSAL to overwrite a
+# registries.yaml it did not write (which may carry private-registry
+# credentials or TLS configuration). So the role ships the installer, its
+# template and a profile carrying only the two keys it reads, and runs it.
+#
+# NEVER RESTARTS k3s OR containerd. k3s reads registries.yaml at START, so this
+# role's write takes effect at the node's next k3s start and not before. That
+# restart bounces every runner pod on the node, so it is not a converge's to
+# take: an agent reaches it through ansible/restart-k3s-agent.yml in a slot the
+# coordinator grants, the server at its next reboot. The installer itself never
+# restarts anything, and this role has no handler and no service task.
+#
+# SAFE TO APPLY BEFORE THE MIRROR SERVES, and safe while it is down: containerd
+# always tries ghcr.io's default endpoint last, so a mirror that refuses costs
+# one failed dial per pull (the installer's header, "SAFE TO INSTALL FIRST").
+#
+# DRIFT. The installer's own --dry-run is the drift read: it prints
+# `target: <path> (currently: absent|ours|ours-unchanged|foreign)` after one
+# read of the installed file. It runs under --check too (check_mode: false;
+# --dry-run writes nothing) and reports anything but `ours-unchanged` as
+# `changed`, so `just ansible-drift ansible/ci-pool.yml --tags
+# registry_mirror_node` shows a pending install rather than a silent skip. A
+# `foreign` file fails the run with the installer's own refusal. Under --check
+# on a node that does not yet carry the installer copy, the copy tasks already
+# report the pending change and the plan is skipped, because there is nothing on
+# the node to run it from yet.
+
+- name: Read this node's registry-mirror inputs out of its committed profile
+  # regex_findall | first, the chain every role in this tree reads a profile
+  # with. A profile without CLUSTER_ROLE resolves to '' and is refused below.
+  ansible.builtin.set_fact:
+    registry_mirror_node_cluster_role: >-
+      {{ registry_mirror_node_profile_text
+         | regex_findall('^CLUSTER_ROLE=(.*)$', multiline=True) | first | default('') }}
+    registry_mirror_node_join_address: >-
+      {{ registry_mirror_node_profile_text
+         | regex_findall('^CLUSTER_JOIN_ADDRESS=(.*)$', multiline=True) | first | default('') }}
+  vars:
+    registry_mirror_node_profile_text: "{{ lookup('ansible.builtin.file', registry_mirror_node_profile) }}"
+
+- name: Refuse a profile whose cluster role disagrees with the inventory
+  # The installer derives the endpoint from the PROFILE's role, and the rest of
+  # ci-pool.yml gates on the INVENTORY's. A disagreement would point a node at
+  # an endpoint for the other role, so it is refused before anything is written.
+  ansible.builtin.assert:
+    that:
+      - registry_mirror_node_cluster_role in ['server', 'agent']
+      - registry_mirror_node_cluster_role == cluster_role
+      - registry_mirror_node_cluster_role == 'server' or registry_mirror_node_join_address | length > 0
+    fail_msg: >-
+      {{ registry_mirror_node_profile | basename }} declares CLUSTER_ROLE={{ registry_mirror_node_cluster_role }}
+      and CLUSTER_JOIN_ADDRESS={{ registry_mirror_node_join_address }}, but the inventory says
+      cluster_role={{ cluster_role }}; an agent also needs a join address to derive the mirror's
+      endpoint from. Nothing was written.
+    success_msg: "registry mirror inputs: role {{ registry_mirror_node_cluster_role }}"
+
+- name: Create the node-local registry-mirror installer directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ registry_mirror_node_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the committed registry-mirror installer and its template
+  ansible.builtin.copy:
+    src: "{{ registry_mirror_node_source_dir | trim }}/{{ item.name }}"
+    dest: "{{ registry_mirror_node_install_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  become: true
+  loop:
+    - name: "{{ registry_mirror_node_installer }}"
+      mode: "0755"
+    - name: "{{ registry_mirror_node_template }}"
+      mode: "0644"
+  loop_control:
+    label: "{{ item.name }}"
+  register: registry_mirror_node_installer_copy
+
+- name: Install the two profile keys the installer reads
+  # Only CLUSTER_ROLE and CLUSTER_JOIN_ADDRESS: the installer parses exactly
+  # those, and the rest of the profile has no business on the node.
+  ansible.builtin.copy:
+    content: |
+      # Rendered by the registry_mirror_node role from this node's committed
+      # phase0 profile: the only two keys install-registry-mirror.sh reads.
+      CLUSTER_ROLE={{ registry_mirror_node_cluster_role }}
+      CLUSTER_JOIN_ADDRESS={{ registry_mirror_node_join_address }}
+    dest: "{{ registry_mirror_node_install_dir }}/profile.env"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: registry_mirror_node_profile_copy
+
+- name: Plan the registries.yaml install with the installer's own dry run
+  ansible.builtin.command:
+    argv:
+      - "{{ registry_mirror_node_install_dir }}/{{ registry_mirror_node_installer }}"
+      - --dry-run
+      - "{{ registry_mirror_node_install_dir }}/profile.env"
+  environment:
+    K3S_CONFIG_ROOT: "{{ registry_mirror_node_config_root }}"
+  become: true
+  check_mode: false
+  register: registry_mirror_node_plan
+  # A refusal (a `foreign` file, an unreadable profile) exits non-zero and
+  # fails here with the installer's own message.
+  changed_when: >-
+    (registry_mirror_node_plan.stdout
+     | regex_findall('\(currently: ([a-z-]+)\)') | first | default('unknown')) != 'ours-unchanged'
+  when: >-
+    not (ansible_check_mode
+         and (registry_mirror_node_installer_copy.changed or registry_mirror_node_profile_copy.changed))
+
+- name: Install registries.yaml (k3s reads it at its next start)
+  ansible.builtin.command:
+    argv:
+      - "{{ registry_mirror_node_install_dir }}/{{ registry_mirror_node_installer }}"
+      - "{{ registry_mirror_node_install_dir }}/profile.env"
+  environment:
+    K3S_CONFIG_ROOT: "{{ registry_mirror_node_config_root }}"
+  become: true
+  changed_when: true
+  when:
+    - registry_mirror_node_plan is not skipped
+    - registry_mirror_node_plan is changed
+
+- name: Read the installed registries.yaml back through the installer
+  # Confirm the reader's input: k3s reads this file at its next start, so the
+  # file is what must equal the installer's rendering.
+  ansible.builtin.command:
+    argv:
+      - "{{ registry_mirror_node_install_dir }}/{{ registry_mirror_node_installer }}"
+      - --dry-run
+      - "{{ registry_mirror_node_install_dir }}/profile.env"
+  environment:
+    K3S_CONFIG_ROOT: "{{ registry_mirror_node_config_root }}"
+  become: true
+  check_mode: false
+  changed_when: false
+  register: registry_mirror_node_verify
+  when: not ansible_check_mode
+
+- name: Fail unless the installed registries.yaml is exactly the installer's rendering
+  ansible.builtin.assert:
+    that:
+      - "'(currently: ours-unchanged)' in registry_mirror_node_verify.stdout"
+    fail_msg: >-
+      {{ registry_mirror_node_config_root }}/registries.yaml is not the file
+      install-registry-mirror.sh renders for this node after the install:
+      {{ registry_mirror_node_verify.stdout }}
+    success_msg: >-
+      {{ registry_mirror_node_config_root }}/registries.yaml is the installer's
+      rendering; k3s reads it at its next start
+  when: not ansible_check_mode

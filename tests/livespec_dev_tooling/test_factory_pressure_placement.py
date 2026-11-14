@@ -79,7 +79,11 @@ def _node(
     return {
         "metadata": {
             "name": name,
-            "labels": {"kubernetes.io/hostname": name, "ci-runner.io/factory": "true"},
+            "labels": {
+                "kubernetes.io/hostname": name,
+                "ci-runner.io/factory": "true",
+                "ci-runner.io/factory-admit": "true",
+            },
         },
         "spec": {
             "taints": [{"key": _TAINT_KEY, "value": "high", "effect": "PreferNoSchedule"}]
@@ -263,7 +267,7 @@ def test_a_stale_or_missing_reading_clears_the_taint_everywhere(tmp_path: Path) 
         ],
         pods=[],
     )
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == _ALARM_EXIT, run.stderr
     assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
     assert f"reading-unknown:{_GMK}" in run.stdout
 
@@ -274,7 +278,7 @@ def test_a_node_that_publishes_no_pressure_condition_is_unknown(tmp_path: Path) 
         nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=None)],
         pods=[],
     )
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == _ALARM_EXIT, run.stderr
     assert mutations == [], mutations
     assert f"reading-unknown:{_GMK}" in run.stdout
 
@@ -524,3 +528,169 @@ def _reconcile_with_env(
     )
     log = (fake / "argv.log").read_text(encoding="utf-8").splitlines()
     return run, [line for line in log if not line.startswith("get ")]
+
+
+_M4 = "macbook-m4-max-homelab-worker"
+_ALARM_EXIT = 3
+
+
+def _unreachable(node: _Json, *, taint: _Json | None = None, arch: str | None = None) -> _Json:
+    if taint is not None:
+        node["spec"]["taints"] = [*node["spec"]["taints"], taint]
+    if arch is not None:
+        node["metadata"]["labels"]["kubernetes.io/arch"] = arch
+    return node
+
+
+_WORKER_CLASS = {
+    "key": "homelab-worker.livespec.dev/class",
+    "value": "worker",
+    "effect": "NoSchedule",
+}
+
+
+def test_a_factory_node_the_sandbox_pods_cannot_schedule_on_does_not_stop_the_steer(
+    tmp_path: Path,
+) -> None:
+    # The 2026-11-09 regression: the M4 homelab worker joined ci-runner.io/factory=true
+    # with no pressure publisher. Its NoSchedule class taint keeps every amd64
+    # sandbox pod off it, yet its unknown reading cleared the taint fleet-wide.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72"),
+            _node(_GMK, avg60=8.0),
+            _unreachable(_node(_M4, avg60=None), taint=_WORKER_CLASS, arch="arm64"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_PE} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+    assert "reading-unknown" not in run.stdout
+    assert f"out-of-scope[{_M4}:untolerated-taint:homelab-worker.livespec.dev/class]" in run.stdout
+
+
+def test_a_factory_node_of_another_architecture_is_out_of_scope(tmp_path: Path) -> None:
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72"),
+            _node(_GMK, avg60=8.0),
+            _unreachable(_node(_M4, avg60=None), arch="arm64"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_PE} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+    assert f"out-of-scope[{_M4}:arch:arm64]" in run.stdout
+
+
+def test_a_tolerated_or_soft_taint_keeps_a_node_in_scope(tmp_path: Path) -> None:
+    # node-role/ci=factory is tolerated by the sandbox pods and a PreferNoSchedule
+    # taint never filters, so neither takes a node out: its unknown reading still
+    # clears the taint everywhere.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72", tainted=True),
+            _unreachable(
+                _node(_GMK, avg60=None),
+                taint={"key": "node-role/ci", "value": "factory", "effect": "NoSchedule"},
+            ),
+        ],
+        pods=[],
+    )
+    assert run.returncode == _ALARM_EXIT, run.stderr
+    assert f"reading-unknown:{_GMK}" in run.stdout
+    assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
+
+
+def test_an_out_of_scope_node_is_never_left_tainted(tmp_path: Path) -> None:
+    m4 = _unreachable(_node(_M4, avg60=60.0, tainted=True), taint=_WORKER_CLASS)
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72"), _node(_GMK, avg60=8.0), m4],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_M4} {_TAINT_KEY}:PreferNoSchedule-" in mutations
+    assert not any(m.startswith(f"taint nodes {_M4} {_TAINT_KEY}=high") for m in mutations)
+
+
+def test_an_unknown_in_scope_reading_raises_a_named_alarm_after_clearing_the_taint(
+    tmp_path: Path,
+) -> None:
+    # A silently disabled steer ran for two days before anyone saw it. An unknown
+    # in-scope reading still clears the taint (the fail-safe), but it also writes a
+    # named alarm at journal priority err and fails the unit, so `systemctl --failed`
+    # and the journal both show it.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[_node(_PE, avg60=45.0, alloc="72", tainted=True), _node(_GMK, avg60=None)],
+        pods=[],
+    )
+    assert run.returncode == _ALARM_EXIT, run.stderr
+    assert mutations == [f"taint nodes {_PE} {_TAINT_KEY}:PreferNoSchedule-"], mutations
+    assert (
+        f"<3>reconcile-factory-pressure-taint.sh: ALARM factory-pressure-steer-disabled nodes={_GMK}"
+        in run.stderr
+    )
+
+
+def test_an_out_of_scope_node_without_a_reading_raises_no_alarm(tmp_path: Path) -> None:
+    run, _ = _reconcile(
+        tmp_path,
+        nodes=[
+            _node(_PE, avg60=45.0, alloc="72"),
+            _node(_GMK, avg60=8.0),
+            _unreachable(_node(_M4, avg60=None), taint=_WORKER_CLASS, arch="arm64"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert "ALARM" not in run.stderr
+
+
+def _admit(node: _Json, value: str) -> _Json:
+    node["metadata"]["labels"]["ci-runner.io/factory-admit"] = value
+    return node
+
+
+_GAMING = "gamingpc-xubuntu"
+
+
+def test_a_node_whose_factory_admit_label_the_pods_reject_is_out_of_scope(tmp_path: Path) -> None:
+    # 2026-11-11 16:3xZ: gamingpc and hp read ci-runner.io/factory-admit=false, which
+    # the sandbox pods' nodeSelector rejects. Compared anyway, gamingpc (0.00) was the
+    # "lowest", so BOTH reachable nodes were tainted and the steer netted to nothing.
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _admit(_node(_PE, avg60=2.5, alloc="72"), "true"),
+            _admit(_node(_GMK, avg60=30.0), "true"),
+            _admit(_node(_GAMING, avg60=0.0), "false"),
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert f"taint nodes {_GMK} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations
+    assert not any(m.startswith(f"taint nodes {_PE} {_TAINT_KEY}=high") for m in mutations)
+    assert f"steer-to:{_PE}:" in run.stdout
+    assert f"out-of-scope[{_GAMING}:label:ci-runner.io/factory-admit]" in run.stdout
+
+
+def test_a_node_without_the_factory_admit_label_is_out_of_scope(tmp_path: Path) -> None:
+    gaming = _node(_GAMING, avg60=None)
+    del gaming["metadata"]["labels"]["ci-runner.io/factory-admit"]
+    run, mutations = _reconcile(
+        tmp_path,
+        nodes=[
+            _admit(_node(_PE, avg60=2.5, alloc="72"), "true"),
+            _admit(_node(_GMK, avg60=30.0), "true"),
+            gaming,
+        ],
+        pods=[],
+    )
+    assert run.returncode == 0, run.stderr
+    assert "reading-unknown" not in run.stdout
+    assert f"taint nodes {_GMK} {_TAINT_KEY}=high:PreferNoSchedule --overwrite" in mutations

@@ -18,6 +18,9 @@ from livespec_dev_tooling._incident_ci_plan import (
     event_key as _event_key,
 )
 from livespec_dev_tooling._incident_ci_plan import (
+    execution_view as _execution_view,
+)
+from livespec_dev_tooling._incident_ci_plan import (
     select_incident_targets as _incident_selection,
 )
 from livespec_dev_tooling._incident_ci_types import (
@@ -104,21 +107,23 @@ def select_ci_plan(
     trust: CiTrust,
     environ: Mapping[str, str],
 ) -> CiPlan | IncidentConfigurationRefusal:
-    """Select members, preserving complete normal graphs and refusing untrusted repair."""
-    if (
-        not targets
-        or any(not t.name for t in targets)
-        or len({t.name for t in targets}) != len(targets)
-    ):
+    """Select members, preserving complete normal graphs and refusing untrusted repair.
+
+    Members are keyed by (job, slug); each slug executes at most once.
+    """
+    view = None if any(not t.name for t in targets) else _execution_view(targets=targets)
+    if view is None or not view[0]:
         return _refuse(
-            code="invalid-ci-inventory", detail="CI targets must be nonempty and uniquely named"
+            code="invalid-ci-inventory",
+            detail="CI targets must be nonempty, unique per job and slug, and agree across jobs",
         )
+    execution = view[0]
     requested = event.kind == "pull_request" and trust.incident_label in event.labels
     if not requested:
         return _plan(
             event=event,
             targets=targets,
-            selection=(targets, ()),
+            selection=(execution, ()),
             authority=None,
             environ=normal_child_environment(environ=environ),
             incident_label=trust.incident_label,
@@ -126,7 +131,7 @@ def select_ci_plan(
     authorized = _authorize(event=event, authority=authority, trust=trust)
     if isinstance(authorized, IncidentConfigurationRefusal):
         return authorized
-    selected, deferred = _incident_selection(targets=targets)
+    selected, deferred = _incident_selection(targets=execution)
     if not selected:
         return _refuse(
             code="incident-ci-no-retained-checks",
@@ -148,7 +153,13 @@ def _aggregate_plan_valid(*, plan: CiPlan, event: CiEvent, targets: tuple[CiTarg
         plan.authority is None or not _authority_matches(event=event, authority=plan.authority)
     ):
         return False
-    selection = _incident_selection(targets=targets) if requested else (targets, ())
+    # The same admission select_ci_plan applies: an inventory with no valid execution
+    # view, or one that runs nothing, validates no plan, whatever its callers recheck.
+    view = None if any(not t.name for t in targets) else _execution_view(targets=targets)
+    if view is None or not view[0]:
+        return False
+    execution = view[0]
+    selection = _incident_selection(targets=execution) if requested else (execution, ())
     expected = _plan(
         event=event,
         targets=targets,
@@ -213,4 +224,6 @@ def aggregate_ci_results(
         ),
         missing=tuple(t.name for t in plan.selected if t.name not in by_name),
         deferred=plan.deferred,
+        attribution=plan.attribution,
+        conditional=plan.conditional,
     )

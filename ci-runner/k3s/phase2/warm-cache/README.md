@@ -25,7 +25,7 @@ local-path provisioner creates it:
 |---|---|
 | `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch, hashes its `uv.lock`, and — when any lock changed, the published generation no longer verifies, or it is older than 24 h — builds a NEW generation from an EMPTY directory: per repository it rewrites the file-host prefix in its own clone's lock to the PyPI files proxy and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` with that generation as `UV_CACHE_DIR`; runs the verifier; checks the budget; writes the generation's manifest; publishes with one atomic symlink rename; prunes to the newest two. A run with nothing changed verifies the live generation and records `rebuilt=0`. Every run writes `last-run.json` for the host sweep. For every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Its header carries the whole control flow and the exit codes. |
 | `verify-uv-cache.py`, `uv_cache_layout.py` | The verifier (stdlib plus `returns`, both files shipped in the populator's ConfigMap and mounted together at `/scripts`): maps every entry of a uv 0.9.x cache back to a `(name, version)` and fails on any entry no routed lock references. The layout module holds the bucket table and the scanners; the CLI holds the lock union, the build-dependency closure and the report — split at the repo's per-file LLOC ceiling. "Verifier" below. |
-| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap, the carrier-only `warm-cache-populate` CronJob (the one writer of cargo, sccache and target caches), and the `warm-uv-cache-populate` DaemonSet. The DaemonSet selects every non-carrier node labelled `ci-runner.io/warm-uv-cache=true`, writes only that node's uv lower, starts one run immediately and repeats every 30 minutes. |
+| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap, the carrier-only `warm-cache-populate` CronJob (the one writer of cargo, sccache and target caches), and the `warm-uv-cache-populate` DaemonSet. The DaemonSet selects every non-carrier node labelled `ci-runner.io/warm-uv-cache=true`, writes only that node's uv lower and its action archive seed (`WARM_CACHE_ACTIONS=true`, livespec-dev-tooling-e2gv6n), starts one run immediately and repeats every 30 minutes. The hp DaemonSet writes the uv lower only: hp is runner-only, and its runner volumes are never seeded from the action tree. |
 | `pypi-proxy/` | The PyPI FILES proxy every rebuild fetches through: one nginx `proxy_cache` in front of `files.pythonhosted.org` on the `ci-cache` tier, read only by the populator. "The PyPI files proxy" below and its own README. |
 | `converge-warm-cache.sh` | The idempotent converge of every cluster object here: the proxy (with a bounded rollout wait), the budget ConfigMap + CronJob, the `warm-cache-repos` ConfigMap derived from `../arc/values-*.yaml`, and the script ConfigMap from the populator AND the verifier. Run by the boot converge and by `install-warm-cache.sh`. |
 | `install-warm-cache.sh` | The attended superset: the converge, one populate Job run immediately and waited for, then `arc-hook-pod-template` converged via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
@@ -262,15 +262,37 @@ each be at or under the budget, else the generation is renamed
 with both numbers, and the job exits 3. Fixed numbers, not a multiple of
 the last build: a ratchet is self-referential, and the point is an alarm
 when the union drifts; re-deriving it is a reviewed commit against the
-cost table above. Values: **1,000,000,000 bytes and 20,000 files** (union
-379 MB / 8,070 files; the runaway generation was 1,388 MB / 159,409 files,
-so both axes trip well before that shape recurs). Home: the
+cost table above. Re-derived 2026-11-12: an empty `UV_CACHE_DIR` was filled by
+`uv sync --frozen --all-groups --no-install-project --no-install-workspace`
+for the ten routed default-branch locks. That union contained 128 distinct
+`(name, version)` pairs and measured 740,981,208 bytes / 18,665 regular files
+with the same `du -sb` and `find -type f` accounting the populator uses. The
+per-start seed cost is the lifecycle sweep's `start-seed-cost` observation:
+`seed.seconds` spans the provisioner's `_warm` creation through the final
+`.uv-generation` marker, while `seed.bytes` uses the same byte accounting as
+the union.
+
+The per-start seed cost of this union, measured 2026-11-12 on the factory
+sandbox (overlayfs, so no reflink: every byte is really copied, which makes it
+an upper bound for the XFS/reflink medium). A tree of 18,665 regular files
+totalling 740,981,208 bytes (the union's file count and byte total, spread
+over 64 directories) was copied with `cp -a --reflink=auto` three times:
+1.80 s, 1.83 s and 2.46 s, so about 2.5 s at worst. `seed.bytes` for a seed of
+this union is its 740,981,208 bytes by the sweep's `du -sb` accounting. The
+reflink medium is cheaper per byte but still pays per file; scaling the prior
+calibration (3 s at 12,192 files) linearly by file count gives about 4.6 s for
+18,665 files, and the sweep's ten-second `start-seed-cost` threshold sits above
+both figures. The live XFS/reflink read-back of `seed.seconds` remains
+host-captured after the converge. The measurement retains sufficient
+headroom for lock growth while still alarming before the recorded runaway
+shape. The budget values themselves are deliberately stated only in their
+home: the
 `warm-cache-budget` ConfigMap (`bytes`, `files`) in
 `warm-cache-cronjob.yaml`, injected as `WARM_BUDGET_BYTES` /
 `WARM_BUDGET_FILES` via `configMapKeyRef`; the populator refuses to start
 without them, records the values in effect in every generation's manifest
 and in `last-run.json`, and the sweep emits them as
-`livespec.ci_warm.budget_*` so a chart can draw the line.
+`livespec.ci_warm.budget_*` so a chart can draw the line. Its reviewed budget commitment: `sha256:e54f904da805d86b5fbfb59fe9e9e39bd7d1d823c6bcc9c4661a82339ccc1448`.
 
 ## Metrics
 
@@ -1033,7 +1055,15 @@ freshly provisioned node gets NONE of them from `ansible/ci-pool.yml` today
    boot path is gone at the next reboot — which is how the mirror was lost
    at the 2026-09-09 05:08Z reboot (`livespec-dev-tooling-y1t5`).
 
-### The half that is open
+### The half that is open (closed by livespec-dev-tooling-e2gv6n)
+
+Step 2 above is now the `registry_mirror_node` role in `ansible/ci-pool.yml`,
+on EVERY ci_pool node, the server included: it wraps
+`registry-mirror/install-registry-mirror.sh`, reports drift through the
+installer's own `--dry-run`, and never restarts k3s
+(`just ansible-apply ansible/ci-pool.yml --tags registry_mirror_node`). The file
+takes effect at each node's next k3s start. The history below is kept for the
+record.
 
 **A freshly provisioned node carries the mirror's node half, and nothing
 installs it.** `ansible/ci-pool.yml` (like the retired `install-node.sh`
@@ -1095,7 +1125,12 @@ calls the forge, so no workflow changes and no forked runner are needed.
   reports `actions:over-budget`.
 - **The provisioner** reflink-copies `archives/` into
   `<volume>/_warm/actions/archives` for EVERY volume (the tree is content-addressed,
-  so it is not per repository) and stamps `.generation`.
+  so it is not per repository) and stamps `.generation`. It copies the volume's
+  OWN node's `.warm/actions`, so each ci-workvols node needs its own publisher:
+  the carrier CronJob on the carrier, and the `warm-uv-cache-populate` DaemonSet
+  (`WARM_CACHE_ACTIONS=true`) on every other ci-workvols node
+  (livespec-dev-tooling-e2gv6n). `WARM_CACHE_ACTIONS` defaults to the negation of
+  `WARM_CACHE_UV_ONLY`, so a populator that does not set it behaves as before.
 - **The runner** is the reader, and it reads during Set up job, before any hook or
   job container exists. So the switch lives in the runner container's command:
   `arc/action-archive-entry.sh` (in the `arc-hook-pod-template` ConfigMap, mounted

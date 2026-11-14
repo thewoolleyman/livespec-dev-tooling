@@ -1,0 +1,84 @@
+# values-livespec-orchestrator-master.yaml -- the dedicated master-push lane
+# for livespec-orchestrator-beads-fabro. GitHub assigns generic ARC runners
+# before Kueue sees a pod, so master traffic needs its own runs-on label and
+# LocalQueue to avoid waiting behind pull-request coverage shards.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro"
+githubConfigSecret: arc-github-app-installation
+
+runnerScaleSetName: "livespec-orchestrator-master-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+listenerTemplate:
+  spec:
+    nodeSelector:
+      ci-runner.io/always-on: "true"
+    containers:
+      - name: listener
+
+template:
+  metadata:
+    labels:
+      kueue.x-k8s.io/queue-name: livespec-orchestrator-master-lq
+  spec:
+    schedulerName: ci-runner-scheduler
+    tolerations:
+      - key: livespec.io/factory-pressure
+        operator: Exists
+        effect: PreferNoSchedule
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+    volumes:
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template-@HOOK_REVISION@
+      - name: fleet-container-hook
+        hostPath:
+          path: /usr/local/lib/ci-runner-k3s/hooks/2.338.2/index.js
+          type: File
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.338.2@sha256:759a1d94a15b05941aba5196974ff43fe15b4cbba29b694b35cbc32a1166b232
+        command: ["/bin/bash", "/home/runner/hook-template/action-archive-entry.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+            value: /home/runner/fleet-hook/index.js
+          - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
+            value: "2.338.2"
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+          - name: fleet-container-hook
+            mountPath: /home/runner/fleet-hook/index.js
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+minRunners: 0
+# Four is the measured master coverage-shard burst, a recorded exception to
+# the normal six-runner floor in kueue/DERIVATION.md.
+maxRunners: 4

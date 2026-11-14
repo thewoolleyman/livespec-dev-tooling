@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Interval for {{ reconcile_runs_timer_unit }}.timer (role reconcile_runs). The
+# empty assignment resets the unit text's monotonic timers before this file sets
+# them again.
+[Timer]
+OnBootSec=
+OnBootSec={{ reconcile_runs_boot_delay }}
+OnUnitInactiveSec={{ reconcile_runs_interval }}

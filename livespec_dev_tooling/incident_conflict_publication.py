@@ -18,11 +18,12 @@ Each action carries its sweep state under `sweep` in the observer record:
 `attempts` (all of them), `streak` (consecutive attempts of the `last` reason),
 `next_at` (epoch seconds) and, once set, `terminal`. A `retry` outcome backs off
 exponentially from five minutes to an hour by its streak and turns `terminal` once the
-streak reaches that reason's bound, so nothing is retried forever. A `terminal` outcome
-is journaled with its reason at once and is never written again automatically; it
-needs the incident owner or an operator. A `landed` outcome always wins: it marks the
-action `reconciled` even over a terminal another publisher recorded meanwhile, keeping
-that diagnosis as `superseded_terminal`.
+streak reaches that reason's bound or all retry reasons together reach the global
+attempt bound, so nothing is retried forever. A `terminal` outcome is journaled with
+its reason at once and is never written again automatically; it needs the incident
+owner or an operator. A `landed` outcome always wins: it marks the action `reconciled`
+even over a terminal another publisher recorded meanwhile, keeping that diagnosis as
+`superseded_terminal`.
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ _CAP_SECONDS = 3600.0
 _BOUNDS = {"merge-unrecorded": 12, "claim-changed": 3}
 _EXHAUSTED = {"claim-changed": HALF_REOPEN}
 _DEFAULT_BOUND = 48
+_MAX_ATTEMPTS = 48
 _RECONCILED = "reconciled"
 _LANDED = "landed"
 _DEFERRED = "deferred"
@@ -95,11 +97,13 @@ class ConflictPublication:
 
     def publish(self, *, intent: RecoveryIntent, receipt: str, automatic: bool) -> Published:
         """Write the conflict when the snapshot allows it, then record the outcome."""
-        gate = self._snapshot(action_id=intent.action_id, receipt=receipt, automatic=automatic)
+        gate, operator_override = self._snapshot(
+            action_id=intent.action_id, receipt=receipt, automatic=automatic
+        )
         if gate is not None:
             return gate
         outcome = self.chain.record(intent=intent, receipt=receipt)
-        return record_outcome(
+        published = record_outcome(
             state=self.state,
             repository=self.repository,
             action_id=intent.action_id,
@@ -107,20 +111,34 @@ class ConflictPublication:
             outcome=outcome,
             clock=self.clock,
         )
+        if operator_override and published.status != _SKIPPED:
+            _record_operator_override(
+                state=self.state,
+                repository=self.repository,
+                action_id=intent.action_id,
+                receipt=receipt,
+            )
+        return published
 
-    def _snapshot(self, *, action_id: str, receipt: str, automatic: bool) -> Published | None:
+    def _snapshot(
+        self, *, action_id: str, receipt: str, automatic: bool
+    ) -> tuple[Published | None, bool]:
         with repository_lock(directory=self.state, repository=self.repository) as path:
             action = _actions(record=load_record(path=path)).get(action_id)
         if action is None or action.get("receipt") != receipt:
-            return Published(status=_SKIPPED, reason="the action no longer holds this receipt")
+            return (
+                Published(status=_SKIPPED, reason="the action no longer holds this receipt"),
+                False,
+            )
         if action.get(_RECONCILED):
-            return Published(status=_RECONCILED, reason="already on the chain")
+            return Published(status=_RECONCILED, reason="already on the chain"), False
         terminal = _state(action=action).get(_TERMINAL)
         if terminal:
-            return Published(status=_TERMINAL, reason=str(terminal))
-        if automatic and not is_due(action=action, now=self.clock()):
-            return Published(status=_DEFERRED, reason="backing off")
-        return None
+            return Published(status=_TERMINAL, reason=str(terminal)), False
+        due = is_due(action=action, now=self.clock())
+        if automatic and not due:
+            return Published(status=_DEFERRED, reason="backing off"), False
+        return None, not automatic and not due
 
 
 def record_outcome(
@@ -171,18 +189,39 @@ def _apply(
     attempts = cast("int", state.get("attempts", 0)) + 1
     streak = cast("int", state.get("streak", 0)) + 1 if state.get("last") == outcome.reason else 1
     state.update(attempts=attempts, streak=streak, last=outcome.reason)
-    if outcome.status == "retry" and streak < _BOUNDS.get(outcome.reason, _DEFAULT_BOUND):
+    exhausted_reason = streak >= _BOUNDS.get(outcome.reason, _DEFAULT_BOUND)
+    if outcome.status == "retry" and attempts < _MAX_ATTEMPTS and not exhausted_reason:
         state["next_at"] = clock() + backoff_seconds(attempts=streak)
         action[_SWEEP] = state
         return Published(status=_DEFERRED, reason=outcome.reason)
     reason = (
         outcome.reason
         if outcome.status == _TERMINAL
-        else _EXHAUSTED.get(outcome.reason, f"{outcome.reason}: no landing after {streak} attempts")
+        else _EXHAUSTED.get(
+            outcome.reason,
+            f"{outcome.reason}: no landing after {attempts} attempts",
+        )
+        if exhausted_reason
+        else f"{outcome.reason}: no landing after {attempts} attempts"
     )
     state[_TERMINAL] = reason
     action[_SWEEP] = state
     return Published(status=_TERMINAL, reason=reason)
+
+
+def _record_operator_override(
+    *, state: Path, repository: str, action_id: str, receipt: str
+) -> None:
+    """Mark an operator's early retry unless its action changed during the write."""
+    with repository_lock(directory=state, repository=repository) as path:
+        record = load_record(path=path)
+        action = _actions(record=record).get(action_id)
+        if action is None or action.get("receipt") != receipt:
+            return
+        sweep = _state(action=action)
+        sweep["operator_overrides"] = cast("int", sweep.get("operator_overrides", 0)) + 1
+        action[_SWEEP] = sweep
+        save_record(path=path, record=record)
 
 
 def _state(*, action: dict[str, object]) -> dict[str, object]:

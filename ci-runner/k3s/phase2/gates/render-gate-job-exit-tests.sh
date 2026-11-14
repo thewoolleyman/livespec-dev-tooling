@@ -62,6 +62,18 @@
 #   U. a locked artifact the proxy cannot serve falls through to PyPI directly.
 #   V. the operator cache kill switch removes the gate's private uv seed before
 #      the gate container starts.
+#   X. the gate container's size is what the client passed: --cpu, --memory and
+#      --parallelism become its cpu and memory requests, a memory limit equal to
+#      the memory request, and LIVESPEC_TEST_PARALLELISM, and a render with no
+#      size flags carries the renderer's own defaults, read from the renderer
+#      rather than restated here, and requests no more than one gate unit, read
+#      from the gates-cq annotations in ../kueue/cluster-queue-gates.yaml
+#      (livespec-dev-tooling-c3nd2h, livespec-dev-tooling-brggiu).
+#   Y. the operator reproduction route's two flags (livespec-dev-tooling-pkmxgu):
+#      --queue names the Job's LocalQueue, which is gates-lq when it is not
+#      passed, and --repro-stack-interval renders the stack diagnostics, which an
+#      ordinary render carries no trace of. A malformed value of either is
+#      refused, and the diagnostics block parses as shell.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -586,6 +598,24 @@ if [ "${1:-}" = "--show" ]; then
     *)          exit 1 ;;
   esac
 fi
+# Case W: what a check reading the run's change set sees WHEN THE RECIPES RUN.
+# The change set is the one the flake-retry plugin reads
+# (livespec_dev_tooling/flake_retry_changes.py `change_paths`): the diff from
+# the merge base with origin/master, plus staged, unstaged and untracked paths.
+if [ -n "${RECIPE_STATE:-}" ]; then
+  base="$(git merge-base HEAD origin/master)"
+  {
+    echo "status:"
+    git status --porcelain
+    echo "changes:"
+    {
+      git diff --name-only "${base}" HEAD --no-renames
+      git diff --name-only --cached --no-renames
+      git diff --name-only --no-renames
+      git ls-files --others --exclude-standard
+    } | sort -u
+  } > "${RECIPE_STATE}"
+fi
 if [ "${GATE_RUN_UVX:-}" = 1 ]; then
   if [ -n "${UVX_STREAM_DIR:-}" ]; then
     uvx test-tool > "${UVX_STREAM_DIR}/out" 2> "${UVX_STREAM_DIR}/err"
@@ -612,10 +642,33 @@ if [ "${1:-}" = "clone" ]; then
   [ -n "${CLONE_FAILS}" ] && exit 1
   exit 0
 fi
+# Cases W and WD run the script in a REAL repository, so everything but a clone
+# reaches the real git there and the working-tree comparison under test is
+# git's own. A hook's GIT_DIR or GIT_INDEX_FILE must not point it elsewhere.
+if [ -n "${GATE_REAL_GIT:-}" ]; then
+  exec env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+    -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES "${GATE_REAL_GIT}" "$@"
+fi
 [ "${3:-}" = "rev-parse" ] && echo "0000000000000000000000000000000000000000"
 exit 0
 STUB
 chmod +x "${STUB_DIR}/git"
+
+# A `uv` for case W's proxied cache warm. A `sync` records where it ran, the
+# environment it was pointed at and the lock it was handed, and touches no
+# network; UV_SYNC_FAILS makes it fail as a sync that could not install would.
+cat > "${STUB_DIR}/uv" <<'STUB'
+#!/usr/bin/env bash
+printf 'uv %s\n' "$*" >> "${STUB_LOG}"
+if [ "${1:-}" = "sync" ]; then
+  printf '%s\n' "${PWD}" >> "${UV_STUB_DIR}/sync-dirs"
+  printf '%s\n' "${UV_PROJECT_ENVIRONMENT:-}" >> "${UV_STUB_DIR}/sync-envs"
+  cp uv.lock "${UV_STUB_DIR}/synced.lock" 2>/dev/null || :
+  [ -n "${UV_SYNC_FAILS:-}" ] && { echo 'error: Failed to download `good==1.0`' >&2; exit 1; }
+fi
+exit 0
+STUB
+chmod +x "${STUB_DIR}/uv"
 
 cat > "${STUB_DIR}/uvx" <<'STUB'
 #!/usr/bin/env bash
@@ -651,6 +704,8 @@ run_gate_script() {
   # Leaves the invocation log at ${SCRATCH}/stub.log and returns the script's
   # own exit status, which IS the Job's verdict.
   : > "${SCRATCH}/stub.log"
+  rm -rf "${SCRATCH}/uv-stub"
+  mkdir -p "${SCRATCH}/uv-stub"
   gate_script "$1" > "${SCRATCH}/gate-script.sh"
   mkdir -p "${SCRATCH}/gate-cwd"
   (
@@ -659,6 +714,8 @@ run_gate_script() {
       CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
       UVX_PROXY_FAIL="${UVX_PROXY_FAIL:-}" UVX_TOOL_FAILS="${UVX_TOOL_FAILS:-}" \
       UVX_STREAM_DIR="${UVX_STREAM_DIR:-}" GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
+      GATE_REAL_GIT="${GATE_REAL_GIT:-}" RECIPE_STATE="${RECIPE_STATE:-}" \
+      UV_STUB_DIR="${SCRATCH}/uv-stub" UV_SYNC_FAILS="${UV_SYNC_FAILS:-}" \
       bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
   )
 }
@@ -666,9 +723,10 @@ run_gate_script() {
 if run_gate_script "${declared_out}" "verify publish"; then
   if [ "$(cat "${SCRATCH}/stub.log")" = "just --show verify
 just --show publish
+git status --porcelain
 just verify
 just publish" ]; then
-    pass "a tree providing both recipes preflights both, then runs both in order"
+    pass "a tree providing both recipes preflights both, compares the checkout with the pushed tree, then runs both in order"
   else
     fail "the provided tree ran the wrong commands: $(cat "${SCRATCH}/stub.log")"
   fi
@@ -1056,32 +1114,39 @@ else
   fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
 fi
 
-# Wait until a stand-in proxy answers HTTP, not merely until it accepts a connection, and for up to 30 s:
-# the gate script gives the proxy 2 s to answer /health and treats silence as "proxy down", so a stand-in
-# still starting under CI load turned the W case's proxied artifact direct (master run 41505312652, PR 3174).
+# Each stand-in writes its readiness file only after binding its HTTP server.
+# Waiting for that signal makes the case insensitive to a loaded runner
+# delaying the process between launch and its first answer.  The child exiting
+# first is the corresponding negative readiness signal.
+start_stand_in_proxy() {
+  local root="$1" port="$2" ready="$3"
+  rm -f "${ready}"
+  (
+    cd "${root}" || exit 1
+    exec python3 - "${port}" "${ready}" <<'PY'
+import http.server
+import sys
+
+server = http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), http.server.SimpleHTTPRequestHandler)
+with open(sys.argv[2], "w", encoding="utf-8") as ready:
+    ready.write("ready\n")
+server.serve_forever()
+PY
+  ) >/dev/null 2>&1 &
+  STAND_IN_PROXY_PID=$!
+}
+
 wait_for_stand_in_proxy() {
-  local port="$1" deadline_seconds="${STAND_IN_PROXY_READY_DEADLINE_SECONDS:-30}" deadline remaining
-  deadline=$((SECONDS + deadline_seconds))
-  while [ "${SECONDS}" -lt "${deadline}" ]; do
-    remaining=$((deadline - SECONDS))
-    if [ "${remaining}" -le 0 ]; then
-      fail "the stand-in proxy on port ${port} never answered HTTP within ${deadline_seconds} s"
+  local child_pid="$1" ready="$2" child_status
+  while ! [ -s "${ready}" ]; do
+    if ! kill -0 "${child_pid}" 2>/dev/null; then
+      wait "${child_pid}" 2>/dev/null
+      child_status=$?
+      fail "the stand-in proxy child ${child_pid} exited before writing readiness (status ${child_status})"
       return 1
-    fi
-    # A TCP open alone accepts a listener whose HTTP service is not ready.
-    # curl requires a successful HTTP status, while its connection and total
-    # transfer limits each use the time left from this helper's one deadline.
-    # The outer timeout remains the hard stop if curl itself is delayed.
-    if timeout --signal=KILL "${remaining}s" \
-      curl --fail --head --http1.0 --silent --show-error \
-        --connect-timeout "${remaining}" --max-time "${remaining}" \
-        "http://127.0.0.1:${port}/" >/dev/null 2>&1; then
-      return 0
     fi
     sleep 0.1
   done
-  fail "the stand-in proxy on port ${port} never answered HTTP within ${deadline_seconds} s"
-  return 1
 }
 
 echo "== U. uvx retries direct PyPI when the proxy fails after a healthy probe =="
@@ -1089,9 +1154,10 @@ uvx_proxy_root="${SCRATCH}/uvx-proxy"
 mkdir -p "${uvx_proxy_root}/simple"
 printf 'simple api\n' > "${uvx_proxy_root}/simple/index.html"
 uvx_proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-(cd "${uvx_proxy_root}" && exec python3 -m http.server "${uvx_proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
-uvx_proxy_pid=$!
-if wait_for_stand_in_proxy "${uvx_proxy_port}"; then
+uvx_proxy_ready="${SCRATCH}/uvx-proxy.ready"
+start_stand_in_proxy "${uvx_proxy_root}" "${uvx_proxy_port}" "${uvx_proxy_ready}"
+uvx_proxy_pid=${STAND_IN_PROXY_PID}
+if wait_for_stand_in_proxy "${uvx_proxy_pid}" "${uvx_proxy_ready}"; then
   if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_PROXY_FAIL=1 GATE_RUN_UVX=1 \
        run_gate_script "${declared_out}" "verify publish"; then
     if grep -qF "uvx index=http://127.0.0.1:${uvx_proxy_port}/simple args=test-tool" "${SCRATCH}/stub.log" && \
@@ -1137,47 +1203,343 @@ else
   fail "an unreachable uvx proxy made the gate fail: $(cat "${SCRATCH}/gate.err")"
 fi
 
-echo "== W. locked artifacts use the proxy when served and fall through on a miss =="
-# Run the rendered script against a local stand-in proxy. It serves exactly one
-# locked artifact: that URL must be rewritten, while the 404 remains direct.
-# Stopping the proxy then proves an unavailable service leaves both direct and
-# does not turn install-worktree-pack's preparation into a gate failure.
+echo "== W. locked artifacts route through the proxy from a copy OUTSIDE the checkout =="
+# The checkout under test is a REAL repository here: origin/master carries one
+# uv.lock and the pushed HEAD either keeps it or changes it. A local stand-in
+# proxy serves exactly one locked artifact. The script must route that artifact
+# through the proxy and leave its 404 neighbour direct, as before, but in a COPY
+# of the lock outside the checkout: the checkout's own uv.lock stays the pushed
+# bytes, so the change set a check reads when the recipes run is the pushed
+# tree's (livespec-dev-tooling-o4hkgh). The in-place rewrite it replaces put
+# uv.lock in every delegated gate's change set, and the flake-retry plugin then
+# withheld every retry in that session as a non-version-only uv.lock change.
+real_git="$(command -v git)"
+fixture_git() {
+  env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+    -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    "${real_git}" -c core.hooksPath=/dev/null -c commit.gpgsign=false \
+    -c user.name=gate-fixture -c user.email=gate-fixture@example.invalid \
+    -C "${SCRATCH}/gate-cwd" "$@"
+}
+make_gate_checkout() {
+  # make_gate_checkout <uv.lock on origin/master> <uv.lock the pushed HEAD carries>
+  # The pushed commit always changes README.md, so its change set is never empty.
+  rm -rf "${SCRATCH}/gate-cwd"
+  mkdir -p "${SCRATCH}/gate-cwd"
+  fixture_git init --quiet
+  printf '[project]\nname = "gate-fixture"\nversion = "0.1.0"\n' > "${SCRATCH}/gate-cwd/pyproject.toml"
+  printf '3.12\n' > "${SCRATCH}/gate-cwd/.python-version"
+  printf '%s\n' "$1" > "${SCRATCH}/gate-cwd/uv.lock"
+  printf 'base\n' > "${SCRATCH}/gate-cwd/README.md"
+  fixture_git add -A
+  fixture_git commit --quiet -m base
+  fixture_git update-ref refs/remotes/origin/master HEAD
+  printf 'pushed\n' > "${SCRATCH}/gate-cwd/README.md"
+  printf '%s\n' "$2" > "${SCRATCH}/gate-cwd/uv.lock"
+  fixture_git add -A
+  fixture_git commit --quiet -m pushed
+  # The pod's checkout is a detached HEAD at the pushed ref.
+  fixture_git checkout --quiet --detach HEAD
+}
+# recipe_state_section <status|changes>: one section of the state the stub
+# `just` recorded when the recipes ran.
+recipe_state_section() {
+  awk -v want="$1:" '/^(status|changes):$/ { on = ($0 == want); next } on' "${SCRATCH}/recipe-state"
+}
 lock_good='https://files.pythonhosted.org/packages/good/good-1.0.whl'
 lock_missing='https://files.pythonhosted.org/packages/missing/missing-1.0.whl'
 lock_body="wheels = [{ url = \"${lock_good}\", hash = \"sha256:good\" }, { url = \"${lock_missing}\", hash = \"sha256:missing\" }]"
+lock_pushed="${lock_body}
+# the pushed tree's own lock change"
 proxy_root="${SCRATCH}/fake-proxy"
-mkdir -p "${proxy_root}/packages/good" "${SCRATCH}/gate-cwd"
+mkdir -p "${proxy_root}/packages/good"
 printf 'wheel\n' > "${proxy_root}/packages/good/good-1.0.whl"
 proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-(cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
-proxy_pid=$!
-if wait_for_stand_in_proxy "${proxy_port}"; then
-  printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
-  if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
-    proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
-    rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
-    if printf '%s' "${rewritten}" | grep -F "${proxied_good}" >/dev/null && \
-       printf '%s' "${rewritten}" | grep -F "${lock_missing}" >/dev/null; then
+proxy_ready="${SCRATCH}/fake-proxy.ready"
+start_stand_in_proxy "${proxy_root}" "${proxy_port}" "${proxy_ready}"
+proxy_pid=${STAND_IN_PROXY_PID}
+if wait_for_stand_in_proxy "${proxy_pid}" "${proxy_ready}"; then
+  proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
+
+  # (1) a pushed tree that leaves uv.lock alone.
+  make_gate_checkout "${lock_body}" "${lock_body}"
+  if GATE_REAL_GIT="${real_git}" RECIPE_STATE="${SCRATCH}/recipe-state" \
+       GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    synced_lock="$(cat "${SCRATCH}/uv-stub/synced.lock" 2>/dev/null || true)"
+    sync_dir="$(cat "${SCRATCH}/uv-stub/sync-dirs" 2>/dev/null || true)"
+    sync_env="$(cat "${SCRATCH}/uv-stub/sync-envs" 2>/dev/null || true)"
+    if printf '%s' "${synced_lock}" | grep -F "${proxied_good}" >/dev/null && \
+       printf '%s' "${synced_lock}" | grep -F "${lock_missing}" >/dev/null && \
+       ! printf '%s' "${synced_lock}" | grep -F "${lock_good}" >/dev/null; then
       pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
     else
-      fail "the lock did not route only the proxy-served artifact: ${rewritten}"
+      fail "the synced lock did not route only the proxy-served artifact: ${synced_lock:-<no uv sync ran>}"
+    fi
+    case "${sync_dir}" in
+      "${SCRATCH}/gate-cwd"|"${SCRATCH}/gate-cwd/"*|"")
+        fail "the proxied lock was not synced from a copy outside the checkout: sync ran in '${sync_dir}'" ;;
+      *)
+        if [ "$(printf '%s\n' "${sync_dir}" | wc -l)" -eq 1 ] && [ ! -e "${sync_dir}" ]; then
+          pass "the proxied lock is synced once, from a copy outside the checkout that is removed afterwards"
+        else
+          fail "the out-of-tree lock copy synced more than once or was left behind: ${sync_dir}"
+        fi ;;
+    esac
+    case "${sync_env}" in
+      "${SCRATCH}/gate-cwd"|"${SCRATCH}/gate-cwd/"*|"")
+        fail "the proxied sync installed into the checkout instead of a throwaway environment: '${sync_env}'" ;;
+      *) pass "the proxied sync installs into a throwaway environment outside the checkout" ;;
+    esac
+    if grep -qE '^uv sync .*--frozen' "${SCRATCH}/stub.log" && \
+       grep -qE '^uv sync .*--no-install-project' "${SCRATCH}/stub.log"; then
+      pass "the proxied sync is frozen to the copied lock and installs no project"
+    else
+      fail "the proxied sync is not a frozen, project-less sync: $(grep -E '^uv ' "${SCRATCH}/stub.log" || true)"
+    fi
+    if [ "$(fixture_git show HEAD:uv.lock)" = "$(cat "${SCRATCH}/gate-cwd/uv.lock")" ]; then
+      pass "the checkout's uv.lock is still the pushed tree's bytes"
+    else
+      fail "the checkout's uv.lock was rewritten in place: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    fi
+    if [ -z "$(recipe_state_section status)" ] && [ "$(recipe_state_section changes)" = "README.md" ]; then
+      pass "when the recipes run the change set is the pushed tree's alone, with no uv.lock in it"
+    else
+      fail "the change set the recipes saw is not the pushed tree's: $(cat "${SCRATCH}/recipe-state" 2>/dev/null || echo '<recipes never ran>')"
     fi
   else
     fail "the gate script failed while preparing a lock with a proxy miss: $(cat "${SCRATCH}/gate.err")"
   fi
+
+  # (3) a pushed tree that changes uv.lock itself.
+  make_gate_checkout "${lock_body}" "${lock_pushed}"
+  if GATE_REAL_GIT="${real_git}" RECIPE_STATE="${SCRATCH}/recipe-state" \
+       GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    if [ "$(recipe_state_section changes)" = "README.md
+uv.lock" ] && [ -z "$(recipe_state_section status)" ] && \
+       [ "$(fixture_git show HEAD:uv.lock)" = "$(cat "${SCRATCH}/gate-cwd/uv.lock")" ] && \
+       [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_pushed}" ]; then
+      pass "a pushed uv.lock change still reaches the change set, with the pushed bytes"
+    else
+      fail "a pushed uv.lock change did not reach the change set with its own bytes: $(cat "${SCRATCH}/recipe-state" 2>/dev/null || echo '<recipes never ran>') lock=$(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    fi
+  else
+    fail "the gate script failed on a pushed uv.lock change: $(cat "${SCRATCH}/gate.err")"
+  fi
+
+  # A proxied sync that fails is a warning, never a gate failure: the recipes'
+  # own uv then installs whatever the cache lacks directly from PyPI.
+  make_gate_checkout "${lock_body}" "${lock_body}"
+  if GATE_REAL_GIT="${real_git}" UV_SYNC_FAILS=1 \
+       GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    if grep -qF 'WARN' "${SCRATCH}/gate.err" && \
+       [ "$(fixture_git show HEAD:uv.lock)" = "$(cat "${SCRATCH}/gate-cwd/uv.lock")" ]; then
+      pass "a failed proxied sync warns, leaves the checkout as pushed, and the gate still runs"
+    else
+      fail "a failed proxied sync did not warn or changed the checkout: $(cat "${SCRATCH}/gate.err")"
+    fi
+  else
+    fail "a failed proxied sync made gate preparation fail: $(cat "${SCRATCH}/gate.err")"
+  fi
 fi
 kill "${proxy_pid}" 2>/dev/null || true
 wait "${proxy_pid}" 2>/dev/null || true
-printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
-if run_gate_script "${declared_out}" "verify publish"; then
-  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_body}" ]; then
+make_gate_checkout "${lock_body}" "${lock_body}"
+if GATE_REAL_GIT="${real_git}" run_gate_script "${declared_out}" "verify publish"; then
+  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_body}" ] && \
+     [ ! -s "${SCRATCH}/uv-stub/sync-dirs" ]; then
     pass "an unreachable proxy leaves locked artifacts direct and the gate preparation succeeds"
   else
-    fail "an unreachable proxy rewrote a lock instead of falling through: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    fail "an unreachable proxy rewrote or synced a lock instead of falling through: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
   fi
 else
   fail "an unreachable proxy made gate preparation fail: $(cat "${SCRATCH}/gate.err")"
 fi
+
+echo "== WD. a checkout that differs from the pushed tree is refused by name =="
+# Before the recipes run, the script compares the checkout with the pushed tree
+# (`git status --porcelain`). A difference is a NAMED red verdict that runs no
+# recipe, never a silent pass: whatever made it, every check reading the run's
+# change set would judge a different change set than the pushing host's.
+make_gate_checkout "${lock_body}" "${lock_body}"
+printf 'stray\n' > "${SCRATCH}/gate-cwd/stray-provisioning-output.txt"
+printf 'edited in the pod\n' > "${SCRATCH}/gate-cwd/README.md"
+if GATE_REAL_GIT="${real_git}" run_gate_script "${declared_out}" "verify publish"; then
+  fail "a checkout that differs from the pushed tree reported a GREEN gate"
+elif ! grep -qF 'FATAL:' "${SCRATCH}/gate.err" || \
+     ! grep -qF 'stray-provisioning-output.txt' "${SCRATCH}/gate.err" || \
+     ! grep -qF 'README.md' "${SCRATCH}/gate.err"; then
+  fail "red, but the refusal does not name the differing paths: $(cat "${SCRATCH}/gate.err")"
+elif [ -n "$(grep -E '^just ' "${SCRATCH}/stub.log" | grep -vF -- '--show' || true)" ]; then
+  fail "a recipe RAN in a checkout that differs from the pushed tree: $(cat "${SCRATCH}/stub.log")"
+else
+  pass "a checkout that differs from the pushed tree is red, names each path, and runs no recipe"
+fi
+# Case E's discipline: with the comparison removed the same checkout must stop
+# being refused, or the case above proves nothing.
+noclean="${SCRATCH}/noclean-template.yaml"
+sed 's/gate_dirty="$(git status --porcelain)"/gate_dirty=""/' "${TEMPLATE}" > "${noclean}"
+noclean_out="${SCRATCH}/noclean.yaml"
+if cmp -s "${TEMPLATE}" "${noclean}"; then
+  fail "could not build the no-comparison mutant template"
+elif GATE_JOB_TEMPLATE="${noclean}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" --check-suite verify --check-suite publish \
+     > "${noclean_out}" 2>/dev/null; then
+  if GATE_REAL_GIT="${real_git}" run_gate_script "${noclean_out}" "verify publish"; then
+    pass "without the comparison the same checkout is NOT refused — case WD is load-bearing"
+  else
+    fail "the no-comparison mutant refused anyway — case WD proves nothing: $(cat "${SCRATCH}/gate.err")"
+  fi
+else
+  fail "the renderer refused the no-comparison mutant template"
+fi
+# Leave the shared gate directory as the cases after this one found it.
+rm -rf "${SCRATCH}/gate-cwd"
+mkdir -p "${SCRATCH}/gate-cwd"
+
+echo "== X. the gate container is sized by --cpu, --memory and --parallelism =="
+# Prints "<cpu request> <memory request> <memory limit> <LIVESPEC_TEST_PARALLELISM>"
+# for the gate container of the rendered manifest at $1. The block is bounded by
+# INDENTATION, not by container_block's next `- name:` line: the container's own
+# env entries are `- name:` lines too, and would end the block at the first one.
+# So no init container's requests can answer for the gate container.
+gate_container_block() {
+  awk '
+    !inblock && /^ *- name: gate *$/ { inblock = 1; indent = match($0, /-/); print; next }
+    inblock && /^ *- / && match($0, /-/) <= indent { exit }
+    inblock { print }
+  ' "$1"
+}
+gate_size() {
+  gate_container_block "$1" | sed 's/[[:space:]]*#.*$//' | awk '
+    /^[[:space:]]*requests:[[:space:]]*$/ { section = "requests"; next }
+    /^[[:space:]]*limits:[[:space:]]*$/ { section = "limits"; next }
+    /^[[:space:]]*[a-zA-Z]+:[[:space:]]*$/ { section = "" }
+    section == "requests" && /^[[:space:]]*cpu:/ { gsub(/[" ]/, "", $2); cpu = $2 }
+    section == "requests" && /^[[:space:]]*memory:/ { gsub(/[" ]/, "", $2); mem_req = $2 }
+    section == "limits" && /^[[:space:]]*memory:/ { gsub(/[" ]/, "", $2); mem_lim = $2 }
+    want_value && /^[[:space:]]*value:/ { gsub(/[" ]/, "", $2); par = $2; want_value = 0 }
+    /^[[:space:]]*- name: LIVESPEC_TEST_PARALLELISM[[:space:]]*$/ { want_value = 1 }
+    END { print cpu, mem_req, mem_lim, par }
+  '
+}
+# The renderer's own defaults, read off its defaults line, so this case follows
+# the renderer instead of pinning a committed value.
+defaults_line="$(grep -E '^cpu="[^"]*"; memory="[^"]*"; parallelism="[^"]*";' "${RENDERER}")"
+default_cpu="$(printf '%s\n' "${defaults_line}" | sed -E 's/^cpu="([^"]*)".*/\1/')"
+default_memory="$(printf '%s\n' "${defaults_line}" | sed -E 's/.*memory="([^"]*)".*/\1/')"
+default_parallelism="$(printf '%s\n' "${defaults_line}" | sed -E 's/.*parallelism="([^"]*)".*/\1/')"
+if [ -z "${default_cpu}" ] || [ -z "${default_memory}" ] || [ -z "${default_parallelism}" ]; then
+  fail "could not read the renderer's cpu, memory and parallelism defaults line"
+fi
+# Values chosen to differ from every default, so a render that ignored a flag
+# could not pass by carrying the default.
+sized_cpu="$((default_cpu + 4))"
+sized_memory="$((${default_memory%Gi} + 5))Gi"
+sized_parallelism="$((default_parallelism + 3))"
+out_sized="${SCRATCH}/sized.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+     --cpu "${sized_cpu}" --memory "${sized_memory}" --parallelism "${sized_parallelism}" \
+     > "${out_sized}" 2>"${SCRATCH}/sized.err"; then
+  read -r got_cpu got_mem_req got_mem_lim got_par <<< "$(gate_size "${out_sized}")"
+  if [ "${got_cpu}" = "${sized_cpu}" ] && [ "${got_mem_req}" = "${sized_memory}" ]; then
+    pass "the gate container requests the passed cpu ${sized_cpu} and memory ${sized_memory}"
+  else
+    fail "the gate container requests cpu '${got_cpu}' memory '${got_mem_req}', not ${sized_cpu} / ${sized_memory}"
+  fi
+  if [ -n "${got_mem_lim}" ] && [ "${got_mem_lim}" = "${got_mem_req}" ]; then
+    pass "the gate container's memory limit equals its memory request"
+  else
+    fail "the gate container's memory limit '${got_mem_lim}' differs from its request '${got_mem_req}'"
+  fi
+  if [ "${got_par}" = "${sized_parallelism}" ]; then
+    pass "LIVESPEC_TEST_PARALLELISM is the passed ${sized_parallelism}"
+  else
+    fail "LIVESPEC_TEST_PARALLELISM is '${got_par}', not ${sized_parallelism}"
+  fi
+else
+  fail "renderer failed with size flags: $(cat "${SCRATCH}/sized.err")"
+fi
+read -r got_cpu got_mem_req got_mem_lim got_par <<< "$(gate_size "${out_a}")"
+if [ "${got_cpu}" = "${default_cpu}" ] && [ "${got_mem_req}" = "${default_memory}" ] && \
+   [ "${got_mem_lim}" = "${default_memory}" ] && [ "${got_par}" = "${default_parallelism}" ]; then
+  pass "a render with no size flags carries the renderer's own defaults"
+else
+  fail "a render with no size flags carries cpu '${got_cpu}' memory '${got_mem_req}' / '${got_mem_lim}' parallelism '${got_par}', not the renderer's defaults"
+fi
+# One gate unit, read off the gates-cq annotations where the unit lives, so a
+# default-size Job is held to the quota unit without restating either value.
+gates_queue="${SCRIPT_DIR}/../kueue/cluster-queue-gates.yaml"
+unit_cpu="$(sed -n 's/^[[:space:]]*ci-runner\.io\/gate-unit-cpu:[[:space:]]*"\{0,1\}\([0-9][0-9]*\)"\{0,1\}[[:space:]]*$/\1/p' "${gates_queue}")"
+unit_memory="$(sed -n 's/^[[:space:]]*ci-runner\.io\/gate-unit-memory:[[:space:]]*"\{0,1\}\([0-9][0-9]*Gi\)"\{0,1\}[[:space:]]*$/\1/p' "${gates_queue}")"
+if [ -z "${unit_cpu}" ] || [ -z "${unit_memory}" ]; then
+  fail "could not read the gate unit annotations of ${gates_queue}"
+elif [ -z "${got_cpu}" ] || [ "${got_mem_req%Gi}" = "${got_mem_req}" ]; then
+  fail "a render with no size flags requests cpu '${got_cpu}' memory '${got_mem_req}', which cannot be compared with one gate unit in whole cpus and Gi"
+elif [ "${got_cpu}" -le "${unit_cpu}" ] && [ "${got_mem_req%Gi}" -le "${unit_memory%Gi}" ]; then
+  pass "a render with no size flags requests no more than one gate unit (${unit_cpu} cpu / ${unit_memory})"
+else
+  fail "a render with no size flags requests cpu ${got_cpu} / memory ${got_mem_req}, more than one gate unit (${unit_cpu} cpu / ${unit_memory})"
+fi
+
+echo "== Y. the operator reproduction route's --queue and --repro-stack-interval =="
+if grep -qF 'kueue.x-k8s.io/queue-name: gates-lq' "${out_a}" && ! grep -qF 'gate-repro' "${out_a}"; then
+  pass "a render with neither flag names gates-lq and carries no reproduction diagnostics"
+else
+  fail "a render with neither flag must name gates-lq and carry no reproduction diagnostics"
+fi
+out_repro="${SCRATCH}/repro.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+     --queue gates-repro-lq --repro-stack-interval 300 > "${out_repro}" 2>"${SCRATCH}/repro.err"; then
+  if grep -qF 'kueue.x-k8s.io/queue-name: gates-repro-lq' "${out_repro}" && \
+     ! grep -qF 'kueue.x-k8s.io/queue-name: gates-lq' "${out_repro}"; then
+    pass "--queue gates-repro-lq is the Job's LocalQueue"
+  else
+    fail "--queue gates-repro-lq did not become the Job's only queue-name label"
+  fi
+  if grep -qF 'faulthandler.dump_traceback_later(300, repeat=True, file=_stream)' "${out_repro}" && \
+     grep -qF 'export PYTHONPATH="${gate_repro_site}' "${out_repro}" && \
+     grep -qF 'while sleep 300; do gate_repro_report; done' "${out_repro}"; then
+    pass "--repro-stack-interval 300 arms a 300 s stack dump in every Python process and a 300 s report loop"
+  else
+    fail "--repro-stack-interval 300 did not render the stack dump, the PYTHONPATH export and the report loop"
+  fi
+  repro_script="${SCRATCH}/repro-gate-script.sh"
+  if python3 - "${out_repro}" "${repro_script}" <<'GATE_SCRIPT' && bash -n "${repro_script}"; then
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    documents = [document for document in yaml.safe_load_all(handle) if document]
+job = next(document for document in documents if document.get("kind") == "Job")
+containers = job["spec"]["template"]["spec"]["containers"]
+gate = next(container for container in containers if container["name"] == "gate")
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    handle.write(gate["args"][0])
+GATE_SCRIPT
+    pass "the gate container's script with the diagnostics rendered parses as shell"
+  else
+    fail "the gate container's script with the diagnostics rendered does not parse as shell"
+  fi
+else
+  fail "a render with --queue gates-repro-lq --repro-stack-interval 300 was refused: $(cat "${SCRATCH}/repro.err")"
+fi
+for bad_queue in "" "Gates-LQ" "gates lq" "-gates"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --queue "${bad_queue}" \
+       > /dev/null 2>&1; then
+    fail "--queue '${bad_queue}' was rendered rather than refused"
+  else
+    pass "--queue '${bad_queue}' is refused"
+  fi
+done
+for bad_interval in 0 030 abc -5 "3 00"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+       --repro-stack-interval "${bad_interval}" > /dev/null 2>&1; then
+    fail "--repro-stack-interval '${bad_interval}' was rendered rather than refused"
+  else
+    pass "--repro-stack-interval '${bad_interval}' is refused"
+  fi
+done
 
 echo
 if [ "${failures}" -eq 0 ]; then

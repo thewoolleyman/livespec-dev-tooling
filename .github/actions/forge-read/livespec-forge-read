@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""livespec-forge-read: one forge call under the incident retry rule (workflow side).
+
+Usage: livespec-forge-read <call-name> [--method <method>] [--field <name>=<value>]...
+                           [--idempotent] [--paginate] <endpoint>
+
+SPECIFICATION/contracts.md (its expedited incident execution rules) defines the rule
+(work item livespec-dev-tooling-levu6j). This is its workflow-side definition:
+the composite Action `forge-read` puts it on the job's path, and it needs
+nothing beyond python3 and `gh`. The released incident CI entrance applies the
+same rule through livespec_dev_tooling._forge_policy, and
+tests/livespec_dev_tooling/test_forge_policy.py holds the two equal.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import time
+
+MAX_ATTEMPTS = 6
+ATTEMPT_TIMEOUT_SECONDS = 30
+WAIT_BUDGET_SECONDS = 300
+ANSWER_BYTES = 256
+FIRST_WAIT = 2
+HEADERLESS_RATE_WAIT = 60
+OUTCOME_UNKNOWN_EXIT = 75
+RATE_LIMIT_BODY = re.compile(r"rate limit|abuse detection mechanism|secondary quota", re.IGNORECASE)
+HTTP_STATUS_LINE = re.compile(r"HTTP/[0-9.]+ (?P<status>[0-9]{3})")
+NEXT_LINK = re.compile(r'<(?P<url>[^>]+)>;\s*rel="next"')
+
+
+class Attempt:
+    """What one attempt got: an HTTP status (None when it got none), headers, body, stderr."""
+
+    def __init__(self, *, status, headers, body, stderr):
+        self.status = status
+        self.headers = headers
+        self.body = body
+        self.stderr = stderr
+
+
+class Budget:
+    """The one bound a call shares across its attempts and its pages."""
+
+    def __init__(self):
+        self.attempts = 0
+        self.waits = 0
+        self.waited = 0
+        self.rate_limited_answers = 0
+
+
+def escape_answer(*, text):
+    out = []
+    for byte in text.encode("utf-8", "surrogatepass")[:ANSWER_BYTES]:
+        if byte == 0x5C:
+            out.append("\\\\")
+        elif 0x20 <= byte <= 0x7E:
+            out.append(chr(byte))
+        else:
+            out.append("\\x%02x" % byte)
+    return "".join(out)
+
+
+def parse_included(*, stdout, stderr):
+    head, separator, body = stdout.replace("\r\n", "\n").partition("\n\n")
+    lines = head.split("\n")
+    matched = HTTP_STATUS_LINE.match(lines[0]) if separator else None
+    if matched is None:
+        return Attempt(status=None, headers={}, body="", stderr=stderr)
+    headers = {}
+    for line in lines[1:]:
+        name, colon, value = line.partition(":")
+        if colon:
+            headers[name.strip().lower()] = value.strip()
+    return Attempt(status=int(matched["status"]), headers=headers, body=body, stderr=stderr)
+
+
+def parses(*, text):
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def kind_of(*, attempt, read):
+    status = attempt.status
+    if status is None:
+        return "transport"
+    if 200 <= status < 300:
+        return "answer" if not read or parses(text=attempt.body) else "not_json"
+    if status == 429:
+        return "rate_limited"
+    if status == 403:
+        limited = RATE_LIMIT_BODY.search(attempt.body) is not None
+        spent = attempt.headers.get("x-ratelimit-remaining") == "0"
+        return "rate_limited" if limited or spent else "forbidden"
+    if status == 401:
+        return "forbidden"
+    if status == 404:
+        return "not_found"
+    return "server_error" if 500 <= status < 600 else "transport"
+
+
+def retryable(*, kind, attempt, as_read):
+    if kind in {"rate_limited", "server_error", "not_json"} or attempt.status is None:
+        return True
+    return as_read and not parses(text=attempt.body)
+
+
+def asked_wait(*, kind, attempt, budget, now):
+    doubling = FIRST_WAIT * 2**budget.waits
+    if kind != "rate_limited":
+        return doubling
+    retry_after = attempt.headers.get("retry-after", "").strip()
+    reset = attempt.headers.get("x-ratelimit-reset", "").strip()
+    if retry_after.isdigit():
+        asked = int(retry_after)
+    elif attempt.headers.get("x-ratelimit-remaining") == "0" and reset.isdigit():
+        asked = max(0, int(reset) - int(now()))
+    else:
+        # Doubled once for every earlier rate-limited answer of the call,
+        # whatever header that answer carried.
+        asked = HEADERLESS_RATE_WAIT * 2**budget.rate_limited_answers
+    budget.rate_limited_answers += 1
+    return max(asked, doubling)
+
+
+def failed_line(*, name, number, attempt, kind, wait):
+    status = "none" if attempt.status is None else str(attempt.status)
+    answer = escape_answer(text=attempt.body or attempt.stderr)
+    return (
+        f"forge-read: {name} attempt {number}/{MAX_ATTEMPTS} status={status} "
+        f"kind={kind} wait={wait} answer={answer}"
+    )
+
+
+def ended(*, name, attempt, kind, why):
+    status = "none" if attempt.status is None else str(attempt.status)
+    return f"forge-read: {name} failed: {why}; last status {status}, kind {kind}"
+
+
+def run_call(*, name, method, idempotent, attempt, sleep, now, emit, budget=None):
+    """Make one call under the rule. Returns (outcome, attempt, kind)."""
+    shared = Budget() if budget is None else budget
+    read = method.upper() == "GET"
+    as_read = read or idempotent
+    while True:
+        got = attempt()
+        shared.attempts += 1
+        kind = kind_of(attempt=got, read=read)
+        if kind == "answer":
+            return "answer", got, kind
+        retry = retryable(kind=kind, attempt=got, as_read=as_read)
+        if retry and not as_read and kind != "rate_limited":
+            emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait="none"))
+            emit(ended(name=name, attempt=got, kind=kind, why="outcome-unknown write"))
+            return "outcome-unknown", got, kind
+        if not retry or shared.attempts >= MAX_ATTEMPTS:
+            emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait="none"))
+            why = "attempts exhausted" if retry else "answer not retryable"
+            emit(ended(name=name, attempt=got, kind=kind, why=why))
+            return "failed", got, kind
+        asked = asked_wait(kind=kind, attempt=got, budget=shared, now=now)
+        if shared.waited + asked > WAIT_BUDGET_SECONDS:
+            # The wait is refused, never taken, so the line names none.
+            emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait="none"))
+            why = f"wait of {asked}s asked would pass the {WAIT_BUDGET_SECONDS}s budget"
+            emit(ended(name=name, attempt=got, kind=kind, why=why))
+            return "failed", got, kind
+        emit(failed_line(name=name, number=shared.attempts, attempt=got, kind=kind, wait=f"{asked}s"))
+        sleep(asked)
+        shared.waits += 1
+        shared.waited += asked
+
+
+def gh_attempt(*, method, fields, endpoint):
+    argv = ["gh", "api", "--include", "--method", method]
+    for field in fields:
+        argv += ["--raw-field", field]
+    argv.append(endpoint)
+
+    def attempt():
+        try:
+            done = subprocess.run(
+                argv, capture_output=True, text=True, check=False, timeout=ATTEMPT_TIMEOUT_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            return Attempt(status=None, headers={}, body="", stderr=f"timed out after {ATTEMPT_TIMEOUT_SECONDS}s")
+        except OSError as unrunnable:
+            return Attempt(status=None, headers={}, body="", stderr=str(unrunnable))
+        return parse_included(stdout=done.stdout, stderr=done.stderr)
+
+    return attempt
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="livespec-forge-read")
+    parser.add_argument("call_name")
+    parser.add_argument("endpoint")
+    parser.add_argument("--method", default="GET")
+    parser.add_argument("--field", action="append", default=[])
+    parser.add_argument("--idempotent", action="store_true")
+    parser.add_argument("--paginate", action="store_true")
+    args = parser.parse_args(argv)
+
+    def emit(line):
+        print(line, file=sys.stderr, flush=True)
+
+    budget = Budget()
+    endpoint = args.endpoint
+    pages = []
+    while True:
+        outcome, got, _ = run_call(
+            name=args.call_name,
+            method=args.method,
+            idempotent=args.idempotent,
+            attempt=gh_attempt(method=args.method, fields=args.field, endpoint=endpoint),
+            sleep=time.sleep,
+            now=time.time,
+            emit=emit,
+            budget=budget,
+        )
+        if outcome == "outcome-unknown":
+            return OUTCOME_UNKNOWN_EXIT
+        if outcome != "answer":
+            return 1
+        if not args.paginate:
+            sys.stdout.write(got.body)
+            return 0
+        pages.append(json.loads(got.body))
+        following = NEXT_LINK.search(got.headers.get("link", ""))
+        if following is None:
+            sys.stdout.write(json.dumps(pages))
+            return 0
+        endpoint = following["url"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -68,13 +68,29 @@ The files:
 - Read `.ai/livespec-operation-gotchas.md` before running or editing
   livespec revise/propose-change flows, spec heading coverage, or commit-prefix
   classification logic, before treating a clean filing display as evidence an
-  item will pass its pre-dispatch screen — and, whatever your role, before capturing a path from
+  item will pass its pre-dispatch screen, before filing a work item with a raw
+  `bd create` instead of capture-work-item (it leaves no claim token, so
+  approve and accept refuse `claim-token-missing`, 2026-11-12), before filing
+  a flaky-test root fix without first searching the target tenant for the
+  same case (a duplicate of an active item, 2026-11-13), before lifting a
+  `do-not-merge` hold (it does not re-arm auto-merge, 2026-11-13) — and,
+  whatever your role, before capturing a path from
   `ls` in a command substitution (`$(ls -d …)`, `$(ls -td … | head -1)`) or
   reporting a surprising `No such file or directory`: `ls` is aliased to lsd
   here, the symptom is a FALSE ABSENCE, and it has cost three different roles a
   false observation across 42 days. Read it also before any `git stash` in a
   worktree: `refs/stash` is shared by every worktree, so a pop can apply
   another session's entry (2026-11-10).
+  Read it also before interpolating a shell variable next to a `:` in zsh
+  (`resolve-blocked:$id:ready`): zsh applies `:r` and drive.py refuses the
+  mangled id as "unsupported" (2026-11-12).
+  Read it also before resolving a remote ref from `FETCH_HEAD` in a preserve
+  check or seed-source verification: a second fetch overwrites it, and a
+  2026-11-12 check read master's tip as a needs-human ref and reported real
+  preserved work as empty.
+  Read it also before writing ledger or file text through a heredoc: an
+  unquoted `<<EOF` runs every backticked phrase and the write succeeds with
+  words missing (two sweep items, 2026-11-13).
 - Read `.ai/fleet-and-secrets.md` before pushing any change under
   `.github/workflows/` (it needs an exemption, a label and the wrapper), before
   changing fleet coordination workflows,
@@ -103,7 +119,9 @@ The files:
 - Read `.ai/gate-runtime-vs-harness-patience.md` before running `just check`,
   committing product `.py`, or diagnosing a gate command that produced no
   output — the commit aggregate can outlast the harness's 20-minute tool-call
-  ceiling, and a kill with no verdict is NOT a hook refusal.
+  ceiling, and a kill with no verdict is NOT a hook refusal. Read it also
+  before committing in a worktree whose push gate is still running: a moved
+  HEAD makes a PASSED push gate refuse the push (2026-11-13).
 - Read `.ai/factory-span-receiver.md` before diagnosing a factory
   `build.cargo-*` span that lacks an attribute the sandbox shim attaches, or
   before naming "the sandbox pin" as the gate for factory-telemetry evidence —
@@ -191,8 +209,9 @@ The files:
 - Read `.ai/coordinator-duties.md` before directing other seats as a
   coordinator, before stating what a burn or spend fix is worth, before
   retrying any check that failed intermittently, or before waiting on a seat's
-  "report". Rank spend only from measured Honeycomb data, give a flake its
-  in-place test retry and a root fix but never a job rerun, unblock a `blocked` seat's picker every tick, and
+  "report". Rank spend only from measured Honeycomb data, give a flake a
+  bounded retry (backoff, at most 3, each recorded on a root-fix item) and a
+  root fix, unblock a `blocked` seat's picker every tick, and
   have the owning session decide before the maintainer is asked (maintainer
   corrections, 2026-10-31).
 - Read `.ai/janitor-failed-output.md` before diagnosing a `failed at
@@ -208,11 +227,26 @@ The files:
   than this project's install. On 2026-11-01 a session reported that no
   `classify-tier` verb existed, and the coordinator ruled on that report. The
   verb had shipped in the installed build.
+- Read `.ai/fleet-host-ssh-routes.md` before recording that a fleet host cannot
+  be reached or asking anyone for "a route" to one, and on any of these errors:
+  `failed to look up local user`, `No ED25519 host key is known`, or
+  `Permission denied (publickey)` from a fleet host. Each is usually a wrong
+  account or method; check the record and retry before concluding a host is
+  unreachable: the `tailscale-admin` repository records every machine's SSH
+  account and server, a bare `ssh <host>` uses the wrong
+  account, and `tailscale ssh` cannot reach a Mac. On 2026-11-12 a false "no
+  route to macbook-m4-max" held this repo's homelab plan for about eight hours.
 - Read `.ai/tailnet-posture.md` before proposing any network route into or
   out of the tailnet, any Tailscale key, tag, ACL or grant change, or any way
   for GitHub-hosted runners to reach a fleet host. The tailnet has no tags and
   no agent mints a key, so a CI tailnet join is never the answer (proposed for
   the incident observer under livespec-dev-tooling-jpfdcx, 2026-11-10).
+- Read `.ai/deleted-gate-pod-diagnosis.md` before diagnosing a delegated gate
+  that "was admitted but reached no terminal condition", or any gate Job whose
+  pod is already gone. The client deletes the abandoned Job and its logs go
+  with it, but the node's events, kubelet journal and sysstat, and Honeycomb's
+  per-pod `k8s.pod.cpu.usage`, still show where and when the work stopped
+  (livespec-dev-tooling-ddy5xu, 2026-11-11).
 
 ## Backlog drive — this repo has no foreman seat
 
@@ -279,6 +313,14 @@ report. Recorded 2026-11-03: a resumed coordinator ran the plan operation,
 stopped at the `human` pointer, and asked the maintainer about fifteen times
 whether to start the loop while seats ran unwatched. The maintainer: "YOU HAD
 ONE JOB".
+
+**Incident mode is the default response in livespec-dev-tooling.** When its
+master is red, or a production defect there needs a fix faster than the normal
+lane, the coordinator uses EXPEDITED_INCIDENT_RESPONSE (or
+EXPEDITED_INCIDENT_RESPONSE_REVERT) through the path incident t26bbr proved,
+and never waits out a normal roll-forward; livespec, the orchestrator and
+overseer are not yet usable. Recorded in the scope event on
+`livespec-dev-tooling-6tgd2z`, 2026-11-12; see `.ai/coordinator-duties.md` §2.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 

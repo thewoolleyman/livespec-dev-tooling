@@ -609,11 +609,11 @@ jobs:
     needs: [incident-ci]
     if: ${{ !cancelled() }}
     # The same single variable routes every ordinary gating target.
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
-      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -785,6 +785,7 @@ jobs:
           just check-check-tools || failed="$failed check-check-tools"
           just check-ci-gate-parity || failed="$failed check-ci-gate-parity"
           just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
+          just check-ci-single-container-image || failed="$failed check-ci-single-container-image"
           just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
           just check-codex-hook-reconcilable || failed="$failed check-codex-hook-reconcilable"
           just check-comment-line-anchors || failed="$failed check-comment-line-anchors"
@@ -879,7 +880,7 @@ jobs:
   incident-ci:
     timeout-minutes: 90  # 7-day max 58 min (livespec-dev-tooling-u6jztk)
     name: incident-ci
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     permissions:
@@ -890,7 +891,7 @@ jobs:
     outputs:
       omitted: ${{ steps.entrance.outputs.omitted }}
     env:
-      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -903,6 +904,13 @@ jobs:
         # checks out (livespec-dev-tooling-oqpw6t).
         with:
           fetch-depth: 0
+
+      # Every forge call this job's steps make goes through livespec-forge-read,
+      # the retrying call SPECIFICATION/contracts.md requires for the incident
+      # CI job (livespec-dev-tooling-levu6j): one unusable GitHub answer must not
+      # decide the required check.
+      - name: Put the retrying forge call on the path
+        uses: ./.github/actions/forge-read
 
       # Same one-step preparation as the check matrices above; the candidate
       # venv it creates is what the released entrance's `just` members use.
@@ -927,7 +935,8 @@ jobs:
         id: released
         shell: bash
         run: |
-          tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
+          release="$(livespec-forge-read incident-ci-latest-release-read "repos/${GITHUB_REPOSITORY}/releases/latest")"
+          tag="$(printf '%s' "$release" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("tag_name") or "")')"
           case "$tag" in
             v[0-9]*.[0-9]*.[0-9]*) ;;
             *) echo "::error::could not resolve the latest release tag of ${GITHUB_REPOSITORY} (got '${tag}')"; exit 1 ;;
@@ -962,7 +971,14 @@ jobs:
         run: |
           block=absent
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then
-            body="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.body // ""')"
+            # A body that could not be read is never armed, never a block and
+            # never "selected nothing": the step fails naming the read, and
+            # writes no `block` output, so the entrance does not run.
+            if ! pull="$(livespec-forge-read incident-ci-pull-request-body-read "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"; then
+              echo "::error::incident-ci: incident-ci-pull-request-body-read ended without an answer; nothing was selected and no block output was written"
+              exit 1
+            fi
+            body="$(printf '%s' "$pull" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("body") or "")')"
             if grep -qE '^<!-- livespec-incident-ci[[:space:]]*$' <<< "$body"; then
               block=present
             fi
@@ -1008,6 +1024,11 @@ jobs:
             exit 1
           fi
           mode="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.load(sys.stdin)["mode"])')"
+          # Print ONLY the enablement reading the released plan recorded
+          # (livespec-dev-tooling-ahl6vz), so the run log carries the CI-plan
+          # vantage. Never print the whole plan: it carries an environment map.
+          enablement="$(printf '%s' "$plan" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.dumps(json.load(sys.stdin).get("enablement"), sort_keys=True))')"
+          echo "incident-ci: the released plan recorded enablement ${enablement}"
           # An unexpedited PR that retains a block (a factory repayment
           # follow-up, say) is NOT refused: the block is ignored, `omitted`
           # stays unwritten, and the complete normal graph is the gate, exactly
@@ -1138,20 +1159,25 @@ jobs:
         with:
           persist-credentials: false
 
+      # The job-list read below is a forge call of ci-green, so it goes through
+      # the retrying livespec-forge-read (livespec-dev-tooling-levu6j).
+      - name: Put the retrying forge call on the path
+        uses: ./.github/actions/forge-read
+
       # The leg set is derived from the checked-out ci.yml (the workflow this
       # run used), so it can never drift from the matrices. filter=latest
-      # reads each job's latest attempt. An unreadable job list fails closed
-      # after two short retries.
+      # reads each job's latest attempt. A job list livespec-forge-read could
+      # not read fails ci-green closed, naming the read.
       - name: Every required leg was created and concluded success
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"
-          read_jobs() {
-            gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" --jq '.jobs[] | {name, status, conclusion}' > "$jobs_file"
-          }
-          read_jobs || { sleep 5; read_jobs; } || { sleep 15; read_jobs; } || {
-            echo "::error::ci-green: could not read this run's jobs from the Actions API; failing closed"
+          pages_file="${RUNNER_TEMP}/ci-green-run-jobs-pages.json"
+          if ! livespec-forge-read ci-green-run-jobs-read --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" > "$pages_file"; then
+            echo "::error::ci-green: ci-green-run-jobs-read ended without an answer; failing closed"
             exit 1
-          }
+          fi
+          jobs_lines="$(python3 -c 'import json, sys; [print(json.dumps({"name": j["name"], "status": j["status"], "conclusion": j["conclusion"]})) for page in json.load(open(sys.argv[1])) for j in page["jobs"]]' "$pages_file")"
+          printf '%s\n' "$jobs_lines" > "$jobs_file"
           python3 -m livespec_dev_tooling.ci_green_required_legs --workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file"

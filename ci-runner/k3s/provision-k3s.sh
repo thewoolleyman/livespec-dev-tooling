@@ -136,6 +136,19 @@ WARM_UV_NODE_LABEL="ci-runner.io/warm-uv-cache=true"
 # tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py holds the
 # two to agreement rather than trusting them to it.
 FACTORY_NODE_LABEL="ci-runner.io/factory=true"
+# The ALWAYS-ON label, rendered from the node's own ALWAYS_ON_NODE key: "a node
+# nobody powers off at will". Every ARC runner scale set's listener pod selects
+# on it (phase2/arc/values-*.yaml `listenerTemplate`), because a listener
+# stranded on a powered-off node takes no jobs for its whole scale set — eight
+# of them sat Terminating for about 45 minutes on 2026-11-12 when
+# gamingpc-xubuntu was powered off for a RAM upgrade
+# (livespec-dev-tooling-crvvxt). Carried by the same three routes as the factory
+# label and for the same reason: this install command at join, ansible/roles/
+# node_labels on every apply, and phase2/reconstruct/
+# converge-always-on-node-labels.sh at every control-plane boot.
+# tests/livespec_dev_tooling/test_always_on_node_label.py holds the three
+# spellings to agreement.
+ALWAYS_ON_NODE_LABEL="ci-runner.io/always-on=true"
 # The tier whose presence PROVES this node is the carrier (phase2/
 # storage-layout/): the label is only set when it is actually mounted here.
 CACHE_TIER_MOUNT="${CI_CACHE_TIER_MOUNT:-/var/cache/ci-runner}"
@@ -214,6 +227,12 @@ append_profile_node_args() {
   # factory host joins without it and the selector means something.
   if [ "${CFG[FACTORY_NODE]}" = true ]; then
     args+=(--node-label "$FACTORY_NODE_LABEL")
+  fi
+
+  # The ALWAYS-ON label, when the profile declares the node one. A profile that
+  # says nothing joins without it, so an undeclared node never hosts a listener.
+  if [ "${CFG[ALWAYS_ON_NODE]}" = true ]; then
+    args+=(--node-label "$ALWAYS_ON_NODE_LABEL")
   fi
 
   # `CI_NODE_FACILITIES=full` is the profile fact that this procedure has

@@ -44,6 +44,20 @@
 # ---------------------------------------------------------------------------
 all:
   children:
+    # Dispatch hosts that this tree reaches ONLY to log their Fabro client in
+    # to every registered factory (ansible/fabro-hosts.yml's dispatch-client
+    # play; group_vars/fabro_dispatch_clients.yml). They are deliberately NOT
+    # under `legacy`: they are not sunset machines, and their own provisioning
+    # lives in their own repository. Any later dispatch host joins here
+    # (livespec-dev-tooling-yyadq6).
+    fabro_dispatch_clients:
+      hosts:
+        # The Hetzner interactive AI host that takes the dispatch seats off
+        # the VPS, governed by hetzner-xubuntu-info (its hxi-3euehs). It is
+        # reached over the tailnet's OpenSSH as `ubuntu`, per the
+        # tailscale-admin record.
+        hetzner-xubuntu:
+          ansible_user: ubuntu
     legacy:
       children:
         dev_hosts:
@@ -70,6 +84,16 @@ all:
             # 2026-11-02; see the header.
             hp-xubuntu:
               ansible_user: cwoolley
+              cluster_role: agent
+            # The maintainer's dual-boot gaming PC, a k3s AGENT since 2026-11-11
+            # (plan homelab-k8s-worker-nodes, epic livespec-dev-tooling-ko26ez).
+            # Runner-only CI, one gate lane and one factory sandbox pod, per its
+            # profile ci-runner/k3s/phase0-bare-metal/profiles/gamingpc-xubuntu.env.
+            # No Fabro server, so it is in no fabro-hosts or sandbox_hosts group.
+            # Its operator account is `ubuntu`. Not yet in `home_lab`: its
+            # lan-ssh-fallback host_vars are a separate change.
+            gamingpc-xubuntu:
+              ansible_user: ubuntu
               cluster_role: agent
         # Hosts that LEFT `sandbox_hosts` and still carry what its play
         # installed. ansible/former-sandbox-hosts.yml converges them: it keeps the

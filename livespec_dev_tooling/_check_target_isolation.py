@@ -26,6 +26,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -54,9 +55,9 @@ def _exited(*, process: subprocess.Popen[bytes]) -> bool:
     WNOWAIT keeps the leader's id reserved, so the caller can kill the group
     before `process.wait()` reaps it.
     """
-    if not hasattr(os, "waitid"):
-        return process.poll() is not None
-    return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+    if sys.platform == "linux" and hasattr(os, "waitid"):
+        return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+    return process.poll() is not None
 
 
 def wait_for_exit(*, process: subprocess.Popen[bytes], deadline_seconds: float) -> bool:

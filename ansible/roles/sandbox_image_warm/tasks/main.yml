@@ -78,7 +78,28 @@
     success_msg: >-
       the inventory declares {{ sandbox_image_warm_inventory_process_spec_images | join(', ') }};
       the timer re-reads them from {{ sandbox_image_warm_process_spec_urls | length }} file(s) on master
-  when: sandbox_image_warm_store == 'containerd'
+  when:
+    - sandbox_image_warm_store == 'containerd'
+    - sandbox_image_warm_workflow_urls | length == 0
+
+- name: Refuse a workflow-sourced warm that also names another source
+  # A warm reads ONE reference source (the script refuses both at once at run
+  # time; this refuses it at converge time, before a timer is armed that fails
+  # every tick). A workflow source on the docker store is refused too: no play
+  # installs one, and a docker factory host's runs follow the release pin.
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_warm_store == 'containerd'
+      - sandbox_image_warm_process_spec_urls | length == 0
+      - sandbox_image_warm_crictl | string | trim | length > 0
+    fail_msg: >-
+      a workflow-sourced warm must fill the containerd store and declare no
+      process_spec source (store {{ sandbox_image_warm_store }}, process_spec
+      {{ sandbox_image_warm_process_spec_urls | to_json }}). Nothing was installed.
+    success_msg: >-
+      the timer re-reads the sandbox pins of {{ sandbox_image_warm_workflow_urls | length }}
+      workflow file(s) on master, for prefixes {{ sandbox_image_warm_tag_prefixes | join(', ') }}
+  when: sandbox_image_warm_workflow_urls | length > 0
 
 - name: Refuse an empty value in any field of the sandbox image warm
   # Jinja catches an UNDEFINED variable on its own, but an empty string

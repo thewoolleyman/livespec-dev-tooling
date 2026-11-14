@@ -43,16 +43,19 @@
 #      current copy, so CI pods on the worker run the fleet-patched hook
 #      (research 009). A current copy is not delivered again; a bundle
 #      without its checksum is refused before any host change.
-#  10. The fleet AppArmor profile workflow pods run under
-#      (ci-runner/k3s/phase2/apparmor/ci-runner-workflow) is installed into
-#      the VM's /etc/apparmor.d on stdin and (re)loaded with apparmor_parser,
-#      because the VM kernel is the worker's kernel: a workflow pod naming
-#      the profile cannot start on a node that has not loaded it.
-#  11. The node's host collector configuration — the otel-collector
-#      repository's file at the commit pinned in telemetry/collector.ref — is
-#      fetched, delivered into the worker's telemetry/config.yaml in the VM on
-#      stdin and verified there against the pinned sha256 before it replaces
-#      the current copy (DoD assertion 18). When the task's environment
+#  10. The fleet AppArmor profiles are installed into the VM's
+#      /etc/apparmor.d on stdin and (re)loaded with apparmor_parser, because
+#      the VM kernel is the worker's kernel: the profile workflow pods name
+#      (ci-runner/k3s/phase2/apparmor/ci-runner-workflow), without which such
+#      a pod cannot start, and the node-level copy of containerd's default
+#      profile (cri-containerd.apparmor.d beside it), which every pod naming
+#      no profile runs under, as on the fleet's ci_pool nodes.
+#  11. The node's host collector configuration — and, when its pin declares
+#      one, its separate pod-span configuration — are fetched from the
+#      otel-collector repository at the commit pinned in telemetry/collector.ref,
+#      delivered into the worker's telemetry directory in the VM on stdin and
+#      verified against their pinned sha256 before replacement (DoD assertion
+#      18). When the task's environment
 #      carries HONEYCOMB_INGEST_KEY_LIVESPEC (run it under
 #      with-livespec-env.sh), the key is delivered into telemetry/.env on
 #      stdin, never in an argument; without it the worker still converges and
@@ -82,6 +85,7 @@ probe="$here/probe-vm-capabilities.sh"
 converge="$here/vm/converge-worker-container.sh"
 hook_bundles="${HOMELAB_WORKER_HOOK_BUNDLE_DIR:-$here/../ci-runner/k3s/phase2/container-hook/bundle}"
 apparmor_profile="${HOMELAB_WORKER_APPARMOR_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/ci-runner-workflow}"
+apparmor_default_profile="${HOMELAB_WORKER_APPARMOR_DEFAULT_PROFILE:-$here/../ci-runner/k3s/phase2/apparmor/cri-containerd.apparmor.d}"
 cache_span="${HOMELAB_WORKER_CACHE_SPAN:-$here/../ci-runner/k3s/phase2/cache-telemetry/ci-cache-span.sh}"
 collector_ref="${HOMELAB_WORKER_COLLECTOR_REF:-$here/telemetry/collector.ref}"
 collector_base_url="${HOMELAB_WORKER_COLLECTOR_BASE_URL:-https://raw.githubusercontent.com/thewoolleyman/otel-collector}"
@@ -141,6 +145,7 @@ WORKER_VM_MEMORY_GIB=""
 WORKER_VM_DISK_GIB=""
 WORKER_DATA_DISK_GIB=""
 WORKER_LAN_ADDRESS=""
+WORKER_LAN_INTERFACE=""
 # shellcheck disable=SC1090  # the declared host's data file
 . "$hosts_dir/$host.env"
 for key in WORKER_HOST_OS WORKER_VM_CPUS WORKER_VM_MEMORY_GIB WORKER_VM_DISK_GIB WORKER_DATA_DISK_GIB; do
@@ -155,6 +160,13 @@ case "$WORKER_LAN_ADDRESS" in
   *) die "homelab-worker/hosts/$host.env declares WORKER_LAN_ADDRESS=$WORKER_LAN_ADDRESS, which is not an IPv4 address/prefix" ;;
 esac
 lan_ip="${WORKER_LAN_ADDRESS%/*}"
+# Optional: the host's LAN interface that Lima's bridged network must use
+# (e.g. a wired adapter rather than Wi-Fi). Checked below with the other
+# bridged-network prerequisites; never written by this task.
+case "$WORKER_LAN_INTERFACE" in
+  "" | [a-z]*[0-9]) ;;
+  *) die "homelab-worker/hosts/$host.env declares WORKER_LAN_INTERFACE=$WORKER_LAN_INTERFACE, which is not a network interface name (for example en7)" ;;
+esac
 
 worker="$host-homelab-worker"
 data_disk="hwdata"
@@ -177,6 +189,7 @@ for bundle in "$hook_bundles"/*/; do
 done
 [ -n "$hook_versions" ] || die "no container hook bundle under $hook_bundles"
 [ -s "$apparmor_profile" ] || die "the workflow AppArmor profile $apparmor_profile is missing"
+[ -s "$apparmor_default_profile" ] || die "the default AppArmor profile $apparmor_default_profile is missing"
 [ -s "$cache_span" ] || die "the cache-span emitter $cache_span is missing"
 
 # ref_value <key>: one key=value line of the collector pin.
@@ -188,6 +201,12 @@ collector_file="$(ref_value file)"
 collector_sha="$(ref_value sha256)"
 [ -n "$collector_commit" ] && [ -n "$collector_file" ] && [ -n "$collector_sha" ] ||
   die "the collector pin $collector_ref does not declare commit, file and sha256"
+collector_pod_file="$(ref_value pod_file)"
+collector_pod_sha="$(ref_value pod_sha256)"
+if [ -n "$collector_pod_file" ] && [ -z "$collector_pod_sha" ] ||
+  [ -z "$collector_pod_file" ] && [ -n "$collector_pod_sha" ]; then
+  die "the collector pin $collector_ref must declare pod_file and pod_sha256 together"
+fi
 
 os="$(uname -s)"
 if [ "$os" != "$WORKER_HOST_OS" ]; then
@@ -218,6 +237,20 @@ missing=""
 limactl sudoers --check >/dev/null 2>&1 ||
   missing="$missing
   limactl sudoers --check fails: write the sudoers entry with 'limactl sudoers | sudo tee /etc/sudoers.d/lima' as a documented host change"
+if [ -n "$WORKER_LAN_INTERFACE" ]; then
+  lima_networks="${LIMA_HOME:-$HOME/.lima}/_config/networks.yaml"
+  bridged_iface=""
+  if [ -f "$lima_networks" ]; then
+    bridged_iface="$(awk '
+      /^[[:space:]]*bridged:[[:space:]]*$/ { in_bridged = 1; next }
+      in_bridged && /^[[:space:]]*[a-zA-Z0-9_-]+:[[:space:]]*$/ { in_bridged = 0 }
+      in_bridged && /^[[:space:]]*interface:/ { sub(/^[[:space:]]*interface:[[:space:]]*/, ""); gsub(/["[:space:]]/, ""); print; exit }
+    ' "$lima_networks")"
+  fi
+  [ "$bridged_iface" = "$WORKER_LAN_INTERFACE" ] ||
+    missing="$missing
+  Lima's bridged network uses interface '${bridged_iface:-<none>}' in $lima_networks, but homelab-worker/hosts/$host.env declares WORKER_LAN_INTERFACE=$WORKER_LAN_INTERFACE: set the bridged entry's interface to $WORKER_LAN_INTERFACE, then regenerate the sudoers entry with 'limactl sudoers > lima.sudoers && sudo install -o root -g wheel -m 0444 lima.sudoers /etc/sudoers.d/lima', as a documented host change"
+fi
 [ -z "$missing" ] || die "the bridged network's host prerequisites are missing; the VM was not created or started:$missing"
 
 instances="$(limactl list --format '{{.Name}}' 2>/dev/null || true)"
@@ -320,14 +353,17 @@ else
   say "cache-span emitter delivered to $span_dest in VM $worker"
 fi
 
-profile_dest="/etc/apparmor.d/${apparmor_profile##*/}"
-limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile_dest" <"$apparmor_profile"
-limactl shell --workdir / "$worker" sudo apparmor_parser -r "$profile_dest" ||
-  die "AppArmor refused the workflow profile $profile_dest in VM $worker; the worker container was not converged"
-say "workflow AppArmor profile loaded from $profile_dest in VM $worker"
+for profile in "$apparmor_profile" "$apparmor_default_profile"; do
+  profile_dest="/etc/apparmor.d/${profile##*/}"
+  limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$profile_dest" <"$profile"
+  limactl shell --workdir / "$worker" sudo apparmor_parser -r "$profile_dest" ||
+    die "AppArmor refused the profile $profile_dest in VM $worker; the worker container was not converged"
+  say "AppArmor profile loaded from $profile_dest in VM $worker"
+done
 
 collector_tmp="$(mktemp)"
-trap 'rm -f "$collector_tmp"' EXIT
+collector_pod_tmp=""
+trap 'rm -f "$collector_tmp" "$collector_pod_tmp"' EXIT
 curl -fsSL -o "$collector_tmp" "$collector_base_url/$collector_commit/$collector_file" ||
   die "could not fetch the collector configuration $collector_file at $collector_commit"
 collector_dest="$worker_root/telemetry/config.yaml"
@@ -339,6 +375,21 @@ else
     die "the collector configuration delivered to VM $worker does not match the sha256 pinned in $collector_ref; the worker container was not converged"
   limactl shell --workdir / "$worker" sudo mv "$collector_dest.new" "$collector_dest"
   say "collector configuration $collector_commit delivered to $collector_dest in VM $worker"
+fi
+if [ -n "$collector_pod_file" ]; then
+  collector_pod_tmp="$(mktemp)"
+  curl -fsSL -o "$collector_pod_tmp" "$collector_base_url/$collector_commit/$collector_pod_file" ||
+    die "could not fetch the pod-span collector configuration $collector_pod_file at $collector_commit"
+  collector_pod_dest="$worker_root/telemetry/pods-config.yaml"
+  if [ "$(vm_sha256 "$collector_pod_dest")" = "$collector_pod_sha" ]; then
+    say "pod-span collector configuration $collector_commit is current in VM $worker"
+  else
+    limactl shell --workdir / "$worker" sudo install -D -m 0644 /dev/stdin "$collector_pod_dest.new" <"$collector_pod_tmp"
+    [ "$(vm_sha256 "$collector_pod_dest.new")" = "$collector_pod_sha" ] ||
+      die "the pod-span collector configuration delivered to VM $worker does not match the sha256 pinned in $collector_ref; the worker container was not converged"
+    limactl shell --workdir / "$worker" sudo mv "$collector_pod_dest.new" "$collector_pod_dest"
+    say "pod-span collector configuration $collector_commit delivered to $collector_pod_dest in VM $worker"
+  fi
 fi
 if [ -n "${HONEYCOMB_INGEST_KEY_LIVESPEC:-}" ]; then
   printf 'HONEYCOMB_INGEST_KEY_LIVESPEC=%s\n' "$HONEYCOMB_INGEST_KEY_LIVESPEC" |

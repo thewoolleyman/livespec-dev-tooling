@@ -1,0 +1,2 @@
+pgfault per_s=174976
+pgmajfault per_s=4

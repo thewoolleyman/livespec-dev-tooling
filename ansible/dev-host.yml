@@ -9,9 +9,8 @@
 # than by position here, so a play that runs one role alone still gets it: the
 # VNC desktop precedes the two desktop applications that need its display.
 #
-# The VS Code web editor (roles code_serve_web and code_pwa_proxy) was RETIRED
-# on 2026-10-16 by the maintainer: the service is shut down and will not be
-# restarted, so this play no longer converges it.
+# The VS Code web editor remains installed under drift control, but the
+# maintainer's hold is the role default: both units are disabled and stopped.
 
 # Each role is tagged so an operator can converge a subset. That matters here
 # because this host carries services with very different interruption costs --
@@ -36,12 +35,16 @@
       tags: [onepassword_desktop]
     - role: claude_desktop
       tags: [claude_desktop]
+    - role: vps_editor_stack
+      tags: [vps_editor_stack]
     - role: btop_loop
       tags: [btop_loop]
     - role: fpart
       tags: [fpart]
     - role: ssh_hardening
       tags: [ssh_hardening]
+    - role: authorized_keys_managed
+      tags: [authorized_keys_managed]
     - role: keyring_quota
       tags: [keyring_quota]
     - role: tmux_config
@@ -76,6 +79,13 @@
     # concurrency limit".
     - role: local_gate_slots
       tags: [local_gate_slots]
+    # The RAM-backed /tmp capped and Claude Code's per-session temp trees moved
+    # to disk, memory slices for dispatcher loops and local gates, and a bound
+    # on reconcile-runs (the 2026-11-13 memory overload). A plain converge changes
+    # nothing running; the live move is the never-tagged
+    # `dev_host_memory_bounds_cutover`. See the role's HOST_VARS.md.
+    - role: dev_host_memory_bounds
+      tags: [dev_host_memory_bounds]
     # On this VPS, proactive compaction could repeatedly chase an unreachable
     # fragmentation target and burn a core; the role leaves on-demand paths
     # alone. See its managed drop-in for the host measurement and rationale.
@@ -86,6 +96,12 @@
     # reader that stops completing visible rather than silently stale.
     - role: flake_retry_filer
       tags: [flake_retry_filer]
+    # The livespec reconcile-runs timer, one sweep over every tenant this host
+    # dispatches for (livespec-dev-tooling-oxwre7). The unit text is
+    # livespec-orchestrator-beads-fabro's, read from this host's checkout; see
+    # roles/reconcile_runs/HOST_VARS.md.
+    - role: reconcile_runs
+      tags: [reconcile_runs]
     # The independent released incident observer (livespec-dev-tooling-w7n3ad):
     # loopback listener first, then the tailnet front that publishes it from
     # this host's tailscale_serve_mappings. Both run under the credential
@@ -94,3 +110,8 @@
       tags: [incident_observer]
     - role: tailscale_serve
       tags: [tailscale_serve]
+    # The control node's trust in every ci_pool host's tailnet ssh host key,
+    # from the keys pinned in each host's host_vars (role
+    # controller_known_hosts), so a rebuilt control node can reach the pool.
+    - role: controller_known_hosts
+      tags: [controller_known_hosts]

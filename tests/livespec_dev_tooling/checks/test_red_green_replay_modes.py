@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -64,7 +65,7 @@ def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
     from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
 
     modes = _load_modes()
-    assert hasattr(modes, "run_replay")
+    assert hasattr(modes, "run_one_test")
     test_path = tmp_path / "tests" / "test_red.py"
     test_path.parent.mkdir()
     test_path.write_text("def test_red() -> None:\n    assert False\n", encoding="utf-8")
@@ -94,7 +95,7 @@ def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
         assert msg_path.name == "COMMIT_EDITMSG"
         recorded.extend(trailers)
 
-    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes, "run_one_test", delegated)
     monkeypatch.setattr(modes.subprocess, "run", local_pytest)
     monkeypatch.setattr(modes, "write_trailers", record)
     message = tmp_path / "COMMIT_EDITMSG"
@@ -151,7 +152,7 @@ def test_green_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
         assert msg_path.name == "COMMIT_EDITMSG"
         recorded.extend(trailers)
 
-    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes, "run_one_test", delegated)
     monkeypatch.setattr(modes, "head_trailer_value", trailer)
     monkeypatch.setattr(modes, "current_head_sha", lambda: IOSuccess("c" * 40))
     monkeypatch.setattr(modes.subprocess, "run", local_pytest)
@@ -186,7 +187,7 @@ def test_an_absent_remote_verdict_runs_the_replay_locally(
     log = _RecordingLog()
     monkeypatch.setattr(
         modes,
-        "run_replay",
+        "run_one_test",
         lambda **_kwargs: ReplayVerdict(
             local=False,
             reason="the gate Job reached no verdict",
@@ -215,6 +216,44 @@ def test_an_absent_remote_verdict_runs_the_replay_locally(
     assert replay.output == "local failure\n"
     assert replay.trailers == ()
     assert [event for _level, event, _kwargs in log.records] == ["commit-time replay gated locally"]
+
+
+def test_a_refused_replay_refuses_the_commit_instead_of_running_the_leg_locally(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused resource declaration refuses the commit; it is no absent verdict (c3nd2h).
+
+    Running the leg locally would let a refused Red pass as a valid failing Red,
+    so the leg must stop before any pytest run and before any trailer is written.
+    """
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    modes = _load_modes()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        modes,
+        "run_one_test",
+        lambda **_kwargs: ReplayVerdict(
+            local=False,
+            reason="the commit is refused: `gate_cpu` must be a positive integer (pyproject.toml)",
+            refused=True,
+        ),
+    )
+    # A local pytest run fails the test outright: the refusal must come first.
+    monkeypatch.setattr(
+        modes.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("the leg ran locally")
+    )
+
+    with pytest.raises(SystemExit) as stopped:
+        _ = modes._run_replay_test(  # noqa: SLF001
+            log=_RecordingLog(),
+            pytest_argv=["/abs/python", "-m", "pytest", "/abs/tests/test_red.py"],
+            job_pytest_argv=["pytest", "tests/test_red.py"],
+            trailer_prefix="Red",
+        )
+
+    assert stopped.value.code == 1
+    assert "gate_cpu" in capsys.readouterr().err
 
 
 class _RecordingLog:
@@ -248,15 +287,28 @@ def _load_modes():
     return module
 
 
+def _load_suite():
+    """Load the private suite helper without depending on test order."""
+    import importlib
+
+    _ = _load_modes()
+    return importlib.import_module("_red_green_replay_suite")
+
+
 def _run_suite_leg(
     monkeypatch,
     tmp_path: Path,
     *,
     suite_run,
     xdist: bool = True,
+    affected_evidence=None,
+    staged_paths: list[str] | None = None,
+    tests_paths: list[str] | None = None,
 ):
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
     modes = _load_modes()
-    import _red_green_replay_suite as suite
+    suite = _load_suite()
 
     seen: dict[str, object] = {}
 
@@ -268,12 +320,27 @@ def _run_suite_leg(
 
     monkeypatch.setattr(suite, "run_suite", fake_run_suite)
     monkeypatch.setattr(suite, "xdist_importable", lambda: xdist)
+    monkeypatch.setattr(
+        suite,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(local=True, reason="local replay"),
+    )
     monkeypatch.setattr(suite, "read_pre_commit_evidence", lambda **_kwargs: None)
+    monkeypatch.setattr(suite, "staged_tree_hash", lambda **_kwargs: "tree-under-test")
+    monkeypatch.setattr(
+        suite,
+        "qualifying_affected_tests_evidence",
+        lambda **_kwargs: affected_evidence,
+        raising=False,
+    )
     msg = tmp_path / "COMMIT_EDITMSG"
     msg.write_text("chore: x\n", encoding="utf-8")
     log = _RecordingLog()
     rc = modes._handle_suite_green_mode(  # noqa: SLF001
-        msg_path=msg, log=log, staged_paths=["a.py"]
+        msg_path=msg,
+        log=log,
+        staged_paths=["a.py"] if staged_paths is None else staged_paths,
+        tests_paths=tests_paths,
     )
     return rc, log, msg.read_text(encoding="utf-8"), seen, modes
 
@@ -305,6 +372,197 @@ def test_suite_green_logs_and_runs_serially_without_xdist(
     assert rc == 0
     assert "-n" not in seen["argv"]  # type: ignore[operator]
     assert log.check_ids("warning") == ["red-green-replay-suite-green-serial-fallback"]
+
+
+def test_suite_green_uses_same_tree_affected_tests_evidence_in_a_sandbox(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A qualifying scoped gate narrows a sandbox suite-green replay."""
+    from livespec_dev_tooling.affected_tests_record import AffectedTestsEvidence
+
+    evidence = AffectedTestsEvidence(
+        tree_hash="tree-under-test",
+        outcome="passed",
+        test_paths=("tests/test_alpha.py", "tests/test_beta.py"),
+        run_id="affected-tests:run-1",
+    )
+    suite = _load_suite()
+
+    assert hasattr(suite, "qualifying_affected_tests_evidence")
+    run = _suite_run_cls()(returncode=0, output="2 passed in 1.00s\n", timed_out=False)
+
+    rc, _log, message, seen, _ = _run_suite_leg(
+        monkeypatch,
+        tmp_path,
+        suite_run=run,
+        affected_evidence=evidence,
+    )
+
+    assert rc == 0
+    assert seen["argv"][-2:] == ["tests/test_alpha.py", "tests/test_beta.py"]  # type: ignore[index]
+    assert "TDD-Suite-Green-Scope: affected-tests" in message
+    assert "TDD-Suite-Green-Producer: affected-tests:run-1" in message
+    assert "TDD-Suite-Green-Scope: full-suite" not in message
+
+
+@pytest.mark.parametrize(
+    ("staged_paths", "tests_paths", "expected_scope", "expected_tail"),
+    [
+        (
+            ["tests/test_cleanup.py"],
+            ["tests/test_cleanup.py"],
+            "staged-tests",
+            "tests/test_cleanup.py",
+        ),
+        (["tests/conftest.py"], [], "full-suite", None),
+    ],
+)
+def test_suite_green_affected_tests_evidence_never_narrows_a_test_only_commit(
+    monkeypatch,
+    tmp_path: Path,
+    staged_paths: list[str],
+    tests_paths: list[str],
+    expected_scope: str,
+    expected_tail: str | None,
+) -> None:
+    """Only a behaviour-preserving product commit takes the affected-tests scope."""
+    from livespec_dev_tooling.affected_tests_record import AffectedTestsEvidence
+
+    evidence = AffectedTestsEvidence(
+        tree_hash="tree-under-test",
+        outcome="passed",
+        test_paths=("tests/test_alpha.py", "tests/test_beta.py"),
+        run_id="affected-tests:run-1",
+    )
+    run = _suite_run_cls()(returncode=0, output="2 passed in 1.00s\n", timed_out=False)
+
+    rc, _log, message, seen, _ = _run_suite_leg(
+        monkeypatch,
+        tmp_path,
+        suite_run=run,
+        affected_evidence=evidence,
+        staged_paths=staged_paths,
+        tests_paths=tests_paths,
+    )
+
+    assert rc == 0
+    assert "tests/test_alpha.py" not in seen["argv"]  # type: ignore[operator]
+    if expected_tail is not None:
+        assert seen["argv"][-1] == expected_tail  # type: ignore[index]
+    assert f"TDD-Suite-Green-Scope: {expected_scope}" in message
+    assert "affected-tests" not in message
+    assert "TDD-Suite-Green-Producer" not in message
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    [(0, "true\n", True), (0, "false\n", False), (1, "true\n", False)],
+)
+def test_sandbox_exempt_requires_git_config_to_answer_true(
+    *, monkeypatch, tmp_path: Path, returncode: int, stdout: str, expected: bool
+) -> None:
+    """Only an explicit true sandbox marker permits affected-test reuse."""
+    suite = _load_suite()
+
+    assert hasattr(suite, "_sandbox_exempt")
+    monkeypatch.setattr(
+        suite.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=returncode, stdout=stdout),
+    )
+
+    assert suite._sandbox_exempt(cwd=tmp_path) is expected  # noqa: SLF001
+    monkeypatch.setattr(
+        suite.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()),
+    )
+    assert suite._sandbox_exempt(cwd=tmp_path) is False  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("sandbox", "outcome", "paths", "recorded_tree", "index_tree", "expected"),
+    [
+        (True, "passed", ("tests/test_alpha.py",), "tree", "tree", True),
+        (False, "passed", ("tests/test_alpha.py",), "tree", "tree", False),
+        (True, "failed", ("tests/test_alpha.py",), "tree", "tree", False),
+        (True, "passed", (), "tree", "tree", False),
+        (True, "passed", ("tests/test_alpha.py",), "other", "tree", False),
+        (True, "passed", ("tests/test_alpha.py",), "tree", None, False),
+    ],
+)
+def test_qualifying_affected_tests_evidence_requires_every_sandbox_condition(
+    *,
+    monkeypatch,
+    tmp_path: Path,
+    sandbox: bool,
+    outcome: str,
+    paths: tuple[str, ...],
+    recorded_tree: str,
+    index_tree: str | None,
+    expected: bool,
+) -> None:
+    """The evidence is usable only for a passing, nonempty same-tree sandbox run."""
+    suite = _load_suite()
+
+    from livespec_dev_tooling.affected_tests_record import AffectedTestsEvidence
+
+    assert hasattr(suite, "qualifying_affected_tests_evidence")
+    evidence = AffectedTestsEvidence(
+        tree_hash=recorded_tree,
+        outcome=outcome,
+        test_paths=paths,
+        run_id="affected-tests:run-1",
+    )
+    monkeypatch.setattr(suite, "_sandbox_exempt", lambda **_kwargs: sandbox, raising=False)
+    monkeypatch.setattr(
+        suite,
+        "read_affected_tests_evidence",
+        lambda **_kwargs: evidence,
+        raising=False,
+    )
+
+    actual = suite.qualifying_affected_tests_evidence(cwd=tmp_path, index_tree=index_tree)
+
+    assert (actual is not None) is expected
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        None,
+        ("failed", ("tests/test_alpha.py",), "tree-under-test"),
+        ("passed", (), "tree-under-test"),
+        ("passed", ("tests/test_alpha.py",), "different-tree"),
+    ],
+)
+def test_suite_green_keeps_full_scope_without_qualifying_affected_tests_evidence(
+    monkeypatch,
+    tmp_path: Path,
+    evidence: tuple[str, tuple[str, ...], str] | None,
+) -> None:
+    """Failed, empty, mismatched, and absent records do not narrow the suite."""
+    from livespec_dev_tooling.affected_tests_record import AffectedTestsEvidence
+
+    qualifying = (
+        None
+        if evidence is None
+        else AffectedTestsEvidence(
+            outcome=evidence[0], test_paths=evidence[1], tree_hash=evidence[2], run_id="run-1"
+        )
+    )
+    run = _suite_run_cls()(returncode=0, output="5 passed in 1.00s\n", timed_out=False)
+
+    rc, _log, message, seen, _ = _run_suite_leg(
+        monkeypatch,
+        tmp_path,
+        suite_run=run,
+        affected_evidence=qualifying,
+    )
+
+    assert rc == 0
+    assert "tests/test_alpha.py" not in seen["argv"]  # type: ignore[operator]
+    assert "TDD-Suite-Green-Scope: full-suite" in message
 
 
 def test_suite_green_timeout_rejects_with_named_check_id(

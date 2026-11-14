@@ -9,8 +9,11 @@
 # (ci-runner/observability/triggers/) reads it.
 #
 # Only meaningful on the pool: a hosted runner has none of the mounts under
-# test, so the job is skipped (not passed) when CI_RUNNER_LABELS routes to
-# hosted capacity — exactly the fallback ci.yml uses.
+# test, so the job is skipped (not passed) when CI_COVERAGE_RUNNER_LABELS
+# (falling back to CI_RUNNER_LABELS) routes to hosted capacity — the same
+# fall-through ci.yml's coverage jobs use, so the check follows the k3s pool
+# the coverage jobs run on even when CI_RUNNER_LABELS routes other jobs to
+# hosted runners.
 name: CI cache negative tests
 
 on:
@@ -25,8 +28,8 @@ permissions:
 jobs:
   cache-negative-tests:
     name: cache-negative-tests
-    if: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'k3s') }}
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    if: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'k3s') }}
+    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       # The fleet's job image: the pod is what every routed job gets — the
       # hook template's mounts and env — which is the whole point.

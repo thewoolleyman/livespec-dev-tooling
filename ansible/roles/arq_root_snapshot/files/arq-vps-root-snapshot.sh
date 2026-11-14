@@ -12,10 +12,8 @@ RSYNC_FILTERS=(
     "--filter=- **/.cargo/***"
     "--filter=- **/.claude-flow/***"
     "--filter=- **/.claude/plugins/***"
-    "--filter=- **/.claude/worktrees/***"
     "--filter=- **/.codex/.tmp/***"
     "--filter=- **/.codex/plugins/***"
-    "--filter=- **/.git/***"
     "--filter=- **/.gradle/caches/***"
     "--filter=- **/.local/share/mise/installs/***"
     "--filter=- **/.local/share/mise/downloads/***"
@@ -33,7 +31,6 @@ RSYNC_FILTERS=(
     "--filter=- **/.vscode-server/extensions/***"
     "--filter=- **/.vscode/cli/***"
     "--filter=- **/.vscode/extensions/***"
-    "--filter=- **/.worktrees/***"
     "--filter=- **/build/***"
     "--filter=- **/dist/***"
     "--filter=- **/go/pkg/***"
@@ -49,6 +46,9 @@ RSYNC_FILTERS=(
     "--filter=- arq-vps-root-snapshot/***"
     "--filter=- *.pyc"
     "--filter=- .DS_Store"
+    # A desktop session's per-user GVFS FUSE mount; root cannot read it, and the
+    # resulting rsync IO error (exit 23) also suppresses --delete-excluded.
+    "--filter=- .gvfs"
 )
 
 mkdir -p "${DEST}"
@@ -149,7 +149,7 @@ main() {
         echo "source_host=$(hostname -f 2>/dev/null || hostname)"
         echo "included_paths=/etc /home /data /root /opt /srv /usr/local /var/lib /var/log"
         echo "excluded_paths=/dev /proc /sys /run /tmp /var/tmp /var/cache /var/lib/docker /var/lib/containerd /var/lib/dpkg/info /mnt /media /lost+found /snap"
-        echo "dependency_excludes=go/pkg .rustup .cargo .npm .gradle/caches .bun/install .local/share/mise/installs .local/share/mise/downloads .local/share/claude/versions .local/share/containers .local/share/JetBrains/Daemon .local/share/pnpm .local/share/uv .venv venv site-packages __pycache__ node_modules .pnpm-store .cache .claude/plugins .claude/worktrees .codex/plugins .codex/.tmp .vscode-server/extensions .vscode/extensions .worktrees .git build dist target ci-runner/_work ci-runner/cache ci-runner/runners ubuntu/gate-runner/_work"
+        echo "dependency_excludes=go/pkg .rustup .cargo .npm .gradle/caches .bun/install .local/share/mise/installs .local/share/mise/downloads .local/share/claude/versions .local/share/containers .local/share/JetBrains/Daemon .local/share/pnpm .local/share/uv .venv venv site-packages __pycache__ node_modules .pnpm-store .cache .claude/plugins .codex/plugins .codex/.tmp .vscode-server/extensions .vscode/extensions build dist target ci-runner/_work ci-runner/cache ci-runner/runners ubuntu/gate-runner/_work"
         echo "self_excludes=/srv/arq-vps-root-snapshot"
         printf 'rsync_statuses='
         printf '%s ' "${statuses[@]}"

@@ -13,34 +13,20 @@
 # See DERIVATION.md "Recomputation on the ninth repository (2026-08-20)" for the
 # full arithmetic; the summary is below.
 #
-# nominalQuota derivation for THIS repo:
-#   demand weight w = 13 (this repo's MEASURED CI-matrix width — see the note
-#                         below, it is not a podman-era inheritance)
-#   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
-#   pool churn-slot capacity C = 44 (per-node since the 2026-11-03 rebalance: poweredge 24 + gmktec 12 + hp 8; poweredge 32 + gmktec 12 from R5; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
-#   exact share = C * w / W = 1.1085  ->  floor 1, no leftover = 1
-#
-# AT C = 44 THE OLD C = 16 COHORT-SUM EXCEPTION IS STILL GONE. At the old C = 16
-# this repo's share rounded to zero and the rule's `max(1, ...)` floor lifted it
-# to 1, forcing the committed quotas to sum to 17 (one above C). At the two-node
-# C = 44 its exact share is 1.1085: it earns a floor of 1 outright with no
-# leftover unit, so its quota is 1 by the apportionment itself and the ten quotas
-# sum to exactly C = 44 with no forced excess. See DERIVATION.md "The derivation
-# at C = 44 -- the two-node pool (2026-09-11)".
-#
-# WHY THE DEMAND WEIGHT IS 13 AND IS NOT IN THE 63-67 BAND. The other Drivers'
-# weights are podman-era apportionment numbers that happen to approximate their
-# matrix widths, and ../arc/values-livespec-driver-codex.yaml says outright that
-# its maxRunners is "inherited as a proxy because nobody has measured its actual
-# matrix width". This repo's 13 IS a measurement: run 32420185191 on
-# thewoolleyman/livespec-driver-pi#64 dispatched exactly 13 jobs. It is low
-# because that repo's ci.yml deliberately collapses its ~69 check targets into
-# batch jobs (check-python-batch, check-metadata-batch) instead of running one
-# job per check slug. Do NOT "correct" it upward to match its siblings.
+# nominalQuota for THIS repo: 1, the churn-slot-flavor value below, which is
+# the authority. The cohort's churn-slot-flavor quotas sum to 30, equal to the
+# pool's registered churn-slot capacity: poweredge 17 + gmktec 6 + hp 4 +
+# gamingpc 3 (DERIVATION.md "Per-node CPU budget cut: cohort 30 (2026-11-13)").
+# The demand-weight apportionment at C = 44 that set the earlier values was
+# superseded by the measured re-derivations from 2026-10-22 on, and each change
+# since is a dated DERIVATION.md section. To change a quota, follow
+# DERIVATION.md "Recomputing at another C" and keep the cohort's sum equal to
+# the registered capacity: a sum above it promises slots no node has, and a sum
+# below it idles capacity.
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 2 when its peers are idle — observed live
+# so this repo can burst well above 1 when its peers are idle — observed live
 # on the cutover run, which burst to 4 concurrent runners. The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-driver-pi.yaml's
 # maxRunners. The two are different terms of the same min() and are correctly

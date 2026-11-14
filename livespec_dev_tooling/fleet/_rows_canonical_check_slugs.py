@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 
 # `returns` is vendored, so this row must establish the import path itself
 # instead of depending on another fleet module having run first.
@@ -29,6 +30,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import tomli  # noqa: E402  — vendor-path-aware import after sys.path insert.
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
@@ -52,6 +54,7 @@ from livespec_dev_tooling.fleet._rows_aggregate_gate import (  # noqa: E402
     ResolvedCheckAggregate,
     resolve_check_aggregate_targets,
 )
+from livespec_dev_tooling.fleet._tree_state import parse_tree_payload  # noqa: E402
 
 __all__: list[str] = [
     "CANONICAL_CHECK_SLUGS_HINT",
@@ -61,6 +64,8 @@ __all__: list[str] = [
 
 PYPROJECT_PATH = "pyproject.toml"
 _MUST_RUN_ALL = "fleet members must run every canonical check"
+_DEV_TOOLING_REPO = "livespec-dev-tooling"
+_CHECKS_PREFIX = "livespec_dev_tooling/checks/"
 
 
 CANONICAL_CHECK_SLUGS_HINT = (
@@ -81,6 +86,60 @@ def _canonical_slugs() -> tuple[str, ...] | RowFinding:
             message=f"canonical check inventory unreadable: {unreadable}", severity="error"
         )
     return unsafe_perform_io(discovered.unwrap())
+
+
+def _pinned_tag(*, pyproject_text: str) -> str | None:
+    """The member's committed dev-tooling release tag, or no resolvable tag."""
+    try:
+        source: dict[str, object] = tomli.loads(pyproject_text)
+    except tomli.TOMLDecodeError:
+        return None
+    for key in ("tool", "uv", "sources", _DEV_TOOLING_REPO):
+        child = source.get(key)
+        if not isinstance(child, dict):
+            return None
+        source = cast("dict[str, object]", child)
+    tag = source.get("tag")
+    return tag if isinstance(tag, str) else None
+
+
+def _pinned_canonical_slugs(*, ctx: FleetContext, member: FleetMember) -> tuple[str, ...] | RowSkip:
+    """The canonical inventory at a preflight member's committed package pin."""
+    pyproject = ctx.file_text(repo=member.repo, path=PYPROJECT_PATH)
+    if pyproject is None:
+        return RowSkip(reason=f"{member.repo}: pin inventory unknown; {PYPROJECT_PATH} unreadable")
+    tag = _pinned_tag(pyproject_text=pyproject)
+    if tag is None:
+        return RowSkip(reason=f"{member.repo}: dev-tooling tag pin missing")
+    payload = ctx.api_object(
+        path=f"repos/{ctx.owner}/{_DEV_TOOLING_REPO}/git/trees/{tag}?recursive=1",
+        operation="pinned_canonical_check_inventory",
+    )
+    tree = parse_tree_payload(payload=payload)
+    if not tree.readable or tree.truncated:
+        return RowSkip(reason=f"{member.repo}: canonical check inventory at {tag} unreadable")
+    slugs = tuple(
+        sorted(
+            f"check-{path.removeprefix(_CHECKS_PREFIX).removesuffix('.py').replace('_', '-')}"
+            for path in tree.paths
+            if path.startswith(_CHECKS_PREFIX)
+            and path.endswith(".py")
+            and "/" not in path.removeprefix(_CHECKS_PREFIX)
+            and not path.removeprefix(_CHECKS_PREFIX).startswith("_")
+        )
+    )
+    if not slugs:
+        return RowSkip(reason=f"{member.repo}: canonical check inventory at {tag} is empty")
+    return slugs
+
+
+def _required_canonical_slugs(
+    *, ctx: FleetContext, member: FleetMember
+) -> tuple[str, ...] | RowFinding | RowSkip:
+    """Choose the member-pin inventory for preflight, otherwise this checkout's inventory."""
+    if ctx.filter_consuming_preflight:
+        return _pinned_canonical_slugs(ctx=ctx, member=member)
+    return _canonical_slugs()
 
 
 def _member_waivers(
@@ -116,8 +175,8 @@ def assert_canonical_check_slugs_wired(*, ctx: FleetContext, member: FleetMember
     resolved = resolve_check_aggregate_targets(ctx=ctx, member=member, tree=tree)
     if not isinstance(resolved, ResolvedCheckAggregate):
         return resolved
-    canonical = _canonical_slugs()
-    if isinstance(canonical, RowFinding):
+    canonical = _required_canonical_slugs(ctx=ctx, member=member)
+    if isinstance(canonical, RowFinding | RowSkip):
         return canonical
     declared = _member_waivers(ctx=ctx, member=member, tree=tree)
     if isinstance(declared, RowSkip):

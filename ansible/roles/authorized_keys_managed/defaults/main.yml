@@ -1,0 +1,10 @@
+---
+# Entries are host-specific because both the account and each tunnel's public
+# key are properties of the host that accepts it. A host that applies this role
+# MUST declare the account, group and path in host_vars: with them empty, the
+# role's first task refuses before changing anything.
+authorized_keys_managed_user: ""
+authorized_keys_managed_group: ""
+authorized_keys_managed_path: ""
+authorized_keys_managed_entries: []
+authorized_keys_managed_retired_keys: []

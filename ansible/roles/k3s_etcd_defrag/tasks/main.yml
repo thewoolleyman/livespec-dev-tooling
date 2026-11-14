@@ -1,0 +1,148 @@
+---
+# k3s_etcd_defrag — install the pinned etcdctl and the daily defragmentation
+# timer for the k3s server's embedded etcd. Server-only: the play gates it on
+# cluster_role. See defaults/main.yml for why and for the pin's provenance.
+#
+# The timer is installed and enabled whether or not the datastore is etcd yet.
+# Its service carries ConditionPathExists= on the etcd data dir, so before the
+# cut-over (and after a rollback to SQLite) every run is a clean skip.
+
+- name: Read this host's machine architecture
+  ansible.builtin.command:
+    argv: [uname, -m]
+  register: k3s_etcd_defrag_machine
+  check_mode: false
+  changed_when: false
+
+- name: Refuse a host the pinned etcd tarball is not built for
+  ansible.builtin.assert:
+    that:
+      - k3s_etcd_defrag_machine.stdout | trim == k3s_etcd_defrag_host_architecture
+    fail_msg: >-
+      {{ inventory_hostname }} reports {{ k3s_etcd_defrag_machine.stdout | trim }}, but
+      k3s_etcd_defrag_tarball_sha256 is the checksum of the {{ k3s_etcd_defrag_arch }} tarball.
+      Set k3s_etcd_defrag_arch, _host_architecture and _tarball_sha256 together for this host.
+    success_msg: "{{ inventory_hostname }} is {{ k3s_etcd_defrag_host_architecture }}"
+
+- name: Read the installed etcdctl version
+  ansible.builtin.command:
+    argv: ["{{ k3s_etcd_defrag_bin }}", version]
+  register: k3s_etcd_defrag_installed
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Derive whether the pinned etcdctl must be installed
+  ansible.builtin.set_fact:
+    k3s_etcd_defrag_install_needed: >-
+      {{ k3s_etcd_defrag_installed.rc != 0
+         or ('etcdctl version: ' ~ k3s_etcd_defrag_etcd_version) not in k3s_etcd_defrag_installed.stdout }}
+
+- name: Create the etcdctl download directory
+  ansible.builtin.file:
+    path: "{{ k3s_etcd_defrag_download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  when: k3s_etcd_defrag_install_needed | bool and not ansible_check_mode
+
+- name: Download the etcd release tarball and verify its pinned sha256
+  ansible.builtin.get_url:
+    url: "{{ k3s_etcd_defrag_tarball_url }}"
+    dest: "{{ k3s_etcd_defrag_download_dir }}/{{ k3s_etcd_defrag_tarball }}"
+    checksum: "sha256:{{ k3s_etcd_defrag_tarball_sha256 }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when: k3s_etcd_defrag_install_needed | bool and not ansible_check_mode
+
+- name: Extract etcdctl from the verified tarball
+  ansible.builtin.unarchive:
+    src: "{{ k3s_etcd_defrag_download_dir }}/{{ k3s_etcd_defrag_tarball }}"
+    dest: "{{ k3s_etcd_defrag_download_dir }}"
+    remote_src: true
+    include:
+      - "{{ k3s_etcd_defrag_release_dir }}/etcdctl"
+    owner: root
+    group: root
+  become: true
+  when: k3s_etcd_defrag_install_needed | bool and not ansible_check_mode
+
+- name: Install the pinned etcdctl
+  ansible.builtin.copy:
+    src: "{{ k3s_etcd_defrag_download_dir }}/{{ k3s_etcd_defrag_release_dir }}/etcdctl"
+    dest: "{{ k3s_etcd_defrag_bin }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: k3s_etcd_defrag_install_needed | bool and not ansible_check_mode
+
+- name: Remove the etcdctl download directory
+  ansible.builtin.file:
+    path: "{{ k3s_etcd_defrag_download_dir }}"
+    state: absent
+  become: true
+  when: k3s_etcd_defrag_install_needed | bool and not ansible_check_mode
+
+- name: Report the pinned etcdctl a check run would install
+  ansible.builtin.debug:
+    msg: >-
+      Would install etcdctl {{ k3s_etcd_defrag_etcd_version }} at {{ k3s_etcd_defrag_bin }} from
+      {{ k3s_etcd_defrag_tarball_url }} (sha256 {{ k3s_etcd_defrag_tarball_sha256 }}); installed:
+      {{ k3s_etcd_defrag_installed.stdout_lines | default(['none']) | first | default('none') }}.
+  changed_when: true
+  when: k3s_etcd_defrag_install_needed | bool and ansible_check_mode
+
+- name: Verify the installed etcdctl is the pinned version
+  ansible.builtin.command:
+    argv: ["{{ k3s_etcd_defrag_bin }}", version]
+  register: k3s_etcd_defrag_verified
+  changed_when: false
+  failed_when: >-
+    ('etcdctl version: ' ~ k3s_etcd_defrag_etcd_version) not in k3s_etcd_defrag_verified.stdout
+  when: not ansible_check_mode
+
+- name: Check whether the defragmentation timer unit is already installed
+  ansible.builtin.stat:
+    path: "{{ k3s_etcd_defrag_unit_dir }}/{{ k3s_etcd_defrag_unit }}.timer"
+    get_checksum: false
+  register: k3s_etcd_defrag_timer_present
+  check_mode: false
+  become: true
+
+- name: Install the defragmentation service unit
+  ansible.builtin.template:
+    src: k3s-etcd-defrag.service.j2
+    dest: "{{ k3s_etcd_defrag_unit_dir }}/{{ k3s_etcd_defrag_unit }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the defragmentation timer unit
+  ansible.builtin.template:
+    src: k3s-etcd-defrag.timer.j2
+    dest: "{{ k3s_etcd_defrag_unit_dir }}/{{ k3s_etcd_defrag_unit }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Enable and start the defragmentation timer
+  # Only the TIMER is enabled; the service has no [Install] section and is started
+  # by the timer alone. daemon_reload is set here, not in a handler, so a changed
+  # unit is read before the timer is (re)started in this same pass.
+  ansible.builtin.systemd_service:
+    name: "{{ k3s_etcd_defrag_unit }}.timer"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # A check run over a host that does not yet carry the unit cannot ask systemd
+  # about it; the template task above already reports that drift.
+  when: not ansible_check_mode or k3s_etcd_defrag_timer_present.stat.exists

@@ -160,6 +160,38 @@ see correction C6 in `.ai/supervisor-protocol.md`. This section is the
 host-wide subset, kept here because the trap hits ANY role on this host and
 `.ai/supervisor-protocol.md` is loaded only by supervisor handoffs.
 
+## In zsh, Brace A Variable Before A Colon
+
+HOST-WIDE, the same class of trap as the `ls` alias above: the agent shell here is zsh, and zsh reads `$var:X` as a
+modifier whenever X is a modifier letter. `:r` strips an extension, `:h` and `:t` keep the head or tail, and `:l` and
+`:u` change case. So `--action resolve-blocked:$id:ready` sends a mangled id, and drive.py answers with the generic
+"Unsupported human valve action id.". That reads like a build or grammar change, not a quoting bug. `git show $T:path`
+is hit the same way (`:l` lowercases).
+
+Write `"resolve-blocked:${id}:ready"` and `"${T}:path"`, or wrap the loop in `bash -c`. When a valve press that worked
+before is refused as unsupported, print the expanded argv before blaming the build. Measured 2026-11-12 by the
+implement-test-performance seat: two releases failed inside a loop, the cause was first misread as an orchestrator build
+roll, and the identical literal command went green. The coordinator's record of the same trap is in
+`.ai/coordinator-duties.md` (§12, "In zsh, brace a variable before a colon"). It is repeated here because that file
+loads only for coordinator work.
+
+## Quote The Heredoc Delimiter For Ledger Or File Text
+
+An unquoted heredoc (`<<EOF`) is shell-expanded: every backticked phrase in its body RUNS as a command substitution,
+and `$name` expands. Ledger text and these guidance files use backticks for recipe names, flags and paths, so an
+unquoted heredoc feeding `bd create`, `bd comment`, `bd update --description` or a file write silently deletes them.
+The command usually fails with "command not found" on stderr and leaves an empty string in place, so the write
+SUCCEEDS with words missing. Measured 2026-11-13 by the fleet-flaky-tests seat: two fleet copies of
+livespec-dev-tooling-7qb2bs, overseer-qc6lm3 and livespec-driver-codex-qglpti, were filed with their backticked
+recipe names stripped, and each description had to be repaired afterwards; a comment on each records it.
+
+Write `<<'EOF'` (quoted delimiter) for any ledger or file text, or pass the text from a file. After the write, read the
+record back and check that one backticked phrase survived, not just that the command exited 0.
+
+Two more zsh traps beside it, both host-wide: zsh has no `mapfile` (a bash-only builtin, so a snippet copied from a
+bash script fails), and `ls` is lsd (see above). For a list of paths, use `find` or a short python snippet, or wrap
+the loop in `bash -c`.
+
 ## A Clean Filing Display Is Not Evidence Of Admissibility
 
 `filing_display` can print `definition-of-done findings: none` for an item whose
@@ -181,6 +213,30 @@ pre-dispatch screen has passed. Read that verdict rather than the display. When
 the screen refuses on a heading, add the heading it names to the `References:`
 line, written with its literal `## ` marker, beside the scenario heading, and ask
 the dispatcher seat to screen it again.
+
+## A Raw `bd create` Leaves An Item With No Claim Token
+
+A work item filed with native `bd create` names no dispatch claim token, and
+nothing warns at filing time. Every later valve press then refuses with
+`claim-token-missing`: approve, accept, and the dispatch claim. Measured
+2026-11-12 on plan expedited-incident-response-flag. Its carriers
+livespec-dev-tooling-bqnzcm.1, .2, .3, .3.1 and .4 were filed that way from a
+seat session. The coordinator's approve and accept presses refused, it named
+tokens on four of them by hand, and it closed bqnzcm.1 out of band with
+`resolved-out-of-band`.
+
+The plugin mints and names a token only through its create path,
+`livespec_orchestrator_beads_fabro._store_claim_token_creation.create_issue_naming_first_claim_token`
+(`names_token=True`). The capture-work-item operation goes through it. A seat
+that cannot run that operation, because it raises a consent picker and a seat
+never raises one, must not fall back to raw `bd create`.
+
+How to apply: file a work item through the capture-work-item operation, or call
+`create_issue_naming_first_claim_token(client=..., draft=..., names_token=True)`
+from a Python snippet under `/usr/local/bin/with-livespec-env.sh`. For an item
+already filed without a token, ask the coordinator to name one with the
+per-item helper. Do not run `migrate_claim_tokens.py --confirm-claim-writers-stopped`
+for one item: it attests that every claim writer of the tenant is stopped.
 
 ## Definition Of Done Lines The Approve Valve Repairs
 
@@ -272,3 +328,62 @@ session acknowledged the hold and never checked auto-merge. The PR merged at
 proved incomplete, because the launch build already skips `cancelled` runs in
 its master-CI ancestor walk, and the coordinator ruled that B' stays live. A
 hold whose basis is sound gets no such second chance, so disarm it at once.
+
+## `FETCH_HEAD` Names Only The Last Fetch — A Preserve Check Can Read Master As The Ref
+
+To learn what a remote ref points at, resolve it by name: `git ls-remote origin
+<ref>`, or an explicit refspec fetch
+(`git fetch origin +<ref>:refs/remotes/origin/<name>`) followed by
+`git rev-parse origin/<name>`. Never read `FETCH_HEAD` after more than one
+fetch in the same command. Each fetch rewrites `FETCH_HEAD`, so it names
+whatever was fetched LAST. Nothing errors: the wrong commit diffs cleanly, and
+an empty diff reads as "this ref preserves nothing".
+
+Measured 2026-11-12 on livespec-dev-tooling-io6hyk. A preserve check
+(coordinator-duties §10) ran `git fetch origin <needs-human ref>`, then
+`git fetch origin master`, then `git rev-parse FETCH_HEAD`. It got master's tip
+`4646a01c`, so its "diff against the master base" compared master with itself.
+The session reported the run's preservation ref as empty, and changed the
+relaunch seed. factory-run-work-preservation then measured the true value: the
+ref was `40871d5f`, the run's own review_fix checkpoint, carrying the same
+11-file patch as the work-in-progress ref. The corrections had to be posted on
+the item and on the plan epic.
+
+How to apply: in any preserve check or seed-source verification, resolve each
+ref by name before diffing it. Cross-check a surprising "empty" or "wrong
+commit" result with `git ls-remote` before reporting it. Compare two preserved
+trees with `git diff <base> <ref> | git patch-id --stable` against each one's
+own master base, not with a direct diff, because their bases drift apart.
+
+## Lifting A `do-not-merge` Hold Does Not Re-Arm Auto-Merge
+
+The `do-not-merge` label disarms a pull request's auto-merge (the
+disarm-on-hold-label workflow). Removing the label does NOT turn it back on.
+The pull request then sits green and unmerged, and nothing reports it. After you
+lift a hold, re-arm it explicitly with `gh pr merge <n> -R <owner/repo> --auto
+--rebase`, then read back `gh pr view <n> --json autoMergeRequest` and confirm
+it is not `null`.
+
+Measured 2026-11-13 in the o4hkgh Rule-G pin sweep. Eight v1.207.0 bot bump
+pull requests were held with `do-not-merge` until each showed a pre-merge
+delegated gate. The first four lifted holds (livespec-runtime#900,
+livespec-driver-pi#555, livespec-orchestrator-beads-fabro#5181,
+livespec-driver-claude#1078) stayed open with `autoMergeRequest: null` for up
+to an hour. All of them merged within seconds of an explicit re-arm.
+
+## Search The Target Tenant Before Filing A Flaky-Test Root Fix
+
+Several seats meet the same flake in the same hour: the coordinator, the
+dispatcher, a CI-cost seat, and the plan that owns the failing code. Before you
+file a root-fix item through capture-work-item, search the TARGET tenant with
+`bd list --status all --json` for the failing case's literal identity: the
+harness case number or name, the test node id, or the failure string. Match on
+title AND description, and include `active` items, because a factory run may
+already be building the fix. In a shared harness file, also find the active
+items that edit that file and order yours after them.
+
+Measured 2026-11-13. The fleet-flaky-tests seat filed bd-ib-opfsxp for
+check-fleet-launch case 10b about 20 minutes after bd-ib-tctou7 had claimed
+the same case, and tctou7 was already running on petri. The duplicate cost a
+close and two cross-seat messages. tctou7 also named a deeper cause, a launcher
+re-ticket race, than the seat's own reading of the test's wall-clock deadlines.

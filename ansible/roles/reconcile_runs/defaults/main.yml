@@ -1,0 +1,73 @@
+---
+# reconcile_runs -- one committed owner for the livespec `reconcile-runs` host
+# timer, on every host that dispatches factory runs. See HOST_VARS.md.
+
+# The hold. With false, the role installs every tenant's units and leaves the
+# timers disabled and inactive, so a host that does not dispatch yet carries the
+# units without running them. This is the only switch that starts a timer; a
+# tenant's own `enabled: false` leaves that one tenant out of an enabled host's
+# sweep.
+reconcile_runs_enabled: false
+
+# The tenants this host reconciles, in sweep order. `reconcile-runs` takes a
+# single `--repo` and its claim lane reads only that repository's ledger, so a
+# tenant is covered only by a pass run against its own checkout. Each entry:
+#   name                tenant slug; names the service and the success marker
+#   repo                the tenant's primary checkout on this host
+#   credential_wrapper  the tenant's committed `credential_wrapper` argv,
+#                       ending in "--"; a relative first element resolves
+#                       against `repo`, as the dispatcher resolves it
+#   unit                optional service base name (default reconcile-runs-<name>)
+#   plugin_root         optional, defaults to reconcile_runs_plugin_root
+#   enabled             optional per-tenant hold (default true)
+reconcile_runs_tenants: []
+
+reconcile_runs_user: ubuntu
+reconcile_runs_group: ubuntu
+
+# The unit TEXT is livespec-orchestrator-beads-fabro's, read from the host's own
+# checkout of that repository and rendered with its @PLACEHOLDER@ tokens
+# substituted, so the two repositories keep one source each.
+reconcile_runs_orchestrator_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+reconcile_runs_template_dir: >-
+  {{ reconcile_runs_orchestrator_checkout }}/orchestrator-image/services/reconcile-runs
+reconcile_runs_plugin_root: "{{ reconcile_runs_orchestrator_checkout }}/.claude-plugin"
+
+reconcile_runs_unit_dir: /etc/systemd/system
+reconcile_runs_unit_owner: root
+reconcile_runs_unit_group: root
+
+# ONE timer per host starts ONE sweep, which runs the enabled tenants' passes one
+# at a time in list order. A pass peaks at about 3.5 GB (measured on the dev
+# host, 2026-11-11), so tenants never run side by side.
+reconcile_runs_timer_unit: reconcile-runs
+reconcile_runs_sweep_unit: reconcile-runs-sweep
+reconcile_runs_boot_delay: 5min
+reconcile_runs_interval: 10min
+
+# Each tenant pass is bounded. A failed pass is retried by the NEXT SWEEP, one
+# interval after this sweep ends, not by Restart=: the orchestrator's unit text
+# commits Restart=no, and an in-sweep retry would hold every later tenant behind
+# a hung one (four 1800 s attempts is two hours of a serial sweep).
+reconcile_runs_timeout_seconds: 1800
+
+# Dead-man. Each successful pass touches <state_dir>/<name>.last-success; the
+# staleness unit fails, naming the tenant and the age, once a marker is older
+# than the bound. Size the bound to the sweep: every enabled tenant's pass plus
+# the interval, with room for one timed-out pass.
+reconcile_runs_state_dir: /var/lib/livespec/reconcile-runs
+reconcile_runs_stale_after_seconds: 14400
+reconcile_runs_staleness_interval: 5min
+reconcile_runs_staleness_bin: /usr/local/libexec/livespec-reconcile-runs-staleness
+reconcile_runs_staleness_unit: reconcile-runs-staleness
+# The staleness unit's OnFailure= target, for a host whose telemetry does not
+# read the markers (empty: no OnFailure=). With a target set, the check fails
+# only when the stale set changes or the last alert is older than
+# reconcile_runs_staleness_realert_seconds, so one stale episode raises one alert.
+reconcile_runs_staleness_on_failure: ""
+reconcile_runs_staleness_alert_state: "{{ reconcile_runs_state_dir }}/.staleness-alerted"
+reconcile_runs_staleness_realert_seconds: 86400
+
+# Test seam: false renders every file and skips the systemd calls (daemon-reload,
+# timer state, the post-change sweep). Hosts keep the default.
+reconcile_runs_manage_systemd: true

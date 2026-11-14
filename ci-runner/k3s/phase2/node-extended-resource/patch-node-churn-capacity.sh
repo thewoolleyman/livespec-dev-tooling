@@ -167,8 +167,11 @@ while :; do
     "$CREDENTIAL_REFRESH_BIN" || die "refresh FAILED (see above): ${CREDENTIAL_REFRESH_BIN} could not re-fetch the node-status credential for ${NODE_NAME}, so the rejection stands and ${KUBECONFIG} is unchanged."
     continue
   fi
-  [ "$(date +%s)" -ge "$deadline" ] && die "node ${NODE_NAME} did not register in the API within ${NODE_WAIT_TIMEOUT}s"
   echo "waiting for node ${NODE_NAME} to register..."
+  # The deadline guards a hung registration wait; it must not erase the
+  # observation that this probe found no node, even when the probe itself was
+  # delayed past the deadline on a loaded runner.
+  [ "$(date +%s)" -ge "$deadline" ] && die "node ${NODE_NAME} did not register in the API within ${NODE_WAIT_TIMEOUT}s"
   sleep 3
 done
 

@@ -278,6 +278,7 @@ check:
         check-check-tools
         check-ci-gate-parity
         check-ci-matrix-completeness
+        check-ci-single-container-image
         check-claude-md-coverage
         check-codex-hook-reconcilable
         check-comment-line-anchors
@@ -340,6 +341,8 @@ check:
         check-wrapper-shape
         check-ansible-lint
         check-ansible-hostname-free
+        check-ansible-get-url-checksum
+        check-ansible-authorized-keys-managed
         check-dev-host-fabro-client-bins-declared
         check-lint
         check-format
@@ -404,6 +407,17 @@ check-ansible-lint:
 check-ansible-hostname-free:
     uv run python -m livespec_dev_tooling.ansible_hostname_free
 
+# `get_url` does not download under `--check`: with no `checksum:` it compares
+# the destination against an empty temporary file and reports `changed` on a host
+# that is already converged (livespec-dev-tooling-7g5qba). Every `get_url` task
+# under `ansible/roles/*/tasks` pins a checksum or records a
+# `# check-mode-exempt: <why>` comment.
+check-ansible-get-url-checksum:
+    uv run python -m livespec_dev_tooling.ansible_get_url_checksum
+
+check-ansible-authorized-keys-managed:
+    uv run pytest tests/consumer/test_authorized_keys_managed.py
+
 # Every `dispatcher.factories.<name>.bin` this repository commits names the
 # `path` of one `fabro_client_builds` entry, so the Fabro client a Dispatcher
 # EXECS is one `ansible/dev-host.yml` stages from a digest-verified control-node
@@ -424,6 +438,16 @@ ansible-drift *args:
 [positional-arguments]
 ansible-apply *args:
     uvx --from ansible-core==2.21.4 ansible-playbook -i ansible/inventory/legacy.yml "$@"
+
+# `gate-repro` — run ONE diagnosed reproduction gate Job for the committed tree
+# of <repo-root> on the gates-repro-lq lane (one gate unit on gamingpc-xubuntu)
+# and keep its evidence under tmp/gate-repro/ on this host: the Job's full log
+# and status every 300 s, and how it ended. Operator-only, never in `just check`
+# or CI: it needs the gates credential (livespec-dev-tooling-pkmxgu, for the
+# gamingpc gate hang livespec-dev-tooling-ddy5xu).
+[positional-arguments]
+gate-repro repo_root *args:
+    ci-runner/k3s/phase2/gates/gate-repro.sh --repo-root "$@"
 
 # Operator-invoked, future-state-only Git author identity audit. The output
 # path MUST be below this checkout's ignored tmp/ tree. This is deliberately
@@ -467,7 +491,7 @@ check-format:
     uv run ruff format --check .
 
 check-types:
-    uv run pyright
+    scripts/just/check-types.sh
 
 # `warm-typecheck` — populate pyright's bundled node runtime + typeshed
 # ONCE, serially, so a later PARALLEL `just check` never cold-downloads it
@@ -876,6 +900,14 @@ check-ci-gate-parity:
 check-ci-matrix-completeness:
     uv run python -m livespec_dev_tooling.checks.ci_matrix_completeness
 
+# Fails when `.github/workflows/ci.yml` declares two or more distinct job
+# `container:` images, naming each image and its line. A delegated gate Job runs in
+# the one image it resolves from that file, so a second pin refuses every push and
+# post-merge janitor of the repository until it is removed. No severity lever: it
+# fails by default (livespec-dev-tooling-kzhduc).
+check-ci-single-container-image:
+    uv run python -m livespec_dev_tooling.checks.ci_single_container_image
+
 check-claude-md-coverage:
     uv run python -m livespec_dev_tooling.checks.claude_md_coverage
 
@@ -962,6 +994,12 @@ check-heading-coverage-debt-register:
 # an exemption list, and the ratchet it feeds would become a formality.
 generate-heading-coverage-debt-register:
     uv run python -m livespec_dev_tooling.heading_coverage_debt
+
+# Render one adopter's released incident CI inventory from its own workflow and
+# check-targets.txt at a commit of its default branch (see the script header).
+[positional-arguments]
+render-incident-ci-inventory repository clone commit:
+    scripts/just/render-incident-ci-inventory.sh "$1" "$2" "$3"
 
 check-keyword-only-args:
     uv run python -m livespec_dev_tooling.checks.keyword_only_args
@@ -1052,8 +1090,9 @@ check-no-shadow-ledger-body-typechecks:
 # (epic li-cvaudit, cvtodo). The heading-coverage.json TODO scan ALWAYS
 # runs; `LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` unset → TODO
 # offenders warn + exit 0 (authoring placeholders surface without
-# blocking per-commit `just check`); set (CI sets it to `true`) → they
-# fail. Replaces the prior LIVESPEC_RELEASE_GATE skip carve-out, which
+# blocking per-commit `just check`); set → they fail. The lever arms the
+# release tier wherever a consumer's release workflow sets it to `true`;
+# this repository's own workflows do not set it. Replaces the prior LIVESPEC_RELEASE_GATE skip carve-out, which
 # silently skipped the scan entirely when the gate was unset.
 check-no-todo-registry:
     uv run python -m livespec_dev_tooling.checks.no_todo_registry

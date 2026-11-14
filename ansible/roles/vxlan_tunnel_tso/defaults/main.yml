@@ -1,0 +1,16 @@
+---
+# The VXLAN interface flannel creates on every k3s node.
+vxlan_tunnel_tso_interface: flannel.1
+# NIC drivers whose hardware segmentation of VXLAN-encapsulated TCP is known to
+# emit malformed frames. See tasks/main.yml for the measurement and the upstream
+# fix that will retire an entry.
+vxlan_tunnel_tso_affected_drivers:
+  - bnx2x
+# The node's uplink: the default-route interface, or empty on a host with no
+# default route (the role then only removes its rule).
+vxlan_tunnel_tso_uplink: "{{ (ansible_facts['default_ipv4'] | default({}))['interface'] | default('') }}"
+vxlan_tunnel_tso_udev_rule: /etc/udev/rules.d/70-vxlan-tunnel-tso.rules
+vxlan_tunnel_tso_ethtool: /usr/sbin/ethtool
+# The two halves of the udev rule, kept apart only to stay inside the line limit.
+vxlan_tunnel_tso_udev_match: 'ACTION=="add", SUBSYSTEM=="net", KERNEL=="{{ vxlan_tunnel_tso_interface }}"'
+vxlan_tunnel_tso_udev_run: "{{ vxlan_tunnel_tso_ethtool }} -K {{ vxlan_tunnel_tso_interface }} tso off"

@@ -7,6 +7,9 @@
 | `fabro_factory_registry_limits_dir` | `/home/ubuntu/.local/state/livespec/fleet-limits` | The directory holding one world-readable `<factory>.max_concurrent_runs` file per declared factory. |
 | `fabro_factory_registry_owner` | `root` | The owner of every file and directory this role writes. A variable only so a test can run the committed tasks as a non-root user. |
 | `fabro_factory_registry_group` | `root` | The group of every file and directory this role writes. |
+| `fabro_factory_registry_render` | `true` | Whether this host gets the registry file and the fleet-limit files. `group_vars/fabro_dispatch_clients.yml` turns it off for dispatch-only hosts. Those hosts get the client logins only, because their own provisioning renders their registry. Do not turn it on there: the file would then have two writers. The dispatch-client play's first task refuses it however it is set, `-e` included. |
+| `fabro_factory_registry_client_login` | `false` | Whether this host's Fabro client gets a dev-token login per registered factory in `fabro_factory_registry_client_home/.fabro/auth.json`. `dev_hosts` and `fabro_dispatch_clients` turn it on. |
+| `fabro_factory_registry_entries` | the `fabro_factory_registry` mapping as items | The factories this host resolves. `fabro_dispatch_clients` sets it to read the one `dev_hosts` declaration, so a dispatch-only host is logged in to exactly the factories the dev hosts publish. |
 
 `fabro_factory_registry` is declared ONCE, and only in
 `ansible/inventory/group_vars/dev_hosts.yml` — not in

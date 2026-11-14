@@ -1,0 +1,111 @@
+---
+# gamingpc-xubuntu — the maintainer's dual-boot gaming PC, a k3s pool AGENT
+# (plan homelab-k8s-worker-nodes, epic livespec-dev-tooling-ko26ez; maintainer
+# direction 2026-11-11 ~00:40Z). Its node facts and the derivation of its
+# default split are in
+# ci-runner/k3s/phase0-bare-metal/profiles/gamingpc-xubuntu.env; the host
+# record is thewoolleyman/gamingpc-xubuntu-info.
+
+# --- otel_collector ---
+# The host collector on a k3s agent node, as gmktec-xubuntu's.
+otel_collector_config_file: config.k3s-agent-host.yaml
+otel_collector_pod_config_file: config.k3s-agent-host-pods.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+otel_collector_unit_description: >-
+  otel-collector -- host OTel Collector on a k3s agent node (livespec env)
+otel_collector_unit_after: network-online.target
+otel_collector_unit_wants: network-online.target
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC
+
+# --- disk_guard ---
+disk_guard_threshold_gb: 40
+
+# --- factory_budget_reconciler ---
+# Two factory sandbox pods: legacy-coordinator-agent ruling, 2026-11-12
+# ~10:12Z, on a STRANDED-CAPACITY read (rule K, the same derivation on every
+# factory node). Measured 2026-11-12 ~10:05Z: allocatable 16 cpu / 30.4 GiB;
+# the gate lanes pinned here reserve 5 cpu / 8 GiB
+# (gates-repro-cq/gates-repro-gamingpc-flavor; gates-gamingpc-flavor is 0); a
+# factory sandbox pod requests 3 cpu / 7630Mi. After the lanes and the
+# warm-uv-cache pod (500m / 512Mi), cpu fits 3.67 pods and memory
+# (30.4 - 8 - 0.5) / 7.45 = 2.94, so 2. Was 1 (an earlier one-third memory
+# share read against ~26.5 GiB allocatable).
+#
+# ONE since 2026-11-12 ~19:4xZ (legacy-coordinator-agent GO, R301; plan
+# gate-job-resources). gates-gamingpc-flavor holds TWO gate units, 10 cpu /
+# 16 GiB, for priority 1's hand-land burst, while gmktec and poweredge were
+# saturated (2.1% and 0.7% idle) and gamingpc was 94% idle. The same
+# derivation: memory (30.4 - 16 - 0.5) / 7.45 = 1.86 and cpu
+# (16 - 10 - 0.5) / 3 = 1.83, so 1.
+# REVERT to 2, with the gate lane back to 5 / 8Gi, when the burst ends (that
+# plan archived) and a re-measure shows gate waits under 300 s.
+#
+# NOT RE-DERIVED for the 2026-11-13 reserves (livespec-dev-tooling-wsjl7j). The
+# two derivations above read 16 cpu / 30.4 GiB allocatable. Once the k3s agent
+# restarts on the profile's new KUBELET_ARGS the node offers 12000m / 94597Mi.
+# Memory then binds nothing here; cpu does: with the 10-cpu gate lane,
+# (12 - 10 - 0.5) / 3 = 0.5, so a factory pod and two gates no longer fit
+# together, and with the lane back at 5 cpu, (12 - 5 - 0.5) / 3 = 2.17. This
+# value and the gate lane are their owners' to re-derive; this change moves
+# neither.
+#
+# TWO again, re-derived 2026-11-13 by plan gate-job-resources on wsjl7j's
+# measured allocatable, 12 cpu / 94597Mi (read back 08:52:22Z). The gate lane
+# has been back at 5 cpu / 8 GiB since livespec-dev-tooling#4454 was applied at
+# ~08:3xZ. cpu (12 - 5 - 0.5) / 3 = 2.17 and memory
+# (92.4 - 8 - 0.5) / 7.45 = 11.3, so 2. Both remaining parts of the revert
+# condition above held: the hand-land burst ended, and gate waits read under
+# 300 s.
+factory_pod_budget: 2
+
+# --- k3s_config ---
+# user.slice's CPU share, so the maintainer's local sessions on this
+# workstation keep at least a quarter of the CPU when pods want every core
+# (livespec-dev-tooling-wsjl7j; maintainer direction 2026-11-13 ~04:31Z: "leave
+# some headroom (probably 25%) to support running local sessions or
+# processes"). A weight is a SHARE: it never keeps a core idle, it only decides
+# who wins when demand exceeds cores. Pods use every core a local session
+# leaves idle, and a local session uses every core the pods leave idle.
+#
+# The arithmetic. Local login sessions run in user.slice, which competes at the
+# cgroup root with kubepods.slice and system.slice. The kubelet weights
+# kubepods.slice from allocatable CPU: at the 12000m this node's profile yields
+# (ci-runner/k3s/phase0-bare-metal/profiles/gamingpc-xubuntu.env), that is
+# 12288 shares, and 1 + ((12288 - 2) x 9999) / 262142 = 469. system.slice is at
+# systemd's default of 100. For a share of at least 25%:
+#   w / (w + 469 + 100) >= 0.25   gives   w >= 190.
+# 200 gives 200 / 769 = 26.0%, about 4.2 of 16 CPUs. Measured before this
+# change, 2026-11-13: kubepods.slice 567, system.slice 100, user.slice 100, so
+# user.slice was entitled to 100 / 767 = 13%. (init.scope, the fourth root
+# peer, is systemd itself and does not compete for CPU in practice; counted at
+# full demand it would make the 200 share 23.0%.)
+#
+# system.slice's weight is deliberately NOT set on this node here. Raising it
+# (k3s_config_system_slice_cpu_weight, as the other agents declare) dilutes
+# user.slice, so this value must be re-derived in the same change; so must it
+# when the profile's CPU reserves change. Takes effect on a daemon-reload, no
+# restart; revert by removing this key and re-applying
+# --tags k3s_user_slice_cpu_weight.
+k3s_config_user_slice_cpu_weight: 200
+
+# --- node_status_credential ---
+# The agent-side account the refresh tool drops its fetch to is this node's
+# operator account, `ubuntu` (there is no `cwoolley` here). It logs in to the
+# control-plane node as `cwoolley`, the only account Tailscale SSH maps there.
+# Measured 2026-11-11 ~07:10Z from this host as `ubuntu`: `ssh poweredge-xubuntu`
+# is refused with "tailscale: failed to look up local user \"ubuntu\"", while
+# `ssh cwoolley@poweredge-xubuntu` returns `cwoolley` and passes `sudo -n`.
+node_status_credential_ssh_user: ubuntu
+node_status_credential_remote_user: cwoolley
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:B80TQ80TSdj4j8fef3gQhQtWnafGppS4N817Gh4z33o. Verified 2026-11-11
+# against the fingerprint thewoolleyman/gamingpc-xubuntu-info docs/bootstrap.md
+# records.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKuej1c3Cw/I995gHVmAjaFfibSxBIKHNznAuNkyYiCV"

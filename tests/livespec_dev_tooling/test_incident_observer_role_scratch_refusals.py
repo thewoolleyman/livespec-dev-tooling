@@ -542,12 +542,16 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
     # main.yml only dispatches, through DYNAMIC includes: the scratch path to the
     # converge body runs the preflight first, and nothing below is reachable by
     # `--start-at-task` (review round 3, F1).
+    # A further production installation (livespec-dev-tooling-lqp2qx) is a third
+    # dynamic include, taking its own preflight; production's stays last.
     assert [set(task) - {"name", "when"} for task in main] == [
+        {"ansible.builtin.include_tasks"},
         {"ansible.builtin.include_tasks"},
         {"ansible.builtin.include_tasks"},
     ]
     assert [task["ansible.builtin.include_tasks"] for task in main] == [
         "scratch_apply.yml",
+        "installation_apply.yml",
         "converge.yml",
     ]
     assert main[0]["when"] == (
@@ -640,6 +644,46 @@ def test_the_teardown_read_back_refuses_any_moved_production_byte_or_journal_ent
     held = [_holds(reply=reply) for reply in run_engine(cases=cases)]
 
     assert held == [True, False, False, False, False]
+
+
+def test_the_teardown_read_back_tolerates_live_receipts_and_journal_writes_only() -> None:
+    """Production may write its receipts while a scratch teardown is in flight."""
+    state = _production()["incident_observer_state_dir"]
+    retained = {"path": f"{state}/retained", "checksum": "1"}
+    before = _readings(prefix="before", checksum="x", exists=True, files=[retained])
+    cases = [
+        _read_back(
+            before=before,
+            after=_readings(
+                prefix="after",
+                checksum="x",
+                exists=True,
+                files=[retained, {"path": f"{state}/receipt.json", "checksum": "2"}],
+            ),
+        ),
+        _read_back(
+            before=before,
+            after=_readings(
+                prefix="after",
+                checksum="x",
+                exists=True,
+                files=[retained, {"path": f"{state}/recovery-journal/entry", "checksum": "2"}],
+            ),
+        ),
+        _read_back(
+            before=before,
+            after=_readings(
+                prefix="after",
+                checksum="x",
+                exists=True,
+                files=[retained, {"path": f"{state}/teardown-tamper", "checksum": "2"}],
+            ),
+        ),
+    ]
+
+    held = [_holds(reply=reply) for reply in run_engine(cases=cases)]
+
+    assert held == [True, True, False]
 
 
 def test_the_teardown_reads_back_every_production_credential_unit_and_its_state() -> None:

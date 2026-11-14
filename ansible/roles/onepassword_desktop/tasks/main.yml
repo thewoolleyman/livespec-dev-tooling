@@ -36,9 +36,15 @@
     success_msg: "{{ onepassword_desktop_required_unit }} is running"
 
 - name: Fetch the 1Password package signing key
+  # Pinned so that a host whose key already matches reports ok under --check and
+  # on apply. Without a checksum get_url compares the existing file against an
+  # empty temporary file under --check and reports changed forever
+  # (livespec-dev-tooling-7g5qba). A vendor key rotation fails here loudly, which
+  # is the point: bump onepassword_desktop_key_sha256 after verifying the new key.
   ansible.builtin.get_url:
     url: "{{ onepassword_desktop_key_url }}"
     dest: "{{ onepassword_desktop_armored_key }}"
+    checksum: "sha256:{{ onepassword_desktop_key_sha256 }}"
     owner: root
     group: root
     mode: "0644"
@@ -111,9 +117,13 @@
     - /usr/share/debsig/keyrings/{{ onepassword_desktop_debsig_key_id }}
 
 - name: Fetch the 1Password debsig policy
+  # Pinned for the same reason as the signing key above: with no checksum a
+  # converged host reports this task changed under --check
+  # (livespec-dev-tooling-7g5qba).
   ansible.builtin.get_url:
     url: "{{ onepassword_desktop_debsig_policy_url }}"
     dest: /etc/debsig/policies/{{ onepassword_desktop_debsig_key_id }}/1password.pol
+    checksum: "sha256:{{ onepassword_desktop_debsig_policy_sha256 }}"
     owner: root
     group: root
     mode: "0644"

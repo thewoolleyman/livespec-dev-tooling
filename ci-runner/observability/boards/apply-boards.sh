@@ -191,15 +191,11 @@ def validate(defn):
     return problems
 
 
-def canon(value):
-    return json.dumps(value, sort_keys=True)
-
-
 def stored_matches(desired, stored):
     """True when every key the definition states matches what the API stored."""
-    if not isinstance(stored, dict):
-        return False
-    return all(canon(stored.get(k)) == canon(v) for k, v in desired.items())
+    differences = []
+    diff("", desired, stored, differences)
+    return not differences
 
 
 dataset_names = {}

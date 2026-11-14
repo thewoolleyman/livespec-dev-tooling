@@ -170,7 +170,7 @@ def test_every_raw_url_is_addressed_by_the_resolved_commit_and_not_the_ref() -> 
     defaults = _DEFAULTS.read_text(encoding="utf-8")
     code = "\n".join(line for line in defaults.splitlines() if not line.lstrip().startswith("#"))
     raw_urls = [line for line in code.splitlines() if _RAW_SOURCE in line]
-    assert len(raw_urls) == 4, raw_urls
+    assert len(raw_urls) == 5, raw_urls
     for line in raw_urls:
         assert f"{{{{ {_COMMIT_VARIABLE} }}}}" in line, line
         assert _REF_VARIABLE not in line, line

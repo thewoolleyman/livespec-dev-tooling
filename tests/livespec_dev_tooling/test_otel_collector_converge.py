@@ -24,10 +24,16 @@ of Done.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_JUSTFILE = _REPO_ROOT / "justfile"
 _PLAY = _REPO_ROOT / "ansible" / "dev-host.yml"
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "otel_collector"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
@@ -52,6 +58,7 @@ _SYSTEMD_UNIT_DIRECTORY = "/etc/systemd/system/"
 
 _DRIFT_COMMAND = "just ansible-drift ansible/dev-host.yml --tags otel_collector"
 _APPLY_COMMAND = "just ansible-apply ansible/dev-host.yml --tags otel_collector"
+_ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 
 
 def _task_blocks(*, body: str) -> list[str]:
@@ -63,6 +70,72 @@ def _role_text() -> str:
     return "\n".join(
         path.read_text(encoding="utf-8") for path in sorted(_ROLE.rglob("*")) if path.is_file()
     )
+
+
+def _task(*, name: str) -> str:
+    """Return the one task named ``name`` from the collector role."""
+    matches = [
+        block
+        for block in _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+        if block.startswith(f"- name: {name}\n")
+    ]
+    assert len(matches) == 1, f"expected one task named {name!r}; got {len(matches)}"
+    return matches[0]
+
+
+def _render_pods_endpoint(*, flannel_subnet: str, override: str = "") -> str:
+    """Render the role's exact expression through the pinned Ansible engine."""
+    task = _task(name="Name the OTLP pods endpoint for this node")
+    expression = task.split("otel_collector_otlp_pods_endpoint_effective: >-\n", 1)[1].split(
+        "\n  when:", 1
+    )[0]
+    pin = _ANSIBLE_CORE_PIN.search(_JUSTFILE.read_text(encoding="utf-8"))
+    assert pin is not None, "just ansible-apply must pin ansible-core exactly"
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        rendered = root / "endpoint"
+        play = root / "render.yml"
+        play.write_text(
+            "---\n"
+            "- hosts: localhost\n"
+            "  gather_facts: false\n"
+            "  vars:\n"
+            f"    otel_collector_otlp_pods_endpoint: {json.dumps(override)}\n"
+            "    otel_collector_flannel_subnet_read:\n"
+            f"      stdout: {json.dumps(f'FLANNEL_SUBNET={flannel_subnet}')}\n"
+            "  tasks:\n"
+            "    - name: Render the committed endpoint expression\n"
+            "      ansible.builtin.set_fact:\n"
+            "        rendered_endpoint: >-\n"
+            f"{textwrap.indent(textwrap.dedent(expression).strip(), '          ')}\n"
+            "    - name: Preserve the rendered endpoint for pytest\n"
+            "      ansible.builtin.copy:\n"
+            f"        content: '{{{{ rendered_endpoint }}}}'\n"
+            f"        dest: {json.dumps(str(rendered))}\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "uvx",
+                "--from",
+                pin[0],
+                "ansible-playbook",
+                "-i",
+                "localhost,",
+                "-c",
+                "local",
+                str(play),
+            ],
+            cwd=_REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+            env=os.environ | {"ANSIBLE_NOCOWS": "1"},
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return rendered.read_text(encoding="utf-8")
 
 
 def test_one_committed_converge_carries_a_merged_config_to_the_running_service() -> None:
@@ -185,3 +258,59 @@ def test_the_same_converge_installs_the_services_systemd_unit() -> None:
             "ansible.builtin.slurp:",
         ):
             assert writer not in block, block
+
+
+def test_k3s_agents_render_their_own_otlp_pods_gateway_from_flannel() -> None:
+    """The same role variables give each agent its own flannel gateway bind."""
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    assert "otel_collector_flannel_subnet_path: /run/flannel/subnet.env" in defaults, defaults
+
+    read = _task(name="Read this node's flannel subnet for the OTLP pods endpoint")
+    assert "ansible.builtin.command:" in read, read
+    assert '"{{ otel_collector_flannel_subnet_path }}"' in read, read
+    assert "'OTLP_PODS_ENDPOINT' in otel_collector_required_environment_keys" in read, read
+    assert "otel_collector_otlp_pods_endpoint | length == 0" in read, read
+    assert "changed_when: false" in read, read
+    assert "failed_when: false" in read, read
+
+    refusal = _task(name="Refuse an OTLP pods configuration without this node's flannel subnet")
+    assert "ansible.builtin.assert:" in refusal, refusal
+    assert "otel_collector_flannel_subnet_path" in refusal, refusal
+    assert "FLANNEL_SUBNET" in refusal, refusal
+
+    assert _render_pods_endpoint(flannel_subnet="10.42.5.1/24") == "10.42.5.1:4319"
+    assert _render_pods_endpoint(flannel_subnet="10.42.1.1/24") == "10.42.1.1:4319"
+
+
+def test_otlp_pods_endpoint_override_wins_over_the_flannel_gateway() -> None:
+    """A host-specific override is deliberate and is what the role writes."""
+    write = _task(name="Write the OTLP pods endpoint the merged configuration reads")
+    assert "ansible.builtin.lineinfile:" in write, write
+    assert 'regexp: "^OTLP_PODS_ENDPOINT="' in write, write
+    assert "otel_collector_otlp_pods_endpoint_effective" in write, write
+    # A rewritten endpoint must restart the host collector.  The pod-span
+    # restart is deliberately queued by the following task only when this host
+    # actually declares a companion pod configuration.
+    assert "notify:\n    - Restart the collector onto its managed configuration" in write, write
+    queue = _task(name="Queue the pod-span collector restart after an endpoint change")
+    assert "otel_collector_otlp_pods_endpoint_written.changed" in queue, queue
+    assert "otel_collector_pod_config_file | length > 0" in queue, queue
+    assert "notify: Restart the pod-span collector onto its managed configuration" in queue, queue
+
+    assert (
+        _render_pods_endpoint(flannel_subnet="10.42.5.1/24", override="192.0.2.8:4319")
+        == "192.0.2.8:4319"
+    )
+
+
+def test_otlp_pods_endpoint_refuses_missing_flannel_before_writing_an_endpoint() -> None:
+    """A configuration that reads the key fails closed when no override can supply it."""
+    refusal = _task(name="Refuse an OTLP pods configuration without this node's flannel subnet")
+    write = _task(name="Write the OTLP pods endpoint the merged configuration reads")
+    tasks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+
+    assert "otel_collector_flannel_subnet_read.rc == 0" in refusal, refusal
+    assert "FLANNEL_SUBNET" in refusal, refusal
+    assert tasks.index(refusal) < tasks.index(
+        write
+    ), "the missing flannel assertion must run before the endpoint writer"

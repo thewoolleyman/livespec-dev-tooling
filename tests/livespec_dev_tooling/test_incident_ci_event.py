@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from unittest.mock import Mock
 
 import pytest
 
 from livespec_dev_tooling import incident_ci_event as module
+from livespec_dev_tooling._forge_policy import CallResult
 
 
 def environment():
@@ -33,17 +33,20 @@ def pr():
 
 def wire(monkeypatch, *, data=None, code=0, raw=None):
     def read(**kwargs):
-        assert kwargs["args"] == ["api", "repos/owner/repo/pulls/7"]
-        return subprocess.CompletedProcess(
-            [], code, json.dumps(pr() if data is None else data) if raw is None else raw, ""
-        )
+        assert kwargs == {"name": module.PULL_REQUEST_READ, "endpoint": "repos/owner/repo/pulls/7"}
+        body = json.dumps(pr() if data is None else data) if raw is None else raw
+        if code != 0:
+            return CallResult(
+                outcome="failed", body="", status=503, kind="server_error", lines=("attempt line",)
+            )
+        return CallResult(outcome="answer", body=body, status=200, kind="answer")
 
-    monkeypatch.setattr(module, "gh_read", read)
+    monkeypatch.setattr(module, "forge_call", read)
 
 
 def test_normal_master_never_reads_forge_or_incident_payload(monkeypatch):
     forbidden = Mock(side_effect=AssertionError("read forbidden"))
-    monkeypatch.setattr(module, "gh_read", forbidden)
+    monkeypatch.setattr(module, "forge_call", forbidden)
     value = module.observe_event(
         environ=dict(GITHUB_EVENT_NAME="push", GITHUB_REPOSITORY="owner/repo", GITHUB_SHA="b" * 40)
     )
@@ -115,10 +118,27 @@ def test_missing_duplicate_and_oversize_packet_refuse(monkeypatch, body):
 def test_fork_incident_and_failed_or_duplicate_forge_reply_refuse(monkeypatch):
     wire(monkeypatch, data=pr() | {"head": {"sha": "b" * 40, "repo": {"full_name": "fork/repo"}}})
     assert module.observe_event(environ=environment()) is None
-    wire(monkeypatch, code=1)
-    assert module.observe_event(environ=environment()) is None
     wire(monkeypatch, raw='{"number":7,"number":7}')
     assert module.observe_event(environ=environment()) is None
     wire(monkeypatch, data=[])
     assert module.observe_event(environ=environment()) is None
     assert module.observe_event(environ=environment() | {"GITHUB_PR_NUMBER": "0"}) is None
+
+
+def test_an_unanswered_pull_request_read_refuses_naming_the_read(monkeypatch, capsys):
+    wire(monkeypatch, code=1)
+    with pytest.raises(module.ForgeReadUnansweredError) as raised:
+        module.observe_event(environ=environment())
+    assert str(raised.value) == (
+        f"{module.PULL_REQUEST_READ} ended without an answer (last status 503, kind server_error)"
+    )
+    assert capsys.readouterr().err == "attempt line\n"
+
+
+def test_an_unanswered_read_with_no_status_names_none(monkeypatch):
+    def read(**_kwargs):
+        return CallResult(outcome="failed", body="", status=None, kind="transport")
+
+    monkeypatch.setattr(module, "forge_call", read)
+    with pytest.raises(module.ForgeReadUnansweredError, match="last status none, kind transport"):
+        module.observe_event(environ=environment())

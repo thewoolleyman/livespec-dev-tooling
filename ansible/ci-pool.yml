@@ -27,7 +27,9 @@
 #     step and is gated here the same way.
 # Roles that legitimately run on BOTH roles unchanged (node_sysctl, storage_layout,
 # host_tools_ci, apparmor_profile, sccache_binary, cache_telemetry, container_hook)
-# carry neither a self-gate nor a `when`.
+# carry neither a self-gate nor a `when`. registry_mirror_node has no
+# install-node.sh step either; it reads the node's role from its profile through
+# the installer it wraps, so it is self-gated and carries no `when`.
 #
 # THREE STEPS HAVE NO install-node.sh EQUIVALENT, and their placement is the one
 # ordering the runbook does not dictate, so it is stated here:
@@ -108,7 +110,9 @@
 #     reads no tier and needs no job. hp is a full agent and the
 #     kubernetes-sandbox-backend will place pods on it (that is what the factory
 #     label is for); a pod that names a confinement profile the node has not
-#     loaded fails to start for a reason nothing in the pod explains.
+#     loaded fails to start for a reason nothing in the pod explains. It also
+#     holds containerd's default profile at node level, which every pod that
+#     names NO profile runs under (livespec-dev-tooling-ddy5xu).
 #   * node_status_credential mints and delivers the scoped node-status
 #     kubeconfig. It runs at capacity 0 because an ADVERTISED zero and an ABSENT
 #     resource are different facts: a ClusterQueue naming a resource no node
@@ -185,6 +189,16 @@
     # 1/10 — k3s config (server or agent); self-gated.
     - role: k3s_config
       tags: [k3s_config]
+    # 1a/10 — the ghcr pull-through cache's NODE half, /etc/rancher/k3s/registries.yaml
+    # (livespec-dev-tooling-e2gv6n). Beside k3s_config because it is the same kind
+    # of thing: k3s START configuration that takes effect at the next k3s start,
+    # which neither role performs. UNGATED and on EVERY node, the server included:
+    # the role wraps install-registry-mirror.sh, which reads the node's role out of
+    # its profile and derives the endpoint itself (loopback on the server, the
+    # carrier's address on an agent), so it self-gates like the roles above; and
+    # every node pulls ghcr images, factory pods and CI job containers alike.
+    - role: registry_mirror_node
+      tags: [registry_mirror_node]
     # 1b/10 — agent-only rejoin watchdog (STEP_SERVER_SKIP).
     - role: agent_rejoin
       tags: [agent_rejoin]
@@ -197,6 +211,10 @@
     # 2/10 — inotify, keyring and netlink receive-buffer sysctls (one role covers all three).
     - role: node_sysctl
       tags: [node_sysctl]
+    # 2a/10 — tso off on flannel.1 where the NIC mis-segments VXLAN TCP (bnx2x
+    # today, i.e. poweredge). Ungated: the role self-gates on the NIC driver.
+    - role: vxlan_tunnel_tso
+      tags: [vxlan_tunnel_tso]
     # 2b/10 — storage layout (mount the LABEL-ed tiers; no-op when live). Gated:
     # this role's whole subject is the three LABEL-keyed tiers and the two binds
     # onto them, and it REFUSES an apply at its first label resolution on a node
@@ -215,8 +233,9 @@
     # 2e/10 — fpart/fpsync, the fleet's bulk tree-copy tool (every host).
     - role: fpart
       tags: [fpart]
-    # 3/10 — AppArmor kernel profile (both roles; the ConfigMap half is the
-    # server's converge, not this role).
+    # 3/10 — AppArmor kernel profiles (both roles; the ConfigMap half is the
+    # server's converge, not this role): the workflow profile pods name, and
+    # containerd's default profile for the pods that name none.
     - role: apparmor_profile
       tags: [apparmor_profile]
     # Beside it, and for the same reason it runs on a node that executes no CI
@@ -246,6 +265,26 @@
       tags: [sandbox_image_warm_containerd]
       when: ci_pool_factory_node == 'true'
       sandbox_image_warm_store: containerd
+      sandbox_image_warm_k3s_data_dir: "{{ ci_pool_node_data_dir }}"
+    # And a SECOND containerd warm, for CI JOB containers rather than factory pods
+    # (livespec-dev-tooling-e2gv6n). A job pod's image is the python-v* tag its
+    # repository's .github/workflows/ci.yml pins, which no other warm pulls: the
+    # factory warm above reads process_spec images. Measured 2026-11-11, hp's
+    # Initialize containers median was 15 s against gmktec's 2 s. This warm
+    # re-reads every fleet repository's ci.yml on master each tick and pulls each
+    # pinned `python-v<version>` tag, whichever release each repository pins — the
+    # fleet does not pin one release (see the script's header). Under its own unit
+    # names, so it is disjoint from the factory warm on a node that carries both.
+    # Gated on the CI-facilities posture: every node that takes CI RUNNER pods
+    # (full or runner-only) gets it, a closed node does not. Restarts nothing,
+    # drains nothing.
+    - role: sandbox_image_warm
+      tags: [sandbox_image_warm_ci_containerd]
+      when: ci_pool_ci_node_facilities != 'none'
+      sandbox_image_warm_store: containerd
+      sandbox_image_warm_name: livespec-sandbox-image-warm-ci-containerd
+      sandbox_image_warm_tag_prefixes: [python]
+      sandbox_image_warm_workflow_urls: "{{ sandbox_image_warm_ci_workflow_urls }}"
       sandbox_image_warm_k3s_data_dir: "{{ ci_pool_node_data_dir }}"
     # Before 4/10 — mint+deliver the agent's scoped node-status credential, so
     # the reapply timer below has something to authenticate with (agent-only,
@@ -388,6 +427,13 @@
     # 9/10 — tmpfs datastore mount (server-only, STEP_SKIP; enable only).
     - role: datastore_tmpfs
       tags: [datastore_tmpfs]
+      when: cluster_role == 'server'
+    # 9b — the pinned etcdctl and the daily defragmentation timer for the
+    # server's embedded etcd (livespec-dev-tooling-qy2nzf). Server-only, and
+    # inert until the datastore is etcd: its service is conditioned on the etcd
+    # data dir.
+    - role: k3s_etcd_defrag
+      tags: [k3s_etcd_defrag]
       when: cluster_role == 'server'
     # 10/10 — boot-time orphaned-scratch sweep; self-gated.
     - role: storage_sweep

@@ -30,9 +30,12 @@ from livespec_dev_tooling._check_target_runner import (
     NOT_ADMITTED,
     NOT_LAUNCHED,
     TIMED_OUT,
+    TargetOutcome,
     TargetRun,
+    _renew_progress_stamp,
     run_targets,
 )
+from tests.hang_guard import HANG_GUARD_SECONDS
 
 __all__: list[str] = []
 
@@ -65,16 +68,49 @@ _HOLD = 'exec 3> "{fifo}"; trap "" TERM; sleep 30 & touch ready; wait'
 _AFTER_READY = "while [ ! -e ready ]; do sleep 0.05; done"
 
 
+# `slow` polls for `fast`'s marker this often, and gives up after the repository's ONE
+# hang guard (tests/hang_guard.py) worth of polls: at least HANG_GUARD_SECONDS, since
+# each poll sleeps the full interval. Giving up exits with `_HANG_EXIT`, which the test
+# reports as a hang naming the marker it waited for.
+_MARKER_POLL_S = 0.05
+_MARKER_POLLS = int(HANG_GUARD_SECONDS / _MARKER_POLL_S)
+_HANG_EXIT = 97
+
+
 def test_outcomes_keep_run_order_status_output_and_stdin_closed(tmp_path: Path) -> None:
+    # `slow` ends only once `fast`'s `on_complete` callback has written the marker, so
+    # the completion order holds however late either target is spawned. Its poll
+    # ceiling is the repository's hang guard, not a margin a loaded host can exceed.
+    marker = tmp_path / "fast-completed"
     seen: list[str] = []
+
+    def on_complete(outcome: TargetOutcome) -> None:
+        seen.append(outcome.name)
+        if outcome.name == "fast":
+            marker.touch()
+
     outcomes = run_targets(
         runs=[
-            _sh(name="slow", script="sleep 0.3; echo slow-out; exit 3"),
+            _sh(
+                name="slow",
+                script=(
+                    "n=0; "
+                    f'while [ ! -e "{marker}" ]; do '
+                    f"n=$((n + 1)); [ $n -gt {_MARKER_POLLS} ] && exit {_HANG_EXIT}; "
+                    f"sleep {_MARKER_POLL_S}; done; "
+                    "echo slow-out; exit 3"
+                ),
+            ),
             _sh(name="fast", script="cat; echo fast-out >&2"),
         ],
         cwd=tmp_path,
         max_workers=2,
-        on_complete=lambda outcome: seen.append(outcome.name),
+        on_complete=on_complete,
+    )
+    assert outcomes[0].returncode != _HANG_EXIT, (
+        f"HANG: `slow` was waiting for `fast`'s on_complete marker {marker}, and it had "
+        f"not appeared after {HANG_GUARD_SECONDS} s, the repository's hang guard "
+        "(tests/hang_guard.py). This is a run that never ended, not a slow one."
     )
     assert [(o.name, o.status, o.returncode) for o in outcomes] == [
         ("slow", COMPLETED, 3),
@@ -348,3 +384,31 @@ def test_a_member_run_without_a_progress_stamp_touches_nothing(
 
     assert outcome.status == COMPLETED
     assert list(tmp_path.iterdir()) == []
+
+
+def test_renewing_the_progress_stamp_with_no_stamp_configured_touches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that no gate started has no stamp to renew, and renewing is a no-op.
+
+    The runner renews the stamp only when a member's spool grows across a
+    progress tick, so whether a suite run reaches this branch depends on member
+    timing; this test reaches it on every run (livespec-dev-tooling#4472's PR
+    run 43388745962 missed it and failed per-file coverage).
+    """
+    monkeypatch.delenv(_STAMP_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    _renew_progress_stamp()
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_renewing_the_progress_stamp_touches_the_configured_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = _stamped(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    _renew_progress_stamp()
+
+    assert stamp.stat().st_mtime_ns > 0

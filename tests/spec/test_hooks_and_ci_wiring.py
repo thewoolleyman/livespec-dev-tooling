@@ -142,3 +142,27 @@ def test_the_pack_installer_is_wired_in_both_hooks_that_gate_a_push() -> None:
         f"first; the commit-msg stage reads the message and not the pack, so it "
         f"correctly does not; carrying={carrying}"
     )
+
+
+def test_every_gating_hook_follows_its_members_output_live() -> None:
+    """A detached gate must retain a member's failure before its stall bound ends it.
+
+    Lefthook's ordinary command mode buffers a member's output until that member
+    exits. A member which has already printed its failure and then remains alive
+    until the outer runner's stall window expires consequently leaves no failure
+    evidence in the run record. Lefthook's hook-level `follow` mode makes every
+    member relay its output as it prints, which is the only output path the
+    outer runner can persist before it terminates the hook process group.
+    """
+    text = _LEFTHOOK.read_text(encoding="utf-8")
+    missing = [
+        stage
+        for stage in ("pre-commit", "commit-msg", "pre-push")
+        if f"{stage}:\n  follow: true\n" not in text
+    ]
+    assert not missing, (
+        "every lefthook hook that can run under the detached stall window must "
+        "declare hook-level `follow: true`, so its members' output reaches "
+        "gate-run.sh's output.log "
+        f"before the member exits; missing={missing!r}"
+    )

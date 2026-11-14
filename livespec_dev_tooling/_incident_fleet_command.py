@@ -28,9 +28,14 @@ from livespec_dev_tooling._incident_fleet_capabilities import (  # noqa: E402
     CAPABILITIES,
     SURFACE_CAPABILITY,
 )
+from livespec_dev_tooling._incident_fleet_release_keyed import (  # noqa: E402
+    ServingReading,
+    claim_reason,
+)
 from livespec_dev_tooling._incident_fleet_types import (  # noqa: E402
     CapabilityEvidence,
     FleetAudit,
+    SurfaceDisposition,
 )
 from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest  # noqa: E402
 from livespec_dev_tooling.incident_fleet_audit import audit_incident_fleet  # noqa: E402
@@ -44,10 +49,15 @@ _NONE = "-"
 
 @dataclass(frozen=True, kw_only=True)
 class FleetReport:
-    """The audit plus every serving version read for it ("" when the read was unavailable)."""
+    """The audit plus every serving version read for it ("" when the read was unavailable).
+
+    Each reading is (repository, capability, serving version, detail, head): the detail
+    names the newest release and the HEAD a release-keyed read matched, or why it matched
+    none, and head is the serving commit such a read compared ("" on any other read).
+    """
 
     audit: FleetAudit
-    readings: tuple[tuple[str, str, str], ...]
+    readings: tuple[tuple[str, str, str, str, str], ...]
 
 
 def _digest(*, text: str) -> str:
@@ -87,17 +97,21 @@ def _confirmed(*, read_manifest: Callable[[], str | None], candidate_digest: str
 
 
 class _Cached(Protocol):
-    def __call__(self, *, repository: str, capability: str) -> str: ...
+    def __call__(self, *, repository: str, capability: str) -> ServingReading: ...
 
 
-def _once(*, read: ServingReader) -> tuple[_Cached, dict[tuple[str, str], str]]:
+def _reading(*, value: str | ServingReading | None) -> ServingReading:
+    return value if isinstance(value, ServingReading) else ServingReading(build=value or "")
+
+
+def _once(*, read: ServingReader) -> tuple[_Cached, dict[tuple[str, str], ServingReading]]:
     """Read each (repository, capability) once; remember what was read ("" if unavailable)."""
-    seen: dict[tuple[str, str], str] = {}
+    seen: dict[tuple[str, str], ServingReading] = {}
 
-    def cached(*, repository: str, capability: str) -> str:
+    def cached(*, repository: str, capability: str) -> ServingReading:
         key = (repository, capability)
         if key not in seen:
-            seen[key] = read(repository=repository, capability=capability) or ""
+            seen[key] = _reading(value=read(repository=repository, capability=capability))
         return seen[key]
 
     return cached, seen
@@ -132,7 +146,7 @@ def run_fleet_audit(
                 claim,
                 serving_build=served(
                     repository=claim.repository, capability=capability_of(surface=claim.surface)
-                ),
+                ).build_for(surface=claim.surface, claimed=claim.release_build),
             )
             for claim in claims
         ),
@@ -140,20 +154,41 @@ def run_fleet_audit(
             read_manifest=read_manifest, candidate_digest=candidate_digest
         ),
         verify_evidence=lambda row: (
-            verified(repository=row.repository, capability=capability_of(surface=row.surface))
+            verified(
+                repository=row.repository, capability=capability_of(surface=row.surface)
+            ).build_for(surface=row.surface, claimed=row.release_build)
             == row.serving_build
+        ),
+        explain=lambda row: claim_reason(
+            reading=served(
+                repository=row.repository, capability=capability_of(surface=row.surface)
+            ),
+            surface=row.surface,
+            claimed=row.release_build,
         ),
     )
     if not audit.rows:
         return _unauthenticated(
             digest=digest, cause="core's master did not confirm this membership and identity"
         )
+    # A consumer whose every row is ruled normal or inapplicable adopts nothing, so it owes
+    # no serving-version evidence.
+    normal = {
+        repository
+        for repository in _applicable_consumers(manifest=manifest)
+        if all(
+            row.disposition in {"deliberately-normal", "not-applicable"}
+            for row in audit.rows
+            if row.repository == repository
+        )
+    }
     lacking = tuple(
         f"{repository}: lacks serving-version evidence for {', '.join(missing)}"
         for repository in _applicable_consumers(manifest=manifest)
-        if (
+        if repository not in normal
+        and (
             missing := [
-                c for c in CAPABILITIES if served(repository=repository, capability=c) == ""
+                c for c in CAPABILITIES if served(repository=repository, capability=c).build == ""
             ]
         )
     )
@@ -163,23 +198,25 @@ def run_fleet_audit(
         _ = served(repository=repository, capability="driver-hooks")
     return FleetReport(
         audit=replace(audit, findings=audit.findings + lacking),
-        readings=tuple(sorted((r, c, v) for (r, c), v in readings.items())),
+        readings=tuple(sorted((r, c, v.build, v.detail, v.head) for (r, c), v in readings.items())),
     )
 
 
-def _row_lines(*, audit: FleetAudit) -> tuple[str, ...]:
-    return tuple(
-        "\t".join(
-            (
-                "row",
-                row.repository,
-                row.surface,
-                row.disposition,
-                (row.evidence.serving_build if row.evidence else "") or _NONE,
-            )
-        )
-        for row in audit.rows
-    )
+def _row_lines(*, report: FleetReport) -> tuple[str, ...]:
+    """One line per row; a row classified through a release-keyed read also names it.
+
+    It names the release the row's claim matched and the HEAD that read compared.
+    """
+    heads = {(r, c): head for r, c, _v, _detail, head in report.readings if head}
+
+    def line(*, row: SurfaceDisposition) -> str:
+        serving = row.evidence.serving_build if row.evidence else ""
+        head = heads.get((row.repository, SURFACE_CAPABILITY.get(row.surface, "")), "")
+        named = serving != "" and head != "" and row.disposition != "unclassified"
+        fields = ("row", row.repository, row.surface, row.disposition, serving or _NONE)
+        return "\t".join((*fields, f"release {serving} at HEAD {head}") if named else fields)
+
+    return tuple(line(row=row) for row in report.audit.rows)
 
 
 def render_report(*, report: FleetReport) -> tuple[str, ...]:
@@ -188,8 +225,11 @@ def render_report(*, report: FleetReport) -> tuple[str, ...]:
     ready = tuple(f"ready\t{repository}" for repository in audit.ready_repositories)
     return (
         f"manifest\t{audit.manifest_sha256 or _NONE}",
-        *_row_lines(audit=audit),
-        *(f"serving\t{r}\t{c}\t{v or _NONE}" for r, c, v in report.readings),
+        *_row_lines(report=report),
+        *(
+            "\t".join(("serving", r, c, v or _NONE, *((detail,) if detail else ())))
+            for r, c, v, detail, _head in report.readings
+        ),
         *(f"finding\t{finding}" for finding in audit.findings),
         *(ready or (f"ready\t{_NONE}",)),
     )

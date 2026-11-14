@@ -156,6 +156,42 @@ def test_an_unreadable_declared_suite_gates_the_pre_commit_aggregate_locally(
     assert "gate check suite could not be read" in verdict.reason
 
 
+def test_an_unusable_gate_resource_declaration_refuses_the_commit_instead_of_gating_locally(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused resource declaration refuses the commit, naming the key (c3nd2h).
+
+    The refusal rejects the committed configuration rather than reporting a
+    missing cluster verdict, so the aggregate must not run locally in its place.
+    """
+    from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\ngate_cpu = 0\n",
+        encoding="utf-8",
+    )
+    pushed: list[object] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: declared_gate_job_resources(repo_root=kwargs["repo_root"]),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: pushed.append(kwargs))
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert verdict.local is False
+    assert verdict.exit_status == 1
+    assert verdict.tree_hash == "a" * 40
+    assert "gate_cpu" in verdict.reason
+    assert "pyproject.toml" in verdict.reason
+    assert pushed == []
+
+
 @pytest.mark.parametrize(
     "remote",
     [
@@ -360,6 +396,102 @@ def _git(*, cwd: Path, args: list[str]) -> str:
     return done.stdout.strip()
 
 
+def _capture_delegated_staged_commits(
+    *, module: object, monkeypatch: pytest.MonkeyPatch, repo_root: Path, tree_hash: str
+) -> list[str]:
+    """Configure a passed gate and retain the commit each request publishes."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    published: list[str] = []
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: tree_hash)
+    monkeypatch.setattr(module, "_pre_commit_check_suite", lambda **_kwargs: ("check",))
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Success(
+            GateRunRequest(
+                repo_root=repo_root,
+                mirror_url="mirror",
+                manifest="manifest",
+                gate_ref="refs/gates/tree",
+            )
+        ),
+    )
+
+    def publish(**kwargs: object) -> GateVerdict:
+        """Capture the staged commit the gate Job receives."""
+        request = kwargs["request"]
+        assert isinstance(request, GateRunRequest)
+        published.append(request.source_ref)
+        return GateVerdict(
+            state=GATE_PASSED,
+            detail="the Job passed",
+            token_written=True,
+            job_name="gate-pre-commit-1",
+            tree_hash=tree_hash,
+        )
+
+    monkeypatch.setattr(module, "run_gated_push", publish)
+    return published
+
+
+def test_a_staged_commit_preserves_the_merge_history_the_gate_must_judge(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The published tree keeps normal and merge commit parentage distinct."""
+    module = _module()
+    _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
+    _ = (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "base.txt"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
+    head = _git(cwd=tmp_path, args=["rev-parse", "HEAD"])
+    tree = _git(cwd=tmp_path, args=["write-tree"])
+    first_merge_head = _git(
+        cwd=tmp_path,
+        args=["commit-tree", tree, "-p", head, "-m", "first merged history"],
+    )
+    second_merge_head = _git(
+        cwd=tmp_path,
+        args=["commit-tree", tree, "-p", head, "-m", "second merged history"],
+    )
+    _ = (tmp_path / "staged.txt").write_text("staged\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "staged.txt"])
+    staged_tree = _git(cwd=tmp_path, args=["write-tree"])
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n", encoding="utf-8"
+    )
+    published = _capture_delegated_staged_commits(
+        module=module,
+        monkeypatch=monkeypatch,
+        repo_root=tmp_path,
+        tree_hash=staged_tree,
+    )
+
+    normal = module.run_pre_commit(repo_root=tmp_path)
+    normal_commit = published[-1]
+
+    assert normal.exit_status == 0
+    assert _git(cwd=tmp_path, args=["show", "-s", "--format=%P", normal_commit]) == head
+
+    merge_head_path = tmp_path / _git(cwd=tmp_path, args=["rev-parse", "--git-path", "MERGE_HEAD"])
+    _ = merge_head_path.write_text(f"{first_merge_head}\n{second_merge_head}\n", encoding="utf-8")
+
+    merged = module.run_pre_commit(repo_root=tmp_path)
+    merge_commit = published[-1]
+
+    assert _git(cwd=tmp_path, args=["show", "-s", "--format=%P", merge_commit]) == " ".join(
+        [head, first_merge_head, second_merge_head]
+    )
+    assert merged.exit_status == 0
+    _git(cwd=tmp_path, args=["merge-base", "--is-ancestor", first_merge_head, merge_commit])
+    _git(cwd=tmp_path, args=["merge-base", "--is-ancestor", second_merge_head, merge_commit])
+
+
 def test_the_gated_tree_recipe_restores_the_staged_index_before_the_aggregate(
     *, tmp_path: Path
 ) -> None:
@@ -408,79 +540,59 @@ def test_the_gated_tree_recipe_restores_the_staged_index_before_the_aggregate(
     assert _git(cwd=tmp_path, args=["write-tree"]) == tree
 
 
-def _dirty_the_tree(*, tmp_path: Path, dirty: str) -> None:
-    """Leave the tree dirty in the one way `dirty` names, after staging base.py."""
-    if dirty == "unstaged":
-        _ = (tmp_path / "base.py").write_text("base = 3\n", encoding="utf-8")
-    elif dirty == "untracked":
-        _ = (tmp_path / "conftest.py").write_text("x = 1\n", encoding="utf-8")
-    elif dirty == "ignored":
-        _ = (tmp_path / "ignored.txt").write_text("x\n", encoding="utf-8")
-
-
-def _run_pre_commit_with_stub_aggregate(*, tmp_path: Path, dirty: str) -> list[str]:
-    """Run the shipped pre-commit recipe with a passing full-aggregate stub."""
+def test_the_gated_tree_recipe_restores_merge_heads_before_the_aggregate(*, tmp_path: Path) -> None:
+    """The remote aggregate receives the merge state that the local hook sees."""
     scripts = tmp_path / "scripts" / "just"
     scripts.mkdir(parents=True)
-    _ = shutil.copy(_REPO_ROOT / "scripts" / "just" / "check-pre-commit.sh", scripts)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    writes = tmp_path / "writes.txt"
-    uv = bin_dir / "uv"
-    _ = uv.write_text(
+    recipe = _REPO_ROOT / "scripts" / "just" / "check-pre-commit-gated-tree.sh"
+    _ = shutil.copy(recipe, scripts / recipe.name)
+    seen = tmp_path / "seen.txt"
+    stub = scripts / "check-pre-commit.sh"
+    _ = stub.write_text(
         "#!/usr/bin/env bash\n"
-        'case "$*" in\n'
-        "  *config_value_fast_path*classify*) exit 75 ;;\n"
-        "  *pre_commit_delegate*) exit 75 ;;\n"
-        f'  *write-pre-commit*) echo "$*" >> "{writes}" ;;\n'
-        "esac\n"
-        "exit 0\n",
+        f'{{ git rev-parse HEAD; cat "$(git rev-parse --git-path MERGE_HEAD)"; '
+        f'git diff --cached --name-only; }} > "{seen}"\n'
+        "exit 7\n",
         encoding="utf-8",
     )
-    just = bin_dir / "just"
-    moves_index = "echo moved > moved.txt\ngit add moved.txt\n" if dirty == "index-moves" else ""
-    _ = just.write_text(
-        f"#!/usr/bin/env bash\n{moves_index}echo aggregate-ok\nexit 0\n", encoding="utf-8"
-    )
-    uv.chmod(0o755)
-    just.chmod(0o755)
+    stub.chmod(0o755)
     _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
-    _ = (tmp_path / ".gitignore").write_text("bin/\nwrites.txt\nignored.txt\n", encoding="utf-8")
-    _ = (tmp_path / "base.py").write_text("base = 1\n", encoding="utf-8")
-    _git(cwd=tmp_path, args=["add", ".gitignore", "base.py", "scripts"])
+    _ = (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "base.txt", "scripts"])
     _git(cwd=tmp_path, args=["commit", "-q", "-m", "base"])
-    _ = (tmp_path / "base.py").write_text("base = 2\n", encoding="utf-8")
-    _git(cwd=tmp_path, args=["add", "base.py"])
-    _dirty_the_tree(tmp_path=tmp_path, dirty=dirty)
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_") or key == "GIT_CONFIG_NOSYSTEM"
-    }
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
-    ran = subprocess.run(
-        ["bash", str(scripts / "check-pre-commit.sh")],
+    parent = _git(cwd=tmp_path, args=["rev-parse", "HEAD"])
+    base_tree = _git(cwd=tmp_path, args=["write-tree"])
+    merge_head = _git(cwd=tmp_path, args=["commit-tree", base_tree, "-p", parent, "-m", "merged"])
+    _ = (tmp_path / "staged.txt").write_text("staged\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "staged.txt"])
+    tree = _git(cwd=tmp_path, args=["write-tree"])
+    commit = _git(
         cwd=tmp_path,
-        env=env,
+        args=["commit-tree", tree, "-p", parent, "-p", merge_head, "-m", "staged merge"],
+    )
+    _git(cwd=tmp_path, args=["reset", "-q", "--hard", commit])
+
+    ran = subprocess.run(
+        ["bash", str(scripts / recipe.name)],
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         check=False,
     )
-    assert ran.returncode == 0, ran.stderr
-    return writes.read_text(encoding="utf-8").splitlines() if writes.exists() else []
+
+    assert ran.returncode == 7
+    assert seen.read_text(encoding="utf-8").split() == [parent, merge_head, "staged.txt"]
+    assert _git(cwd=tmp_path, args=["write-tree"]) == tree
 
 
 def test_only_a_clean_full_pre_commit_aggregate_records_reusable_evidence(
     *, tmp_path: Path
 ) -> None:
-    """Unstaged, untracked, or mid-run index changes make the aggregate a different-tree verdict."""
-    cases = (("none", 1), ("ignored", 1), ("unstaged", 0), ("untracked", 0), ("index-moves", 0))
-    for dirty, expected_writes in cases:
-        sub = tmp_path / dirty
-        sub.mkdir()
-        assert (
-            len(_run_pre_commit_with_stub_aggregate(tmp_path=sub, dirty=dirty)) == expected_writes
-        )
+    """The recipe delegates local aggregate evidence to the shared entry point."""
+    _ = tmp_path
+    text = (_REPO_ROOT / "scripts" / "just" / "check-pre-commit.sh").read_text(encoding="utf-8")
+    assert "livespec_dev_tooling.pre_commit_aggregate" in text
+    assert "green_token write-pre-commit" not in text
 
 
 def _run_main_with_delegated_verdict(
@@ -564,8 +676,7 @@ def test_a_failed_or_unattributable_delegated_aggregate_records_no_evidence(
 def _stage_repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> str:
     """Build a repo with one base commit, stage `files`, and return the staged tree."""
     monkeypatch.setenv("GIT_LIVESPEC_STRIP_PROBE", "1")
-    for name in [name for name in os.environ if name.startswith("GIT_")]:
-        monkeypatch.delenv(name)
+    _ = [monkeypatch.delenv(name) for name in os.environ.copy() if name.startswith("GIT_")]
     _git(cwd=tmp_path, args=["init", "-q", "-b", "main"])
     _ = (tmp_path / "keep.py").write_text("KEEP = 1\n", encoding="utf-8")
     _ = (tmp_path / "pyproject.toml").write_text(

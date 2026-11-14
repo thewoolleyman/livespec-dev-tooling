@@ -18,6 +18,9 @@ coverage, an unlocatable function, a body executed outside any test, or a
 selected test with no coverage context), the whole of the tree's Python
 source stands in for that last part.  A key that matches therefore names a
 re-test whose inputs are byte-identical, and anything else is re-tested.
+
+The cache file itself, and the outcome it stores, live in
+`mutation_kill_matrix_cache_store`; this module re-exports them.
 """
 
 from __future__ import annotations
@@ -30,8 +33,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
-from typing import cast
 
+from livespec_dev_tooling.mutation_kill_matrix_cache_store import (
+    CACHE_SCHEMA,
+    CachedOutcome,
+    load_cache,
+    save_cache,
+)
+from livespec_dev_tooling.mutation_kill_matrix_engine_identity import source_digest
 from livespec_dev_tooling.mutation_kill_matrix_execution import CommandExecutor
 from livespec_dev_tooling.mutation_kill_matrix_selection import (
     MutantSpan,
@@ -43,13 +52,13 @@ __all__: list[str] = [
     "CACHE_SCHEMA",
     "CacheKeys",
     "CachedOutcome",
+    "engine_source_digest",
     "load_cache",
     "save_cache",
     "tree_files",
 ]
 
 
-CACHE_SCHEMA = "rule-26-kill-matrix-cache/1"
 _SETTINGS_NAMES = frozenset(
     {
         "pyproject.toml",
@@ -76,14 +85,6 @@ _SKIPPED_PARTS = frozenset(
 )
 _SKIPPED_AT_ROOT = frozenset({"mutants", "reports"})
 _OUTSIDE_ANY_TEST = ""
-
-
-@dataclass(frozen=True, kw_only=True)
-class CachedOutcome:
-    """One mutant's reusable outcome: unapplied, or the tests that killed it."""
-
-    unapplied: bool
-    killed_by: tuple[str, ...]
 
 
 def _kept(*, relative: Path) -> bool:
@@ -145,6 +146,11 @@ def _import_time_units(
             if _OUTSIDE_ANY_TEST in tests
         }
     )
+
+
+def engine_source_digest() -> str:
+    """Identify the actual source on PYTHONPATH even after the venv is re-synced."""
+    return source_digest(root=Path(__file__).parent)
 
 
 def _dependency_set() -> list[str]:
@@ -246,6 +252,7 @@ class CacheKeys:
         self._environment = _digest(
             CACHE_SCHEMA,
             engine_version,
+            engine_source_digest(),
             platform.python_version(),
             repr(timeout),
             *_dependency_set(),
@@ -291,39 +298,3 @@ class CacheKeys:
             span.function_digest or "" if span is not None else "",
             *code,
         )
-
-
-def load_cache(*, path: Path | None) -> dict[str, CachedOutcome] | None:
-    """Load a cache, or None when there is none, it is unreadable, or its schema is foreign."""
-    if path is None or not path.is_file():
-        return None
-    try:
-        loaded: object = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(loaded, dict):
-        return None
-    document = cast("dict[str, object]", loaded)
-    if document.get("schema") != CACHE_SCHEMA:
-        return None
-    entries = cast("dict[str, dict[str, object]]", document.get("entries", {}))
-    return {
-        key: CachedOutcome(
-            unapplied=bool(entry.get("unapplied", False)),
-            killed_by=tuple(str(test) for test in cast("list[object]", entry.get("killed_by", []))),
-        )
-        for key, entry in entries.items()
-    }
-
-
-def save_cache(*, path: Path, entries: dict[str, CachedOutcome]) -> None:
-    """Write the cache holding exactly this run's outcomes."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    document = {
-        "schema": CACHE_SCHEMA,
-        "entries": {
-            key: {"unapplied": outcome.unapplied, "killed_by": list(outcome.killed_by)}
-            for key, outcome in sorted(entries.items())
-        },
-    }
-    _ = path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")

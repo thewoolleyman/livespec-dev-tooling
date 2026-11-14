@@ -1,0 +1,141 @@
+# reusable-ci-infra-rerun.yml — the CI infrastructure re-run reconciler.
+#
+# Per SPECIFICATION/contracts.md §"Reusable workflows wire contract" and
+# non-functional-requirements.md §"Hooks and CI" (livespec-dev-tooling-cetyrq).
+# A caller workflow that a `workflow_run` `completed` event of the calling
+# repository's gating CI workflow starts passes the completed run's id, and
+# this workflow re-runs only the failed jobs whose failure matches a re-run
+# signature. Every other failure stays the run's verdict.
+#
+# Callers reference it as
+# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-ci-infra-rerun.yml@<ref>`
+# with `secrets: inherit` and `actions: write`.
+#
+# The decision is `python -m livespec_dev_tooling.ci_infra_rerun`, which reads
+# what this workflow records and touches no network. It names the jobs whose
+# logs to fetch and plans the re-runs, so a new classifier changes that module
+# and neither this file nor any caller.
+#
+# The re-runs use the fleet App token, not GITHUB_TOKEN: a run re-run with
+# GITHUB_TOKEN raises no further `workflow_run` event when it completes, so a
+# second and third attempt would never be reconciled.
+#
+# Runs on GitHub-hosted capacity: the failures it repairs are the self-hosted
+# pool's shared egress being rate-limited, and the reconciler must not depend
+# on that egress.
+
+name: reusable-ci-infra-rerun
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: The id of the completed gating CI run to reconcile.
+        required: true
+        type: string
+    outputs:
+      rerun_count:
+        description: The number of jobs this pass re-ran.
+        value: ${{ jobs.reconcile.outputs.rerun_count }}
+      left_count:
+        description: The number of failed jobs this pass left as the run's verdict.
+        value: ${{ jobs.reconcile.outputs.left_count }}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ci-infra-rerun-${{ github.repository }}-${{ inputs.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: ci-infra-rerun
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      rerun_count: ${{ steps.plan.outputs.rerun_count }}
+      left_count: ${{ steps.plan.outputs.left_count }}
+    steps:
+      - name: Mint the fleet App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout the livespec-dev-tooling decision module
+        uses: actions/checkout@v5
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Record every attempt's jobs and the logs the planner asks for
+        id: record
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=.livespec-dev-tooling
+          run_attempt=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.run_attempt')
+          echo "run_attempt=${run_attempt}" >> "${GITHUB_OUTPUT}"
+          : > jobs.ndjson
+          for attempt in $(seq 1 "${run_attempt}"); do
+            gh api --paginate \
+              "repos/${REPO}/actions/runs/${RUN_ID}/attempts/${attempt}/jobs?per_page=100" \
+              --jq ".jobs[] | {attempt: ${attempt}, id, name, conclusion,
+                               steps: [.steps[] | {name, conclusion}]}" >> jobs.ndjson
+          done
+          jq -s '.' jobs.ndjson > jobs.json
+          mkdir -p logs
+          for job_id in $(python3 -m livespec_dev_tooling.ci_infra_rerun log-jobs \
+                            --jobs jobs.json --run-attempt "${run_attempt}"); do
+            if ! gh api "repos/${REPO}/actions/jobs/${job_id}/logs" > "logs/${job_id}.log"; then
+              rm -f "logs/${job_id}.log"
+              echo "::warning::log of job ${job_id} unreadable; the planner leaves that job"
+            fi
+          done
+
+      - name: Plan the re-runs
+        id: plan
+        env:
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+          RUN_ATTEMPT: ${{ steps.record.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=.livespec-dev-tooling
+          python3 -m livespec_dev_tooling.ci_infra_rerun plan \
+            --jobs jobs.json --run-attempt "${RUN_ATTEMPT}" --logs-dir logs \
+            --plan-out plan.json --summary-out summary.md \
+            --repository "${REPO}" --run-id "${RUN_ID}"
+          cat summary.md
+          cat summary.md >> "${GITHUB_STEP_SUMMARY}"
+          {
+            echo "rerun_count=$(jq '.rerun_count' plan.json)"
+            echo "left_count=$(jq '.left_count' plan.json)"
+            echo "wait_seconds=$(jq '.wait_seconds' plan.json)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Wait, then re-run the matched jobs
+        if: steps.plan.outputs.rerun_count != '0'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          WAIT_SECONDS: ${{ steps.plan.outputs.wait_seconds }}
+        run: |
+          set -euo pipefail
+          echo "waiting ${WAIT_SECONDS}s before re-running"
+          sleep "${WAIT_SECONDS}"
+          jq -r '.reruns[] | [.job_id, .name, .attempt, .max_attempts, .signature] | @tsv' \
+            plan.json > reruns.tsv
+          while IFS=$'\t' read -r job_id name attempt max_attempts signature; do
+            echo "re-run job '${name}' (id ${job_id}): attempt ${attempt} of ${max_attempts}, signature ${signature}"
+            if ! gh api -X POST "repos/${REPO}/actions/jobs/${job_id}/rerun" > /dev/null; then
+              echo "::warning::re-run of job ${job_id} was refused; the next completed attempt is reconciled again"
+            fi
+          done < reruns.tsv

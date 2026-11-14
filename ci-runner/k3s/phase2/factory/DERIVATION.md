@@ -471,6 +471,38 @@ stranded pod would be refused on requests before limits.
 apply `ansible/ci-pool.yml --tags ci_factory_quota`. Lowering a quota evicts
 nothing. Revert once izazkx has reaped the stranded pods.
 
+## One limits slot over the fleet cap (2026-11-12)
+
+**What refused.** At 19:31Z on 2026-11-12, run 01M78KW65M3F of bd-ib-t5aju3
+died at sandbox acquire with `exceeded quota: factory-runs, requested
+limits.cpu=6, used 114100m, limited 120`. The namespace held 19 sandboxes at
+`limits.cpu` 6 (114) plus one 0.1-cpu pod. `legacy-coordinator-agent` (session
+2420058a) relayed the measurement from `gmktec-factory-placement`.
+
+**Why 120 was not enough.** 120 is exactly 20 x 6, the fleet cap times one
+sandbox's limit, so it holds no room for ANY other limits-bearing pod in the
+namespace. A single 0.1-cpu pod is enough to refuse the 20th sandbox, which
+the fleet cap of 20 admits.
+
+| term | arithmetic | value |
+|---|---|---|
+| `limits.cpu` | 21 x 6 (the fleet cap of 20 plus one sandbox's limit of slack) | **126** |
+| `requests.cpu`, `requests.memory`, `limits.memory`, `pods` | unchanged | 84, 171470Mi, 181710Mi, 42 |
+
+`requests.cpu` remains what the scheduler and node fit count. `limits.cpu` only
+caps the sum of bursts, so raising it admits no pod the requests refuse. Memory
+limits were at about 152Gi of 181710Mi at the time, so they do not bind.
+
+**Still a second copy of the fleet cap.** This quota restates the fleet cap
+(the launchers' `fleet-cap` state file) times the sandbox limit, so the next
+cap raise would strand a launch the same way. The consolidation, deriving the
+quota from the cap or a check that fails when the quota is below cap x limit
+plus slack, is tracked on livespec-dev-tooling-mlimt3.
+
+**Revert.** Set `limits.cpu: "120"` (the `REVERT` line in
+`./factory-namespace.yaml`) and apply `--tags ci_factory_quota`. Lowering a
+quota evicts nothing.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows

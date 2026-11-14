@@ -49,6 +49,7 @@ __all__: list[str] = [
 ]
 
 _USAGE_EXIT = 2
+_MIN_COMMIT_PREFIX_LENGTH = 7
 
 
 class RecipeRunner(Protocol):
@@ -100,7 +101,17 @@ def _tip_refusal(*, build: str, tip: BuildIdentifier) -> str:
     """Why no member may run, or the empty string when the named build is the tip."""
     if tip.unresolved:
         return f"the marketplace commit could not be read: {tip.unresolved}; no member was run"
-    if tip.sha != build.strip().lower():
+    named = build.strip().lower()
+    if (
+        _MIN_COMMIT_PREFIX_LENGTH <= len(named) < len(tip.sha)
+        and all(character in "0123456789abcdef" for character in named)
+        and tip.sha.startswith(named)
+    ):
+        return (
+            f"named build {build} must be the full 40-character commit id; "
+            f"re-run with {tip.sha}; no member was run"
+        )
+    if tip.sha != named:
         return f"named build {build} is not the marketplace commit {tip.sha}; no member was run"
     return ""
 

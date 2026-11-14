@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 
@@ -89,7 +91,7 @@ def operator(tmp_path: Path) -> _Operator:
 def _mint(
     *, operator: _Operator, host: str = "alpha", server: str = "https://127.0.0.1:6550"
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_MINT), host, server, str(operator.ca), str(operator.out)],
         capture_output=True,
         text=True,
@@ -98,7 +100,6 @@ def _mint(
             "HOMELAB_WORKER_HOSTS_DIR": str(_mock_hosts(operator.bin_dir.parent, "alpha")),
         },
         check=False,
-        timeout=60,
     )
 
 

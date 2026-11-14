@@ -50,7 +50,7 @@
 # to RELIEVE: a gate admitted would be one fewer CI runner admitted, fleet-wide.
 # Gates are quota'd on plain cpu/memory over their own flavor instead, so they
 # cannot consume a churn slot and are excluded from DERIVATION.md's
-# apportionment — the ten repositories' churn-slot quotas still sum to exactly
+# apportionment — the cohort's churn-slot quotas still sum to exactly
 # C, unchanged by this file.
 #
 # Read DERIVATION.md "The gates quota on gmktec-xubuntu and hp-xubuntu
@@ -140,9 +140,36 @@ spec:
   topologyName: gates-hostname
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-gamingpc-flavor
+spec:
+  nodeLabels:
+    # gamingpc-xubuntu, a runner-only k3s agent since 2026-11-11 (plan
+    # homelab-k8s-worker-nodes, livespec-dev-tooling-ko26ez). Its lane is one
+    # gate; see the quota below and its profile's header.
+    kubernetes.io/hostname: gamingpc-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: gates-cq
+  annotations:
+    # THE GATE UNIT: what one gate counts as in every gates-cq quota, fleet and
+    # worker alike. Each fleet flavor below commits a whole number of these (cpu
+    # and memory alike), and ./converge-worker-queues.sh reads them off the live
+    # queue to size the worker flavors, so this is the ONE place the unit lives
+    # (plan gate-job-resources, livespec-dev-tooling-brggiu). Change it here and
+    # the worker flavors follow at the next converge;
+    # tests/spec/test_gates_queue_gate_unit.py then fails, naming each fleet
+    # flavor whose quota is no longer a whole number of units, so the fleet
+    # literals cannot drift from it. Memory is 8Gi rather than the renderer's
+    # 6Gi request: the 2Gi is headroom so an under-estimated gate does not make
+    # memory the binding term (see the gates-flavor quota note below). A
+    # repository's own gate_cpu / gate_memory sizes its Job WITHIN these quotas.
+    ci-runner.io/gate-unit-cpu: "5"
+    ci-runner.io/gate-unit-memory: "8Gi"
 spec:
   # NO `cohortName`, on purpose. A cohort exists so members can lend and borrow
   # unused quota, and every member of `fleet-ci-runner-pool` is denominated in
@@ -208,27 +235,72 @@ spec:
               nominalQuota: 24Gi
         - name: gates-poweredge-flavor
           resources:
-            # Two concurrent gates at 5 cpu / 6 Gi each. The node has 72 cpu
-            # and about 378 Gi allocatable, but it read 0.4% idle with CI-slice
-            # pressure 23 at 21:38Z, close to the saturation rule, and each
-            # gate's 5-cpu request takes about that much from best-effort
-            # runners. So the lane starts at two, a first estimate to confirm by
-            # soak.
+            # Six concurrent gates, six gate units of 5 cpu / 8 Gi (2026-11-11,
+            # 07:53Z). The lane went from two to four at 04:57Z. At 07:53Z it was
+            # full at four with gates pending, while the node had 49.7 cpu of
+            # requests free and read 63% idle. Six gates leave about 20 cpu of
+            # requests for factory growth. Derivation: DERIVATION.md "The
+            # PowerEdge gate lane to six gates (2026-11-11)".
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 30
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 48Gi
         - name: gates-hp-flavor
           resources:
-            # Two concurrent gates. hp-xubuntu has 14500m CPU / 27.2 GiB
-            # allocatable and, since FACTORY_NODE=false drained its factory
-            # sandboxes, carried 5.7 cpu of requests with one gate running at
-            # 21:09Z. Two 5-cpu gates fit beside its five churn slots; 16 Gi
-            # gives two 6 Gi requests two Gi of headroom each.
+            # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
+            # plan gate-job-resources; legacy-coordinator-agent GO cb187a57).
+            # hp is the last full lane in flavor order, so a gate reaches it
+            # only after gmktec and poweredge are full. Measured over the whole
+            # current layout (2026-11-11T08:45Z to 2026-11-12T10:20Z, 297
+            # five-minute buckets of gate pods per node): hp ran no gate in 76%
+            # of buckets and two or more in at most 10.8%, which is an upper
+            # bound, nearly all of it one overflow burst while gamingpc's lane
+            # was held at zero. Kueue admission waits read 0-2 s. With the
+            # gamingpc lane open, the fleet keeps 12 gate slots, the most the
+            # worst burst used, and the second slot's 5 cpu / 8 Gi of reserved
+            # requests go to factory sandboxes. Revert to 10 / 16Gi if a gate
+            # waits over five minutes for a lane.
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 5
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 8Gi
+        - name: gates-gamingpc-flavor
+          resources:
+            # One concurrent gate at 5 cpu / 6 Gi. gamingpc-xubuntu expects
+            # 14500m CPU / ~26.5 GiB allocatable, split a third each to CI,
+            # gates and factory (its profile's header): the gate third is
+            # 4833m, and the "at least one unit per class" floor lifts it to one
+            # 5-cpu gate. 8 Gi gives the 6 Gi request 2 Gi of headroom. LAST in
+            # the order: its gate speed is unmeasured, and the lane-order
+            # reconciler moves it once it has a read.
+            #
+            # Held at zero 2026-11-11 to 2026-11-12 while full-suite gates here
+            # hung (livespec-dev-tooling-ddy5xu): AppArmor on this node denied
+            # signals inside the gate container. Lifted after AppArmor Fix B
+            # (livespec-dev-tooling#4274) and the proof run
+            # gate-livespec-orchestrator-beads-fabro-xjbqp, terminal in 8 m 25 s
+            # with zero signal denials.
+            #
+            # Two gate units (10 cpu / 16 Gi) from 2026-11-12 ~19:4xZ, for priority
+            # 1's hand-land burst (legacy-coordinator-agent GO, R301; plan
+            # gate-job-resources). That second unit's requests came out of
+            # gamingpc's factory share: factory_pod_budget 2 -> 1.
+            #
+            # ONE gate unit, 5 cpu / 8 Gi, from 2026-11-13. The maintainer asked
+            # that about 25% of this machine stay free for local sessions, so
+            # homelab-k8s-worker-nodes raises its kubelet system-reserved and
+            # allocatable CPU drops 14.5 -> 12, effective at the next k3s-agent
+            # restart. 12 CPU less one factory sandbox (4 cpu, the budget of 1)
+            # leaves 8, which fits one 5-cpu gate unit and not two. Memory does
+            # not bind: ~92 GiB stays allocatable. factory_pod_budget STAYS 1,
+            # because one gate and two sandboxes would ask 13 of 12. Kueue's
+            # per-node fit (the gates-hostname Topology) already keeps a second
+            # gate off a full node, so this quota keeps admission honest rather
+            # than preventing overcommit.
+            - name: "cpu"
+              nominalQuota: 5
+            - name: "memory"
+              nominalQuota: 8Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass

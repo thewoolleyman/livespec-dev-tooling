@@ -72,11 +72,17 @@ class EvidenceSubject:
 
 @dataclass(frozen=True, kw_only=True)
 class EvidenceReview:
-    """What one record lacks, what failed in it, and what it leaves to disposition."""
+    """What one record lacks, what failed in it, and what it leaves to disposition.
+
+    `paths` are the paths the record names, and `covered` those with a measured
+    coverage row, so `/arm` can hold them against the head's actual changed files.
+    """
 
     missing: tuple[str, ...]
     failed: tuple[str, ...]
     members: tuple[str, ...]
+    paths: tuple[str, ...] = ()
+    covered: tuple[str, ...] = ()
 
 
 def _digest(*, value: object) -> str:
@@ -161,10 +167,14 @@ def _run(*, value: object) -> dict[str, Any] | None:
 
 
 def _percent(*, row: object) -> float | None:
-    value = (_mapping(value=(_mapping(value=row) or {}).get("summary")) or {}).get(
-        "percent_covered"
-    )
+    summary = _mapping(value=(_mapping(value=row) or {}).get("summary")) or {}
+    value = summary.get("percent_covered")
     return float(cast("float", value)) if type(value) in {int, float} else None
+
+
+def _covered(*, record: dict[str, Any]) -> tuple[str, ...]:
+    rows = (_mapping(value=record.get("coverage")) or {}).items()
+    return tuple(sorted(name for name, row in rows if _percent(row=row) is not None))
 
 
 def _missing(*, record: dict[str, Any]) -> list[str]:
@@ -251,6 +261,8 @@ def review_record(*, receipt: dict[str, Any], subject: EvidenceSubject) -> Evide
         missing=tuple(_missing(record=record)),
         failed=tuple(_failed(record=record)),
         members=tuple(members),
+        paths=tuple(sorted(_mapping(value=record.get("paths")) or {})),
+        covered=_covered(record=record),
     )
 
 

@@ -4,6 +4,8 @@
 # Shell entry point; the logic is embedded Python (stdlib only) so the repo's
 # product-Python AST gates, which govern the package, do not apply to a script.
 set -euo pipefail
+COORDINATOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export COORDINATOR_DIR
 exec python3 -I - "$@" <<'PY'
 """Priority-first tick header (coordinator 546979bb, 2026-11-09, after the 10.5 h stall of priority 1).
 
@@ -15,35 +17,169 @@ seat) is seen every tick (rule P3).
 
 TOP mirrors the priorities-record. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
-`bd show` and `bd comments`, through each tenant's credential wrapper.
+`bd show` and `bd comments`, through each tenant's credential wrapper, and local reads
+of the launch hold files.
+
+The HOLDS section (rule HOLD-ENDS-ARE-DRIVEN, coordinator 2026-11-13, after hold-gmktec
+stood more than 3 h past the release of its fix) prints every live hold with its age,
+marks one older than 60 minutes STALE HOLD, and marks one with no OWNER: line or no
+END CONDITION as MALFORMED HOLD.
+
+The OVERCOMMIT section (maintainer-approved 2026-11-13) prints, first in the header, every
+node fleet-utilization.sh --overcommit-only marks FLAGGED (idle under 5 % with the BestEffort
+CI slice's CPU pressure above 30: the classes sharing the node exceed its CPU) or UNREAD, for
+routing to the per-node CPU budget owner the same tick.
 """
 import datetime as dt
 import json
+import os
 import subprocess
 
 TOP = [
-    ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
-    ("2 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
-    ("3 fleet-mutation-testing-rule-26 (Mac w3:t2, ledger-only asks)", "livespec-dev-tooling-oi2two"),
-    ("4 dev-host-test-gate-load", "livespec-dev-tooling-6vuiwe"),
-    ("5 factory yield: sandbox-commit-gate-ceiling", "bd-ib-qy5wol"),
+    ("1 dev-host-disk-retention (VPS overload prevention; workspace livespec-dev-tooling, tab dev-host-disk-retention)", "livespec-dev-tooling-qgwxo4"),
+    ("2a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; the Hetzner migration off vmi3006760)", "hxi-vxsmdv"),
+    ("2b central-credential-service (livespec-overseer; workspace livespec-overseer, tab central-credential-service; the Hetzner credential leg)", "overseer-iyfjbo"),
+    ("3 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
+    ("4 stale-base-merge-options (now the GitHub org move plus merge queue; prep only)", "livespec-dev-tooling-xowhol"),
+    ("5 secret-writer-stored-key-alias (homelab; workspace homelab, tab secret-writer-stored-key-alias)", "hl-bvycoc"),
+    ("6 address-honeycomb-alerts (orchestrator; carriers dolt-server-cudtkp, donph5, 7tfa3x, bd-ib-z2y4ca, bd-ib-immkx7)", "bd-ib-xkwdap"),
+    ("7a implement-test-performance: gate suite double-run fix", "livespec-dev-tooling-sv6m5p"),
+    ("7b gate-job-resources", "livespec-dev-tooling-ukoeah"),
 ]
 WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
-# it is read with the homelab-workload role and the beads password parameter.
-HOMELAB_WRAPPER = [
-    "/usr/local/bin/with-homelab-aws.sh",
-    "--role",
-    "homelab-workload",
-    "/home/ubuntu/.nix-profile/bin/hl",
-    "param",
-    "run",
-    "--bind",
-    "BEADS_DOLT_PASSWORD=/homelab/v1/services/dolt/production/beads-password",
-    "--",
-]
+# it is read through the homelab tenant's own credential wrapper.
+HOMELAB_WRAPPER = ["/usr/local/bin/with-homelab-env.sh", "--"]
+# The hetzner-xubuntu-info tenant (prefix hxi) refuses both of the above (Error 1045 for user
+# 'hetzner-xubuntu-info'); it is read through the credential_wrapper its .livespec.jsonc declares.
+# Checkouts live under ~/workspace on every seat host: a real directory on hetzner-xubuntu,
+# a symlink to /data/projects on the VPS. /data/projects does not exist on hetzner-xubuntu.
+WORKSPACE = os.path.join(os.path.expanduser("~"), "workspace")
+HXI_REPO = os.path.join(WORKSPACE, "hetzner-xubuntu-info")
+HXI_WRAPPER = [HXI_REPO + "/with-hetzner-xubuntu-credentials.sh", "--"]
 STALE_MINUTES = 60
 NOW = dt.datetime.now(dt.timezone.utc)
+STRANDED_TIMEOUT_S = 120
+
+
+OVERCOMMIT_TIMEOUT_S = 120
+OVERCOMMIT_RESOLVE = (
+    "resolve THIS tick: route to the per-node CPU budget owner, plan gate-job-resources (livespec-dev-tooling-ukoeah)"
+)
+
+
+def section_hits(flag, section, timeout_s):
+    """FLAGGED and UNREAD lines of one fleet-utilization.sh section (one source), or None after printing why not."""
+    script = os.path.join(os.environ.get("COORDINATOR_DIR", "."), "fleet-utilization.sh")
+    try:
+        proc = subprocess.run(["bash", script, flag], capture_output=True, text=True, timeout=timeout_s)
+    except Exception as exc:
+        print(f"{section} READ FAILED: {exc}")
+        print()
+        return None
+    if proc.returncode != 0:
+        err = (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}").splitlines()[-1]
+        print(f"{section} READ FAILED: {err[:200]}")
+        print()
+        return None
+    return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith(("FLAGGED", "UNREAD"))]
+
+
+def overcommit_header():
+    """FLAGGED and UNREAD lines of fleet-utilization.sh's OVERCOMMIT section, first in the header."""
+    hits = section_hits("--overcommit-only", "OVERCOMMIT", OVERCOMMIT_TIMEOUT_S)
+    if hits is None:
+        return
+    print(f"OVERCOMMIT (fleet-utilization.sh --overcommit-only; {OVERCOMMIT_RESOLVE}):")
+    for line in hits or ["none flagged"]:
+        print(f"  {line}")
+    print()
+
+
+def stranded_header():
+    """FLAGGED and UNREAD lines of fleet-utilization.sh's STRANDED-CAPACITY section (one source)."""
+    hits = section_hits("--stranded-only", "STRANDED-CAPACITY", STRANDED_TIMEOUT_S)
+    if hits is None:
+        return
+    print("STRANDED-CAPACITY (fleet-utilization.sh --stranded-only; resolve every FLAGGED line THIS tick):")
+    for line in hits or ["none flagged"]:
+        print(f"  {line}")
+    print()
+
+
+HOLD_DIR = os.path.join(WORKSPACE, "livespec-orchestrator-beads-fabro", "tmp", "petri-canary")
+HOLD_SNIPPET = 160
+HOLD_RESOLVE = "<<< resolve THIS tick: each clause, its owner, its next action; drive the unmet one"
+
+
+def is_live_hold(name):
+    """A live hold file: hold-*, not lifted, not a script or manifest, not an archived copy.
+
+    Archived copies carry a dotted suffix such as `.pre-lift-<UTC>` or `.bak-<UTC>`; a dotted
+    work-item id such as `hold-item-<epic>.4` stays live, because its suffix is a digit.
+    """
+    if not name.startswith("hold-") or ".lifted" in name or name.endswith(".sh") or "manifest" in name:
+        return False
+    return not any(part[:1] and not part[:1].isdigit() for part in name.split(".")[1:])
+
+
+def hold_line(name, path):
+    """One HOLDS entry: (sort key, text lines) for a live hold file."""
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read()
+        mtime = os.stat(path).st_mtime
+    except OSError as exc:
+        return (0, name), [f"HOLD UNREAD {name}: {exc}"]
+    age = (NOW - dt.datetime.fromtimestamp(mtime, dt.timezone.utc)).total_seconds() / 60
+    lines = text.splitlines()
+    cond = next((ln for ln in lines if "END CONDITION" in ln), None)
+    shown = cond[cond.index("END CONDITION"):] if cond else (lines[0] if lines else "(empty file)")
+    shown = " ".join(shown.split())[:HOLD_SNIPPET]
+    has_owner = any(ln.lstrip().startswith("OWNER:") for ln in lines)
+    stale = age > STALE_MINUTES
+    head = "STALE HOLD" if stale else "HOLD"
+    out = [f"{head} {name} age {age:.0f} min: {shown}" + (f"  {HOLD_RESOLVE}" if stale else "")]
+    missing = [what for what, ok in (("OWNER: line", has_owner), ("END CONDITION", cond)) if not ok]
+    if missing:
+        out.append(
+            f"    MALFORMED HOLD {name}: names no {' and no '.join(missing)}; rewrite it with an owner and a"
+            " checkable end condition"
+        )
+    kind = 1 if name.startswith("hold-item-") else 0
+    return (kind, name), out
+
+
+def holds_header():
+    """Every live launch hold with its age; STALE past 60 minutes, MALFORMED without OWNER:/END CONDITION."""
+    try:
+        entries = [e for e in os.scandir(HOLD_DIR) if is_live_hold(e.name) and e.is_file()]
+    except OSError as exc:
+        print(f"HOLDS UNREAD: {exc}")
+        print()
+        return
+    rows = sorted(hold_line(e.name, e.path) for e in entries)
+    stale = sum(1 for _, out in rows if out[0].startswith("STALE HOLD"))
+    malformed = sum(1 for _, out in rows if any("MALFORMED HOLD" in ln for ln in out))
+    print(
+        f"HOLDS ({HOLD_DIR}; {len(rows)} live, {stale} STALE, {malformed} MALFORMED). A STALE HOLD is resolved THIS"
+        " tick like a STALE plan line: name each END CONDITION clause, its owner and its next action, and drive the"
+        " unmet clause; building a proof for a clause that waits on a natural event counts as driving it"
+        " (rule HOLD-ENDS-ARE-DRIVEN, coordinator-duties §3):"
+    )
+    for _, out in rows or [((0, ""), ["none live"])]:
+        for line in out:
+            print(f"  {line}")
+    print()
+
+
+print(
+    "INCIDENT MODE: livespec-dev-tooling USABLE (EXPEDITED_INCIDENT_RESPONSE is the default response to a red master;"
+    " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
+)
+print()
+overcommit_header()
+stranded_header()
+holds_header()
 
 
 def run(args, cwd, wrapper):
@@ -57,10 +193,14 @@ def run(args, cwd, wrapper):
 def repo_for(epic):
     """Return the (checkout, wrapper prefix) that reads this epic's tenant."""
     if epic.startswith("hl-"):
-        return "/data/projects/homelab", HOMELAB_WRAPPER
+        return os.path.join(WORKSPACE, "homelab"), HOMELAB_WRAPPER
+    if epic.startswith("hxi-"):
+        return HXI_REPO, HXI_WRAPPER
     if epic.startswith("bd-ib"):
-        return "/data/projects/livespec-orchestrator-beads-fabro", WRAPPER
-    return "/data/projects/livespec-dev-tooling", WRAPPER
+        return os.path.join(WORKSPACE, "livespec-orchestrator-beads-fabro"), WRAPPER
+    if epic.startswith("overseer-"):
+        return os.path.join(WORKSPACE, "livespec-overseer"), WRAPPER
+    return os.path.join(WORKSPACE, "livespec-dev-tooling"), WRAPPER
 
 
 for label, epic in TOP:

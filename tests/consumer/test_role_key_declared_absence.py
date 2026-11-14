@@ -50,8 +50,8 @@ from livespec_dev_tooling.config import (
 from tests.consumer.role_key_fixture import (
     LEGACY_EMPTY_SPELLINGS,
     ROLE_KEY_SPELLING_FIELD,
+    complete_block_declaring,
     records_from,
-    union_key_block,
     write_consumer,
 )
 
@@ -104,7 +104,7 @@ def test_each_blessed_spelling_parses_to_its_own_variant_carrying_its_own_payloa
             role=load_config(
                 repo_root=write_consumer(
                     root=tmp_path / spelling,
-                    block=union_key_block(
+                    block=complete_block_declaring(
                         key=_UNION_KEY,
                         value=f'{{ {spelling} = "{payload}" }}',
                         comment=_DECOY_COMMENT,
@@ -154,7 +154,7 @@ def test_a_blessed_spelling_with_an_empty_payload_is_rejected_at_load(
         _ = load_config(
             repo_root=write_consumer(
                 root=tmp_path / "empty-payload",
-                block=union_key_block(
+                block=complete_block_declaring(
                     key=_UNION_KEY, value=f'{{ {spelling} = "{payload}" }}', comment=_DECOY_COMMENT
                 ),
             )
@@ -187,7 +187,7 @@ def test_the_legacy_empty_spelling_is_rejected_at_load_on_every_union_key(
         _ = load_config(
             repo_root=write_consumer(
                 root=tmp_path / key,
-                block=union_key_block(key=key, value=empty, comment=_DECOY_COMMENT),
+                block=complete_block_declaring(key=key, value=empty, comment=_DECOY_COMMENT),
             )
         )
 
@@ -215,7 +215,7 @@ def test_a_shipped_check_renders_the_legacy_empty_as_a_rejection_not_a_sanctione
     """
     root = write_consumer(
         root=tmp_path / "legacy-empty",
-        block=union_key_block(key=_UNION_KEY, value="[]", comment=_DECOY_COMMENT),
+        block=complete_block_declaring(key=_UNION_KEY, value="[]", comment=_DECOY_COMMENT),
     )
     monkeypatch.chdir(root)
 

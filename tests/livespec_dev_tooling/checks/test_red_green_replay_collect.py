@@ -54,6 +54,7 @@ _GIT_ENV_VARS = (
     "GIT_NAMESPACE",
     "GIT_PREFIX",
 )
+_DROP_NAMES = (*_GIT_ENV_VARS, "COVERAGE_PROCESS_START")
 
 
 @pytest.fixture(autouse=True)
@@ -65,13 +66,8 @@ def _confine_children(*, monkeypatch: pytest.MonkeyPatch) -> None:
     and `COVERAGE_PROCESS_START` or `COV_CORE_*` would make the collecting
     pytest self-instrument and write data files that race the parallel gate.
     """
-    for name in os.environ:
-        if (
-            name in _GIT_ENV_VARS
-            or name == "COVERAGE_PROCESS_START"
-            or name.startswith("COV_CORE_")
-        ):
-            monkeypatch.delenv(name)
+    drop = monkeypatch.delenv
+    _ = [drop(n) for n in os.environ.copy() if n in _DROP_NAMES or n[:9] == "COV_CORE_"]
 
 
 class _History(NamedTuple):

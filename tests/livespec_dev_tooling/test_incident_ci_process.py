@@ -25,8 +25,8 @@ def master(*, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         module,
-        "load_inventory",
-        lambda: (
+        "load_repository_inventory",
+        lambda **_: (
             CiTarget(name="check-fast", classification="fast"),
             CiTarget(name="check-slow", classification="slow"),
         ),
@@ -86,10 +86,10 @@ def test_invalid_event_inventory_and_incident_claim_refuse_without_fallback(
     assert module.main(argv=["plan"]) == 2
     capsys.readouterr()
 
-    def broken():
+    def broken(**_):
         raise ValueError("not a released inventory")
 
-    monkeypatch.setattr(module, "load_inventory", broken)
+    monkeypatch.setattr(module, "load_repository_inventory", broken)
     assert module.main(argv=["plan"]) == 2
     assert "not a released inventory" not in capsys.readouterr().out
 
@@ -139,3 +139,51 @@ def test_outcome_count_limits_apply_within_and_between_files(monkeypatch, tmp_pa
     (tmp_path / "two.jsonl").write_text("")
     with pytest.raises(ValueError, match="report inventory"):
         module.CiProcess.outcomes(directory=tmp_path)
+
+
+def test_an_unanswered_pull_request_read_refuses_naming_the_read(monkeypatch, tmp_path, capsys):
+    master(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    def unanswered(**_kwargs):
+        raise module.ForgeReadUnansweredError(
+            "incident-ci-entrance-pull-request-read ended without an answer"
+        )
+
+    monkeypatch.setattr(module, "observe_event", unanswered)
+    assert module.main(argv=["plan"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "status": "refused",
+        "reason": "incident-ci-entrance-pull-request-read ended without an answer",
+    }
+
+
+def test_the_inventory_is_keyed_on_the_authenticated_read_and_an_undeclared_repo_refuses(
+    monkeypatch, tmp_path, capsys
+):
+    master(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/environment-name")
+    event = CiEvent(
+        kind="pull_request",
+        repository="owner/read-confirmed",
+        base_sha="a" * 40,
+        head_sha="b" * 40,
+        pr_number=7,
+        labels=(),
+    )
+    monkeypatch.setattr(module, "observe_event", lambda **_: (event, ""))
+    asked = []
+
+    def lookup(*, repository):
+        asked.append(repository)
+        message = f"incident-inventory-undeclared: {repository} has no incident CI inventory"
+        raise module.InventoryUndeclaredError(message)
+
+    monkeypatch.setattr(module, "load_repository_inventory", lookup)
+    assert module.main(argv=["plan"]) == 2
+    assert asked == ["owner/read-confirmed"]
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "status": "refused",
+        "reason": "incident-inventory-undeclared: owner/read-confirmed has no incident CI inventory",
+    }

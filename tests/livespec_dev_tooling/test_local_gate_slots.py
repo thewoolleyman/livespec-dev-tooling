@@ -362,6 +362,44 @@ def test_a_waiting_session_names_the_limit_and_repeats_itself_each_half_minute(
         )
 
 
+def test_waiting_for_a_slot_refreshes_an_outer_gate_progress_stamp(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A queued pytest session is progress even before it can start a test.
+
+    `gate-run.sh` ends a gate whose output and progress stamp remain unchanged
+    for its stall window. A session waiting behind the host-wide limit has not
+    created a pytest subprocess yet, so it cannot rely on either test output or
+    the replay runner's poll heartbeat. Its own wait heartbeat must refresh the
+    stamp to preserve the real gate's eventual verdict.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    slot_dir = _slot_store(root=tmp_path)
+    holder = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert holder is not None
+    stamp = tmp_path / "progress.stamp"
+    _ = stamp.write_text("", encoding="utf-8")
+    os.utime(stamp, ns=(1, 1))
+    monkeypatch.setenv("LIVESPEC_GATE_RUN_PROGRESS_STAMP", str(stamp))
+
+    naps: list[float] = []
+
+    def _release_after_one_wait(seconds: float) -> None:
+        naps.append(seconds)
+        os.close(holder)
+
+    waited = module.await_slot(slot_dir=slot_dir, limit=1, sleep=_release_after_one_wait)
+    os.close(waited)
+
+    assert naps == [module.POLL_SECONDS]
+    assert stamp.stat().st_mtime_ns > 1, (
+        "a local-slot wait must renew LIVESPEC_GATE_RUN_PROGRESS_STAMP before its "
+        "first test can produce output, or gate-run.sh mistakes a queued session for "
+        "a stalled gate and kills it"
+    )
+
+
 @pytest.mark.integration
 def test_a_wait_of_several_poll_rounds_adds_no_measurable_cpu_load(*, tmp_path: Path) -> None:
     """The wait is not a busy loop, measured against the real clock.

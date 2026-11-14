@@ -75,6 +75,8 @@ something to differ from.
 | `sandbox_image_warm_k3s_data_dir` | `''` (ci-pool.yml passes the profile's `NODE_DATA_DIR`) | containerd store only: a moved k3s data directory; when set, the CRI client becomes `k3s --data-dir <dir> crictl` |
 | `sandbox_image_warm_host_vars_base_url` | this repository's `ansible/inventory/host_vars` on `master` | containerd store only: where the committed host_vars files are read from |
 | `sandbox_image_warm_process_spec_urls` | one URL per `sandbox_hosts` member, for the containerd store; `[]` for docker | containerd store only: the files whose `process_spec.image` values the warm pulls, re-read every tick |
+| `sandbox_image_warm_workflow_urls` | `[]` | containerd store only: workflow files whose `<image>:<prefix>-v<version>` pins the warm pulls instead of any other source, re-read every tick (see "The CI job warm") |
+| `sandbox_image_warm_ci_workflow_repos` | every fleet repository with a scale set and a `ci.yml` on `master` | the repositories `sandbox_image_warm_ci_workflow_urls` names; `ci-pool.yml` passes those URLs to the CI job warm |
 | `sandbox_image_warm_inventory_process_spec_images` | every `fabro_server_instances[].sandbox_providers.<kind>.process_spec.image` in the inventory | containerd store only: read by the converge alone, which refuses to arm a containerd warm when it is empty |
 
 ```yaml
@@ -290,6 +292,38 @@ change. Know first that the CRI's `RemoveImage` deletes every reference of the
 image record it resolves, so removing one tag can take a byte-identical sibling
 tag with it (`ci-runner/k3s/phase2/warm-cache/README.md`). A pod that needs a
 removed image simply pulls it again.
+
+### The CI job warm (a second containerd warm)
+
+**Why it exists** (livespec-dev-tooling-e2gv6n). A CI job's container is the
+sandbox tag its repository's `.github/workflows/ci.yml` pins (`python-v<version>`),
+and the factory warm above pulls only `process_spec` images. Before this warm,
+no node pre-pulled a CI image, so a job on a node that had not run that tag
+lately paid the pull in Initialize containers: measured 2026-11-11, hp-xubuntu's
+median was 15 s against gmktec-xubuntu's 2 s.
+
+**Which images.** Every tick reads the `ci.yml` of every repository in
+`sandbox_image_warm_ci_workflow_repos` on `master` and pulls every
+`<image>:python-v<version>` it pins. Not the release pin: the fleet does not
+pin one release (2026-11-11: python-v1.183.1, python-v1.189.1 and
+python-v1.194.0 at once, against a v1.194.0 manifest). The prefix match is
+exact, so `python` never matches `python-rust-v*` or `python-agent-v*`. Any
+unreadable file, or a read that finds no pin, fails the tick and pulls nothing.
+
+**Where it runs.** `ansible/ci-pool.yml` includes the role a second time, as
+`livespec-sandbox-image-warm-ci-containerd` (its own runner, units, lock and
+record directories), gated `when: ci_pool_ci_node_facilities != 'none'`: every
+node that takes CI runner pods. It restarts and drains nothing, like the
+factory warm.
+
+```bash
+just ansible-drift ansible/ci-pool.yml --tags sandbox_image_warm_ci_containerd
+just ansible-apply ansible/ci-pool.yml --tags sandbox_image_warm_ci_containerd
+```
+
+Verify with `journalctl -u livespec-sandbox-image-warm-ci-containerd.service --since -1h`.
+Roll it back as the factory warm is rolled back, with `sandbox_image_warm_state: absent`
+on its entry and the tag above.
 
 ### Expiry (the containerd store)
 

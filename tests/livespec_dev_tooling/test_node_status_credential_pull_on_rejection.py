@@ -112,6 +112,7 @@ printf 'kubectl %s\\n' "$*" >> "$ARGV_LOG"
 case " $* " in
   *" get --subresource=status node "*)
     case " $* " in *" -o "*) exit 0 ;; esac
+    /bin/sleep "$PROBE_DELAY_SECONDS"
     printf 'x' >> "$PROBES"
     probe="$(wc -c < "$PROBES" | tr -d ' ')"
     outcome="$(printf '%s' "$PROBE_OUTCOMES" | cut -d, -f"$probe")"
@@ -151,6 +152,7 @@ def _run_patch(
     probe_default: str = "missing",
     refresh_installed: bool = True,
     refresh_exit: int = 0,
+    probe_delay_seconds: int = 0,
 ) -> tuple[int, str, list[str]]:
     """Run the shipped patch script against a faked cluster; return code, output, argv.
 
@@ -181,6 +183,7 @@ def _run_patch(
             "REJECTION": _REJECTION,
             "MISSING_NODE": _MISSING_NODE,
             "REFRESH_EXIT": str(refresh_exit),
+            "PROBE_DELAY_SECONDS": str(probe_delay_seconds),
             "NODE_STATUS_REFRESH_BIN": str(refresh),
             "KUBECONFIG": str(kubeconfig),
             # Long enough that the bounded wait takes several turns before giving
@@ -242,11 +245,19 @@ def test_a_missing_node_is_still_waited_for(*, tmp_path: Path) -> None:
     diagnosis for another.
     """
     code, output, invoked = _run_patch(
-        tmp_path=tmp_path, probes=("missing",), probe_default="missing", refresh_installed=False
+        tmp_path=tmp_path,
+        probes=("missing",),
+        probe_default="missing",
+        refresh_installed=False,
+        # A loaded runner can take longer than the script's deadline merely to
+        # start and answer its first probe. The test verdict comes from the
+        # probe sequence and output, never from how quickly this shim ran.
+        probe_delay_seconds=4,
     )
 
     assert code != 0
     assert _REGISTRATION_WAIT in output
+    assert f"node {_AGENT_NODE} did not register in the API within 3s" in output
     assert "refresh" not in [line.split(" ")[0] for line in invoked]
 
 

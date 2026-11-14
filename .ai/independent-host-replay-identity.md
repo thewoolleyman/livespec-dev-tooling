@@ -111,9 +111,33 @@ led to a relaunch, and the replay ran twice and posted a duplicate record.
 
 The reliable signal is the record itself: watch the item's pull request for a
 `Proof of Done — host_verified` (or `host_not_reproduced`) comment, and the
-item's status. If you want a completion notice instead, start the same
-`env -u … codex exec …` command as a harness background task, without
-`setsid nohup … &`, and wait for its notification.
+item's status. Keep the `setsid nohup … &` form. Do not run the replayer as
+a harness background task to get a completion notice, for the reason below.
+
+### The replayer's exit can kill the acceptance pass its post started
+
+A `host_verified` post starts `reconcile-merged`, a post-merge janitor that
+runs for about an hour. That pass runs as a child of the replayer's process
+tree. Measured 2026-11-13 on livespec-dev-tooling-yyadq6: the replayer ran as a
+harness background task (`env -u … codex exec …` without `setsid nohup`) and
+posted `host_verified` at 23:33:27Z. When codex exited, the janitor died about
+20 s into provisioning. It left
+`~/.worktrees/<repo>/janitor-reconcile-<item>.lock` holding a dead pid, a
+half-provisioned janitor worktree, and the item still at `pending-approval`.
+Nothing errored. The replayer's own last line even said the acceptance pass
+"is still running".
+
+After any replay posts, check that the item moved. If it did not and the lock's
+pid is dead (`ps -p <pid>`), take a load-guard GO and re-run the pass detached:
+
+```bash
+just gate-start -- /usr/local/bin/with-livespec-env.sh -- \
+  python3 <registered plugin root>/scripts/bin/dispatcher.py reconcile-merged \
+  --repo <primary> --item <id> --pr <n> --invoker <role:name>
+```
+
+It reclaims the stale lock itself. On yyadq6 it ended green and closed the
+item.
 
 ## The fourth trap: the primary checkout moves under a replay
 
@@ -128,6 +152,25 @@ HEAD`, and record each run's own commit from `tmp/gate-runs/<id>/head` in the
 record's `commit`. Alternatively, run the steps in a worktree made from the tag
 with `just worktree-create <branch> <tag>`. Use a worktree whenever the
 assertion does not need the primary itself.
+
+## The fifth trap: an external `test -r` calls the gates kubeconfig unreadable
+
+On the dev host, `/usr/bin/test` links to `/usr/lib/cargo/bin/coreutils/test`,
+which is uutils (the Rust coreutils). Its `test -r` ignores supplementary
+groups. `/etc/ci-runner/gates.kubeconfig` is `root:gates-client 0640` and
+readable only through the `gates-client` group, so the external binary calls it
+unreadable. Measured 2026-11-11 at about 08:08Z: two codex replayers, for
+khjkyu and qpgiip, each checked the file with
+`subprocess.run(['test', '-r', ...])`, got exit code 1, and stopped before
+launching their gate. In the same shell, `os.access(path, os.R_OK)` was True
+and a real read succeeded. The shell builtins (`[ -r ]` in bash or zsh) give
+the right answer. Only the external binary is wrong.
+
+So when a brief asks a replayer to confirm a file is readable, name an actual
+read: `head -c 1 <file> >/dev/null`. Treat a "not readable" report from a
+script as unconfirmed until a real read fails. Resuming the SAME codex session
+with that correction kept each replayer's identity, and both gates then
+launched.
 
 ## A codex replayer cannot wait on a long gate
 

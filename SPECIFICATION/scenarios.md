@@ -354,6 +354,20 @@ And repositories MAY borrow unused fair capacity
 
 And fleet active runners MUST never exceed 482 or imply 964 capacity
 
+## Scenario: a runner ceiling that departs from the pool rule without a recorded exception fails the pool's ceiling check
+
+Given the pool's admission derivation records the rule's multiple and floor and an exceptions table
+
+And a repository's scale set whose maxRunners departs from that rule
+
+And no exception row names that repository
+
+When the pool's ceiling check runs
+
+Then it MUST fail naming that repository and its maxRunners
+
+And it MUST pass once an exception row names that repository with a ceiling above its guaranteed share, an acceptance check and a kill switch
+
 ## Scenario: JIT circuit state survives restart without a reburst
 
 Given a persisted JIT controller has an open circuit or exhausted retry record
@@ -447,6 +461,34 @@ And a job whose seed is missing or unreadable MUST fetch from the forge as it wo
 And a routed job on a `runner-only` node MUST fetch from the forge and run to its own outcome
 
 And under the fleet kill switch every job MUST fetch from the forge as it would without the tier
+
+## Scenario: the git object seed covers every gated repository, and a node with no ci-workvols tier seeds only its reflink-capable gate volumes
+
+Given a repository that declares `delegated_gate = true`
+
+When the populator publishes a git object seed generation
+
+Then the generation MUST hold that repository's default-branch and tag objects and no object reachable only from a pull-request ref
+
+And on a node with no `ci-workvols` tier whose gate-volume directory supports reflink, when the pool seeds a delegated gate Job's volume, that volume MUST receive a reflink copy of its own repository's seed only, as a git repository carrying that repository's default-branch and tag refs, while a runner work volume on that node MUST receive no seed
+
+And on a node whose gate-volume directory does not support reflink, the gate volume MUST receive no seed
+
+And a generation MUST NOT be pruned while a copy from it into a gate volume may still be in progress
+
+## Scenario: a delegated gate Job's tree fetch reads its volume's git object seed copy as an alternate, and refetches cold on any seed fault
+
+Given a delegated gate Job whose volume holds a private copy of the gated repository's git object seed, carrying the seed's default-branch and tag refs, and whose base commit descends from a commit those refs reach
+
+When the gate Job fetches the tree under test and its base into a fresh repository with the copy's object directory named as its git alternate
+
+Then the fetch MUST transfer fewer objects from the gate mirror than the same fetch with no alternate
+
+And the fetch MUST NOT use a depth limit, and the fresh repository MUST end with the same tree, base commit, refs and reachable history as the same fetch with no alternate
+
+And when the copy is missing or unreadable, the fetch fails with the alternate named, or the connectivity check of the fetched tree and base fails, the Job MUST discard the fresh repository, fetch again with no alternate, and report the verdict that fetch yields
+
+And when the gate Job reads the fleet kill switch from the cluster as set, the fetch MUST name no alternate
 
 ## Scenario: a stale warm-cache generation fires the trigger
 
@@ -655,6 +697,20 @@ And the drill MUST print its start and end UTC times and the namespace's name
 And once the drill exits the API server MUST NOT list that namespace, and no object outside it MUST have been created, modified or deleted
 
 And applying the drill without its confirmation, or with `factory`, `factory-mi-homelab` or an existing namespace configured, MUST exit before any cluster write
+
+## Scenario: a factory sandbox loss drill deletes exactly one named run's sandbox pod and nothing else
+
+Given the k3s cluster reached from the control node `vps`, and a Fabro run with exactly one factory sandbox pod, which the API server lists in the factory namespace the drill is configured to act in, and that run's committed tree on an origin ref whose diff against its merge-base with the run's repository's default branch is non-empty
+
+When an operator applies the factory sandbox loss drill with its confirmation naming the k3s server, its run id naming that run and its preserved-ref naming that origin ref
+
+Then the drill MUST delete that pod once and wait until the API server lists no pod with that pod's UID, and no other object in the cluster MUST have been created, modified or deleted by the drill
+
+And the drill MUST print the run id, the pod's name and UID, the UTC time it issued the delete and the UTC time at which it first saw the API server list no pod with that UID
+
+And applying the drill without its confirmation or its run id MUST read nothing and exit 0, while a confirmed application whose namespace is not `factory` or `factory-mi-homelab`, or whose run id resolves to no pod, to more than one pod, or to a pod without the `sandbox-driver-kubernetes/sandbox` label, MUST exit non-zero before any cluster write
+
+And applying the drill for a run whose committed tree is not preserved on an origin ref with a non-empty diff against its merge-base with the default branch MUST exit non-zero before any cluster write
 
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
@@ -946,6 +1002,30 @@ And the pre-push gate MUST print a line saying it gated locally
 
 And a gate Job MUST NOT be submitted to the `gates` namespace
 
+## Scenario: a delegated gate Job that runs longer than the stall window still ends with its own verdict
+
+Given a `git push` run through `gate-start` whose pre-push hook delegates its gate, and whose gate Job stays admitted and running for longer than the runner's stall window
+
+When the Job reaches its Complete condition
+
+Then the gate client MUST have renewed the run's progress stamp at least once every 60 seconds throughout the wait
+
+And it MUST have started at most one `kubectl` process per watch window, apart from re-arms after a request that failed or hit its request bound early
+
+And the run MUST record the Job's own verdict, never the runner's stall-bound `FAILED` verdict or a `DIED_WITHOUT_VERDICT` state
+
+## Scenario: a hung kubectl request on a delegated gate wait is timed out and the wait still ends
+
+Given a delegated gate run whose gate client makes a `kubectl` request, on its admission wait or its terminal-state wait, that never returns
+
+When the request reaches its bound
+
+Then the client MUST end that request before the runner's stall window elapses
+
+And it MUST keep renewing the run's progress stamp
+
+And it MUST reach the Job's verdict, or a no-verdict state naming the timed-out call, within the admission bound or poll budget of the wait it is on
+
 ## Scenario: an opted-in push from an eligible host completes on a green cluster verdict
 
 Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
@@ -1049,6 +1129,18 @@ Given a member of livespec-dev-tooling's check aggregate that carries no purity 
 When livespec-dev-tooling's full `just check` aggregate runs
 
 Then the aggregate MUST exit non-zero
+
+And its output MUST name that member
+
+## Scenario: a consuming repository's check aggregate refuses a member with no purity declaration
+
+Given a consuming repository that records the green token
+
+And a member of its `just check` aggregate that is not a canonical check (a module under `livespec_dev_tooling/checks/`) and has no purity line in the repository's `check-targets.txt`
+
+When the repository's `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero before any member runs
 
 And its output MUST name that member
 
@@ -1238,7 +1330,35 @@ Then the push MUST be refused
 
 And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
 
-And that event MUST carry the repository's name, the gated tree's hash, and the gate Job's name
+And that event MUST carry the repository's name and the gated tree's hash
+
+And that event MUST NOT carry a gate Job's name, because no Job was submitted
+
+And that event's refusal step MUST be `submit`
+
+And that event's no-verdict cause MUST be `delegation`
+
+## Scenario: a delegated gate run its own client interrupts emits a client-interrupted no-verdict outcome event
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And a git push of a tree that has no green token whose pre-push gate has submitted its gate Job
+
+When the gate client receives SIGTERM while it waits for that Job's verdict
+
+Then the push MUST be refused
+
+And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
+
+And that event's no-verdict cause MUST be `client-interrupted`
+
+And that event's refusal step MUST be `await-verdict`
+
+And that event MUST carry the repository's name, the gated tree's hash, and the submitted gate Job's name
+
+And the fleet's no-verdict trigger MUST NOT count that event
 
 ## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered
 
@@ -1450,6 +1570,50 @@ And the rendered gate manifest MUST NOT contain that token
 
 And the gate Job MUST run the consumer's recipe with that sibling's clone present
 
+## Scenario: a delegated gate Job retries a forge read the forge refuses transiently
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a forge that answers the gate Job's first fetch of the pinned livespec core ref with HTTP 401 and a later fetch with that ref
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the gate Job MUST fetch the livespec core ref again after a wait
+
+And the gate Job MUST run the consumer's recipe
+
+And the gate Job's log MUST name each fetch attempt with its attempt number and the class of its failure
+
+## Scenario: a delegated gate Job fails a forge read of a missing ref at once
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And whose `.livespec.jsonc` `compat.pinned` names a livespec core ref that does not exist in the livespec core repository, which the gate Job's anonymous read can see
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the gate Job MUST fetch that ref exactly once
+
+And the gate Job MUST report a `FATAL` line naming that ref
+
+And the gate Job MUST NOT run the consumer's recipe
+
+## Scenario: a pushing host retries a private-sibling token mint the forge refuses transiently
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And whose `.livespec.jsonc` `cross_repo_targets` names a private sibling repository
+
+And a forge that answers the pushing host's first request to mint that sibling's installation token with HTTP 500 and a later request with the token
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the pushing host MUST request the token again after a wait
+
+And the gate Job MUST clone that sibling with the minted token
+
+And the pushing host's log MUST name each mint attempt with its HTTP status and MUST NOT contain the token
+
 ## Scenario: a red master whose re-run passes is classified a flake and never merges a revert
 
 Given `master`'s gate job reports a completed failure on the newest commit
@@ -1583,6 +1747,30 @@ When the release fan-out reaches that bound
 Then the run MUST fail with an annotation naming each missing tag
 
 And it MUST send no sibling-released dispatch
+
+## Scenario: a direct sibling-released dispatch opens its dev-tooling bump PR only after the sandbox image tags are served
+
+Given a livespec-dev-tooling release T whose livespec-fabro-sandbox semver tags are not yet served by ghcr.io
+
+And a consumer that pins livespec-dev-tooling
+
+When a sibling-released dispatch for T reaches that consumer directly, without the release fan-out
+
+Then the consumer's bump workflow MUST open no bump PR while any of T's tags is absent
+
+And it MUST open the bump PR to T once all of T's tags are served
+
+## Scenario: a pin-freshness sweep opens no bump to a dev-tooling release whose sandbox image tags are not served
+
+Given a livespec-dev-tooling release T that is the latest release, and whose python-rust-v<T> sandbox image tag is not served by ghcr.io
+
+And a consumer whose livespec-dev-tooling pin is behind T
+
+When the consumer's pin-freshness sweep runs
+
+Then it MUST open no bump PR to T
+
+And it MUST annotate the missing python-rust-v<T> tag
 
 ## Scenario: a host at its local-gate slot limit queues the next pytest session
 
@@ -1782,6 +1970,18 @@ Then the guard MUST refuse the tool call with its full-suite pytest `check_id`
 
 And the refusal MUST name `just gate-start -- uv run pytest -n 8`
 
+## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count
+
+Given a repository with `delegated_gate = true` whose `[tool.livespec_dev_tooling]` table declares `gate_job_only_tests` matching `tests/livespec_dev_tooling/test_apparmor_profile_role.py`
+
+And an agent session on a host whose user can read the gates kubeconfig
+
+When the session runs a foreground pytest invocation that names that file and passes no `-n`
+
+Then the guard MUST refuse the call and name the one-call `gate-start` form
+
+And the same invocation dispatched through `gate-start` MUST NOT be refused
+
 ## Scenario: an agent session's targeted pytest or a factory sandbox's full suite is not refused
 
 Given a repository with `delegated_gate = true`
@@ -1858,6 +2058,18 @@ And the exit code MUST be `75`
 
 And the run MUST NOT be reported as passed
 
+## Scenario: a gate command the stall bound ends leaves a process snapshot that its verdict names
+
+Given a detached gate run whose command, and a descendant that entered its own OS session, produce no output and no progress-stamp renewal for the stall window
+
+When the runner ends the command
+
+Then the run directory MUST hold a `stall-snapshot` written before the first signal, listing each attributed process with its pid, parent pid, session id, elapsed time in whole seconds, wait channel and command line
+
+And the run's `output.log` stall-bound line, and the `FAILED` state that both `gate-wait` and `gate-status` print for the run, MUST name that file
+
+And the verdict MUST be `FAILED`, never a pass
+
 ## Scenario: a shared-config write during a detached gate is recorded with writer attribution and marks the run
 
 Given a detached gate run launched from a linked worktree
@@ -1891,6 +2103,30 @@ Then the runner MUST spawn no child process on any observation of the config
 And the waiter MUST spawn no child process on any poll of the run's state
 
 And `gate-wait` MUST still return within five seconds of the run's `exit_code` appearing
+
+## Scenario: a stopped push gate ends without pushing and reads STOPPED
+
+Given a run started with `gate-start -- git push origin <branch>` whose pre-push hook runs a gate client in its own session
+
+And the run is RUNNING, its pre-push gate client has not yet returned, and `<branch>` has not yet reached the remote
+
+When the operator runs `gate-stop <run-id>`
+
+Then `gate-stop` MUST exit 0 only after no process attributed to the run remains
+
+And the remote MUST NOT receive `<branch>`
+
+And `gate-status <run-id>` MUST print `STOPPED` and exit 75
+
+## Scenario: stopping a delegated gate ends its gate Job
+
+Given a RUNNING run whose gate is delegated to an in-cluster gate Job
+
+When the operator runs `gate-stop <run-id>`
+
+Then the gate Job MUST have ended before `gate-stop` exits 0
+
+And `gate-wait <run-id>` MUST print `STOPPED` and exit 75
 
 ## Scenario: an opted-in commit from a credentialed host runs its replay tests against the staged tree
 
@@ -1947,6 +2183,20 @@ When the gate placement reconciler completes a pass and a gate Job is then submi
 Then the gate Job MUST be admitted on a lane with room
 
 And the gate Job MUST NOT stay suspended for want of an unsaturated lane
+
+## Scenario: a gate placement pass that cannot read a gate-lane node's readings raises an alarm and fails its unit
+
+Given the gate placement reconciler runs as a unit on the pool's server
+And one node that carries a gate lane publishes its CPU idle reading as `unreadable`
+When the reconciler runs a pass
+Then gate admission for the whole `gates` queue runs on the static lane order
+And the reconciler prints one line beginning `ALARM` that names that node and the CPU idle reading
+And the pass ends with exit status 3, so the unit reports failed
+
+Given every node that carries a gate lane publishes both readings
+When the reconciler runs a pass
+Then it prints no line beginning `ALARM`
+And the pass ends with exit status 0
 
 ## Scenario: a gate placement reconciler that cannot read a node's readings falls back to the static lane order
 
@@ -2315,6 +2565,32 @@ When the commit-msg `red_green_replay` check runs its suite-green leg
 Then it MUST NOT start a pytest suite run
 
 And it MUST record its `TDD-Suite-Green-*` trailers from the aggregate run, naming that run
+
+## Scenario: a passing test-only commit with no Red intent runs its staged tests once on the committing host
+
+Given a repository that does not delegate its commit-time replay test runs
+
+And a test-only commit whose subject declares no Red intent, that stages no shared test support, and whose staged test modules pass
+
+When the commit-msg replay gate runs
+
+Then it MUST run the staged test modules exactly once for that commit
+
+And it MUST record `TDD-Suite-Green-Scope: staged-tests`
+
+## Scenario: a passing test-only commit with no Red intent runs its staged tests once in one delegated gate Job
+
+Given a repository that delegates its commit-time replay test runs, on a committing host that can read the gates kubeconfig
+
+And a test-only commit whose subject declares no Red intent, that stages no shared test support, and whose staged test modules pass
+
+When the commit-msg replay gate runs
+
+Then the staged test modules MUST run exactly once, in one gate Job
+
+And a pytest process MUST NOT start on the committing host
+
+And the commit MUST record `TDD-Suite-Green-Scope: staged-tests` with `TDD-Suite-Green-*` trailers that name that gate Job
 
 ## Scenario: the commit-range validation fails a Red+Green commit whose recorded test cannot be collected on its own tree
 
@@ -3103,6 +3379,26 @@ When that test fails
 
 Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
+## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still retries an untouched failing test
+
+Given a pushed tree that changes neither `pyproject.toml` nor any `uv.lock`
+
+When a delegated gate Job routes that tree's locked artifacts through the pool's host-served PyPI cache and runs the repository's tests
+
+Then the change set every check reads in the Job (the diff against the merge base, with staged, unstaged and untracked changes) MUST equal the pushed tree's change set
+
+And a failing test the change does not touch MUST be re-run on its own, as the Untouched-test retry bullet requires
+
+## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still reports a pushed lockfile change
+
+Given a pushed tree that changes `uv.lock`
+
+When a delegated gate Job routes that tree's locked artifacts through the pool's host-served PyPI cache
+
+Then the Job's change set MUST still list `uv.lock`
+
+And the `uv.lock` contents that change set compares MUST be the pushed tree's own bytes, so the cache rewrite neither hides nor fakes a lockfile change
+
 ## Scenario: a change set that touches the build or the plugin disables every retry
 
 Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
@@ -3173,6 +3469,32 @@ When the host-side flake reader runs
 
 Then it MUST file exactly one root-fix work item, for the node id that had none
 
+## Scenario: a root-fix item the reader files in a claim-token tenant names its claim token in the creating write
+
+Given `.livespec.jsonc` commits `dispatcher.claim_tokens` as true
+
+And `tmp/flake-retries/` holds a record for one node id that has no open root-fix work item
+
+When the host-side flake reader runs
+
+Then the reader MUST file the root-fix item through the work-item store's capture path, which names the item's first claim token in the write that creates it
+
+And the item MUST rest in the status the intake gate routed it to, and the reader's pass MUST exit zero
+
+## Scenario: a root-fix item whose intake routing is refused is routed again on the reader's next pass
+
+Given `tmp/flake-retries/` holds records for two node ids, neither of which has an open root-fix work item
+
+And the work-item store's intake gate refuses the first routing of the item the reader files for the first node id
+
+When the host-side flake reader runs
+
+Then it MUST still file and route a root-fix item for the second node id
+
+And its pass MUST exit non-zero, and its log MUST name the first item's id and the refusal text
+
+And when the reader runs again with the intake gate accepting, it MUST route the first item, MUST NOT route the second item again, and MUST NOT file a second root-fix item for either node id while their items are open
+
 ## Scenario: a re-run test's record reaches the host-side reader as a CI artifact
 
 Given the coverage job of this repository, livespec, livespec-overseer or livespec-orchestrator-beads-fabro, whose pytest session re-runs a test
@@ -3188,6 +3510,26 @@ Given the coverage job of one of those repositories, whose pytest session re-run
 When the job's publishing step runs
 
 Then the workflow run MUST carry no artifact from that job named `flake-retries` or `flake-retries-<suffix>`, and that step MUST NOT fail the job
+
+## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state
+
+Given a command-line entry point under `livespec_dev_tooling/` whose run writes host state at a location named by a flag, such as the flake-retry filer's `--state-dir` or the Docker engine install guard's `--state-root`
+
+When it is invoked without that flag
+
+Then it MUST exit non-zero with a message naming the flag
+
+And it MUST NOT create, modify or touch anything under the host location that flag would otherwise have defaulted to
+
+## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite
+
+Given a committed systemd unit, ansible task file or template, or script that invokes a command-line entry point under `livespec_dev_tooling/` whose run writes host state
+
+And that invoker does not pass one of the entry point's state-location flags
+
+When the repository's test suite runs
+
+Then it MUST fail with a message naming the invoker file and the missing flag
 
 ## Scenario: the replay legs never retry the Red test and never accept a final failure
 
@@ -3307,6 +3649,36 @@ And an expedited receipt records deferred replay honestly and remains distinct f
 And a workflow incident requires its scoped host authorization receipt through the credential boundary while the factory retains its existing workflow credential scope.
 ```
 
+## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name
+
+```gherkin
+Given an ordinary pull request whose body carries no `livespec-incident-ci` block
+And GitHub answers the incident-ci job's pull-request body read with a body that is not JSON on the first attempt, with HTTP 502 on the second, with HTTP 429 carrying `Retry-After: 20` on the third, and with the pull request's JSON on the fourth
+When CI runs on that pull request
+Then each of the three failed attempts MUST print one escaped line naming the pull-request body read, its attempt number, its HTTP status and kind, the wait it takes next and the first bytes of its answer
+And the read MUST wait 2 seconds after the first attempt, 4 seconds after the second and 20 seconds after the 429
+And the selection step MUST read the fourth attempt's answer, select nothing and pass
+And when GitHub instead answers every attempt with an HTTP 5xx status, the read MUST stop after six attempts, and the selection step MUST fail naming the pull-request body read and its last status, MUST NOT write its block output and MUST NOT report that it selected nothing
+And then the released incident CI entrance MUST NOT run, and the job MUST NOT write an omitted value
+And when GitHub answers with HTTP 429 carrying a `Retry-After` longer than the read's remaining wait budget, the read MUST fail at once, naming the pull-request body read, `rate_limited` and the wait it was asked for
+And an HTTP 404 answer whose body is JSON MUST fail the read at its first attempt without a retry
+And when GitHub answers every attempt of ci-green's read of its own run's jobs with an HTTP 5xx status, ci-green MUST fail closed after six attempts, naming that read.
+```
+
+## Scenario: an incident label event's forge writes repeat only what did not take effect
+
+```gherkin
+Given a same-repository pull request whose newest CI run on its head is still in progress
+And GitHub creates the incident label workflow's `ci-green` hold but answers the create with HTTP 502
+When the expedited-incident-response label is added to that pull request
+Then the shared command MUST NOT repeat the create, and MUST end it with exit status 75, outcome-unknown, naming the create
+And the step MUST re-read the head's `ci-green` check runs, find the hold whose external id is this job's run id and run attempt, and use that hold without creating another
+And when that re-read finds no such hold, the step MUST repeat the create, at most twice
+And a cancel of the run answered with HTTP 503 MUST be repeated by the shared command without a re-read, because a repeated cancel changes nothing
+And a re-run answered with HTTP 429 carrying `Retry-After: 10` MUST be repeated after 10 seconds without a re-read, because a rate-limited request did not take effect
+And a re-run answered with HTTP 502 MUST be repeated only after a re-read shows the run's `run_attempt` unchanged and its status still `completed`.
+```
+
 ## Scenario: an expedited PR defers coverage and spec work while master runs normally
 
 ```gherkin
@@ -3319,6 +3691,20 @@ And every normal master push disables both incident flags and selects its comple
 And the reusable check matrix honours an incident-omitted list only on a pull_request that carries the trusted incident label and has a same-repository head, and each leg it omits reports omitted-by-incident-policy under its real check name.
 And that workflow runs every requested check on a master push or any other event whatever the input carries, and fails a leg closed on an input that is not a JSON array of strings.
 And a caller that wires incident-omitted from anything other than its incident-ci job's guarded output is refused by the repository conformance check on callers.
+```
+
+## Scenario: an expedited pull-request run and its omitted members are recorded on the incident work item
+
+```gherkin
+Given an authorized incident item with explicit attempt/phase and exact repository/base/head identity, and an expedited pull request whose head the independent controller has armed
+When the incident CI job's released aggregate passes and the publisher publishes it to the controller under the protected CI invocation identity
+Then the controller MUST verify the publication against the identical retained arm, retain the aggregate digest and omitted list in that job's attachment slot, and record on the incident item one published record binding the item, attempt, generation, pull request, head, run id and run attempt and carrying the aggregate's passed members, its deferred members with their reasons and its omitted members, with no failed or missing list because a passed aggregate has none.
+And reading the incident item's records by its id alone MUST return that run and every other expedited pull-request run of every attempt, with its omitted members when published and its conclusion and refusal code when not, without a forge read.
+And a repeated publication of the same aggregate MUST answer the retained record and write nothing, and a different aggregate for the same run attempt MUST be recorded as a conflict record beside it.
+And a publication whose pull request, head or arm differs from the retained arm MUST be refused as stale and MUST record no published record.
+And when the controller retained no publication for a completed incident CI job on an armed head, it MUST record from the job's completion delivery an unpublished record carrying exactly the run id, the run attempt, the job's conclusion and the code of any refusal it answered.
+And a controller whose manifest carries no CI identity policy MUST answer identity-not-provisioned, write that code onto the item's unpublished record for the run attempt and into the step summary, and MUST NOT fail the job, while any other refusal or an unreachable controller MUST fail the incident CI job naming its cause.
+And a run of the incident CI job on a head the controller has not armed, including one whose aggregate refused for want of a current arm, MUST receive no record.
 ```
 
 ## Scenario: the first required master leaf failure fences incident recovery
@@ -3341,6 +3727,18 @@ Then the incident recovery controller constructs the inverse of the complete lan
 And a changed expected head causes inverse recomputation while a genuine overlap enters an owned rollback-conflict phase.
 And the authorized revert merges through the scoped recovery principal without local tests, factory work or pre-merge CI waits.
 And recovery records exact action and merge receipts across timeout or restart while ordinary actors retain their existing branch protection obligations.
+```
+
+## Scenario: a prepared incident recovery publication completes after the controller restarts
+
+```gherkin
+Given a pending incident recovery action with no effect receipt, whose recovery principal recorded an unresolved publication attempt before the target branch ref moved
+When the controller's service restarts
+Then the controller completes that publication on its next due sweep pass, with no operator reconcile, sending only the one recorded commit
+And a recorded commit that forge facts show already landed is recorded as the receipt and not published again
+And a moved target branch head whose recorded commit did not land causes inverse recomputation or an owned rollback-conflict instead of publication
+And a resume that cannot complete leaves the action pending, completable by a later due pass or the operator's explicit reconcile
+And the resume honours the action's persisted back-off and terminal state and counts toward its retry bounds
 ```
 
 ## Scenario: an incident recovery principal configured for a scratch branch recovers only that branch
@@ -3369,6 +3767,32 @@ And that push run MUST NOT release, reconcile master health, deploy or export CI
 And a push to any other non-master branch MUST start no ci.yml run
 And the committed teardown MUST remove the scratch installation's units, configuration and manifest while production keeps its bytes and its running observer
 And the scratch installation MUST NOT be counted as recovery capability for master.
+```
+
+## Scenario: the observer role renders one production installation per declared repository beside livespec-dev-tooling's
+
+```gherkin
+Given livespec-dev-tooling's production observer installation, whose configuration, manifest, units and published public paths are read back and whose observer is running
+And the committed observer inventory declares a second repository with that repository's own required CI jobs
+When the committed observer role converges the inventory
+Then the second repository MUST have its own production installation whose configuration names that repository and its required CI jobs, with its own manifest whose recovery-principal invocation names that configuration, and its own state directory, reference clone, listener port and units
+And its public routes MUST be published on the role's funnel port at /<name>/callback and /<name>/ordinary-action, each proxied to its own listener and to no other
+And livespec-dev-tooling's configuration, manifest, units and published public paths MUST keep their bytes, and its running observer MUST NOT restart
+And removing the second repository's installation through the role MUST leave livespec-dev-tooling's installation with the same bytes and its observer running
+And a role run whose inventory declares only livespec-dev-tooling MUST render that installation byte-identical to the role's output without the per-repository capability.
+```
+
+
+## Scenario: a recorded scratch-branch drill ends in drill-closed and a master incident is refused
+
+```gherkin
+Given an incident item whose incident authority binds only pull-request-bound carriers, every one of whose pull requests merged into an incident-scratch/** base branch, with no landed commit reachable from master
+And a second incident item whose bound carrier pull request's base branch is master
+When an operator applies the implementation orchestrator's drill-close verb to each item
+Then the first item reads the terminal phase drill-closed, with no repayment owed, and its incident authority history remains readable
+And the first item's closure is not counted as a completed incident or as recovery capability for master
+And the verb refuses the second item with incident-not-a-recorded-drill
+And the second item's incident phase, generation, claim and authority history are unchanged
 ```
 
 ## Scenario: a reverted incident retains its original CI evidence before another attempt
@@ -3404,6 +3828,45 @@ And consumer closure retains normal factory proof over the cumulative incident s
 And the operator can inspect attempts, skip reasons, focused evidence, CI runs, rollback and final factory proof through the incident item identity.
 ```
 
+## Scenario: incident focused verification reads its changed set through the isolated object view and disposes symlinked and submodule paths explicitly
+
+```gherkin
+Given an installation whose configured target branch is a scratch branch other than `master`, and an expedited incident repair whose head the reference clone holds alongside a replace ref and a graft that would alter the changed set if honoured
+And the head changes a `.py` under a source prefix stored as a symbolic link to an in-tree module, a second such link whose target leaves the repository, and a submodule gitlink under a source prefix
+When the controller's per-pull-request arm reads the changed set and classifies each changed path
+Then the changed set MUST equal the set read against the merge base with the configured scratch branch with replace refs, grafts and clone configuration ignored
+And the in-tree symbolic-link module MUST be disposed as the module its target names within the head's tree
+And the escaping link and the submodule gitlink MUST each be refused with a reason that names its path
+```
+
+## Scenario: the fleet audit reads each consumer's controller and recovery authorization from the installation that serves it
+
+```gherkin
+Given a committed observer inventory declaring production installations for livespec-dev-tooling and for a second manifest consumer, each with its observer running
+And a third manifest consumer that no production installation serves, and a scratch installation running beside them
+When the operator runs `just incident-fleet-audit`
+Then the second consumer's independent-controller serving version MUST be read from its own installation's running observer and configuration, and its recovery-authorization reading MUST use that same reading
+And livespec-dev-tooling's independent-controller and recovery-authorization readings MUST be read from its own installation, unchanged
+And the third consumer's independent-controller and recovery-authorization readings MUST be unverified, and it MUST NOT be on the ready list
+And the scratch installation MUST NOT be read for any consumer.
+```
+
+## Scenario: a consumer ruled deliberately-normal classifies from claims citing the ruling, with no installation serving it
+
+```gherkin
+Given livespec core's committed fleet manifest, authenticated against core's master, with a fleet member that no production observer installation serves and an adopter whose profile is ["instruction-only"] and whose driver-hooks serving version cannot be read
+And committed deliberately-normal claims on every one of the member's 37 rows and on the adopter's Agent tool and stop guards and Operator factory routing rows, each bound to the committed manifest identity, naming a source path, a proof reference and an owner, naming no release build, and giving as its reason the ruling it rests on, who made it, when and where it is recorded
+When the operator runs `just incident-fleet-audit`
+Then every one of the member's 37 rows MUST read deliberately-normal, although its independent-controller and recovery-authorization serving versions read unverified
+And the adopter's two guidance rows MUST read deliberately-normal, and each of its other 35 rows MUST read not-applicable
+And the ready list MUST NOT name either consumer, and the findings MUST NOT name the member for lacking serving-version evidence
+And every check this repository applies to its committed claims MUST accept every one of those claims
+And the same claims with no reason MUST be refused by those checks and left unclassified by the audit
+And a claim on one of the adopter's runtime rows MUST be refused by those checks and left unclassified by the audit
+And when the audit reads a serving version showing the member's independent controller installed and serving for it, each of the member's controller rows MUST read unclassified, and the findings MUST name the member, the surface and the contradiction with its deliberately-normal claim
+And for a consumer whose controller row carries an implemented claim and whose controller serving version cannot be read, that row MUST still read unclassified and the findings MUST name the consumer and the missing controller serving-version evidence.
+```
+
 ## Scenario: the incident fleet audit command refuses enablement for a consumer without verified serving evidence
 
 ```gherkin
@@ -3416,6 +3879,52 @@ And the command MUST exit non-zero, naming the surface and consumer of every unc
 And its ready list MUST NOT include that consumer, and its findings MUST name that consumer and the missing controller serving-version evidence
 And the incident enablement step run for that consumer MUST refuse, exit non-zero and enable nothing, naming the consumer and the missing evidence
 And the same command run against a manifest whose committed identity cannot be authenticated MUST report that finding, list zero ready repositories and exit non-zero.
+```
+
+## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it
+
+```gherkin
+Given a repository the fleet audit lists ready, served by a production controller installation whose fence is disarmed
+When the operator runs the enablement step for that repository
+Then the step MUST write one enablement record through the controller's control-credentialed route, binding the repository, the committed manifest identity the step's audit authenticated and the step's operation identity
+And the controller MUST confirm that identity with its own fresh read of livespec core's default branch before it retains the record, and an exact retry MUST answer the retained record without writing again
+And a later expedited commit in that repository MUST read the record through the installation this library's committed configuration names, compare the confirmed identity against the hook's own fresh read of core's default branch, and record `enabled` in its receipt
+And the incident CI entrance MUST record `enabled` in its plan from the controller's answer, and the controller MUST record `enabled` in its arm receipt
+And no dev-host file, repository file, repository variable, forge label, pull-request body or ledger record MAY be read as the enablement.
+```
+
+## Scenario: an armed enablement fence refuses incident mode without a current enablement record
+
+```gherkin
+Given a production controller installation whose fence is armed for its repository
+When EXPEDITED_INCIDENT_RESPONSE=1 selects repair in an ordinary invocation of that repository's dev-host hook, incident CI entrance or controller arm
+Then with no retained record the resolver MUST refuse with a named configuration refusal naming the repository, the installation and the missing record, and MUST NOT fall through to normal mode
+And with a record bound to a manifest identity other than the one a fresh read of core's default branch confirms, it MUST refuse naming the stale record
+And with a revoked record it MUST refuse naming the revocation
+And a trusted normal-master or normal-factory-follow-up origin, and an invocation with both flags absent, MUST NOT read the record at all.
+```
+
+## Scenario: the enablement fence is armed for a repository only after that repository is enabled
+
+```gherkin
+Given a repository the fleet audit does not yet list ready, served by a disarmed production installation running a controller release that carries the enablement routes
+When an operator attempts the arming write for the installation's fence
+Then the controller MUST refuse the arming write, because it holds no enablement record bound to the current committed manifest identity
+And every incident operation in that repository MUST keep resolving as before, recording `absent` in the artefact its vantage already produces for that operation and refusing nothing
+And once the audit lists the repository ready and the enablement step has recorded it, the arming write MUST succeed and the fence MUST stay armed through a later change of core's committed manifest identity, refusing incident mode until the step records the repository again
+And a controller release that lacks the routes MUST refuse both the enablement write and the arming write as unknown routes.
+```
+
+## Scenario: an armed enablement fence lets an emergency revert through when core's git transport is unreachable past the freshness bound
+
+```gherkin
+Given a production controller installation whose fence is armed, holding an enablement record whose identity was last confirmed more than six hours ago
+And livespec core's git transport unreachable, so its default-branch head cannot be read
+When EXPEDITED_INCIDENT_RESPONSE=1 selects repair in an ordinary invocation of the repository's dev-host hook, incident CI entrance or controller arm
+Then the reading MUST be `unavailable` and the resolver MUST refuse expedited-repair mode, naming `unavailable` and the failed read
+And when EXPEDITED_INCIDENT_RESPONSE_REVERT=1 selects emergency revert for a recorded incident merge in the same state, the enablement fence MUST NOT refuse it and the revert MUST proceed to its recovery boundary
+And each reading MUST be recorded as `unavailable` in the artefact its vantage already produces for that operation
+And while the head read fails within six hours of a confirmed identity, that identity MUST stand and the reading MUST NOT be `unavailable`.
 ```
 
 ## Scenario: a macOS developer host reads the ledger tenant through the loopback forward
@@ -4031,9 +4540,19 @@ When staleness is evaluated
 
 Then a maintainer notification MUST name the stale detector
 
+## Scenario: a reuse detector notification is delivered to the dev host's ntfy topic with a logged receipt
+
+Given a fleet CI run whose mandatory coverage consumer job recorded the outcome `missing_receipt`
+
+When the scheduled detector raises the maintainer notification for that run
+
+Then it MUST publish the notification to the dev host's ntfy topic
+
+And it MUST log the message id the ntfy server returned for that notification
+
 ## Scenario: a workflow declaring two container images fails its own CI
 
-Given a pull request whose merge with the default branch makes `.github/workflows/ci.yml` declare two distinct job `container:` images
+Given a pull request whose merge with the default branch makes `.github/workflows/ci.yml` declare two distinct job `container:` images that name two image repositories, or two release versions of one image repository
 
 When its CI runs
 
@@ -4057,6 +4576,110 @@ When it is committed, pushed, or carried by a pull request
 Then the pre-commit gate MUST refuse the commit, naming the file, the line and the syntax-check message
 And the pre-push gate MUST refuse the push, naming the file and the line
 And a gating CI job MUST fail, naming the file and the line
+
+## Scenario: two workflow changes that each add their own exemption file merge in either order
+
+Given two changes from the same base that each edit a file under `.github/workflows/`
+And each adds its own differently named exemption file under `.livespec-workflow-edit-exemptions/`, naming a work item that carries the label its tier requires
+
+When either change is merged onto the base first and the other is then merged onto the result
+
+Then each merge MUST NOT conflict on an exemption file
+And the workflow-edit guard MUST exit 0 on each change's own branch
+
+## Scenario: a workflow change with no exemption authored in it is refused by name
+
+Given a change that edits `.github/workflows/ci.yml`
+And the change authors no exemption file in either form
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name `.github/workflows/ci.yml`
+
+## Scenario: an exemption inherited from the base does not admit a workflow change
+
+Given a base whose `.livespec-workflow-edit-exemptions/` directory and root `.livespec-workflow-edit-exemption` file each hold a well-formed exemption naming a labelled work item
+And a change from that base that edits a file under `.github/workflows/` and adds, modifies and stages no exemption file
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+
+## Scenario: the legacy root exemption file authored in the change still admits during the transition
+
+Given a change that edits a file under `.github/workflows/`
+And the change modifies the root `.livespec-workflow-edit-exemption` file to a well-formed exemption naming a work item that carries the label its tier requires
+And the change authors no file under `.livespec-workflow-edit-exemptions/`
+
+When the workflow-edit guard runs
+
+Then it MUST exit 0
+
+## Scenario: changing only an exemption file's mode does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and changes only that exemption file's mode
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
+
+## Scenario: renaming a base exemption file does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and renames that exemption file to another exemption path in either form, leaving its content identical
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
+
+## Scenario: copying a base exemption file does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/` and adds a copy of that exemption file at another exemption path in either form, with identical content
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+And its output MUST report that exemption as inherited from the base, not authored by this change
+
+## Scenario: deleting a base exemption file does not author it
+
+Given a base that holds a well-formed exemption naming a labelled work item, as the root `.livespec-workflow-edit-exemption` file or as a file under `.livespec-workflow-edit-exemptions/`
+And a change from that base that edits a file under `.github/workflows/`, deletes that exemption file and authors no other exemption
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches
+
+## Scenario: an authored exemption is judged by its work item's label, not admitted by authorship alone
+
+Given a change that edits a file under `.github/workflows/`
+And the change authors one well-formed exemption, either as a new file under `.livespec-workflow-edit-exemptions/` or as root `.livespec-workflow-edit-exemption` content that differs from the base's content at that path
+And the exemption names a work item that carries no label admitting its tier
+
+When the workflow-edit guard runs
+
+Then it MUST exit 1
+And its output MUST name each workflow path the change touches, the work item and the label it needs
+
+## Scenario: a change that authors two exemptions cannot be evaluated
+
+Given a change that edits a file under `.github/workflows/`
+And the change authors two well-formed exemption files, in either form or both
+
+When the workflow-edit guard runs
+
+Then it MUST exit 2
+And its output MUST name each authored exemption file
 
 ## Scenario: a new runner release opens one bump across every scale set
 
@@ -4333,3 +4956,387 @@ Then the pre-commit hook's local aggregate MUST have recorded the green token fo
 And the pre-push gate MUST take the **Explicit local route**, submitting no gate Job, not running the local fall-through, and running only the world-reading members that **Token memoization** requires
 
 And it MUST NOT print that it accepted a pre-commit verdict
+## Scenario: reused delegated pre-commit evidence whose gate Job the cluster no longer holds does not stand in for the pre-push gate
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And a delegated pre-commit run recorded pre-push evidence naming gate Job J, tree T and a member list
+And the pushing worktree is clean and its HEAD tree is T
+And the cluster no longer holds gate Job J
+When the pre-push gate runs for that push
+Then it MUST NOT accept the evidence
+And it MUST print a line naming gate Job J and saying that the cluster no longer holds its record
+And it MUST submit a gate Job for tree T exactly as it does when no reusable evidence exists
+
+## Scenario: reused delegated pre-commit evidence that the cluster's record of its gate Job contradicts does not stand in for the pre-push gate
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And a delegated pre-commit run recorded pre-push evidence naming gate Job J, tree T and a member list
+And the pushing worktree is clean and its HEAD tree is T
+And the cluster holds gate Job J, and its record disagrees with the evidence on its outcome, its livespec.gate/tree-hash label or the members its LIVESPEC_GATE_MEMBERS line names as run and passed
+When the pre-push gate runs for that push
+Then it MUST NOT accept the evidence
+And it MUST print gate Job J's name, each field that disagreed, the value the evidence named and the value the cluster's record carried
+And it MUST submit a gate Job for tree T exactly as it does when no reusable evidence exists
+And the push MUST be decided only by that Job's verdict
+
+## Scenario: a consumer's pre-push gate that passes its check set to the shared entry point reuses a qualifying delegated pre-commit verdict
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And a delegated pre-commit run recorded pre-push evidence naming gate Job J, tree T, and members A and B as run and passed
+And member A is tree-pure, member B is world-reading, and member C is tree-pure and not named by the evidence
+And the pushing worktree is clean and its HEAD tree is T
+When the consumer's pre-push gate runs python -m livespec_dev_tooling.green_token pre-push-reuse A B C
+Then it MUST submit no gate Job
+And it MUST run B and C on the pushing host and MUST NOT run A
+And it MUST print gate Job J's name, tree T, the names B and C, and that 1 member was skipped because the verdict covered it
+And it MUST exit 0 when B and C pass
+
+## Scenario: the shared entry point refuses a push naming a member that fails after it accepted a delegated pre-commit verdict
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And python -m livespec_dev_tooling.green_token pre-push-evidence would accept a delegated pre-commit verdict for the pushing worktree's clean HEAD tree
+And a member the shared entry point runs for that push fails with exit status 3
+When the consumer's pre-push gate runs python -m livespec_dev_tooling.green_token pre-push-reuse with its check set
+Then the command MUST exit 1 and name that member
+And the consumer's pre-push gate MUST refuse the push
+
+## Scenario: the shared entry point tells its caller to continue with its own gate when no delegated pre-commit verdict qualifies
+
+Given a consuming repository that sets both delegated_gate = true and delegated_pre_commit = true
+And no delegated pre-commit run qualifies for the pushing worktree's HEAD tree
+When the consumer's pre-push gate runs python -m livespec_dev_tooling.green_token pre-push-reuse with its check set
+Then the command MUST run no member and MUST submit no gate Job
+And it MUST exit 3
+And the consumer's pre-push gate MUST then gate the push exactly as it does without the command
+
+## Scenario: a repository that declares gate_cpu 9 and gate_parallelism 8 gets a gate Job requesting 9 CPUs whose coverage run uses 8 xdist workers
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`, `gate_cpu = 9` and `gate_parallelism = 8`, and declares no `gate_memory`
+
+And its coverage test run takes its pytest-xdist worker count from `LIVESPEC_TEST_PARALLELISM`, as this repository's `just check` does
+
+When the gate client submits that repository's pre-push gate Job
+
+Then the Job's container MUST request 9 CPUs and request and limit memory `6Gi`
+
+And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `8`
+
+And the coverage pytest run inside the Job MUST start 8 pytest-xdist workers
+
+## Scenario: a repository that declares no gate resources keeps the default gate Job size
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and declares none of `gate_cpu`, `gate_memory` and `gate_parallelism`
+
+When the gate client submits that repository's pre-push gate Job or its delegated pre-commit aggregate Job
+
+Then the Job's container MUST request 5 CPUs and request and limit memory `6Gi`
+
+And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `4`
+
+## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `gate_cpu = 0`
+
+When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
+
+Then the gate client MUST refuse before it renders or submits any gate Job
+
+And its message MUST name `pyproject.toml` and the key `gate_cpu`
+
+And the push MUST be refused
+
+## Scenario: a malformed declared gate resource refuses a delegated commit instead of gating it locally
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_pre_commit = true` and `gate_memory = "6"`
+
+When a commit's pre-commit hook would delegate its aggregate on a host eligible under **Host eligibility**
+
+Then the gate client MUST refuse before it renders or submits any gate Job, naming `pyproject.toml` and the key `gate_memory`
+
+And the commit MUST be refused, and the aggregate MUST NOT run on the committing host in its place
+
+## Scenario: a declared gate resource that no single gate lane can admit is refused naming the largest lane's quotas
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and declares `gate_cpu` one more than the largest nominal CPU quota of any flavor committed in `cluster-queue-gates.yaml`
+
+When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
+
+Then the gate client MUST refuse before it submits any gate Job
+
+And its message MUST name the key `gate_cpu`, the declared value, and the largest lane's name and CPU and memory quotas as committed
+
+## Scenario: a repository that declares no gate cpu or memory is not refused over an unreadable gates queue file
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and declares neither `gate_cpu` nor `gate_memory`
+
+And the `cluster-queue-gates.yaml` the gate client would read is absent or cannot be parsed
+
+When a push in that repository reaches the gate client on a host eligible under **Host eligibility**
+
+Then the gate client MUST NOT refuse the push because of that file
+
+And it MUST submit the pre-push gate Job at the renderer's default size
+
+## Scenario: a Red-leg replay Job requests the small replay size whatever the repository declares
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_commit_tests = true` and `gate_cpu = 9`
+
+When a Red commit's replay leg runs as a gate Job
+
+Then the Job's container MUST request 2 CPUs and request and limit memory `3Gi`
+
+And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `1`
+
+## Scenario: a Red-leg replay Job killed for memory is an absent verdict, not a valid Red
+
+Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_commit_tests = true`
+
+And a Red commit whose replay leg runs as a gate Job that ends OOMKilled
+
+When the committing host reads the Job's outcome
+
+Then it MUST treat the outcome as an absent verdict and run the Red leg's test itself
+
+And it MUST record the Red trailers only from that local run
+
+## Scenario: the gmktec gate lane keeps room for three default-size gate Jobs
+
+Given the committed `cluster-queue-gates.yaml`
+
+When its tests run
+
+Then they MUST fail, naming the `gates-flavor` lane, if that lane's nominal CPU quota is below three times the renderer's default CPU request or its nominal memory quota is below three times the renderer's default memory request
+
+## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor
+
+Given a consumer whose `.github/workflows/ci.yml` gives five jobs the container image `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0`
+
+And gives one more job, whose only recipe is `just check-fuzz`, the container image `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.197.0`, written below two comment lines inside its `container:` block
+
+And `check-fuzz` is not a target of that consumer's `just check` aggregate
+
+When the consumer's single-container-image check runs, and the delegated gate renders that consumer's gate Job
+
+Then the check MUST pass
+
+And the gate Job MUST run in `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0`
+
+## Scenario: a workflow naming two image versions fails the single-container-image check
+
+Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0` and every other job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0`
+
+When the consumer's single-container-image check runs
+
+Then it MUST fail, naming both images and each line that declares them
+
+## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike
+
+Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0` and gives another job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.196.0`, written below comment lines inside its `container:` block
+
+When the consumer's single-container-image check runs, and the delegated gate renders that consumer's gate Job
+
+Then the check MUST fail, naming both images
+
+And the delegated gate MUST refuse to render the Job, naming both images
+
+## Scenario: a self-hosted CI job's span names its runner pod, which joins to the node that ran it
+
+Given a fleet member's pull-request CI run whose `check-coverage` job ran on runner `livespec-dev-tooling-k3s-f96mp-runner-kv9mc`
+
+And the runner-pool node telemetry attributes pod `livespec-dev-tooling-k3s-f96mp-runner-kv9mc` to node `poweredge-xubuntu` in that window
+
+When the member's CI run-telemetry exporter emits that run's spans
+
+Then the `ci.job.check-coverage` span MUST carry `ci.runner_name` equal to `livespec-dev-tooling-k3s-f96mp-runner-kv9mc`
+
+And a query joining `ci.runner_name` to `k8s.pod.name` MUST attribute that job to `poweredge-xubuntu`
+
+## Scenario: a fleet member's CI runs the CI run-telemetry exporter livespec-dev-tooling ships
+
+Given a fleet member whose pinned livespec-dev-tooling ships the CI run-telemetry exporter module
+
+When that member's CI `export-telemetry` job runs
+
+Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that module
+
+And the member's repository MUST carry no copy of the exporter's span-building logic
+
+## Scenario: a check runner reclaims the coverage directory a killed runner left behind
+
+Given a coverage-namespace directory under the system temp directory whose recorded creator process is no longer running
+
+And a coverage-namespace directory whose recorded creator is a check runner still running
+
+When another check runner starts and creates its own coverage-namespace directories
+
+Then the directory whose creator is no longer running MUST be removed
+
+And the directory whose creator is still running MUST remain in place
+
+And the running runner's verdict MUST be unchanged
+
+## Scenario: a consumer's commit-hook check reports a livespec_dev_tooling function its installed build does not declare
+
+Given a consuming repository whose test file imports a function from livespec_dev_tooling
+
+And the consumer's installed livespec-dev-tooling build neither declares that function in its shipped cross_repo_public_api nor makes it public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name the import's file and line
+
+And its output MUST name the missing declaration's file and function
+
+## Scenario: a consumer whose every livespec_dev_tooling function is declared or locally public passes the commit-hook check
+
+Given a consuming repository that reaches one livespec_dev_tooling function declared in its installed build's shipped cross_repo_public_api
+
+And reaches a second livespec_dev_tooling function that is public under the repo-local consumption oracle and not declared
+
+And imports a third, `_`-prefixed livespec_dev_tooling function that is neither declared nor public
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 0
+
+And its output MUST name no offender
+
+## Scenario: a declaration present only on livespec-dev-tooling's default branch does not satisfy the commit-hook check
+
+Given a consuming repository that imports a livespec_dev_tooling function
+
+And that function is declared in cross_repo_public_api on livespec-dev-tooling's default branch but not in the consumer's installed release
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name that import as undeclared
+
+## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0
+
+Given a consuming repository whose test file imports a livespec_dev_tooling function its installed build neither declares nor makes public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is unset
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 0
+
+And its output MUST report that import as a warning naming its file and line and the missing declaration's file and function
+
+## Scenario: a consumer's commit-hook check reports an undeclared livespec_dev_tooling function reached as an attribute of an imported module
+
+Given a consuming repository that imports a livespec_dev_tooling module and calls one of its functions as an attribute of that module
+
+And the consumer's installed livespec-dev-tooling build neither declares that function nor makes it public under the repo-local consumption oracle
+
+And LIVESPEC_FAIL_IF_UNDECLARED_DEV_TOOLING_IMPORTS is set
+
+When the consumer runs `python -m livespec_dev_tooling.workflow_checks.dev_tooling_imports_declared`
+
+Then the check MUST exit 4
+
+And its output MUST name the attribute reach's file and line and the missing declaration's file and function
+
+## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree
+
+Given a livespec-dev-tooling tree whose committed cross_repo_public_api package-data file lacks one entry that its pyproject.toml cross_repo_public_api array carries
+
+When livespec-dev-tooling's full `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero
+
+And its output MUST name that entry
+
+## Scenario: a managed forward-only authorized_keys entry leaves every other key untouched
+
+Given an inventory host account whose authorized_keys file holds keys no role manages, and a role whose host variables declare a forward-only entry for one destination
+
+When the role is converged under --check and then applied
+
+Then the check MUST report the pending entry without writing the file, and the apply MUST add exactly that entry with the role's managed marker, restrict, port forwarding to only the declared destination, the remote-forward direction locked with `permitlisten="invalid.invalid:1"`, and a command that does nothing
+
+And every other unmarked line MUST remain byte-for-byte unchanged and in its original order, the file MUST keep mode 0600, and a reapply MUST report no change
+
+And with that entry's key, a local forward to any other destination, any remote forward, and a shell MUST each be refused
+
+## Scenario: a managed authorized_keys role retires a hand-placed key by its key blob
+
+Given an inventory host account whose authorized_keys file holds a hand-placed unmarked line for a key, with options and a comment the role does not know, and other unmarked lines for unrelated keys
+
+And a role whose host variables name that key, by key type and base64 body, as retired
+
+When the role is converged under --check and then applied
+
+Then the check MUST report the retired line as a removal without writing the file, and the apply MUST remove exactly that line
+
+And every other unmarked line MUST remain byte-for-byte unchanged and in its original order, an unmarked line whose key is not named as retired MUST be left in place, and a reapply MUST report no change
+
+## Scenario: a key both managed and retired refuses the converge
+
+Given a role whose host variables declare a managed authorized_keys entry for a key and also name the same key blob as retired
+
+When the role is converged, under --check or as an apply
+
+Then the converge MUST refuse before writing the file, with a diagnostic naming the conflicting key, and the authorized_keys file MUST be unchanged
+
+## Scenario: the flake-retry plugin parses each module once and gives every item of one test file the same retry decision
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a test file that yields 200 parametrized test items and imports one in-repository module, `helpers.py`
+
+And a run whose change set is computable and touches no module of that test file's closure
+
+When the session collects and runs those items
+
+Then the plugin MUST read and parse the test file, each `conftest.py` on its directory chain and `helpers.py` at most once each
+
+And every one of the 200 items MUST be marked for retry
+
+And when the change set is changed to modify `helpers.py`, every one of the 200 items MUST be treated as touched and MUST NOT be marked for retry
+
+## Scenario: after a runner version bump converges, every scale set has a listener and serves jobs on the new version
+
+Given the scale-set values files pin actions/runner 2.338.2
+
+And the pull request that moves every values file to actions/runner 2.339.0 has merged
+
+When the committed converge applies it to the live pool
+
+Then every AutoscalingRunnerSet in the `arc-runners` namespace MUST have a listener and an EphemeralRunnerSet
+
+And a CI job of `livespec-orchestrator-beads-fabro` and a CI job of `livespec-dev-tooling` MUST each complete on a k3s runner whose runner version is 2.339.0
+
+## Scenario: a shipped script hands its Honeycomb key to curl without placing it in curl's argument vector
+
+Given `pressure-telemetry.sh` runs with `HONEYCOMB_INGEST_KEY_LIVESPEC` set to a known test value, and a recording stand-in for `curl` that records its argument vector, its standard input and every file a `-K` or `-H @` argument names
+
+When the script posts its PSI datapoints
+
+Then no recorded argument vector MUST contain the test value
+
+And the stand-in MUST have received an `X-Honeycomb-Team` header whose value equals the test value, through its standard input or an owner-only file
+
+And the same MUST hold for `ci-runner/observability/triggers/apply-triggers.sh` with its Honeycomb configuration key
+
+## Scenario: a dev host that stops sending host metrics fires its no-data trigger
+
+Given the committed dev-host host list names a host, and the no-data triggers generated from that list have been applied to the `livespec` environment
+
+When that host's otel-collector unit is stopped, so it sends no `system.linux.memory.available` datapoint
+
+Then within two evaluations of its 20-minute window that host's no-data trigger MUST fire to the dev-host recipients, naming the host
+
+And when the unit is started again and datapoints resume, the trigger MUST resolve
+
+And adding a second host to the dev-host list and running the generator MUST add exactly one trigger definition, for that host, and MUST leave every existing definition byte-identical

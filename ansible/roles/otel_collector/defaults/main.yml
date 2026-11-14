@@ -31,6 +31,16 @@ otel_collector_config_file: config.yaml
 otel_collector_config_url: >-
   https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_commit }}/{{ otel_collector_config_file }}
 
+# The keyless pod-span receiver is deliberately a second collector process on
+# pool nodes. cni0 does not exist until a pod lands, so a bind failure there
+# must restart only this process, never the hostmetrics collector an operator
+# needs while a node is cordoned. Empty keeps the dev host's single collector
+# unchanged. The companion configuration is fetched at the same resolved commit
+# as the host configuration, then written and supervised independently.
+otel_collector_pod_config_file: ""
+otel_collector_pod_config_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_commit }}/{{ otel_collector_pod_config_file }}
+
 # The CI-runner host's k3s datastore starts empty after each reboot, so its
 # collector needs a small, read-only identity reconstructed from the collector
 # repository before it starts. The other hosts collect only host or container
@@ -58,6 +68,7 @@ otel_collector_identity_unit_path: >-
 # change reached it was a hand step.
 otel_collector_etc_dir: /etc/otel-collector
 otel_collector_config_path: "{{ otel_collector_etc_dir }}/config.yaml"
+otel_collector_pod_config_path: "{{ otel_collector_etc_dir }}/pods-config.yaml"
 
 # The Honeycomb ingest keys the configuration reads as `${env:...}`, which the
 # unit names in `EnvironmentFile=`. A PRECONDITION by default: the converge
@@ -66,6 +77,14 @@ otel_collector_config_path: "{{ otel_collector_etc_dir }}/config.yaml"
 # `otel_collector_env_from_controller` additionally has each named key APPENDED
 # when the file lacks it. See ../../README.md for the one-time placement.
 otel_collector_environment_path: "{{ otel_collector_etc_dir }}/.env"
+
+# A k3s agent configuration that reads `${env:OTLP_PODS_ENDPOINT}` binds its
+# pod receiver on this node's flannel gateway. k3s owns the file and rewrites it
+# when the node is enrolled, so the role reads it at converge time instead of
+# carrying one gateway address for every agent. A host may override the derived
+# value only where its collector must bind somewhere else.
+otel_collector_flannel_subnet_path: /run/flannel/subnet.env
+otel_collector_otlp_pods_endpoint: ""
 
 # Further environment files the unit reads, listed BEFORE the one above so a
 # value in it wins — the ordering the CI-runner host's sibling unit states. Each
@@ -83,6 +102,8 @@ otel_collector_kubeconfig_path: ""
 
 otel_collector_unit_name: otel-collector.service
 otel_collector_unit_path: "/etc/systemd/system/{{ otel_collector_unit_name }}"
+otel_collector_pod_unit_name: otel-collector-pods.service
+otel_collector_pod_unit_path: "/etc/systemd/system/{{ otel_collector_pod_unit_name }}"
 
 # The unit's own identity and ordering. The dev host's collector reads the Docker
 # engine socket through the configuration's `docker_stats` receiver, so it both
@@ -93,6 +114,7 @@ otel_collector_unit_path: "/etc/systemd/system/{{ otel_collector_unit_name }}"
 otel_collector_unit_description: otel-collector -- host OTel Collector on the dev host
 otel_collector_unit_after: network-online.target docker.service
 otel_collector_unit_wants: network-online.target docker.service
+otel_collector_pod_unit_description: otel-collector -- keyless pod-span receiver
 
 # ASSERTED, NEVER INSTALLED — unless a host says otherwise.
 #

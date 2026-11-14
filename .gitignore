@@ -88,3 +88,8 @@ Temporary Items
 /dev-tooling/check-no-workflow-edits.sh
 /dev-tooling/worktree.just
 /dev-tooling/branch-protection.just
+
+# A foreign session-state marker an overseer writes into the primary checkout. It is
+# not part of what this checkout serves, and the incident fleet audit reads the
+# primary's tracked state only (livespec-dev-tooling-ri2lwi).
+/.overseer-state

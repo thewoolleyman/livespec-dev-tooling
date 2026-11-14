@@ -1,0 +1,114 @@
+---
+# restart-otel-collector.yml — the ONE sanctioned way to restart a pool host's
+# OpenTelemetry Collector (`otel-collector.service`) when its managed
+# configuration has NOT changed.
+#
+# WHY IT EXISTS (livespec-dev-tooling-a4rd4f, plan kubernetes-observability).
+# The poweredge-xubuntu collector's `k8sobjects/events` receiver watches every
+# Kubernetes Warning event. At 2026-11-06T00:55:59Z the k3s API server stopped
+# serving during the 11-05 saturation incident; the receiver logged
+# `retrywatcher "Watch failed"` on its events watch and then nothing more. The
+# watch never re-established, while every other pipeline in the same process
+# kept emitting, and no Warning event reached the `k8s-events` dataset for five
+# days. Only a process restart brings such a watch back. The committed paths
+# could not reach one: the otel_collector role restarts the collector only
+# when a managed file changed ("a converge that changed nothing interrupts
+# nothing", tasks/main.yml), and a hand `systemctl restart` over ssh is exactly
+# what the Driver's fleet_host_guard refuses. This playbook is that missing
+# path, and it is the runbook of the `k8s-events-silent` dead-man.
+#
+# THE FENCE IS A VARIABLE, NOT OMISSION FROM A LIST. Without
+# `otel_collector_restart_confirm=<this host's inventory name>` it reads
+# nothing, changes nothing and exits 0, so a run without the confirmation, or
+# naming another host, restarts no collector.
+#
+# WHY NO IDLE GATE. Unlike restart-k3s-server.yml, this restart does not take
+# the cluster API away and no CI job calls the collector. A restart costs the
+# telemetry of a few seconds, which the collector's own queues mostly absorb.
+#
+# WHAT THE VERIFICATION READS. After the restart: the unit is active with a new
+# start time, and its journal since that start holds no `Watch failed` line
+# for the events watch. Arrival of Warning rows in the `k8s-events` dataset is
+# read in Honeycomb, not here: this play has no query credential.
+
+- name: Restart a pool host's OpenTelemetry Collector on confirmation
+  hosts: ci_pool
+  gather_facts: false
+  vars:
+    otel_collector_restart_unit: otel-collector.service
+    otel_collector_restart_settle_seconds: 30
+    otel_collector_restart_requested: >-
+      {{ otel_collector_restart_confirm | default('') == inventory_hostname }}
+  tasks:
+    - name: Report a run that carries no collector-restart confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not restarting {{ otel_collector_restart_unit }} on
+          {{ inventory_hostname }}: this run does not carry
+          `otel_collector_restart_confirm={{ inventory_hostname }}` (it carries
+          `{{ otel_collector_restart_confirm | default('<unset>') }}`). Nothing
+          was read and nothing was changed. To restart this host's collector,
+          run from the control node: just ansible-apply
+          ansible/restart-otel-collector.yml -e
+          otel_collector_restart_confirm={{ inventory_hostname }}
+      when: not (otel_collector_restart_requested | bool)
+
+    - name: Restart and verify the confirmed host's collector
+      when: otel_collector_restart_requested | bool
+      block:
+        - name: Read the collector's start time before the restart
+          ansible.builtin.command:
+            argv: [systemctl, show, "{{ otel_collector_restart_unit }}", -p, ActiveEnterTimestampMonotonic, --value]
+          register: otel_collector_restart_before
+          check_mode: false
+          changed_when: false
+
+        - name: Restart the collector
+          ansible.builtin.systemd_service:
+            name: "{{ otel_collector_restart_unit }}"
+            state: restarted
+          become: true
+
+        - name: Let the restarted collector open its receivers
+          ansible.builtin.pause:
+            seconds: "{{ otel_collector_restart_settle_seconds }}"
+          when: not ansible_check_mode
+
+        - name: Verify the collector is active on a new start
+          ansible.builtin.command:
+            argv: [systemctl, show, "{{ otel_collector_restart_unit }}", -p, ActiveState, -p, ActiveEnterTimestampMonotonic, -p, ActiveEnterTimestamp]
+          register: otel_collector_restart_after
+          check_mode: false
+          changed_when: false
+          failed_when: >-
+            not ansible_check_mode and (
+              'ActiveState=active' not in otel_collector_restart_after.stdout
+              or ('ActiveEnterTimestampMonotonic=' ~ otel_collector_restart_before.stdout)
+                 in otel_collector_restart_after.stdout
+            )
+
+        - name: Verify the events watch has not failed since the restart
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -euo pipefail
+              since="$(systemctl show '{{ otel_collector_restart_unit }}' -p ActiveEnterTimestamp --value)"
+              failures="$(journalctl -u '{{ otel_collector_restart_unit }}' --since "${since}" --no-pager \
+                | { grep -E 'Watch failed' || true; })"
+              if [ -n "${failures}" ]; then
+                printf '%s\n' "${failures}" | tail -5
+                exit 1
+              fi
+              echo "no 'Watch failed' line since ${since}"
+          become: true
+          register: otel_collector_restart_watch
+          check_mode: false
+          changed_when: false
+          when: not ansible_check_mode
+
+        - name: Report the restart
+          ansible.builtin.debug:
+            msg: >-
+              {{ otel_collector_restart_unit }} on {{ inventory_hostname }}
+              restarted: {{ otel_collector_restart_after.stdout_lines | join('; ') }}.
+              {{ otel_collector_restart_watch.stdout | default('') }}

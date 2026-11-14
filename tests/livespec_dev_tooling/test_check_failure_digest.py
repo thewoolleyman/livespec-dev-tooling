@@ -176,9 +176,8 @@ def test_both_hook_aggregates_route_through_the_dispatcher(script_name: str) -> 
 
     The digest is emitted by the dispatcher, so the pre-commit half of the
     acceptance criteria holds only while both gates keep running the SAME
-    aggregate the dispatcher owns. Pre-commit may tee that output to mint its
-    same-tree evidence, but it must preserve the aggregate's exit status and
-    relay every output line.
+    aggregate the dispatcher owns. Pre-commit uses the shared entry point to
+    preserve that command's exit status while it records same-tree evidence.
     """
     script = (_REPO_ROOT / "scripts" / "just" / script_name).read_text(encoding="utf-8")
     invocations = [
@@ -189,8 +188,8 @@ def test_both_hook_aggregates_route_through_the_dispatcher(script_name: str) -> 
 
     assert invocations, f"{script_name} no longer invokes the `just check` aggregate"
     if script_name == "check-pre-commit.sh":
-        assert 'just hook_gate=1 check 2>&1 | tee "$aggregate_log"' in script
-        assert "aggregate_status=${PIPESTATUS[0]}" in script
+        assert "livespec_dev_tooling.pre_commit_aggregate" in script
+        assert "just hook_gate=1 check" in script
     else:
         assert all(
             "|" not in line for line in invocations

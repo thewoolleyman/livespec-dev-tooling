@@ -19,3 +19,6 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/livespec-incident/reference
+# Kept off the OOM killer's early list with the observer it serves
+# (livespec-dev-tooling-lqp2qx).
+OOMScoreAdjust=-500

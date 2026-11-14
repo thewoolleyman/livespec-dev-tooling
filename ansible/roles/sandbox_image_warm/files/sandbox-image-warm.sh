@@ -60,6 +60,20 @@
 # exactly as the release-pin read does for docker. Only references inside
 # LIVESPEC_SANDBOX_IMAGE_WARM_IMAGE are ever pulled.
 #
+# A THIRD SOURCE: THE CI WORKFLOWS' OWN PINS (livespec-dev-tooling-e2gv6n). A CI
+# job's container is the sandbox tag that repository's `.github/workflows/ci.yml`
+# pins, and the fleet's repositories do NOT all pin this repository's current
+# release: measured 2026-11-11, master's ci.yml pinned python-v1.183.1 here,
+# python-v1.189.1 in four repositories and python-v1.194.0 in five, while the
+# release manifest read v1.194.0. A release-pin warm would therefore pre-pull a
+# tag half the fleet's jobs never run. So when
+# LIVESPEC_SANDBOX_IMAGE_WARM_WORKFLOW_URLS names workflow files (the raw
+# ci.yml of each repository on its default branch), the references are every
+# `<IMAGE>:<prefix>-v<version>` those files pin, for each declared prefix,
+# re-read on every tick, and a pin bump merged anywhere in the fleet is warmed on
+# the next tick. As with process_spec, ANY unreadable file fails the whole read,
+# and a read that finds no pinned tag pulls nothing rather than falling back.
+#
 # THE WARM KEEPS ONLY CURRENT TAGS (work-item livespec-dev-tooling-xknoqf; spec
 # non-functional-requirements.md "The sandbox image warm keeps only current
 # tags."). Every release bump pulls new tags, and nothing removed the old ones
@@ -90,6 +104,7 @@ LOCK_TIMEOUT_SECONDS=${LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS:-1800}
 STORE=${LIVESPEC_SANDBOX_IMAGE_WARM_STORE:-docker}
 CRICTL=${LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL:-k3s crictl}
 PROCESS_SPEC_URLS=${LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS:-}
+WORKFLOW_URLS=${LIVESPEC_SANDBOX_IMAGE_WARM_WORKFLOW_URLS:-}
 NODE_ARCH=${LIVESPEC_SANDBOX_IMAGE_WARM_NODE_ARCH:-$(uname -m)}
 # The record directory matches the role's unit name: the docker warm is
 # livespec-sandbox-image-warm, every other store's carries a -<store> suffix.
@@ -184,6 +199,49 @@ process_spec_references() {
         awk -v image="$IMAGE" 'index($0, image ":") == 1 || index($0, image "@") == 1' |
         without_foreign_arch_tags |
         sort -u
+}
+
+# Every `<IMAGE>:<tag>` reference a workflow file pins on stdin, one per line,
+# whose tag is `<prefix>-v<digit>...` for one of the space-separated PREFIXES.
+# The prefix test is an exact string comparison, never a regex, so `python`
+# matches python-v1.2.3 and NOT python-rust-v1.2.3 or python-agent-v1.2.3.
+# Comment lines are skipped, so a commented-out rollback pin is never warmed.
+workflow_images() {
+    awk -v image="$IMAGE" -v prefixes="$1" '
+        BEGIN { count = split(prefixes, want, " ") }
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            while ((at = index(line, image ":")) > 0) {
+                line = substr(line, at + length(image) + 1)
+                if (!match(line, /^[A-Za-z0-9._-]+/)) continue
+                tag = substr(line, 1, RLENGTH)
+                line = substr(line, RLENGTH + 1)
+                for (i = 1; i <= count; i++) {
+                    head = want[i] "-v"
+                    if (substr(tag, 1, length(head)) == head &&
+                        substr(tag, length(head) + 1, 1) ~ /^[0-9]$/) {
+                        print image ":" tag
+                        break
+                    }
+                }
+            }
+        }
+    '
+}
+
+# Every reference a workflow-sourced warm pulls: the pins of every named file,
+# de-duplicated. ANY file that cannot be read fails the whole read, as for
+# process_spec: a partial read can silently omit the very pin that moved.
+workflow_references() {
+    local url body found=""
+    for url in "$@"; do
+        if ! body=$(curl --fail --silent --show-error --location --max-time 30 "$url"); then
+            return 1
+        fi
+        found+=$(printf '%s\n' "$body" | workflow_images "$TAG_PREFIXES")$'\n'
+    done
+    printf '%s' "$found" | awk 'NF' | without_foreign_arch_tags | sort -u
 }
 
 # The store-specific halves of a warm: whether the store holds a reference, and
@@ -407,7 +465,24 @@ fi
 
 references=()
 read -r -a spec_urls <<<"$PROCESS_SPEC_URLS"
-if [[ ${#spec_urls[@]} -gt 0 ]]; then
+read -r -a workflow_urls <<<"$WORKFLOW_URLS"
+if [[ ${#spec_urls[@]} -gt 0 && ${#workflow_urls[@]} -gt 0 ]]; then
+    log "ERROR: both process_spec and workflow sources are declared; a warm reads one; nothing warmed"
+    exit 1
+fi
+if [[ ${#workflow_urls[@]} -gt 0 ]]; then
+    if ! workflow_refs=$(workflow_references "${workflow_urls[@]}"); then
+        log "ERROR: could not read every workflow source (${workflow_urls[*]}); nothing warmed"
+        exit 1
+    fi
+    while IFS= read -r reference; do
+        [[ -n $reference ]] && references+=("$reference")
+    done <<<"$workflow_refs"
+    if [[ ${#references[@]} -eq 0 ]]; then
+        log "ERROR: no $IMAGE tag with a prefix in '$TAG_PREFIXES' pinned in ${workflow_urls[*]}; nothing warmed"
+        exit 1
+    fi
+elif [[ ${#spec_urls[@]} -gt 0 ]]; then
     if ! spec_refs=$(process_spec_references "${spec_urls[@]}"); then
         log "ERROR: could not read every process_spec source (${spec_urls[*]}); nothing warmed"
         exit 1

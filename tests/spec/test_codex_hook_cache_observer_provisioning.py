@@ -74,3 +74,43 @@ def test_codex_config_stages_the_driver_release_the_unit_executes_from() -> None
     assert "codex_config_observer_driver_version: release" in defaults, (
         "the staged Driver must track the same release ref ensure-codex-plugins " "registers"
     )
+
+
+def test_codex_config_enables_the_feature_under_the_drivers_file_keyed_lock() -> None:
+    """`codex features enable` runs while the role holds the Driver's flock.
+
+    Codex rewrites config.toml read-modify-write and takes no lock, so an
+    unserialized enable can drop the observer's `trusted_content_hash` records.
+    The lock is the one the Driver's writers take, keyed on the resolved real
+    path of config.toml, and a lock not obtained within the bounded wait must
+    fail the role before any Codex command that writes the configuration runs.
+    """
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    tasks = _TASKS.read_text(encoding="utf-8")
+    enable = tasks[tasks.index("- name: Enable the Codex feature\n") :]
+    enable = enable[: enable.index("- name: Read the Codex feature states back")]
+
+    assert "realpath, -m" in tasks and ".codex/config.toml" in tasks, (
+        "the lock must be keyed on the RESOLVED real path of config.toml, as the "
+        "Driver's writers key theirs"
+    )
+    assert (
+        '_codex_config_lock_file: "{{ codex_config_config_realpath.stdout | trim }}.livespec-lock"'
+        in enable
+    ), "the lock file is the resolved config path with `.livespec-lock` appended"
+    argv = enable[enable.index("argv:") : enable.index("become: false")]
+    assert argv.index("- flock") < argv.index(
+        "- codex"
+    ), "the flock must wrap the Codex command, not follow it"
+    assert (
+        "- -w" in argv and "codex_config_lock_wait_seconds" in argv
+    ), "the lock wait must be bounded"
+    assert (
+        "- -E" in argv and "codex_config_lock_timeout_rc" in argv
+    ), "a lock timeout must exit with a code distinct from a Codex failure"
+    assert "codex_config_lock_wait_seconds: 10\n" in defaults
+    assert "codex_config_lock_timeout_rc: 75\n" in defaults
+    assert "Did not obtain the exclusive lock on" in tasks, (
+        "a lock that was not obtained must fail the role with a message naming " "the lock file"
+    )
+    assert "codex_config_config_realpath.stdout | trim }}.livespec-lock within" in tasks

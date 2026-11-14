@@ -125,6 +125,7 @@ storage_reclaim_home: /home/cwoolley
 # `config.k3s-agent-host.yaml` was merged for this converge, so the role is the
 # only thing that has ever placed its collector.
 otel_collector_config_file: config.k3s-agent-host.yaml
+otel_collector_pod_config_file: config.k3s-agent-host-pods.yaml
 otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true
@@ -288,72 +289,24 @@ fabro_server_instances:
     # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
     # v0393-85af3547e/fabro and
     # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-12: d22808f8e (fabro 0.408.0-nightly.0), the build the candidate
+    # proved (bd-ib-tcdmkr: ra5o2l run 01M77DZB6XHZ on :32278, setup 56/56 and
+    # runtime parity PASS; consumer [run.prepare] lowering proved live by 58fb on
+    # hl-jq6ov3), widened on legacy-coordinator-agent's GO-SPLIT (2026-11-12
+    # ~10:00Z). ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f, still staged
+    # on gmktec-xubuntu.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     # On this engine the catalog, not the workflow table, decides the image.
     # The orchestrator workflow
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml) pins
-    # python-agent-v1.189.0; this instance's kubernetes process_spec below runs
-    # v1.188.1, the newest release proven in-pod on the candidate. A catalog image
-    # moves canary-first (candidate, then here), never by the release fan-out;
-    # the trailing divergence is held by livespec-dev-tooling-wrlwvk.
+    # the python-agent image its release names; this instance's kubernetes
+    # process_spec below runs v1.188.1 until the candidate has proven the pinned
+    # image in-pod. A catalog image moves canary-first (candidate, then here),
+    # never by the release fan-out; livespec-dev-tooling-nfnvvb owns closing the
+    # trailing divergence (wrlwvk, which owned it before, closed 2026-11-09).
     environments:
-      # gmktec's DEFAULT environment runs on the kubernetes provider (plan
-      # kubernetes-sandbox-backend, bd-ib-nmuyjc DoD 5; coordinator ruling on
-      # livespec-dev-tooling-dfixhe, 2026-10-24, after the third canary run
-      # 01M5NQK36G7K passed its pod bar on sandbox-driver-kubernetes v0.4.1). Like
-      # livespec-ci-k8s it declares NO image: its sandboxes are built from the
-      # kubernetes provider's process_spec below, which carries the image this
-      # entry would name if it ran Docker (python-agent-v1.188.1). The
-      # catalog is server-managed, so this converges by a PUT with no restart and
-      # a live Docker run keeps its container. ROLLBACK to Docker: set
-      # `provider: docker` (dropping it keeps kubernetes, which the role refuses
-      # beside an image) and restore the process_spec's image here:
-      # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1`.
-      - id: livespec-ci
-        # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
-        # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
-        # REVERT: cpu: 4
-        cpu: 6
-        memory: 8GB
-        provider: kubernetes
-      # Serves repositories whose workflow pins the python-rust-agent layer:
-      # livespec-console-beads-fabro, which builds Rust (R622). Its tag FOLLOWS
-      # THAT repository's pin (.fabro/workflows/implement-work-item/workflow.toml,
-      # python-rust-agent-v1.136.2), not the orchestrator's; bump the two
-      # together. Coordinator ruling R668 (2026-10-22).
-      - id: livespec-ci-rust
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
-        cpu: 4
-        memory: 8GB
-      # The Kubernetes twin of livespec-ci (plan kubernetes-sandbox-backend,
-      # bd-ib-nmuyjc in the livespec-orchestrator-beads-fabro tenant), the same
-      # declaration the candidate instance below proved on the 9f6c38f carrier.
-      # It declares NO image: a registered provider's sandboxes are built from
-      # the provider's process_spec, which carries livespec-ci's image, and
-      # Petri refuses a run whose environment names one. Fabro's 8GB is
-      # decimal, so the pod carries 7629Mi. A dispatch reaches it only through a
-      # factory entry that names it; the cutover is pointing the petri entry at
-      # it, and the rollback is pointing it back.
-      - id: livespec-ci-k8s
-        # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
-        # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
-        # REVERT: cpu: 4
-        cpu: 6
-        memory: 8GB
-        provider: kubernetes
-      # Rename step 1 (livespec-dev-tooling-s6go5s; spec v090 section "Factory
-      # sandbox environment naming"): factory-python is the python-agent
-      # toolchain, declared beside BOTH old ids with the same resources and
-      # provider, because livespec-ci and livespec-ci-k8s are already identical
-      # and merge into this one id. The old ids are deleted only after every
-      # fleet repository's petri environment names factory-python and no
-      # non-terminal run on this instance runs in either of them.
-      #
-      # The tested Docker fallback of plan kubernetes-sandbox-backend
-      # (bd-ib-nmuyjc.2) ran this entry on `provider: docker` for one launch
-      # window on 2026-10-31 and restored it here. The procedure and its evidence
-      # are recorded on that work-item and in the factory sandbox backend runbook.
       - id: factory-python
         # REQUEST 3 / LIMIT 6 (bd-ib-zl3qcz): a run's environment cpu replaces the
         # provider process_spec's cpu_cores, so this is the sandbox's CPU LIMIT.
@@ -377,6 +330,12 @@ fabro_server_instances:
         cpu: 6
         memory: 8GB
         provider: kubernetes-rust
+    # Rename step 3 (livespec-dev-tooling-lmuhvi): the role reads every
+    # non-terminal run before deleting any of these catalog entries.
+    retired_environments:
+      - livespec-ci
+      - livespec-ci-k8s
+      - livespec-ci-rust
     # The plugin the sandbox_driver_kubernetes role installs, at that role's
     # pinned digest. The protocol clears a plugin's environment, so HOME and
     # PATH are passed through; this instance's HOME is /home/cwoolley, which
@@ -409,15 +368,30 @@ fabro_server_instances:
         # v0.8.1 at its OWN versioned path (sandbox_driver_kubernetes_versioned_releases
         # below), so mi-homelab keeps v0.5.0 at the shared path. The candidate's
         # `kubernetes` provider ran this same v0.8.2 (wrlwvk parity canary) and now
-        # carries the v0.8.3 one-pod canary (bd-ib-u4fp5z).
+        # carried the v0.8.3 one-pod canary (bd-ib-u4fp5z) that this instance now runs.
         # REVERT: path: /usr/local/bin/sandbox-driver-kubernetes
         # REVERT: sha256: d93437f0bcb495e13a3373a4d2578cc0b2dba2c39c1ad5f3fdcf801ce0788b6e
         # v0.8.2 (2026-11-05, orchestrator bd-ib-digmk2): an exec'd command runs
         # under the sandbox shell's umask (0022), not the driver's private 077.
         # REVERT to v0.8.1: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
         # REVERT to v0.8.1: sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
-        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        # v0.8.3 (2026-11-11, orchestrator bd-ib-u4fp5z; coordinator
+        # legacy-coordinator-agent GO after the candidate's one-pod parity read
+        # PASSED, run 01M750PMP0ND vs petri pod 01M74ZPZGEZ7): an exec's
+        # stop-watcher and stdin feeder exit when their parent shell dies, so a
+        # killed wrapper leaves no orphan polling its stop file.
+        # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        # v0.8.4 (2026-11-13, orchestrator bd-ib-ko5kxf Phase B; coordinator
+        # legacy-coordinator-agent PASS on the candidate's one-pod canary, dispatch
+        # e02cfa454ed04a1394166d1a518c7377, run 01M79HH1CNVD, whose parity matched
+        # v0.8.3 apart from the dispatch-payload env names): a pod create refused
+        # for an exceeded namespace ResourceQuota (403) is reported as a retryable
+        # provider error with code quota-exceeded, not as a credential fault.
+        # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
         inherit_env:
           - HOME
           - PATH
@@ -444,8 +418,23 @@ fabro_server_instances:
         # under the sandbox shell's umask (0022), not the driver's private 077.
         # REVERT to v0.8.1: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.1
         # REVERT to v0.8.1: sha256: ad74f14dc7b4baa5e5765f57b88a96a22d998259508af296ca20c5af0bd2d6d4
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
-        sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        # v0.8.3 (2026-11-11, orchestrator bd-ib-u4fp5z; coordinator
+        # legacy-coordinator-agent GO after the candidate's one-pod parity read
+        # PASSED, run 01M750PMP0ND vs petri pod 01M74ZPZGEZ7): an exec's
+        # stop-watcher and stdin feeder exit when their parent shell dies, so a
+        # killed wrapper leaves no orphan polling its stop file.
+        # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
+        # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
+        # v0.8.4 (2026-11-13, orchestrator bd-ib-ko5kxf Phase B; coordinator
+        # legacy-coordinator-agent PASS on the candidate's one-pod canary, dispatch
+        # e02cfa454ed04a1394166d1a518c7377, run 01M79HH1CNVD, whose parity matched
+        # v0.8.3 apart from the dispatch-payload env names): a pod create refused
+        # for an exceeded namespace ResourceQuota (403) is reported as a retryable
+        # provider error with code quota-exceeded, not as a credential fault.
+        # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
         inherit_env:
           - HOME
           - PATH
@@ -600,8 +589,29 @@ fabro_server_instances:
     # Fork gates run 42457891271 green; built on fabro-k3s by carrier-build run
     # 42461605229. ROLLBACK: v0393-bbe693847/fabro and
     # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-85071c828/fabro
-    binary_sha256: e5c98af4bd1db97253cb7a51bef0a61f3a37e0d05341183a07bcdaeeb5d04d04
+    # 2026-11-11: the CANDIDATE's engine goes back to the fleet instance's
+    # bbe693847 (fabro 0.393.0-nightly.1) for ONE parity sample of
+    # sandbox-driver-kubernetes v0.8.3 (livespec-orchestrator-beads-fabro
+    # bd-ib-u4fp5z, legacy-coordinator-agent's decision). 0.408 refuses
+    # [run.prepare], which every released orchestrator build still uses, so no
+    # released build can run here on it. Pinning the engine isolates the driver
+    # change. Once the parity read is taken, the candidate returns to 0.408 for
+    # bd-ib-dpsiwz's fix-forward canary. 2026-11-11: the parity sample
+    # (run 01M750PMP0ND, bd-ib-n4kj4y) was read and graded PASS by
+    # legacy-coordinator-agent, so the candidate returns to 85071c828 (0.408).
+    # 2026-11-12: the candidate moves to d22808f8e (fabro 0.408.0-nightly.0),
+    # 85071c828 plus ONE commit: a sqlx [patch.crates-io] at launchbadge/sqlx
+    # 10462fa4 lifting libsqlite3-sys 0.37.0 -> 0.39.1 (SQLite 3.54.1) for
+    # RUSTSEC-2026-0459 (livespec-orchestrator-beads-fabro bd-ib-tcdmkr, BUNDLE
+    # route ruled by legacy-coordinator-agent). Fork PR #37 merged green
+    # (4434/4434 tests); built on fabro-k3s by carrier-build run 43149665912.
+    # The candidate goes FIRST with one canary and environment parity; the
+    # fleet instance, mi-homelab and homelab-worker follow together. The store
+    # written by 85071c828 opened and listed cleanly under d22808f8e on vps
+    # (bd-ib-tcdmkr store-compat read). ROLLBACK: v0408-85071c828/fabro and
+    # e5c98af4bd1db97253cb7a51bef0a61f3a37e0d05341183a07bcdaeeb5d04d04.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     # The fleet instance's catalog, entry for entry; the reasons for each
     # entry are given there. Bump the images together with it.
     # The three python entries on the `kubernetes` provider take the fleet's
@@ -647,7 +657,7 @@ fabro_server_instances:
     # instance's root. Bump both sha256 together with the fleet instance's.
     # The `kubernetes-rust` digest equals the role default (v0.5.0, d93437f0), the
     # binary the role installs at /usr/local/bin; `kubernetes` pins the versioned
-    # v0.8.3 (its one-pod canary; the fleet instance stays on v0.8.2). Fabro
+    # v0.8.3 (its one-pod canary, now also the fleet instance's). Fabro
     # verifies each against its pin at EVERY plugin
     # launch, so the pin and the binary must always be equal; see the role's
     # defaults/main.yml.
@@ -664,12 +674,20 @@ fabro_server_instances:
         # v0.8.3 ONE-POD CANARY (2026-11-11, orchestrator bd-ib-u4fp5z; coordinator
         # legacy-coordinator-agent, duties section 10): an exec's stop-watcher and
         # stdin feeder exit when their parent shell dies, so a killed wrapper leaves
-        # no orphan polling its stop file. This instance alone moves first; the
-        # fleet instance stays on v0.8.2 until this canary's parity read passes.
+        # no orphan polling its stop file. This instance moved first; the fleet
+        # instance followed on 2026-11-11 after this canary's parity read passed.
         # REVERT to v0.8.2: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.2
         # REVERT to v0.8.2: sha256: cf3cedc8900d2176630f8a700964a094f9db30648955310e930bee07ca6b9ec7
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
-        sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        # v0.8.4 ONE-POD CANARY (2026-11-12, orchestrator bd-ib-ko5kxf; coordinator
+        # legacy-coordinator-agent GO, duties section 10): a pod create refused
+        # for an exceeded namespace ResourceQuota (403) is reported as a retryable
+        # provider error with code quota-exceeded, not as a credential fault.
+        # This instance moves first; the fleet instance follows only after this
+        # canary's environment-parity read passes.
+        # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
+        # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
         inherit_env:
           - HOME
           - PATH
@@ -677,14 +695,18 @@ fabro_server_instances:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
-          # The candidate runs python-agent-v1.188.1, the image the fleet instance
-          # above moved to after this instance proved it. It carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
+          # The candidate runs python-agent-v1.204.0, the image the orchestrator's
+          # launch build pins (v0.326.0, f4c05ab80e4e; digest
+          # sha256:a337831c976b19f88fce227544e513d48ff3966a75099b2b117cfe905eb6babf),
+          # proven in-pod here first (livespec-dev-tooling-nfnvvb). Its parity is
+          # read against a pod from v1.188.1, which the fleet instance above still
+          # runs and moves to only after that parity read passes.
+          # v1.188.1 carries claude-agent-acp 0.91.0 (Claude Code 2.1.300;
           # livespec-dev-tooling-wrlwvk, #3424), first proven in-pod here on v1.173.0
-          # (run 01M6MQBBRZ7A). Its environment-parity proof against the fleet's v1.136.2
-          # was taken here (run 01M6XWZJ2NF2) before the fleet instance moved off it.
-          # The next image, v1.189.0, is proven here first in the same way.
-          # ROLLBACK: python-agent-v1.173.0.
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
+          # (run 01M6MQBBRZ7A); its parity proof against v1.136.2 was taken here
+          # (run 01M6XWZJ2NF2).
+          # ROLLBACK: python-agent-v1.188.1.
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.204.0
           cpu_cores: 6
           memory_mb: 7629
       kubernetes-rust:
@@ -763,8 +785,15 @@ fabro_server_instances:
     otel_dropin: present
     binary_path: /home/cwoolley/.fabro-homelab-worker-arm64/bin/fabro
     home_env: /home/cwoolley/.fabro-homelab-worker-arm64
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-12: d22808f8e (fabro 0.408.0-nightly.0), the build the candidate
+    # proved (bd-ib-tcdmkr: ra5o2l run 01M77DZB6XHZ on :32278, setup 56/56 and
+    # runtime parity PASS; consumer [run.prepare] lowering proved live by 58fb on
+    # hl-jq6ov3), widened on legacy-coordinator-agent's GO-SPLIT (2026-11-12
+    # ~10:00Z). ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f, still staged
+    # on gmktec-xubuntu.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     environments:
       - id: factory-python
         cpu: 4
@@ -866,31 +895,28 @@ fabro_server_instances:
     # Built on fabro-k3s by carrier-build run 42231707109. ROLLBACK:
     # v0393-85af3547e/fabro and
     # d6fcfafab6da1bfd32c3b96b4153f93367fe8a5b4fc18b0efecacad80b1e5711.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro
-    binary_sha256: 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f
+    # 2026-11-12: d22808f8e (fabro 0.408.0-nightly.0), the build the candidate
+    # proved (bd-ib-tcdmkr: ra5o2l run 01M77DZB6XHZ on :32278, setup 56/56 and
+    # runtime parity PASS; consumer [run.prepare] lowering proved live by 58fb on
+    # hl-jq6ov3), widened on legacy-coordinator-agent's GO-SPLIT (2026-11-12
+    # ~10:00Z). ROLLBACK: v0393-bbe693847/fabro and
+    # 1529aa9f86b5bf346ae20a731bdf1cb433bc678825c8a43d0c21f513dac0ab1f, still staged
+    # on gmktec-xubuntu.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0408-d22808f8e/fabro
+    binary_sha256: f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
     #
-    # ON KUBERNETES since 2026-10-24 (work-item bd-ib-yetegc, plan
-    # kubernetes-sandbox-backend bd-ib-nmuyjc): livespec-ci names no image and
-    # selects the `kubernetes` provider below, whose process_spec carries that
-    # tag. ROLLBACK to Docker: set `provider: docker` and restore
-    # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0`.
     environments:
-      - id: livespec-ci
-        cpu: 4
-        memory: 8GB
-        provider: kubernetes
       # The v092 id for the python-agent layer (livespec-dev-tooling-s6go5s),
-      # identical to livespec-ci above. homelab's committed `mi-homelab` factory
-      # entry names it; livespec-ci is retired later through the
-      # retired_environments axis, once nothing names it (coordinator ruling on
-      # livespec-dev-tooling-dfixhe, 2026-10-24; work-item bd-ib-yetegc).
+      # which homelab's committed `mi-homelab` factory entry names.
       - id: factory-python
         cpu: 4
         memory: 8GB
         provider: kubernetes
+    retired_environments:
+      - livespec-ci
     # The same pinned plugin as the fleet instance, pointed at homelab's OWN
     # namespace. Rulings R668 / R669(1) keep homelab out of reach of the shared
     # fleet instance, so its pods run in `factory-mi-homelab`
@@ -989,10 +1015,16 @@ sandbox_driver_kubernetes_versioned_releases:
   # installed as the REVERT target.
   - version: v0.8.3
     sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
+  # v0.8.4 (bd-ib-ko5kxf): v0.8.3 plus an exceeded-ResourceQuota 403 mapped as
+  # retryable capacity (code quota-exceeded), not a missing permission. The
+  # candidate pins it for its one-pod canary; v0.8.3 stays installed as the
+  # REVERT target. Digest verified by download of the release asset.
+  - version: v0.8.4
+    sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
-# hp-xubuntu made its by hand and declares nothing; vps declares its own (roles/tailscale_serve/HOST_VARS.md).
+# hp-xubuntu publishes nothing and retires its hand-made legacy ports; vps declares its own (roles/tailscale_serve/HOST_VARS.md).
 tailscale_serve_mappings:
   - https_port: 32276
     backend: http://127.0.0.1:32276
@@ -1013,3 +1045,11 @@ tailscale_serve_mappings:
 # 2026-11-10 ruling, under its 6 h guards (role HOST_VARS.md). ROLLBACK: set 6, and
 # lower the fleet cap to 11 FIRST. Kill switch: the reconciler's.
 factory_pod_budget: 7
+
+# --- controller_known_hosts ---
+# This host's Tailscale SSH ed25519 host key, pinned into the control node's
+# known_hosts by ansible/dev-host.yml (role controller_known_hosts). Fingerprint
+# SHA256:vUCMIho6aIRyyY7exW2Is9Yz3h0/aX81uNgZ53103cQ. Verified 2026-11-11: the
+# key the control node already trusted (a hand entry) equals the key the host
+# presented live; its info repository records no fingerprint.
+controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINVacRASJc+Ig/M6TksRXd8VxTSpD613RIjexvhLRAo8"

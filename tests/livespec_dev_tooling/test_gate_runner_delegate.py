@@ -792,6 +792,41 @@ def test_a_cluster_gate_without_a_verdict_exits_75_without_a_local_retry(
     assert invoked == []
 
 
+def test_a_cluster_gate_refused_by_its_resource_declaration_fails_naming_the_key(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unusable resource declaration ends the run FAILED, not without a verdict (c3nd2h).
+
+    The refusal rejects the committed configuration, so the run must not read
+    as a cluster that returned no verdict, and no Job may be submitted.
+    """
+    from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    _ = (root / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_gate = true\ngate_cpu = 0\n",
+        encoding="utf-8",
+    )
+    invoked: list[object] = []
+
+    monkeypatch.setattr(module, "_working_tree_source", lambda **_kwargs: ("tree", "commit"))
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **kwargs: declared_gate_job_resources(repo_root=kwargs["repo_root"]),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: invoked.append(kwargs))
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 1
+    assert outcome.job_name == ""
+    assert "gate_cpu" in outcome.detail
+    assert "pyproject.toml" in outcome.detail
+    assert invoked == []
+
+
 def test_cluster_runner_cli_records_tree_and_job_for_gate_status(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

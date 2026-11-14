@@ -8,29 +8,45 @@ than granting a retry on incomplete evidence.
 from __future__ import annotations
 
 import ast
-import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from livespec_dev_tooling._flake_retry_closure import conftest_chain, module_imports
 from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
+from livespec_dev_tooling.flake_retry_decisions import (
+    RETRY_ATTEMPTS,
+    RETRY_DELAY_SECONDS,
+    retry_withheld_reason_for,
+    session_withheld_reason,
+)
+from livespec_dev_tooling.flake_retry_decisions import (
+    retry_marker_for as _retry_marker_for,
+)
 from livespec_dev_tooling.flake_retry_finalizers import preserve_finalizers
-from livespec_dev_tooling.flake_retry_paths import path_literals
+from livespec_dev_tooling.flake_retry_records import (
+    RetryResult,
+    failure_from,
+    records_json,
+)
+from livespec_dev_tooling.flake_retry_records import (
+    summary as records_summary,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from _pytest.terminal import TerminalReporter
 
+    from livespec_dev_tooling.flake_retry_decisions import Closure, _ModuleFacts
+
 __all__: list[str] = [
     "RETRY_ATTEMPTS",
     "RETRY_DELAY_SECONDS",
     "RetryResult",
     "announce_retries",
+    "ast",
     "mark_untouched_tests",
     "record_report",
     "retry_marker_for",
@@ -38,104 +54,11 @@ __all__: list[str] = [
     "write_retry_records",
 ]
 
-RETRY_ATTEMPTS = 3
-RETRY_DELAY_SECONDS = 60
-_UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
 _RESULTS: dict[str, RetryResult] = {}
-_WITHHELD: list[str] = []
+_FAILED_NODEIDS: set[str] = set()
+_SESSION_WITHHELD: list[str] = []
+_WITHHELD_BY_NODEID: dict[str, str] = {}
 _WORKER_WITHHELD_KEY = "livespec_flake_retry_withheld"
-
-
-@dataclass(frozen=True, kw_only=True)
-class RetryResult:
-    """The final outcome of a test pytest-rerunfailures has retried."""
-
-    nodeid: str
-    attempts: int
-    outcome: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class _ModuleFacts:
-    """What one parsed source module contributes to any closure that reaches it."""
-
-    imports: frozenset[Path]
-    literals: frozenset[str]
-    undeterminable_paths: bool
-
-
-def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
-    """Parse one module once and keep its imports and path-bearing literals."""
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, SyntaxError, UnicodeError):
-        return None
-    path_component_nodes = {
-        id(component)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
-        for component in ast.walk(node)
-        if isinstance(component, ast.Constant) and isinstance(component.value, str)
-    }
-    literals = {
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-        if id(node) not in path_component_nodes or Path(node.value).suffix
-    }
-    path_names, path_is_undeterminable = path_literals(tree=tree, repo_root=repo_root)
-    return _ModuleFacts(
-        imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
-        literals=frozenset(literals | path_names),
-        undeterminable_paths=path_is_undeterminable,
-    )
-
-
-def _closure(
-    *, repo_root: Path, test_path: Path, memo: dict[Path, _ModuleFacts | None] | None = None
-) -> tuple[set[Path], set[str], bool] | None:
-    """Read imports and string literals without executing the test tree.
-
-    `memo` holds each module's parsed facts for the caller's whole collection
-    pass, so a module many tests import is parsed once rather than once per
-    collected item (livespec-dev-tooling-pprfq2).
-    """
-    facts_by_path = {} if memo is None else memo
-    pending = [test_path, *conftest_chain(repo_root=repo_root, test_path=test_path)]
-    modules: set[Path] = set()
-    literals: set[str] = set()
-    undeterminable_paths = False
-    while pending:
-        path = pending.pop()
-        if path in modules:
-            continue
-        if path not in facts_by_path:
-            facts_by_path[path] = _module_facts(repo_root=repo_root, path=path)
-        facts = facts_by_path[path]
-        if facts is None:
-            return None
-        modules.add(path)
-        literals.update(facts.literals)
-        undeterminable_paths = undeterminable_paths or facts.undeterminable_paths
-        pending.extend(facts.imports - modules)
-    return modules, literals, undeterminable_paths
-
-
-def _changed_names(*, paths: set[Path]) -> set[str]:
-    """Produce whole literal spellings that can identify changed code or data paths.
-
-    A literal may name the changed file, its filename, or an entire directory
-    prefix. Individual directory components are deliberately not candidates:
-    a common name such as ``livespec_dev_tooling`` is not a path to every
-    directory that happens to contain that segment.
-    """
-    names: set[str] = set()
-    for path in paths:
-        names.update((path.as_posix(), path.name))
-        names.update(parent.as_posix() for parent in path.parents if parent != Path())
-        if path.suffix == ".py":
-            names.add(".".join(path.with_suffix("").parts))
-    return names
 
 
 def retry_marker_for(
@@ -144,31 +67,26 @@ def retry_marker_for(
     test_path: Path,
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
+    closures: dict[Path, Closure] | None = None,
 ) -> dict[str, int] | None:
-    """Return a rerun marker only when no changed path touches the closure.
-
-    A test file outside `repo_root` cannot be analysed against the repository's
-    change set, so it takes the same conservative path as an unanalysable
-    closure: no marker, and it fails at once when it fails.
-    """
-    if not test_path.is_relative_to(repo_root):
-        return None
-    if any(path.name in _UNSAFE_NAMES or path.name == Path(__file__).name for path in change_paths):
-        return None
-    analyzed = _closure(repo_root=repo_root, test_path=test_path, memo=memo)
-    if analyzed is None:
-        return None
-    modules, literals, undeterminable_paths = analyzed
-    if undeterminable_paths:
-        return None
-    relative_modules = {path.relative_to(repo_root) for path in modules}
-    if relative_modules & change_paths or literals & _changed_names(paths=change_paths):
-        return None
-    return {"reruns": RETRY_ATTEMPTS, "reruns_delay": RETRY_DELAY_SECONDS}
+    """Forward the hook's live retry-policy overrides to the extracted decision."""
+    return _retry_marker_for(
+        repo_root=repo_root,
+        test_path=test_path,
+        change_paths=change_paths,
+        memo=memo,
+        closures=closures,
+        retry_attempts=RETRY_ATTEMPTS,
+        retry_delay_seconds=RETRY_DELAY_SECONDS,
+    )
 
 
 def mark_untouched_tests(
-    *, root: Path, items: list[pytest.Item], can_retry: bool = True
+    *,
+    root: Path,
+    items: list[pytest.Item],
+    can_retry: bool = True,
+    withheld_by_nodeid: dict[str, str] = _WITHHELD_BY_NODEID,
 ) -> str | None:
     """Mark only tests proven untouched by this session's complete change set.
 
@@ -184,14 +102,32 @@ def mark_untouched_tests(
     if paths is None:
         return withheld_reason()
     memo: dict[Path, _ModuleFacts | None] = {}
-    markers: dict[Path, dict[str, int] | None] = {}
+    closures: dict[Path, Closure] = {}
+    withheld = session_withheld_reason(
+        repo_root=root,
+        test_paths=(Path(str(item.path)) for item in items),
+        change_paths=paths,
+        memo=memo,
+    )
+    if withheld is not None:
+        return withheld
     for item in items:
         test_path = Path(str(item.path))
-        if test_path not in markers:
-            markers[test_path] = retry_marker_for(
-                repo_root=root, test_path=test_path, change_paths=paths, memo=memo
-            )
-        marker = markers[test_path]
+        retry_withheld = retry_withheld_reason_for(
+            repo_root=root,
+            test_path=test_path,
+            memo=memo,
+            change_paths=paths,
+            closures=closures,
+        )
+        if retry_withheld is not None:
+            nodeid = getattr(item, "nodeid", None)
+            if isinstance(nodeid, str):
+                withheld_by_nodeid[nodeid] = retry_withheld
+            continue
+        marker = retry_marker_for(
+            repo_root=root, test_path=test_path, change_paths=paths, memo=memo, closures=closures
+        )
         if marker is not None:
             item.add_marker(pytest.mark.flaky(**marker))
     return None
@@ -204,14 +140,23 @@ def record_report(*, report: pytest.TestReport) -> None:
     previous = _RESULTS.get(report.nodeid)
     outcome = cast(str, report.outcome)
     if outcome == "rerun":
+        failure = failure_from(longrepr=getattr(report, "longrepr", ""))
         _RESULTS[report.nodeid] = RetryResult(
             nodeid=report.nodeid,
             attempts=(previous.attempts if previous else 0) + 1,
             outcome="rerun",
+            failures=(*previous.failures, failure) if previous else (failure,),
         )
     elif previous is not None:
         _RESULTS[report.nodeid] = RetryResult(
-            nodeid=report.nodeid, attempts=previous.attempts + 1, outcome=outcome
+            nodeid=report.nodeid,
+            attempts=previous.attempts + 1,
+            outcome=outcome,
+            failures=(
+                (*previous.failures, failure_from(longrepr=getattr(report, "longrepr", "")))
+                if outcome == "failed"
+                else previous.failures
+            ),
         )
 
 
@@ -220,7 +165,7 @@ def write_retry_records(*, repo_root: Path, results: Iterable[RetryResult]) -> P
     output = repo_root / "tmp" / "flake-retries" / "retries.jsonl"
     _ = output.parent.mkdir(parents=True, exist_ok=True)
     _ = output.write_text(
-        "".join(json.dumps(result.__dict__, sort_keys=True) + "\n" for result in results),
+        records_json(results=results),
         encoding="utf-8",
     )
     return output
@@ -228,12 +173,15 @@ def write_retry_records(*, repo_root: Path, results: Iterable[RetryResult]) -> P
 
 def retry_summary(*, results: Iterable[RetryResult]) -> str:
     """Render the loud terminal block required for every retry decision."""
-    rows = [f"{result.nodeid}: {result.attempts} attempts, {result.outcome}" for result in results]
-    return "FLAKE-RETRIED\n" + "\n".join(rows)
+    return records_summary(results=results)
 
 
 def announce_retries(
-    *, terminalreporter: TerminalReporter, root: Path, withheld: str | None = None
+    *,
+    terminalreporter: TerminalReporter,
+    root: Path,
+    withheld: str | None = None,
+    withheld_by_nodeid: dict[str, str] | None = None,
 ) -> None:
     """Persist and announce retry evidence without changing pytest's final verdict."""
     annotate = os.environ.get("GITHUB_ACTIONS") == "true"
@@ -242,6 +190,14 @@ def announce_retries(
         _ = terminalreporter.write_line(f"no failing test is retried this session: {withheld}")
         if annotate:
             _ = terminalreporter.write_line(f"::warning::FLAKE-RETRY-WITHHELD {withheld}")
+    if withheld_by_nodeid:
+        _ = terminalreporter.write_sep("=", "FLAKE-RETRY-WITHHELD")
+        for nodeid, reason in sorted(withheld_by_nodeid.items()):
+            _ = terminalreporter.write_line(f"{nodeid}: {reason}")
+            if annotate:
+                _ = terminalreporter.write_line(
+                    f"::warning::FLAKE-RETRY-WITHHELD {nodeid}: {reason}"
+                )
     results = list(_RESULTS.values())
     if not results:
         return
@@ -260,10 +216,13 @@ def _workeroutput(*, holder: object) -> dict[str, object] | None:
     return cast(dict[str, object], candidate) if isinstance(candidate, dict) else None
 
 
-def _record_withheld(*, withheld: str | None) -> None:
-    """Keep one withholding reason for the controller's terminal summary."""
-    if withheld is not None and withheld not in _WITHHELD:
-        _WITHHELD.append(withheld)
+def _failed_withholding_reasons() -> dict[str, str]:
+    """Return closure holds only for tests that actually failed in this session."""
+    return {
+        nodeid: reason
+        for nodeid, reason in _WITHHELD_BY_NODEID.items()
+        if nodeid in _FAILED_NODEIDS
+    }
 
 
 # PYTEST CALLS ITS HOOKS POSITIONALLY. pluggy reads a hook's argument names off
@@ -276,13 +235,17 @@ class _CollectionHook:
     def __call__(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
+        _FAILED_NODEIDS.clear()
+        _SESSION_WITHHELD.clear()
+        _WITHHELD_BY_NODEID.clear()
         withheld = mark_untouched_tests(
             root=Path(str(session.config.rootpath)),
             items=items,
             can_retry=config.pluginmanager.hasplugin("rerunfailures"),
+            withheld_by_nodeid=_WITHHELD_BY_NODEID,
         )
-        _WITHHELD[:] = []
-        _record_withheld(withheld=withheld)
+        if withheld is not None:
+            _SESSION_WITHHELD.append(withheld)
 
 
 class _ConfigureHook:
@@ -296,8 +259,11 @@ class _SessionFinishHook:
         """Send a worker's withholding reason to xdist's controller."""
         del exitstatus
         workeroutput = _workeroutput(holder=session.config)
-        if workeroutput is not None and _WITHHELD:
-            workeroutput[_WORKER_WITHHELD_KEY] = _WITHHELD[0]
+        if workeroutput is not None and (_SESSION_WITHHELD or _failed_withholding_reasons()):
+            workeroutput[_WORKER_WITHHELD_KEY] = {
+                "session": _SESSION_WITHHELD[0] if _SESSION_WITHHELD else None,
+                "nodes": _failed_withholding_reasons(),
+            }
 
 
 class _NodeDownHook:
@@ -306,13 +272,28 @@ class _NodeDownHook:
         """Collect the worker withholding reason before the controller summarizes."""
         del error
         workeroutput = _workeroutput(holder=node)
-        withheld = None if workeroutput is None else workeroutput.get(_WORKER_WITHHELD_KEY)
-        _record_withheld(withheld=withheld if isinstance(withheld, str) else None)
+        payload = None if workeroutput is None else workeroutput.get(_WORKER_WITHHELD_KEY)
+        if not isinstance(payload, dict):
+            return
+        payload_mapping = cast(dict[str, object], payload)
+        session_reason = payload_mapping.get("session")
+        if not _SESSION_WITHHELD and isinstance(session_reason, str):
+            _SESSION_WITHHELD.append(session_reason)
+        node_reason_mapping = cast(dict[str, object], payload_mapping.get("nodes", {}))
+        _WITHHELD_BY_NODEID.update(
+            {
+                nodeid: reason
+                for nodeid, reason in node_reason_mapping.items()
+                if isinstance(reason, str)
+            }
+        )
 
 
 class _ReportHook:
     def __call__(self, report: pytest.TestReport) -> None:
         record_report(report=report)
+        if report.when == "call" and report.outcome == "failed":
+            _FAILED_NODEIDS.add(report.nodeid)
 
 
 class _SummaryHook:
@@ -323,7 +304,8 @@ class _SummaryHook:
         announce_retries(
             terminalreporter=terminalreporter,
             root=Path(str(config.rootpath)),
-            withheld=_WITHHELD[0] if _WITHHELD else None,
+            withheld=_SESSION_WITHHELD[0] if _SESSION_WITHHELD else None,
+            withheld_by_nodeid=_failed_withholding_reasons(),
         )
 
 

@@ -9,6 +9,18 @@
 #      `LivespecCPUPressure` condition, which each node publishes about itself
 #      (publish-node-cpu-pressure.sh). A heartbeat older than
 #      FACTORY_PRESSURE_STALE_SECONDS, or no condition at all, is UNKNOWN.
+#      ONLY nodes the steered sandbox pods can schedule on are compared. A node
+#      lacking a label the pods' nodeSelector requires (FACTORY_PRESSURE_REQUIRED_LABELS,
+#      `key=value`, comma-separated; default ci-runner.io/factory-admit=true, which the
+#      factory-vs-CI share sets per cycle), whose kubernetes.io/arch is not
+#      FACTORY_PRESSURE_ARCH, or that carries a
+#      NoSchedule/NoExecute taint the pods do not tolerate
+#      (FACTORY_PRESSURE_TOLERATED_TAINTS, `key` or `key=value`, comma-separated),
+#      is OUT OF SCOPE: its reading is neither required nor compared, it is never
+#      tainted, and the DECISION line names it. Without this, the M4 homelab
+#      worker (arm64, NoSchedule class taint, no publisher) made every cycle
+#      `reading-unknown` from 2026-11-09T19:55:58Z and switched steering off for
+#      the whole fleet (orchestrator bd-ib-nmuyjc).
 #   2. Finds the lowest-pressure node and asks whether it fits one more sandbox:
 #        fit = allocatable cpu - requested cpu (Pending/Running pods)
 #              - gates_reserve
@@ -23,7 +35,9 @@
 #      livespec.io/factory-pressure=high:PreferNoSchedule on THAT node.
 #      Otherwise (no gap, no fit, any reading unknown, no quota read ever) it
 #      removes the taint from every factory node, so placement falls back to the
-#      sandbox pods' own hostname topology spread.
+#      sandbox pods' own hostname topology spread. An unknown IN-SCOPE reading
+#      also raises `ALARM factory-pressure-steer-disabled` at priority err and
+#      exits 3, so the disabled steer is never silent.
 #      A gates flavor that sets .spec.topologyName reserves at most
 #      FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU (default 5000m, committed in
 #      the .service unit); one without keeps the uncapped unused quota. Each
@@ -100,6 +114,11 @@ release = float(os.environ["FACTORY_PRESSURE_RELEASE_GAP"])
 need = int(os.environ["FACTORY_PRESSURE_SANDBOX_MILLICPU"])
 reserve_cap = int(os.environ["FACTORY_PRESSURE_GATES_RESERVE_CAP_MILLICPU"])
 stale = int(os.environ["FACTORY_PRESSURE_STALE_SECONDS"])
+arch = os.environ.get("FACTORY_PRESSURE_ARCH", "amd64")
+tolerated = [t.strip() for t in os.environ.get(
+    "FACTORY_PRESSURE_TOLERATED_TAINTS", "node-role/ci=factory").split(",") if t.strip()]
+required = [r.strip() for r in os.environ.get(
+    "FACTORY_PRESSURE_REQUIRED_LABELS", "ci-runner.io/factory-admit=true").split(",") if r.strip()]
 now = int(os.environ["FACTORY_PRESSURE_NOW"])
 quota_ok = os.environ["FACTORY_PRESSURE_QUOTA_OK"] == "1"
 TAINT_KEY = "livespec.io/factory-pressure"
@@ -127,7 +146,33 @@ def pod_cpu(pod):
     return max(main, init)
 
 
-nodes = load("nodes.json")["items"]
+all_nodes = load("nodes.json")["items"]
+
+
+def tolerates(taint):
+    key, value = taint.get("key", ""), taint.get("value", "")
+    return any(t == key or t == f"{key}={value}" for t in tolerated)
+
+
+def out_of_scope(n):
+    """Why the steered sandbox pods can never land on this node, or None."""
+    labels = n["metadata"].get("labels", {})
+    for r in required:
+        key, _, value = r.partition("=")
+        if labels.get(key) != value:
+            return f"label:{key}"
+    for t in (n.get("spec", {}).get("taints") or []):
+        if t.get("effect") in ("NoSchedule", "NoExecute") and not tolerates(t):
+            return f"untolerated-taint:{t.get('key', '')}"
+    node_arch = n["metadata"].get("labels", {}).get("kubernetes.io/arch")
+    if node_arch and node_arch != arch:
+        return f"arch:{node_arch}"
+    return None
+
+
+excluded = {n["metadata"]["name"]: out_of_scope(n) for n in all_nodes}
+excluded = {k: v for k, v in excluded.items() if v}
+nodes = [n for n in all_nodes if n["metadata"]["name"] not in excluded]
 pods = [p for p in load("pods.json")["items"]
         if p.get("status", {}).get("phase") in ("Pending", "Running")]
 
@@ -222,7 +267,7 @@ def fit(node):
     return alloc - requested - gates_reserve(node)
 
 
-tainted_now = {n["metadata"]["name"] for n in nodes
+tainted_now = {n["metadata"]["name"] for n in all_nodes
                if any(t.get("key") == TAINT_KEY for t in (n.get("spec", {}).get("taints") or []))}
 want = set()
 reason = ""
@@ -247,9 +292,15 @@ else:
         reason = f"steer-to:{low}:fit={fit_low}m"
 
 summary = " ".join(f"{k}={'unknown' if v is None else v}" for k, v in sorted(readings.items()))
+if excluded:
+    summary += " out-of-scope[" + " ".join(f"{k}:{v}" for k, v in sorted(excluded.items())) + "]"
 for line in reserve_log:
     print(line)
 print(f"DECISION {reason} readings[{summary}] quota={quota_source} taint={','.join(sorted(want)) or 'none'}")
+if reason.startswith("reading-unknown:"):
+    print("ALARM factory-pressure-steer-disabled nodes=" + reason.split(":", 1)[1]
+          + " (no fresh LivespecCPUPressure reading on an in-scope factory node;"
+          + " the taint is cleared fleet-wide until it returns)")
 for n in sorted(want - tainted_now):
     print(f"TAINT {n}")
 for n in sorted(tainted_now - want):
@@ -266,8 +317,8 @@ for p in pods:
     print(f"ANNOTATE {md['namespace']} {md['name']} {annotation}")
 PY
 
-grep -E '^(RESERVE|DECISION)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
-[ "$DRY_RUN" = 0 ] || { grep -vE '^(RESERVE|DECISION)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: dry-run: /"; exit 0; }
+grep -E '^(RESERVE|DECISION|ALARM)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
+[ "$DRY_RUN" = 0 ] || { grep -vE '^(RESERVE|DECISION|ALARM)' "$work/decision" | sed "s/^/${SCRIPT_NAME}: dry-run: /"; exit 0; }
 
 status=0
 while read -r verb a b rest; do
@@ -282,4 +333,13 @@ while read -r verb a b rest; do
       kubectl annotate pod -n "$a" "$b" "${ANNOTATION_KEY}=${rest}" >/dev/null || status=1 ;;
   esac
 done <"$work/decision"
+# RULE K (fail closed, loudly): a steer disabled by an unknown in-scope reading
+# ran silently for two days (2026-11-09..11). The taint is still cleared above
+# (the fail-safe), but the cycle now raises a NAMED alarm at journal priority
+# err (the `<3>` prefix journald parses) and fails the unit, so it shows in
+# `systemctl --failed` and the journal until the reading returns.
+if grep -q '^ALARM' "$work/decision"; then
+  sed -n "s/^ALARM /<3>${SCRIPT_NAME}: ALARM /p" "$work/decision" >&2
+  [ "$status" = 0 ] && status=3
+fi
 exit "$status"

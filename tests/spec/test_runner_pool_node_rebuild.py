@@ -127,11 +127,18 @@ def _executable_lines(*, source: Path) -> list[tuple[int, str]]:
 
 def test_no_stage_of_the_procedure_embeds_a_value_that_belongs_to_one_node() -> None:
     """Node identity lives in the profile; the stages — the playbook included — carry none of it."""
+    # A value an identity key shares with one of the SAME profile's vocabulary keys
+    # is that vocabulary, not a node-identifying literal: gamingpc-xubuntu's
+    # OPERATOR_ACCOUNT is `ubuntu`, which is also its OS_DISTRIBUTION, and the
+    # base-OS stage legitimately spells the distribution name.
     identity = {
         value: f"{name}:{key}"
         for name, profile in _profiles().items()
         for key, value in profile.items()
-        if key in _IDENTITY_KEYS and value not in _UNSET_VALUES
+        if key in _IDENTITY_KEYS
+        and value not in _UNSET_VALUES
+        and value
+        not in {shared for other, shared in profile.items() if other not in _IDENTITY_KEYS}
     }
     assert identity, f"the profiles must declare node identity under {_IDENTITY_KEYS}"
 

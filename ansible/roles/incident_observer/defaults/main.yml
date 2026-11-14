@@ -15,7 +15,7 @@
 # declares the packages its vendored runtime imports from outside itself
 # (v1.183.1 is the first that does), so the role installs the release and
 # nothing beside it.
-incident_observer_release: v1.193.0
+incident_observer_release: v1.205.0
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
@@ -56,7 +56,7 @@ incident_observer_required_jobs:
 # The orchestrator plugin release whose `incident_authority.py` is the canonical
 # `read-current` reader (docs/incident-observer-service.md). Cloned at this tag,
 # root-owned, next to the venv. Its tenant credential is NOT provisioned here.
-incident_observer_reader_release: v0.304.0
+incident_observer_reader_release: v0.315.1
 incident_observer_reader_repo: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
 incident_observer_reader_script_relative: .claude-plugin/scripts/bin/incident_authority.py
 
@@ -147,6 +147,142 @@ incident_observer_port: 8765
 # publishes, and whenever the funnel port publishes a path not in this list.
 incident_observer_funnel_https_port: 10000
 incident_observer_funnel_paths:
+  - /callback
+  - /ordinary-action
+
+# --- the production installation inventory --------------------------------------
+# One entry per repository a production observer installation serves
+# (SPECIFICATION/contracts.md, the per-repository installation paragraph,
+# livespec-dev-tooling-lqp2qx). livespec-dev-tooling is the FIRST entry and is
+# the installation every variable above describes: ansible/dev-host.yml
+# converges it, byte-identical to the role before this inventory existed, and
+# its entry repeats the values above exactly (a test holds them equal). Every
+# OTHER entry is converged one at a time by ansible/incident-observer-installation.yml
+# with `-e incident_observer_installation_name=<name>`, where <name> is the
+# repository without its owner. Its layout is derived from that name in
+# vars/installation.yml: controller-<name>.json, released-installation-<name>.json,
+# installation-<name>/{receipts,reference}, units livespec-incident-observer-<name>
+# and livespec-incident-reference-fetch-<name>, reader-<name>.env. Its public
+# routes are published on the one funnel port at /<name>/callback and
+# /<name>/ordinary-action, each proxied to the same route on its own listener.
+# The audit's controller reader (livespec_dev_tooling) holds its committed list
+# of served repositories equal to this inventory's `repository` values.
+#   repository        owner/name the installation serves (controller.json `repository`)
+#   repository_id     GitHub's numeric id of that repository (survives a transfer)
+#   owner_id          GitHub's numeric id of its owner (changes with a transfer); the
+#                     CI identity policy keys on both, never on the owner's login
+#   required_jobs     that repository's required master leaf jobs, `ci-green` last
+#   port              its loopback listener port, distinct from every other entry's
+#                     and from the scratch instance's
+#   tenant_project_id its work-item tenant's server-stable project id (the
+#                     reference clone's `.beads/metadata.json` pointer)
+#   reader_env_var    the control-node environment variable that carries THAT
+#                     tenant's credential; an apply refuses when it is not projected
+incident_observer_installations:
+  - repository: thewoolleyman/livespec-dev-tooling
+    repository_id: 1245319543
+    owner_id: 158
+    required_jobs:
+      - check-types
+      - check-lint
+      - check-format
+      - check-per-file-coverage
+      - check-coverage
+      - check-python-batch
+      - check-fleet-conformance
+      - check-red-green-replay
+      - check-check-coverage-incremental
+      - check-metadata-batch
+      - incident-ci
+      - ci-green
+    port: 8765
+    tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544
+    reader_env_var: BEADS_DOLT_PASSWORD
+  # The three repositories the maintainer's 2026-11-12 ruling adopts besides
+  # livespec-dev-tooling (epic livespec-dev-tooling-bqnzcm). Each required_jobs
+  # list is that repository's own `ci-green` needs on master, spelled as the
+  # workflow_job event reports them (a matrix job once per leg), with incident-ci
+  # before ci-green as livespec-dev-tooling's own list has it (incident-ci reaches
+  # the orchestrator and overseer with livespec-orchestrator-beads-fabro#5092 and
+  # livespec-overseer#2963; livespec's release-gate-pre-tag is skipped on master
+  # and reports once under that name). Each tenant id is that repository's
+  # `.beads/metadata.json` project_id. The reader credential: the credential
+  # wrapper projects ONE BEADS_DOLT_PASSWORD, the same from every checkout
+  # (measured 2026-11-12), and the TENANT it opens is chosen by the reference
+  # clone's committed `.beads/config.yaml` (dolt.server-user, dolt.database),
+  # rendered into the clone's pointer. The apply proves that credential opens the
+  # served tenant before it serves (tasks/converge.yml), so a later per-tenant
+  # password cannot silently cross.
+  - repository: thewoolleyman/livespec
+    repository_id: 1215509712
+    owner_id: 158
+    required_jobs:
+      - check-lint
+      - check-format
+      - check-types
+      - check-per-file-coverage
+      - check-coverage
+      - check-python-batch
+      - check-red-green-replay
+      - check-doctor-static
+      - check-copier-template-smoke
+      - check-metadata-batch
+      - release-gate-pre-tag
+      - incident-ci
+      - ci-green
+    port: 8770
+    tenant_project_id: a2a7f557-5359-45a6-9246-786a87ea7d18
+    reader_env_var: BEADS_DOLT_PASSWORD
+  - repository: thewoolleyman/livespec-orchestrator-beads-fabro
+    repository_id: 1262632932
+    owner_id: 158
+    required_jobs:
+      - check-lint (nonroot)
+      - check-format (nonroot)
+      - check-types (nonroot)
+      - check-per-file-coverage-shard (nonroot, 1/4)
+      - check-per-file-coverage-shard (nonroot, 2/4)
+      - check-per-file-coverage-shard (nonroot, 3/4)
+      - check-per-file-coverage-shard (nonroot, 4/4)
+      - check-per-file-coverage (nonroot)
+      - check-coverage (nonroot)
+      - check-python-batch (nonroot)
+      - check-doctor-static
+      - check-red-green-replay
+      - check-check-coverage-incremental
+      - check-metadata-batch
+      - e2e-cli
+      - acceptance
+      - check-factory-provenance
+      - check-fleet-materialized-workflow-toml-size
+      - incident-ci
+      - ci-green
+    port: 8771
+    tenant_project_id: 6a35844e-3c68-4ea6-bca0-703c27007af3
+    reader_env_var: BEADS_DOLT_PASSWORD
+  - repository: thewoolleyman/livespec-overseer
+    repository_id: 1307110964
+    owner_id: 158
+    required_jobs:
+      - check-lint
+      - check-format
+      - check-types
+      - check-per-file-coverage
+      - check-coverage
+      - check-python-batch
+      - check-red-green-replay
+      - check-check-coverage-incremental
+      - check-metadata-batch
+      - check-doctor-static
+      - incident-ci
+      - ci-green
+    port: 8772
+    tenant_project_id: 7d389f16-2acc-4fb8-9668-863646408a77
+    reader_env_var: BEADS_DOLT_PASSWORD
+# The routes every installation publishes: livespec-dev-tooling's at exactly
+# these paths (incident_observer_funnel_paths above), every other installation's
+# under /<name>.
+incident_observer_installation_routes:
   - /callback
   - /ordinary-action
 

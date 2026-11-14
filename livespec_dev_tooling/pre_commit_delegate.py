@@ -11,7 +11,16 @@ from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
 )
-from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
+from livespec_dev_tooling._gate_member_report import passed_members
+from livespec_dev_tooling._gate_remote_assembly import (
+    declared_gate_check_suite,
+    refuses_declaration,
+)
+from livespec_dev_tooling._pre_commit_delegate_evidence import (
+    host_holds_tree,
+    record_delegated_evidence,
+)
+from livespec_dev_tooling._pre_push_evidence import clear_for_worktree
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_pre_commit
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
@@ -21,7 +30,6 @@ from livespec_dev_tooling.gate_remote_verdict import (
     GATE_PASSED,
     run_gated_push,
 )
-from livespec_dev_tooling.green_token import write_pre_commit_evidence
 from livespec_dev_tooling.incident_gate_entry import IncidentEntrance
 
 __all__: list[str] = ["PreCommitVerdict", "main", "run_pre_commit"]
@@ -41,6 +49,8 @@ class PreCommitVerdict:
     exit_status: int | None = None
     output_checksum: str | None = None
     full_aggregate: bool = False
+    members_passed: tuple[str, ...] | None = None
+    host_unchanged: bool = False
 
 
 def run_pre_commit(*, repo_root: Path) -> PreCommitVerdict:
@@ -111,6 +121,14 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
     """Wrap the index tree in a commit object the gate client can publish."""
     from returns.result import Failure
 
+    parents = ("HEAD",)
+    marker = default_gate_command_runner(
+        argv=["git", "rev-parse", "--git-path", "MERGE_HEAD"], cwd=repo_root
+    )
+    if not isinstance(marker, Failure) and marker.unwrap().returncode == 0:
+        merge_head_path = repo_root / marker.unwrap().stdout.strip()
+        if merge_head_path.is_file():
+            parents += tuple(merge_head_path.read_text(encoding="utf-8").split())
     argv = [
         "git",
         "-c",
@@ -119,10 +137,10 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
         "user.email=pre-commit@livespec.invalid",
         "commit-tree",
         tree_hash,
-        "-p",
-        "HEAD",
-        "-mpre-commit aggregate of the staged tree",
     ]
+    for parent in parents:
+        argv.extend(["-p", parent])
+    argv.append("-mpre-commit aggregate of the staged tree")
     committed = default_gate_command_runner(argv=argv, cwd=repo_root)
     if isinstance(committed, Failure):
         return ""
@@ -139,6 +157,25 @@ def _pre_commit_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
     return (*declared.unwrap()[:-1], _GATED_TREE_CHECK)
 
 
+def _unbuilt_verdict(*, refused: bool, detail: str, tree_hash: str) -> PreCommitVerdict:
+    """The verdict for a gate request that could not be assembled.
+
+    An unusable resource declaration rejects the committed configuration, so the
+    commit is refused naming the key; any other assembly failure is a missing
+    cluster verdict, and the aggregate gates locally.
+    """
+    return PreCommitVerdict(
+        local=not refused,
+        reason=(
+            f"the commit is refused, not gated locally: unusable gate Job resources: {detail}"
+            if refused
+            else f"the gate Job could not be submitted: {detail}"
+        ),
+        tree_hash=tree_hash,
+        exit_status=1 if refused else None,
+    )
+
+
 def _run_remote(
     *, repo_root: Path, tree_hash: str, check_suite: tuple[str, ...]
 ) -> PreCommitVerdict:
@@ -153,9 +190,9 @@ def _run_remote(
         check_suite=check_suite,
     )
     if isinstance(built, Failure):
-        return PreCommitVerdict(
-            local=True,
-            reason=f"the gate Job could not be submitted: {built.failure().detail}",
+        return _unbuilt_verdict(
+            refused=refuses_declaration(failure=built.failure()),
+            detail=built.failure().detail,
             tree_hash=tree_hash,
         )
     source = _staged_commit(repo_root=repo_root, tree_hash=tree_hash)
@@ -183,6 +220,7 @@ def _run_remote(
             tree_hash=tree_hash,
         )
     if remote.state == GATE_PASSED:
+        host_unchanged = host_holds_tree(repo_root=repo_root, tree_hash=tree_hash)
         joined = host_authority_decision(
             verdict=remote,
             ran=run_host_authority_members(
@@ -199,6 +237,12 @@ def _run_remote(
             full_aggregate=_staged_tree_selects_full_aggregate(
                 repo_root=repo_root, tree_hash=tree_hash
             ),
+            members_passed=(
+                None
+                if joined.member_verdicts is None
+                else passed_members(report=joined.member_verdicts)
+            ),
+            host_unchanged=host_unchanged,
         )
     if remote.state == GATE_FAILED:
         return PreCommitVerdict(
@@ -235,6 +279,7 @@ def main() -> int:
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
+    clear_for_worktree(cwd=Path.cwd())
     verdict = run_pre_commit(repo_root=Path.cwd())
     log = structlog.get_logger("pre_commit_delegate")
     if verdict.local:
@@ -254,27 +299,7 @@ def main() -> int:
         output_checksum=verdict.output_checksum,
         reason=verdict.reason,
     )
-    if verdict.exit_status == 0 and not verdict.full_aggregate:
-        log.info(
-            "no pre-commit aggregate evidence recorded: the gate Job ran the doc-only or "
-            "Red-leg subset for the staged tree, so the pre-push gate still runs every "
-            "tree-pure member",
-            job_name=verdict.job_name,
-            tree_hash=verdict.tree_hash,
-        )
-    elif (
-        verdict.exit_status == 0
-        and verdict.tree_hash
-        and verdict.job_name
-        and verdict.output_checksum
-    ):
-        _ = write_pre_commit_evidence(
-            cwd=Path.cwd(),
-            log=log,
-            run_id=f"pre-commit-delegate:{verdict.job_name}:{verdict.tree_hash}",
-            output_checksum=verdict.output_checksum,
-            tree_hash=verdict.tree_hash,
-        )
+    record_delegated_evidence(cwd=Path.cwd(), log=log, verdict=verdict)
     return 1 if verdict.exit_status is None else verdict.exit_status
 
 

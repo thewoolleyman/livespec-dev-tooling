@@ -1,0 +1,3 @@
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            48G   33G   15G  70% /tmp
+tmpfs            48G  203M   47G   1% /dev/shm

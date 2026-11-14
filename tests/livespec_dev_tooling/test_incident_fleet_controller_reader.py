@@ -6,12 +6,16 @@ import importlib.metadata
 import json
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
+import yaml
 from returns.io import IOFailure, IOSuccess
 
+from livespec_dev_tooling import incident_fleet_controller_reader as controller_reader
 from livespec_dev_tooling.fleet._invocation_failure import BINARY_ABSENT, InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import CommandOutcome, CommandResult
 from livespec_dev_tooling.incident_fleet_controller_reader import (
@@ -19,6 +23,7 @@ from livespec_dev_tooling.incident_fleet_controller_reader import (
     read_controller_serving,
 )
 from livespec_dev_tooling.incident_fleet_host import HostProbe
+from livespec_dev_tooling.incident_fleet_serving import host_serving_reader
 
 COMMIT = "c" * 40
 BOOT = 1_000_000
@@ -115,7 +120,10 @@ def test_the_observed_repository_unit_and_command_are_the_deployed_ones() -> Non
 def test_another_repository_has_no_independent_controller_and_nothing_is_asked(
     host: _Host,
 ) -> None:
-    assert read_controller_serving(probe=host.probe(), repository="thewoolleyman/livespec") is None
+    assert (
+        read_controller_serving(probe=host.probe(), repository="thewoolleyman/livespec-runtime")
+        is None
+    )
     assert host.asked == []
 
 
@@ -248,3 +256,152 @@ def test_it_never_reads_the_auditors_own_package_or_a_release_name(
     monkeypatch.setattr(importlib.metadata, "version", own_version)
     assert host.read() == f"v1.2.3@{COMMIT}"
     assert own_version.call_count == 0
+
+
+_SECOND = "thewoolleyman/livespec"
+_SECOND_UNIT = "livespec-incident-observer-livespec.service"
+_SECOND_CONFIG = "/etc/livespec-incident/controller-livespec.json"
+
+
+def _serve_second(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        controller_reader, "SERVED_REPOSITORIES", (OBSERVED_REPOSITORY, _SECOND), raising=False
+    )
+
+
+def _second_argv(host: _Host, *, config: str) -> list[str]:
+    return [*host.argv()[:-1], config]
+
+
+def test_a_served_repository_is_read_from_its_own_installations_unit_and_configuration(
+    host: _Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _serve_second(monkeypatch)
+    host.write_process(started_at=time.time() + 60, argv=_second_argv(host, config=_SECOND_CONFIG))
+    assert read_controller_serving(probe=host.probe(), repository=_SECOND) == f"v1.2.3@{COMMIT}"
+    assert host.asked
+    assert all(_SECOND_UNIT in call for call in host.asked)
+
+
+def test_a_served_repository_never_counts_another_installations_process(
+    host: _Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _serve_second(monkeypatch)
+    assert read_controller_serving(probe=host.probe(), repository=_SECOND) is None
+
+
+def test_this_librarys_reading_is_unchanged_when_other_repositories_are_served(
+    host: _Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _serve_second(monkeypatch)
+    assert host.read() == f"v1.2.3@{COMMIT}"
+    assert all("livespec-incident-observer.service" in call for call in host.asked)
+
+
+def test_a_process_started_with_the_scratch_configuration_is_never_read(host: _Host) -> None:
+    scratch = "/etc/livespec-incident/controller-scratch-thhgeg.json"
+    host.write_process(started_at=time.time() + 60, argv=_second_argv(host, config=scratch))
+    assert host.read() is None
+
+
+@pytest.mark.parametrize(
+    "served",
+    [
+        (OBSERVED_REPOSITORY, "thewoolleyman/Not_Safe"),
+        (OBSERVED_REPOSITORY, "thewoolleyman/scratch"),
+        (OBSERVED_REPOSITORY, "thewoolleyman/livespec", "someone-else/livespec"),
+    ],
+)
+def test_a_served_name_that_is_unsafe_scratch_or_shared_is_unverified_with_nothing_asked(
+    host: _Host, monkeypatch: pytest.MonkeyPatch, served: tuple[str, ...]
+) -> None:
+    monkeypatch.setattr(controller_reader, "SERVED_REPOSITORIES", served, raising=False)
+    assert read_controller_serving(probe=host.probe(), repository=served[1]) is None
+    assert host.asked == []
+
+
+_ROLE_DEFAULTS = "ansible/roles/incident_observer/defaults/main.yml"
+_INVENTORY_KEY = "incident_observer_installations"
+
+
+def _yaml(*, path: Path) -> dict[str, object]:
+    loaded: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return cast("dict[str, object]", loaded) if isinstance(loaded, dict) else {}
+
+
+def _inventory_like(value: object) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    entries = cast("list[object]", value)
+    return all(
+        isinstance(entry, dict) and "repository" in cast("dict[str, object]", entry)
+        for entry in entries
+    )
+
+
+def test_the_served_repositories_are_the_observer_roles_committed_inventory() -> None:
+    root = Path(__file__).resolve().parents[2]
+    inventory = _yaml(path=root / _ROLE_DEFAULTS).get(_INVENTORY_KEY)
+    assert _inventory_like(inventory), f"{_ROLE_DEFAULTS} declares no {_INVENTORY_KEY} list"
+    entries = cast("list[dict[str, str]]", inventory)
+    declared = tuple(entry["repository"] for entry in entries)
+    assert getattr(controller_reader, "SERVED_REPOSITORIES", None) == declared
+
+
+def test_no_other_role_or_inventory_key_declares_a_repository_inventory() -> None:
+    root = Path(__file__).resolve().parents[2]
+    sources = [
+        root / _ROLE_DEFAULTS,
+        *sorted((root / "ansible/roles/incident_observer/vars").glob("*.yml")),
+        *sorted((root / "ansible/inventory/host_vars").glob("*.yml")),
+        *sorted((root / "ansible/inventory/group_vars").glob("*.yml")),
+    ]
+    stray = [
+        f"{path.relative_to(root)}: {key}"
+        for path in sources
+        for key, value in _yaml(path=path).items()
+        if _inventory_like(value) and not (path == root / _ROLE_DEFAULTS and key == _INVENTORY_KEY)
+    ]
+    assert stray == []
+
+
+def test_the_recovery_reading_for_a_served_repository_asks_that_repositorys_own_unit(
+    host: _Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    second = "thewoolleyman/livespec"
+    monkeypatch.setattr(
+        controller_reader,
+        "SERVED_REPOSITORIES",
+        (OBSERVED_REPOSITORY, second),
+        raising=False,
+    )
+    config = "/etc/livespec-incident/controller-livespec.json"
+    host.write_process(started_at=time.time() + 60, argv=[*host.argv()[:-1], config])
+    ruleset = {
+        "id": 7,
+        "enforcement": "active",
+        "target": "branch",
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "bypass_actors": [{"actor_id": 987, "actor_type": "Integration", "bypass_mode": "always"}],
+    }
+    base = host.probe()
+    units: list[str] = []
+
+    def run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
+        if args[0] == "systemctl":
+            units.append(args[2])
+            return base.run(args=args, cwd=cwd)
+        path = args[-1]
+        body: object = (
+            [ruleset]
+            if path.endswith("/rulesets")
+            else ruleset
+            if "/rulesets/" in path
+            else {"default_branch": "master"}
+        )
+        return IOSuccess(CommandResult(returncode=0, stdout=json.dumps(body), stderr=""))
+
+    read = host_serving_reader(probe=replace(base, run=run))
+    served = read(repository=second, capability="recovery-authorization")
+    assert served == f"v1.2.3@{COMMIT}+bypass-app-987"
+    assert units == ["livespec-incident-observer-livespec.service"]

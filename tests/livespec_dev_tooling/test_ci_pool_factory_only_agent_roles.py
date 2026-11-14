@@ -77,15 +77,6 @@ _HP_MUST_NOT_RUN = frozenset(
         # The tier role: hp declares no tier, and the role refuses the apply at
         # its first label resolution on a node with none.
         "storage_layout",
-        # The two FACTORY_NODE-gated roles (livespec-dev-tooling-due2h6,
-        # orchestrator work-item bd-ib-kogktm). Since 2026-11-03 hp declares
-        # FACTORY_NODE=false (orchestrator plan kubernetes-sandbox-backend, epic
-        # bd-ib-nmuyjc): its 16 cores go to CI runners, and new factory sandboxes
-        # land on poweredge and gmktec. The play stops reaching both roles there;
-        # what they already installed stays, inert, so reverting is the same
-        # profile edit back.
-        "factory_workspace_root",
-        "sandbox_image_warm",
     }
 )
 _HP_MUST_RUN = frozenset(
@@ -117,6 +108,19 @@ _HP_MUST_RUN = frozenset(
         # The pressure emitter is node-local telemetry, so this factory-only
         # host must emit it too.
         "pressure_telemetry",
+        # The two FACTORY_NODE-gated roles (livespec-dev-tooling-due2h6,
+        # orchestrator work-item bd-ib-kogktm). hp declared FACTORY_NODE=false
+        # from 2026-11-03 (orchestrator epic bd-ib-nmuyjc) and declares it true
+        # again for its 2026-11-11 factory trial (sandbox pods only, capped at 1
+        # by factory_pod_budget; epic livespec-dev-tooling-ko26ez), so the play
+        # reaches both roles there again. Reverting the trial is the same profile
+        # edit back, after which these two move back to _HP_MUST_NOT_RUN.
+        "factory_workspace_root",
+        "sandbox_image_warm",
+        # The ghcr pull mirror's node half, on EVERY ci_pool node
+        # (livespec-dev-tooling-e2gv6n): hp pulls CI and factory images from
+        # ghcr like every other node, and the role is ungated.
+        "registry_mirror_node",
     }
 )
 
@@ -126,8 +130,14 @@ _HP_MUST_RUN = frozenset(
 # the play orders them, which is `install-node.sh`'s retired STEP_IDS order.
 _POWEREDGE_ROLES = (
     "k3s_config",
+    # The ghcr pull mirror's node half, beside the k3s start configuration
+    # (livespec-dev-tooling-e2gv6n). Ungated: the server takes over its
+    # hand-installed 2026-09-08 registries.yaml through it.
+    "registry_mirror_node",
     "agent_node_password",
     "node_sysctl",
+    # Self-gated on the NIC driver (bnx2x); a no-op elsewhere.
+    "vxlan_tunnel_tso",
     "storage_layout",
     "host_thermal",
     "host_tools_ci",
@@ -136,6 +146,9 @@ _POWEREDGE_ROLES = (
     "factory_workspace_root",
     # The containerd warm of the factory pod image, beside the workspace root on
     # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
+    "sandbox_image_warm",
+    # And the CI job warm: the python-v* tags the fleet's ci.yml files pin, on
+    # every node that takes CI runner pods (livespec-dev-tooling-e2gv6n).
     "sandbox_image_warm",
     "node_status_credential",
     "node_extended_resource",
@@ -178,6 +191,9 @@ _POWEREDGE_ROLES = (
     # resolves the install, the consent gate and that credential.
     "factory_reach_check",
     "datastore_tmpfs",
+    # The pinned etcdctl and the daily defragmentation timer for the server's
+    # embedded etcd (livespec-dev-tooling-qy2nzf). Server-only.
+    "k3s_etcd_defrag",
     "storage_sweep",
     # The five node-local timers two hand-run installers used to carry
     # (livespec-dev-tooling-xcscdz). Server-only, and LAST: arming the prune's
@@ -204,8 +220,11 @@ _POWEREDGE_ROLES = (
 )
 _GMKTEC_ROLES = (
     "k3s_config",
+    "registry_mirror_node",
     "agent_rejoin",
     "node_sysctl",
+    # Self-gated on the NIC driver (bnx2x); a no-op elsewhere.
+    "vxlan_tunnel_tso",
     "storage_layout",
     "host_tools_ci",
     "fpart",
@@ -213,6 +232,9 @@ _GMKTEC_ROLES = (
     "factory_workspace_root",
     # The containerd warm of the factory pod image, beside the workspace root on
     # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
+    "sandbox_image_warm",
+    # And the CI job warm: the python-v* tags the fleet's ci.yml files pin, on
+    # every node that takes CI runner pods (livespec-dev-tooling-e2gv6n).
     "sandbox_image_warm",
     "node_status_credential",
     "node_extended_resource",

@@ -1,0 +1,17 @@
+4133 execs in 30 s (138/s), by nearest live non-shell-wrapper ancestor:
+    1280  31.0%  (all ancestors gone)
+     241   5.8%  bash <scratchpad>/turn-watch.sh
+     195   4.7%  bash <scratchpad>/direct-h5jr5x.sh
+     192   4.6%  /sbin/init
+     179   4.3%  <wt>/.venv/bin/python3 -m livespec_dev_tooling.gate_remote_delegate run
+     160   3.9%  bash <scratchpad>/seat-events.sh
+     156   3.8%  /usr/bin/python3 /tmp/livespec-orchestrator-beads-fabro-payload-0.315.1-91fvg8vf/payload/scripts/bin/dispatche
+     104   2.5%  claude --model claude-opus-5-5 --dangerously-skip-permissions -n factory-run-work-preservation
+      92   2.2%  claude
+      91   2.2%  claude --model claude-opus-5-5 --dangerously-skip-permissions -n legacy-coordinator-agent
+      89   2.2%  /usr/bin/python3 /tmp/livespec-orchestrator-beads-fabro-payload-0.315.1-jzudnfao/payload/scripts/bin/dispatche
+      88   2.1%  claude --model claude-opus-5-5 --dangerously-skip-permissions -n implement-test-performance
+      88   2.1%  bash /data/projects/livespec-orchestrator-beads-fabro/tmp/petri-canary/dispatch-dual-r681b.sh bd-ib-22j24v
+      84   2.0%  <wt>/.venv/bin/python3 -m livespec_dev_tooling.pre_commit_delegate run
+      83   2.0%  claude --model claude-opus-5-5 --dangerously-skip-permissions -n legacy-dispatcher-agent
+      80   1.9%  bash <scratchpad>/ending-screen.sh

@@ -93,9 +93,10 @@
   when: incident_observer_installed
 
 - name: Refuse a scratch apply onto a venv production does not already serve
-  # The scratch instance shares production's venv and reader clone and writes
-  # neither: installing a release there would change the package production's
-  # manifest hashes without restarting production. Converge production first.
+  # The scratch instance and every further installation share production's venv
+  # and reader clone and write neither: installing a release there would change
+  # the package production's manifest hashes without restarting production.
+  # Converge production first (livespec-dev-tooling-lqp2qx for installations).
   ansible.builtin.assert:
     that:
       - incident_observer_installed
@@ -108,7 +109,7 @@
       converge production (ansible/dev-host.yml --tags incident_observer) at that
       release before the scratch instance. Nothing has been written.
     success_msg: the shared venv serves {{ incident_observer_release }}
-  when: incident_observer_scratch | bool
+  when: (incident_observer_scratch | bool) or incident_observer_installation_name is defined
 
 - name: Install the interpreter's venv module and git
   ansible.builtin.apt:
@@ -121,6 +122,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Create the controller account
   ansible.builtin.user:
@@ -135,6 +137,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Name whether the controller account can be become yet
   # Under `--check` on a host this role has never reached the account was not
@@ -165,6 +168,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Create the protected configuration directory
   ansible.builtin.file:
@@ -178,6 +182,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Create the controller account's home
   ansible.builtin.file:
@@ -191,6 +196,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Create the scratch instance's own root beside production's state
   # The scratch state directory and reference clone are siblings beneath it,
@@ -203,6 +209,19 @@
     mode: "0750"
   become: true
   when: incident_observer_scratch | bool
+
+- name: Create a further installation's own root beside production's state
+  # Its state directory and reference clone are siblings beneath it, as
+  # production's are beneath the controller account's home
+  # (livespec-dev-tooling-lqp2qx).
+  ansible.builtin.file:
+    path: "{{ incident_observer_installation_root }}"
+    state: directory
+    owner: "{{ incident_observer_user }}"
+    group: "{{ incident_observer_group }}"
+    mode: "0750"
+  become: true
+  when: incident_observer_installation_name is defined
 
 - name: Create the private state directory and its recovery journal
   # 0700 is what the loader checks on the state directory itself; the two
@@ -233,6 +252,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Install the released distribution from its tag, never from a checkout
   # Only when the venv does not already serve this release: pip rebuilds a
@@ -255,6 +275,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
     and (not incident_observer_installed
     or (incident_observer_installed_version.rc | default(1)) != 0
     or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
@@ -276,15 +297,19 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
   notify: Restart the incident observer onto its installation
 
 - name: Clone the independent reference repository at the released tag
   # Owned by the controller account so its fetch timer can keep the objects
   # current; a full clone, because the inverse resolves landed commit chains.
+  # A further installation clones the repository it SERVES, on its default
+  # branch (vars/installation.yml); production clones livespec-dev-tooling at
+  # the released tag, as before.
   ansible.builtin.git:
-    repo: "{{ incident_observer_release_repo }}"
+    repo: "{{ incident_observer_reference_repo | default(incident_observer_release_repo) }}"
     dest: "{{ incident_observer_reference_dir }}"
-    version: "{{ incident_observer_release }}"
+    version: "{{ incident_observer_reference_version | default(incident_observer_release) }}"
     umask: "0022"
   become: true
   become_user: "{{ incident_observer_user }}"
@@ -341,6 +366,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
   notify: Restart the incident observer onto its installation
 
 - name: Write the canonical reader's credential as the unit's environment file
@@ -381,6 +407,7 @@
       not (incident_observer_scratch | bool)
       and incident_observer_scratch_name is not defined
       and incident_observer_target_branch | default('', true) | length == 0
+      and incident_observer_installation_name is not defined
     - lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length > 0
     - lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length > 0
 
@@ -419,6 +446,7 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
 
 - name: Name the installation and the account this apply has just created
   # Both facts were read before this run wrote anything, so on a FIRST apply
@@ -520,12 +548,44 @@
   become: true
   when: incident_observer_reference_ready
 
+- name: Prove the reader's credential opens the tenant this installation serves
+  # A further installation's reader reads ITS repository's tenant: the pointer
+  # above names the database and user its reference clone commits, and the
+  # credential is the one the wrapper projects (one BEADS_DOLT_PASSWORD today,
+  # the same from every checkout). A read through that pointer, as the
+  # controller account, with that credential, must succeed before the
+  # installation serves, so a later per-tenant password can never silently open
+  # another tenant or leave this one unreadable (livespec-dev-tooling-lqp2qx).
+  # Output is withheld: it is ledger content.
+  ansible.builtin.command:
+    argv: [/usr/local/bin/bd, list, --limit, "1", --json]
+    chdir: "{{ incident_observer_reference_dir }}"
+  environment:
+    HOME: "{{ incident_observer_home }}"
+    # `bd` reads its credential from BEADS_DOLT_PASSWORD, whichever control-node
+    # variable the inventory entry names as its source.
+    BEADS_DOLT_PASSWORD: "{{ lookup('ansible.builtin.env', incident_observer_reader_env_var) }}"
+  become: true
+  become_user: "{{ incident_observer_user }}"
+  register: incident_observer_tenant_proof
+  changed_when: false
+  failed_when: incident_observer_tenant_proof.rc != 0
+  check_mode: false
+  no_log: true
+  when:
+    - incident_observer_installation_name is defined
+    - incident_observer_reference_ready
+    - not ansible_check_mode
+
 - name: Read the released tag's commit from the reference clone
+  # A further installation's reference clone is of another repository, so the
+  # released livespec-dev-tooling tag is read from production's reference
+  # clone, read-only (vars/installation.yml `incident_observer_release_reference_dir`).
   ansible.builtin.command:
     argv:
       - git
       - -C
-      - "{{ incident_observer_reference_dir }}"
+      - "{{ incident_observer_release_reference_dir | default(incident_observer_reference_dir) }}"
       - rev-parse
       - "{{ incident_observer_release }}^{commit}"
   become: true
@@ -728,10 +788,42 @@
       incident_observer_funnel_handlers: >-
         {{ ((incident_observer_funnel_config.Web | default({}, true))[incident_observer_funnel_host]
             | default({}, true)).Handlers | default({}, true) }}
+      # Each declared public path, paired by position with the route it proxies
+      # to on this installation's own listener: the same path for
+      # livespec-dev-tooling, the unprefixed route for a further installation
+      # (vars/installation.yml), livespec-dev-tooling-lqp2qx.
       incident_observer_funnel_declared_routes: >-
         {{ incident_observer_funnel_paths
-           | map('regex_replace', '^(.*)$', '\1 proxy http://127.0.0.1:' ~ incident_observer_port ~ '\1')
+           | zip(incident_observer_funnel_targets | default(incident_observer_funnel_paths))
+           | map('join', ' proxy http://127.0.0.1:' ~ incident_observer_port)
            | list }}
+      # Every public path any declared installation publishes on this port:
+      # livespec-dev-tooling's exact paths and each further installation's
+      # /<name>/ routes. Converging one installation neither refuses on nor
+      # unpublishes another's (livespec-dev-tooling-lqp2qx).
+      incident_observer_funnel_union: >-
+        {{ (incident_observer_installations | default([])
+            | map(attribute='repository') | map('regex_replace', '^.*/', '')
+            | map('regex_replace', '^livespec-dev-tooling$', '')
+            | map('regex_replace', '^(?=.)', '/')
+            | product(incident_observer_installation_routes | default(incident_observer_funnel_paths))
+            | map('join') | list)
+           | union(incident_observer_funnel_paths) }}
+      # The route each of those paths must proxy to: the same route on the
+      # listener of the installation that declares it, at that entry's port. A
+      # declared path proxied anywhere else is refused below, whichever
+      # installation's converge reads it.
+      incident_observer_funnel_union_routes: >-
+        {{ (incident_observer_installations | default([])
+            | map(attribute='repository') | map('regex_replace', '^.*/', '')
+            | map('regex_replace', '^livespec-dev-tooling$', '')
+            | map('regex_replace', '^(?=.)', '/')
+            | zip(incident_observer_installations | default([]) | map(attribute='port') | map('string'))
+            | product(incident_observer_installation_routes | default(incident_observer_funnel_paths))
+            | map('flatten') | map('join', '|')
+            | map('regex_replace', '^([^|]*)[|]([^|]*)[|](.*)$', '\1\3 proxy http://127.0.0.1:\2\3')
+            | list)
+           | union(incident_observer_funnel_declared_routes) }}
       incident_observer_funnel_published_routes: >-
         {{ incident_observer_funnel_handlers | dict2items | map(attribute='key')
            | zip(incident_observer_funnel_handlers | dict2items | map(attribute='value.Proxy', default=''))
@@ -743,7 +835,12 @@
            if incident_observer_funnel_on
            else incident_observer_funnel_paths }}
       incident_observer_funnel_extra: >-
-        {{ incident_observer_funnel_handlers | list | difference(incident_observer_funnel_paths) }}
+        {{ incident_observer_funnel_handlers | list | difference(incident_observer_funnel_union) }}
+      incident_observer_funnel_mistargeted: >-
+        {{ incident_observer_funnel_published_routes
+           | difference(incident_observer_funnel_union_routes)
+           | map('regex_replace', ' proxy .*$', '')
+           | select('in', incident_observer_funnel_union) | list }}
   ansible.builtin.set_fact:
     incident_observer_funnel_granted: >-
       {{ 'funnel' in ((incident_observer_tailscale_status.stdout | from_json).Self.CapMap
@@ -793,7 +890,10 @@
       - --yes
       - "--https={{ incident_observer_funnel_https_port }}"
       - "--set-path={{ item }}"
-      - "http://127.0.0.1:{{ incident_observer_port }}{{ item }}"
+      - >-
+        http://127.0.0.1:{{ incident_observer_port }}{{
+        dict(incident_observer_funnel_paths
+             | zip(incident_observer_funnel_targets | default(incident_observer_funnel_paths)))[item] }}
   become: true
   register: incident_observer_funnel_publish
   loop: "{{ incident_observer_funnel_unpublished | default([]) }}"
@@ -848,18 +948,31 @@
   vars:
     incident_observer_funnel_read: "{{ incident_observer_funnel_after.stdout | default('', true) }}"
     <<: *incident_observer_funnel_reading
+  # A declared path proxied to any listener but the one of the installation
+  # that declares it is refused too (livespec-dev-tooling-lqp2qx): no public
+  # path may reach another installation's listener.
   ansible.builtin.assert:
     that:
       - incident_observer_funnel_extra | length == 0
+      - incident_observer_funnel_mistargeted | length == 0
     fail_msg: >-
-      funnel port {{ incident_observer_funnel_https_port }} publishes
+      the funnel port's public paths are not exactly the declared installations':
+      {% if incident_observer_funnel_extra | length > 0 %}funnel port
+      {{ incident_observer_funnel_https_port }} publishes
       {{ incident_observer_funnel_extra | join(', ') }}, which the role does not
-      declare (incident_observer_funnel_paths: {{ incident_observer_funnel_paths | join(', ') }}).
+      declare (every declared installation's paths: {{ incident_observer_funnel_union | join(', ') }}).
       Remove it with `tailscale funnel --https={{ incident_observer_funnel_https_port }}
-      --set-path=<path> off`, or declare it, and run this apply again.
+      --set-path=<path> off`, or declare it, and run this apply again. {% endif %}{%
+      if incident_observer_funnel_mistargeted | length > 0 %}funnel port
+      {{ incident_observer_funnel_https_port }} proxies
+      {{ incident_observer_funnel_mistargeted | join(', ') }} to a listener other
+      than the one of the installation that declares it (expected:
+      {{ incident_observer_funnel_union_routes | join('; ') }}). Converge that
+      installation again, or remove the path, and run this apply again.{% endif %}
     success_msg: >-
       funnel port {{ incident_observer_funnel_https_port }} publishes no path
-      beyond {{ incident_observer_funnel_paths | join(', ') }}
+      beyond {{ incident_observer_funnel_union | join(', ') }}, each to its own
+      installation's listener
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined

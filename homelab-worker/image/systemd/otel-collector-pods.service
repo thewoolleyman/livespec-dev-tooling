@@ -1,0 +1,19 @@
+# The keyless pod-span receiver deliberately has its own process. A cordoned
+# worker can have no cni0 bridge at all; then a bad bind may retry here without
+# taking the hostmetrics collector down with it.
+[Unit]
+Description=OpenTelemetry Collector (homelab worker pod spans)
+After=network-online.target kubelet.service
+ConditionPathExists=/etc/otel-collector/pods-config.yaml
+ConditionPathExists=/etc/otel-collector/node.env
+ConditionPathExists=/etc/otel-collector/.env
+
+[Service]
+EnvironmentFile=/etc/otel-collector/node.env
+EnvironmentFile=/etc/otel-collector/.env
+ExecStart=/usr/local/bin/otelcol-contrib --config=/etc/otel-collector/pods-config.yaml
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

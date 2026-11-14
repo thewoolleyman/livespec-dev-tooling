@@ -19,6 +19,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 # Integration tier: each test runs the real script under /bin/bash against stub executables
@@ -49,7 +51,7 @@ _SPAN_BYTES = b"#!/bin/sh\n# mocked cache-span emitter\n"
 _A = "alpha"
 _B = "beta"
 _NO_LAN = "delta"
-_OPTIONAL_HOST_KEYS = {"WORKER_LAN_ADDRESS"}
+_OPTIONAL_HOST_KEYS = {"WORKER_LAN_ADDRESS", "WORKER_LAN_INTERFACE"}
 _REQUIRED_HOST_KEYS = {
     "WORKER_HOST_OS",
     "WORKER_VM_CPUS",
@@ -64,7 +66,7 @@ printf 'limactl %s\\n' "$*" >> "$STUB_LOG"
 state="$STUB_STATE"
 case "${1:-}" in
   --version) cat "$state/lima-version"; exit 0 ;;
-  sudoers) exit "$(cat "$state/sudoers-exit" 2>/dev/null || echo 0)" ;;
+  sudoers) exit "$(if [ -f "$state/sudoers-exit" ]; then echo "$(<"$state/sudoers-exit")"; else echo 0; fi)" ;;
   list)
     shift
     fmt=""
@@ -116,7 +118,7 @@ case "${1:-}" in
         for a in "$@"; do src="$dst"; dst="$a"; done
         mv "$state/vm$src" "$state/vm$dst"
         exit 0 ;;
-      *" apparmor_parser "*) exit "$(cat "$state/apparmor-exit" 2>/dev/null || echo 0)" ;;
+      *" apparmor_parser "*) exit "$(if [ -f "$state/apparmor-exit" ]; then echo "$(<"$state/apparmor-exit")"; else echo 0; fi)" ;;
       *" mkdir "*) exit 0 ;;
       *" install -m 0600 /dev/stdin "*)
         for dest in "$@"; do :; done
@@ -126,7 +128,7 @@ case "${1:-}" in
     cat > "$state/shell-stdin"
     if grep -q '^# converge-lan-address' "$state/shell-stdin"; then
       mv "$state/shell-stdin" "$state/lan-stdin"
-      exit "$(cat "$state/lan-exit" 2>/dev/null || echo 0)"
+      exit "$(if [ -f "$state/lan-exit" ]; then echo "$(<"$state/lan-exit")"; else echo 0; fi)"
     fi
     if grep -q '^# converge-worker-container' "$state/shell-stdin"; then
       mv "$state/shell-stdin" "$state/converge-stdin"
@@ -135,7 +137,7 @@ case "${1:-}" in
     fi
     mv "$state/shell-stdin" "$state/probe-stdin"
     cat "$state/probe-output"
-    exit "$(cat "$state/probe-exit")" ;;
+    exit "$(<"$state/probe-exit")" ;;
 esac
 exit 0
 """
@@ -197,6 +199,7 @@ def host(tmp_path: Path) -> _Host:
         f"{hashlib.sha256(_HOOK_BYTES).hexdigest()}  index.js\n", encoding="utf-8"
     )
     (state / "workflow-profile").write_text("# mocked workflow profile\n", encoding="utf-8")
+    (state / "default-profile").write_text("# mocked default profile\n", encoding="utf-8")
     (state / "cache-span").write_bytes(_SPAN_BYTES)
     repo = state / "collector-repo" / _COLLECTOR_COMMIT
     repo.mkdir(parents=True)
@@ -248,18 +251,18 @@ def _run(
         "HOMELAB_WORKER_SOCKET_VMNET": str(host.bin_dir / "socket_vmnet"),
         "HOMELAB_WORKER_HOOK_BUNDLE_DIR": str(host.state / "hook-bundle"),
         "HOMELAB_WORKER_APPARMOR_PROFILE": str(host.state / "workflow-profile"),
+        "HOMELAB_WORKER_APPARMOR_DEFAULT_PROFILE": str(host.state / "default-profile"),
         "HOMELAB_WORKER_CACHE_SPAN": str(host.state / "cache-span"),
         "HOMELAB_WORKER_COLLECTOR_REF": str(host.state / "collector.ref"),
         "HOMELAB_WORKER_COLLECTOR_BASE_URL": f"file://{host.state / 'collector-repo'}",
         **(extra_env or {}),
     }
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *args],
         capture_output=True,
         text=True,
         env=env,
         check=False,
-        timeout=60,
     )
 
 
@@ -590,6 +593,52 @@ def test_a_missing_socket_vmnet_stops_the_task_before_the_vm_starts(host: _Host)
     assert [c for c in calls if c.startswith("brew ")] == []
 
 
+def _declare_lan_interface(*, host: _Host, name: str, iface: str, lima_iface: str | None) -> None:
+    env = host.state / "hosts" / f"{name}.env"
+    env.write_text(
+        env.read_text(encoding="utf-8") + f"WORKER_LAN_INTERFACE={iface}\n", encoding="utf-8"
+    )
+    if lima_iface is not None:
+        config = host.state / ".lima" / "_config"
+        config.mkdir(parents=True, exist_ok=True)
+        (config / "networks.yaml").write_text(
+            "networks:\n"
+            "  shared:\n"
+            "    mode: shared\n"
+            "    gateway: 192.168.105.1\n"
+            "  bridged:\n"
+            "    mode: bridged\n"
+            f"    interface: {lima_iface}\n"
+            "  host:\n"
+            "    mode: host\n",
+            encoding="utf-8",
+        )
+
+
+@pytest.mark.parametrize("lima_iface", ["en0", None])
+def test_a_bridged_network_on_another_interface_than_declared_stops_the_task_before_the_vm_starts(
+    host: _Host, lima_iface: str | None
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    _declare_lan_interface(host=host, name=_A, iface="en7", lima_iface=lima_iface)
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "WORKER_LAN_INTERFACE=en7" in result.stderr
+    assert f"uses interface '{lima_iface or '<none>'}'" in result.stderr
+    assert "limactl sudoers" in result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "start", "shell"}] == []
+
+
+def test_a_bridged_network_on_the_declared_interface_passes_the_prerequisite_check(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    _declare_lan_interface(host=host, name=_A, iface="en7", lima_iface="en7")
+    result = _run(host=host, args=[_A])
+    assert "WORKER_LAN_INTERFACE" not in result.stderr, result.stderr
+    assert [c for c in _calls(host=host) if c.split()[1] in {"create", "start"}] != []
+
+
 def test_a_failing_sudoers_check_stops_the_task_before_the_vm_starts(host: _Host) -> None:
     _install_lima(host=host, version="2.2.1")
     (host.state / "sudoers-exit").write_text("1\n", encoding="utf-8")
@@ -758,6 +807,35 @@ def test_the_workflow_apparmor_profile_is_loaded_in_the_vm_before_the_container_
         if c.endswith(" apparmor_parser -r " + "/etc/apparmor.d/workflow-profile")
     )
     assert loaded < _converge_index(shells)
+
+
+def test_the_default_apparmor_profile_is_loaded_in_the_vm_before_the_container_step(
+    host: _Host,
+) -> None:
+    """Pods naming no profile run under containerd's default; the VM holds the fleet's copy."""
+    _install_lima(host=host, version="2.2.1")
+    result = _run(host=host, args=[_A])
+    assert result.returncode == 0, result.stderr
+    installed = host.state / "vm" / "etc" / "apparmor.d" / "default-profile"
+    assert installed.read_text(encoding="utf-8") == "# mocked default profile\n"
+    shells = _shells(host=host)
+    loaded = next(
+        i
+        for i, c in enumerate(shells)
+        if c.endswith(" apparmor_parser -r " + "/etc/apparmor.d/default-profile")
+    )
+    assert loaded < _converge_index(shells)
+
+
+def test_a_missing_default_apparmor_profile_is_refused_before_any_host_change(
+    host: _Host,
+) -> None:
+    _install_lima(host=host, version="2.2.1")
+    (host.state / "default-profile").unlink()
+    result = _run(host=host, args=[_A])
+    assert result.returncode != 0
+    assert "the default AppArmor profile" in result.stderr
+    assert [c for c in _calls(host=host) if c.startswith(("limactl create", "limactl start"))] == []
 
 
 def test_a_profile_apparmor_refuses_never_converges_the_worker(host: _Host) -> None:

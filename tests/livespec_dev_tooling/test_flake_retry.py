@@ -6,10 +6,25 @@ import importlib
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from _pytest.terminal import TerminalReporter
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class _RecordingItem:
+    """A collected-item stand-in that records the markers the hook adds."""
+
+    def __init__(self, *, path: Path) -> None:
+        self.path = path
+        self.nodeid = f"{path.name}::test_it"
+        self.markers: list[object] = []
+
+    def add_marker(self, marker: object) -> None:
+        self.markers.append(marker)
 
 
 def test_the_plugin_declares_the_bounded_single_test_retry_policy() -> None:
@@ -21,6 +36,13 @@ def test_the_plugin_declares_the_bounded_single_test_retry_policy() -> None:
 
     assert plugin.RETRY_ATTEMPTS == 3
     assert plugin.RETRY_DELAY_SECONDS == 60
+
+
+def test_the_change_set_and_closure_decision_live_in_a_sibling_module() -> None:
+    """The hook surface delegates its analysis decision without changing its API."""
+    module_path = _REPO_ROOT / "livespec_dev_tooling" / "flake_retry_decisions.py"
+
+    assert module_path.is_file(), "the retry decision must live outside the pytest hook module"
 
 
 def test_pytest_loads_the_plugin_from_the_shared_entry_point() -> None:
@@ -53,6 +75,26 @@ def test_an_untouched_test_is_marked_for_a_bounded_single_test_retry(*, tmp_path
     )
 
     assert marker == {"reruns": 3, "reruns_delay": 60}
+
+
+@pytest.mark.integration
+def test_the_hook_passes_its_live_retry_policy_to_the_extracted_decision(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A consumer's hook-level retry override still reaches the extracted decision."""
+    test_path = tmp_path / "test_example.py"
+    _ = test_path.write_text("VALUE = 1\n", encoding="utf-8")
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(plugin, "RETRY_ATTEMPTS", 1)
+    monkeypatch.setattr(plugin, "RETRY_DELAY_SECONDS", 0)
+
+    marker = plugin.retry_marker_for(
+        repo_root=tmp_path,
+        test_path=test_path,
+        change_paths={Path("README.md")},
+    )
+
+    assert marker == {"reruns": 1, "reruns_delay": 0}
 
 
 @pytest.mark.integration
@@ -105,20 +147,56 @@ def test_a_touched_or_session_unsafe_test_has_no_retry_marker(
 
 
 def test_retried_results_are_written_and_rendered_without_hiding_final_failure(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Retried tests leave one machine-readable record and a terminal-summary row."""
+    """Every failed retry is recorded and named under the terminal summary row."""
     plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
-    record = plugin.RetryResult(nodeid="test_example.py::test_flaky", attempts=4, outcome="failed")
-
-    output = plugin.write_retry_records(repo_root=tmp_path, results=[record])
+    monkeypatch.setattr(plugin, "_RESULTS", {})
+    plugin.record_report(
+        report=SimpleNamespace(
+            when="call",
+            nodeid="test_example.py::test_flaky",
+            outcome="rerun",
+            longrepr="AssertionError: first failure\ntraceback",
+        )
+    )
+    plugin.record_report(
+        report=SimpleNamespace(
+            when="call",
+            nodeid="test_example.py::test_flaky",
+            outcome="failed",
+            longrepr="AssertionError: final failure",
+        )
+    )
+    written: list[str] = []
+    reporter = cast(
+        TerminalReporter,
+        SimpleNamespace(
+            write_line=written.append,
+            write_sep=lambda _separator, title: written.append(title),
+        ),
+    )
+    plugin.announce_retries(terminalreporter=reporter, root=tmp_path)
+    output = tmp_path / "tmp" / "flake-retries" / "retries.jsonl"
 
     assert output == tmp_path / "tmp" / "flake-retries" / "retries.jsonl"
     assert [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()] == [
-        {"attempts": 4, "nodeid": "test_example.py::test_flaky", "outcome": "failed"}
+        {
+            "attempts": 2,
+            "failures": [
+                {"cut": False, "text": "AssertionError: first failure\ntraceback"},
+                {"cut": False, "text": "AssertionError: final failure"},
+            ],
+            "nodeid": "test_example.py::test_flaky",
+            "outcome": "failed",
+        }
     ]
-    assert "FLAKE-RETRIED" in plugin.retry_summary(results=[record])
-    assert "failed" in plugin.retry_summary(results=[record])
+    assert written == [
+        "FLAKE-RETRIED",
+        "test_example.py::test_flaky: 2 attempts, failed",
+        "  AssertionError: first failure",
+        "  AssertionError: final failure",
+    ]
 
 
 @pytest.mark.integration
@@ -161,19 +239,41 @@ def test_an_outside_root_test_does_not_change_the_decision_for_an_inside_root_te
 
     monkeypatch.setattr(plugin, "change_paths", _change_paths)
 
-    class _Item:
-        def __init__(self, *, path: Path) -> None:
-            self.path = path
-            self.markers: list[object] = []
-
-        def add_marker(self, marker: object) -> None:
-            self.markers.append(marker)
-
-    inside_item = _Item(path=inside)
-    outside_item = _Item(path=outside)
+    inside_item = _RecordingItem(path=inside)
+    outside_item = _RecordingItem(path=outside)
 
     withheld = plugin.mark_untouched_tests(root=repo, items=[outside_item, inside_item])
 
     assert withheld is None
     assert outside_item.markers == []
     assert len(inside_item.markers) == 1
+
+
+@pytest.mark.integration
+def test_a_session_unsafe_change_set_marks_no_test_and_names_the_withhold(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A whole-session withhold returns its reason before any test is marked."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    test_path = repo / "test_example.py"
+    _ = test_path.write_text("def test_it():\n    assert True\n", encoding="utf-8")
+
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+
+    def _change_paths(*, repo_root: Path) -> set[Path]:
+        assert repo_root == repo
+        return {Path("justfile")}
+
+    monkeypatch.setattr(plugin, "change_paths", _change_paths)
+
+    item = _RecordingItem(path=test_path)
+    withheld_by_nodeid: dict[str, str] = {}
+
+    withheld = plugin.mark_untouched_tests(
+        root=repo, items=[item], withheld_by_nodeid=withheld_by_nodeid
+    )
+
+    assert withheld == "a justfile change"
+    assert item.markers == []
+    assert withheld_by_nodeid == {}

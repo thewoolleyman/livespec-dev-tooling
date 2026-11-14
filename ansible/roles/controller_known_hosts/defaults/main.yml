@@ -1,0 +1,14 @@
+---
+# controller_known_hosts — the control node's trust in every ci_pool host's
+# TAILNET ssh host key, from committed bytes rather than a hand edit.
+#
+# USER-SCOPE: the file is the connecting account's own known_hosts, which is
+# the trust store every `just ansible-*` run and every `ssh <pool-host>` from
+# this host reads. Nothing here uses `become`.
+controller_known_hosts_path: "{{ ansible_facts['user_dir'] }}/.ssh/known_hosts"
+
+# The group whose members are pinned. Each member that declares
+# `controller_known_hosts_ed25519` in its host_vars gets one entry under its
+# inventory name; a member without one is reported, never guessed at, so a
+# new host cannot be trusted on first use by this role.
+controller_known_hosts_group: ci_pool

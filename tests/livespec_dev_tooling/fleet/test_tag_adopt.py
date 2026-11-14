@@ -81,6 +81,7 @@ _MARKERS = {
     "probe": HOLD_PROBE_MODULE,
     "ls-remote": "ls-remote",
     "marketplace-update": "marketplace update",
+    "marketplace-tip": "rev-parse",
     "update": "plugin update",
 }
 
@@ -142,6 +143,7 @@ class _Host:
             "probe": _ok(),
             "ls-remote": _ok(stdout=_LS_REMOTE),
             "marketplace-update": _ok(),
+            "marketplace-tip": _ok(stdout=f"{_REF_COMMIT}\n"),
             "update": _ok(),
         }
         self.env_answers: dict[str, CommandOutcome] = {}
@@ -395,6 +397,78 @@ def test_a_full_commit_id_routes_to_the_full_commit_adopt_step(*, tmp_path: Path
 
     assert host.kinds() == ["marketplace-update"]
     assert "known_marketplaces.json" in outcome.failure
+
+
+def test_a_short_marketplace_commit_prefix_names_the_full_commit_to_rerun_with(
+    *, tmp_path: Path
+) -> None:
+    host = _Host(tmp_path=tmp_path)
+    before = host.registry.read_bytes()
+    build = _REF_COMMIT[:12]
+
+    outcome = adopt_orchestrator_build.adopt_named_build(
+        clone=host.clone,
+        build=build,
+        run=host.run,
+        read_registry=lambda: host.registry.read_text(encoding="utf-8"),
+        read_known_marketplaces=lambda: host.known.read_text(encoding="utf-8"),
+        tag_host=host.tag_host(),
+    )
+
+    assert outcome.failure == (
+        f"commit {build} must be the full 40-character commit id; "
+        f"re-run with {_REF_COMMIT}; nothing was moved"
+    )
+    assert host.registry.read_bytes() == before
+    assert host.kinds() == ["marketplace-update", "marketplace-tip"]
+
+
+def test_a_short_commit_that_does_not_prefix_the_marketplace_tip_uses_tag_refusal(
+    *, tmp_path: Path
+) -> None:
+    host = _Host(tmp_path=tmp_path)
+    before = host.registry.read_bytes()
+    build = _OTHER_COMMIT[:12]
+
+    outcome = adopt_orchestrator_build.adopt_named_build(
+        clone=host.clone,
+        build=build,
+        run=host.run,
+        read_registry=lambda: host.registry.read_text(encoding="utf-8"),
+        read_known_marketplaces=lambda: host.known.read_text(encoding="utf-8"),
+        tag_host=host.tag_host(),
+    )
+
+    assert f"{build!r} is neither a full commit id" in outcome.failure
+    assert host.registry.read_bytes() == before
+    assert host.kinds() == ["marketplace-update", "marketplace-tip", "release"]
+
+
+def test_a_short_published_tag_uses_the_tag_adopt_path(*, tmp_path: Path) -> None:
+    host = _Host(tmp_path=tmp_path)
+    before = host.registry.read_bytes()
+    build = _OTHER_COMMIT[:12]
+    host.answers["release"] = _ok(stdout=json.dumps({"tag_name": build, "draft": False}))
+
+    outcome = adopt_orchestrator_build.adopt_named_build(
+        clone=host.clone,
+        build=build,
+        run=host.run,
+        read_registry=lambda: host.registry.read_text(encoding="utf-8"),
+        read_known_marketplaces=lambda: host.known.read_text(encoding="utf-8"),
+        tag_host=host.tag_host(),
+    )
+
+    assert "marketplace remote could not be read" in outcome.failure
+    assert host.registry.read_bytes() == before
+    assert host.kinds() == [
+        "marketplace-update",
+        "marketplace-tip",
+        "release",
+        "release",
+        "probe",
+        "ls-remote",
+    ]
 
 
 def test_the_full_commit_form_given_a_tag_runs_nothing_and_names_the_argument(

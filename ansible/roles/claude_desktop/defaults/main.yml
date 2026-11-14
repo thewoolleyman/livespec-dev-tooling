@@ -3,6 +3,9 @@
 # a downloaded binary so the app tracks upstream through the host's normal
 # unattended-upgrade path rather than through a re-run of this role.
 claude_desktop_key_url: https://downloads.claude.ai/claude-desktop/key.asc
+# sha256 of the bytes served at the URL above, verified against the vendor
+# 2026-11-10. See the fetch task for why the key is pinned.
+claude_desktop_key_sha256: bd70a5e4a268002704024ceba7f8446024114e94f3f0bdd11c23a9e592be81c6
 claude_desktop_keyring: /usr/share/keyrings/claude-desktop-archive-keyring.asc
 claude_desktop_repo: >-
   deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc]

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Check reconcile-runs success-marker ages every {{ reconcile_runs_staleness_interval }}
+
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec={{ reconcile_runs_staleness_interval }}
+Persistent=true
+Unit={{ reconcile_runs_staleness_unit }}.service
+
+[Install]
+WantedBy=timers.target

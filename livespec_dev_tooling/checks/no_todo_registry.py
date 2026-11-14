@@ -141,7 +141,7 @@ from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
 
 __all__: list[str] = []
 
-CHECK_PURITY = "tree-pure"
+CHECK_PURITY = "world-reading"
 
 
 _COVERAGE_PATH = Path("tests") / "heading-coverage.json"

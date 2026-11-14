@@ -64,6 +64,7 @@ before the axis existed.
 | `binary_sha256` | empty — the role leaves whatever is at `binary_path` alone | the sha256 `binary_source` must hash to. Declared together with `binary_source` or not at all; the role refuses the pair half-spelled, and refuses a source that does not hash to this digest **before** it reads the factory host. |
 | `home_env` | `fabro_server_host_home` | the unit's `Environment=HOME`. Independent of `home_dir`: `home_dir` is the state root the server is POINTED at with `--storage-dir` and `--config`, while this is the `HOME` its process and its CLI resolve `~/.fabro` against. |
 | `environments` | `[]` — the role leaves whatever the instance's server holds alone | the instance's **sandbox environment catalog**: a list of entries, each spelling an `id`, a docker `image`, a `cpu` count and a `memory` size. The one axis that is not a file this role renders — a sandbox environment is server-managed state behind the instance's `/api/v1/environments` API. See "The sandbox environment catalog" below. |
+| `retired_environments` | `[]` — the role deletes no catalog entries | a list of sandbox environment ids this mapping has deliberately retired. For each id the role reads every non-terminal run on that same instance, refuses while one still selects it, then sends `DELETE /api/v1/environments/{id}`. See "Retiring an old catalog environment" below. |
 | `vault_secrets` | `[]` — the role leaves the instance's vault alone | vault entries the instance must hold: a list, each spelling a `name`, a `type` (`token` or `file`), an optional `description`, and either `from_controller_env` (the control-node variable a real credential is read from) or `value` (a committed non-secret placeholder). Each name the vault lacks is created once the server answers; a name it holds is never read, compared or overwritten. See "State the role provisions on a host that has none" below. |
 | `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
 | `retained_read_only` | `false` — a parked instance's files keep the modes they have | `true` keeps a **parked** instance only as a rollback: after the stop, the role clears every write bit (`a-w`, recursive, symlinks not followed) on the instance's whole `home_dir` and on its `binary_path`, never replaces its binary, and skips its own directory task for any path inside a retained `home_dir` — whichever instance it is converging, because a sibling that names no `binary_path` shares that state root's `bin/`. Refused unless it is a boolean and `service_state` is `stopped`. Rollback: set it back to `false` and `service_state` to `running`; the directory task then restores the owner's write bit on the state root, `storage/` and the binary directory, and anything deeper needs a converge-able step added here first, never a hand `chmod`. |
@@ -278,6 +279,59 @@ Both writes carry the server's own concurrency check where it has one: the repla
 sends `If-Match` with the revision that same read returned, so a change made
 between the read and the write is refused rather than overwritten. The header is
 required by the API, so there is no form of that request that skips it.
+
+### Retiring an old catalog environment
+
+`retired_environments` is the explicit destructive counterpart to
+`environments`. Removing an id from the active list alone is not a deletion: the
+role leaves undeclared catalog entries alone unless this list names them. For each
+listed id, it first reads every non-terminal run from that instance's own
+`/api/v1/runs` API and then reads each run's persisted settings to learn its
+selected environment. The settings answer is the run's `WorkflowSettings`, whose
+`project`, `workflow` and `run` namespaces sit at the top level, so the selected
+environment's id is `run.environment.id`. If any run selects a listed id, the converge fails naming
+both the run and the id, and sends no DELETE at all. This all-runs read happens
+before any listed id is deleted, so a later id cannot be removed while an earlier
+one is found unsafe.
+
+The read pages through EVERY run, 100 at a time, and sends no list of status
+filters. It decides which runs are non-terminal itself: every status other than
+`succeeded`, `failed` and `archived` counts, including a status this role has
+never seen. That covers `pending`, `runnable`, `initializing`, `starting`,
+`running`, `paused`, `blocked` and `removing`. A `paused` or `starting` run
+counts, because it still holds its selected environment. The filter is
+client-side because each Fabro build refuses, with HTTP 400, a status filter its
+own enum does not name. The gmktec server refused `starting` and `paused` on
+2026-11-13, which made every retirement converge fail before it had read a
+single run (livespec-dev-tooling-lmuhvi).
+
+An unfiltered Fabro listing hides `removing` runs, and a `removing` run still
+holds its environment. So a second paged pass asks for `removing` by name and
+its runs are merged in by id; a build that refuses that one filter fails the
+converge rather than retiring blind. Every page must be a JSON object carrying a
+`data` list and a boolean `meta.has_more`. A page that is not, an HTTP error, or
+a listing longer than the page bound (200 pages per pass) fails the converge
+rather than retiring on a partial read. `FABRO_SERVER_RUNS_MAX_PAGES` overrides
+that bound, but it is a test hook only: no host var sets it.
+
+The terminal set is exactly `succeeded`, `failed` and `archived`. A Fabro build
+that reports another finished kind, such as `dead`, has those runs held as
+non-terminal. That errs toward refusing a retirement, never toward deleting an
+environment a run still holds. So a retirement blocked by a run that has
+finished is this rule at work: read the run's status, then remove the run.
+
+When no non-terminal run selects a retired id, the role authenticates with the
+same host-side `FABRO_DEV_TOKEN` request shape as the ordinary catalog converge
+and first reads `GET /api/v1/environments/{id}`. A `404` there means a prior
+converge already removed the id: it reports no change and sends no DELETE. A
+`200` carries the entry's current `revision`, which the role sends as the
+`If-Match` header of `DELETE /api/v1/environments/{id}`, because Fabro refuses a
+DELETE without it as `428 Precondition Required`. A `204` reports a change. A
+`409` means the entry changed between the read and the delete, and fails the
+converge rather than reporting the id retired; so does any other answer. An instance
+mapping may never name the same id in both `environments` and
+`retired_environments`; the role refuses that contradictory declaration before
+it writes host or catalog state.
 
 ### The body is DERIVED from the catalog, not spelled in the role
 
@@ -869,7 +923,9 @@ instance takes it in a window at 0 live runs, under legacy-coordinator-agent's r
 `0.408.0-nightly.0`: the carrier rebased onto the exact upstream tag `v0.408.0-nightly.0` with Petri
 `ac0b9fb3` (livespec-orchestrator-beads-fabro `bd-ib-qx45e6`, plan fabro-currency). That base refuses
 `[run.prepare]`, so the fleet instance and mi-homelab stay on `bbe6938` until the workflow migrated to
-authored setup nodes (`bd-ib-dpsiwz`) is live. The rollback target is named in `host_vars` beside the pin and never
+authored setup nodes (`bd-ib-dpsiwz`) is live. On 2026-11-11 the candidate's engine goes back to `bbe6938` for one parity
+sample of sandbox-driver-kubernetes `v0.8.3` (livespec-orchestrator-beads-fabro `bd-ib-u4fp5z`), so that sample isolates the
+driver change; after that sample passed, it returned to `85071c8` for `bd-ib-dpsiwz`'s fix-forward canary. On 2026-11-12 the candidate moves to `d22808f` (`0.408.0-nightly.0`), `85071c8` plus one sqlx `[patch.crates-io]` that lifts `libsqlite3-sys` 0.37.0 → 0.39.1 for RUSTSEC-2026-0459 (`bd-ib-tcdmkr`), first with one canary and environment parity; the fleet instance, mi-homelab and the homelab worker follow together, and on 2026-11-12 all three are pinned to `d22808f` too (mi-homelab and the homelab worker at 0 runs first, the fleet instance in its next cancel-for-restart window). The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
@@ -891,23 +947,26 @@ eight runs from the petri capacity sampler: every run's sandbox anon peaked at
 number together with the quota, and read any sandbox OOM on this host as an
 INFRASTRUCTURE ending (ruling R235).
 
-That instance's catalog declares `livespec-ci`, `livespec-ci-rust` and
-`livespec-ci-k8s`, each 8GB. The ones on the `kubernetes` providers are 6 CPU
-since 2026-11-05 (see the `sandbox_providers` paragraph below), and
-`livespec-ci-rust` is 4 CPU. `livespec-ci` and `livespec-ci-k8s` run on the
-`kubernetes` provider and so declare no image; `livespec-ci-rust` keeps a docker
-image — the `python-rust-agent` layer, following the pin of the one repository
-that builds Rust rather than the orchestrator's. A dispatch reaches an
-environment only through a factory entry that names it, so a cutover between two
-of them is pointing that entry, and the rollback is pointing it back.
+That instance's active catalog declares `factory-python` and
+`factory-python-rust`. The earlier `livespec-ci`, `livespec-ci-rust` and
+`livespec-ci-k8s` ids are retired: `retired_environments` makes the role remove
+each only after its instance has no non-terminal run that still selects it. A
+dispatch reaches an environment only through a factory entry that names it, so a
+cutover points that entry at an active toolchain-specific id; the retired list
+keeps the old ids from silently remaining available after that cutover.
 
 `sandbox_providers` on that instance declares the `kubernetes` kind at the
 plugin digest the `sandbox_driver_kubernetes` role pins for that kind's path.
-Since 2026-11-05 that path is the versioned
-`/usr/local/bin/sandbox-driver-kubernetes-v0.8.2`, and the digest is the one
-`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.2. The
-candidate's `kubernetes` kind pins the versioned v0.8.3 for that release's
-one-pod canary (orchestrator bd-ib-u4fp5z), and `fabro-server-mi-homelab` keeps
+Since 2026-11-11 that path is the versioned
+`/usr/local/bin/sandbox-driver-kubernetes-v0.8.3`, and the digest is the one
+`sandbox_driver_kubernetes_versioned_releases` declares for v0.8.3, on both the
+`kubernetes` and `kubernetes-rust` kinds (orchestrator bd-ib-u4fp5z; v0.8.2 from
+2026-11-05 is the REVERT target). Since 2026-11-13 both kinds pin the versioned
+`/usr/local/bin/sandbox-driver-kubernetes-v0.8.4` at the digest that list declares
+for v0.8.4 (orchestrator bd-ib-ko5kxf: a quota 403 is retryable capacity), with
+v0.8.3 as the REVERT target, after the candidate's one-pod canary passed its
+environment-parity read. The candidate's `kubernetes` kind pinned each of v0.8.3
+(2026-11-11) and v0.8.4 (2026-11-12) first, for that release's one-pod canary. `fabro-server-mi-homelab` keeps
 the shared `/usr/local/bin/sandbox-driver-kubernetes` at the role's default
 release. Either
 way the pin and the binary the role stages at that path move together, so the

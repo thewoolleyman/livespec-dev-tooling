@@ -481,7 +481,7 @@ def _split_job_blocks(*, body: list[str], job_indent: int) -> list[tuple[str, li
     following top-level workflow key). Lines before the first header (e.g. a
     leading comment) belong to no block and are dropped.
     """
-    header_re = re.compile(rf"^ {{{job_indent}}}([A-Za-z0-9_-]+):\s*$")
+    header_re = re.compile(rf"^ {{{job_indent}}}([A-Za-z0-9_-]+):\s*(?:#.*)?$")
     blocks: list[tuple[str, list[str]]] = []
     current: tuple[str, list[str]] | None = None
     for raw in body:
@@ -497,6 +497,13 @@ def _split_job_blocks(*, body: list[str], job_indent: int) -> list[tuple[str, li
         if current is not None:
             current[1].append(raw)
     return blocks
+
+
+def job_blocks(*, source: str) -> list[tuple[str, list[str]]]:
+    """The ci.yml's top-level (job name, body lines) blocks, as `parse_ci_jobs` splits them."""
+    body = _find_jobs_body(lines=source.splitlines()) or []
+    job_indent = _detect_job_indent(lines=body)
+    return [] if job_indent is None else _split_job_blocks(body=body, job_indent=job_indent)
 
 
 def parse_ci_jobs(*, source: str) -> list[CiJob]:

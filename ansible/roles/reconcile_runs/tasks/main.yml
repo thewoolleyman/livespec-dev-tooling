@@ -1,0 +1,401 @@
+---
+# reconcile_runs -- the livespec `reconcile-runs` host timer: one sweep of every tenant.
+#
+# Replaces the hand-run installer livespec-orchestrator-beads-fabro
+# orchestrator-image/services/reconcile-runs/install.sh (that repository owns
+# its tree; the installer is retired there as a follow-up). The unit TEXT stays
+# that repository's: this role reads it from the host's own checkout,
+# substitutes its @PLACEHOLDER@ tokens and the credential wrapper per tenant, and
+# adds host policy (interval, bound, sweep order, dead-man marker) as drop-ins.
+#
+# One timer per host starts one sweep; the sweep runs each enabled tenant's
+# pass in list order, one at a time. Every declared tenant's service is always
+# installed. The timers start only when reconcile_runs_enabled is true;
+# otherwise they are disabled and inactive, and the drift report shows a timer
+# enabled by hand. A tenant with `enabled: false` is installed but left out of
+# the sweep.
+
+- name: Refuse an incomplete reconcile-runs configuration
+  ansible.builtin.assert:
+    that:
+      - reconcile_runs_enabled is boolean
+      - reconcile_runs_tenants is sequence
+      - reconcile_runs_tenants is not string
+      - reconcile_runs_user | string | length > 0
+      - reconcile_runs_group | string | length > 0
+      - reconcile_runs_timeout_seconds | int > 0
+      - reconcile_runs_stale_after_seconds | int > reconcile_runs_timeout_seconds | int
+      - reconcile_runs_manage_systemd is boolean
+    fail_msg: >-
+      reconcile_runs_enabled must be a boolean, reconcile_runs_tenants a list,
+      the account declared, and the staleness bound longer than one pass's
+      timeout.
+    success_msg: the reconcile-runs configuration is complete
+
+- name: Refuse a malformed tenant entry
+  ansible.builtin.assert:
+    that:
+      - item.name is defined and item.name is match('^[a-z0-9][a-z0-9-]*$')
+      - item.repo is defined and item.repo is match('^/')
+      - item.credential_wrapper is defined
+      - item.credential_wrapper is sequence and item.credential_wrapper is not string
+      - item.credential_wrapper | length >= 2
+      - item.credential_wrapper | last == '--'
+      - item.credential_wrapper | select('search', '\s') | list | length == 0
+      - item.enabled | default(true) is boolean
+    fail_msg: >-
+      reconcile_runs_tenants entry {{ item.name | default('(unnamed)') }} needs a
+      lower-case name, an absolute repo, and its committed credential_wrapper
+      argv ending in "--" with no whitespace inside an argument.
+    success_msg: tenant {{ item.name }} is well formed
+  loop: "{{ reconcile_runs_tenants }}"
+  loop_control:
+    label: "{{ item.name | default('(unnamed)') }}"
+
+- name: Start from no resolved tenants
+  ansible.builtin.set_fact:
+    reconcile_runs_resolved: []
+
+- name: Resolve each tenant's units, wrapper and success marker
+  ansible.builtin.set_fact:
+    reconcile_runs_resolved: >-
+      {{ reconcile_runs_resolved + [{
+           'name': item.name,
+           'repo': item.repo,
+           'unit': item.unit | default('reconcile-runs-' ~ item.name),
+           'plugin_root': item.plugin_root | default(reconcile_runs_plugin_root),
+           'wrapper_head': wrapper_head,
+           'wrapper': ([wrapper_head] + item.credential_wrapper[1:]) | join(' '),
+           'effective_enabled': reconcile_runs_enabled and (item.enabled | default(true)),
+           'marker': reconcile_runs_state_dir ~ '/' ~ item.name ~ '.last-success'
+         }] }}
+  vars:
+    raw_head: "{{ item.credential_wrapper[0] }}"
+    wrapper_head: >-
+      {{ raw_head if raw_head is match('^/')
+         else item.repo ~ '/' ~ (raw_head | regex_replace('^\./', '')) }}
+  loop: "{{ reconcile_runs_tenants }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Order the enabled tenants' passes one after another
+  ansible.builtin.set_fact:
+    reconcile_runs_resolved: >-
+      {{ reconcile_runs_resolved[:index] + [reconcile_runs_resolved[index] | combine({'after': previous})]
+         + reconcile_runs_resolved[index + 1:] }}
+  vars:
+    enabled_before: >-
+      {{ reconcile_runs_resolved[:index] | selectattr('effective_enabled') | map(attribute='unit') | list }}
+    previous: >-
+      {{ (enabled_before | last) if (item.effective_enabled and enabled_before | length > 0) else '' }}
+  loop: "{{ reconcile_runs_resolved }}"
+  loop_control:
+    index_var: index
+    label: "{{ item.name }}"
+
+- name: Refuse two tenants that share a name or a unit
+  ansible.builtin.assert:
+    that:
+      - reconcile_runs_resolved | map(attribute='name') | unique | length == reconcile_runs_resolved | length
+      - reconcile_runs_resolved | map(attribute='unit') | unique | length == reconcile_runs_resolved | length
+      - reconcile_runs_sweep_unit not in (reconcile_runs_resolved | map(attribute='unit') | list)
+    fail_msg: two reconcile_runs_tenants entries share a name or a unit name.
+    success_msg: every tenant has its own units
+
+# --- Out-of-band preconditions, asserted before anything changes the host ---
+
+- name: Read the orchestrator's committed reconcile-runs unit text
+  ansible.builtin.slurp:
+    src: "{{ reconcile_runs_template_dir }}/{{ item }}"
+  loop:
+    - reconcile-runs.service
+    - reconcile-runs.timer
+  register: reconcile_runs_unit_text
+  become: true
+  check_mode: false
+
+- name: Decode the unit text
+  ansible.builtin.set_fact:
+    reconcile_runs_service_text: "{{ reconcile_runs_unit_text.results[0].content | b64decode }}"
+    reconcile_runs_timer_text: "{{ reconcile_runs_unit_text.results[1].content | b64decode }}"
+
+- name: Read the wrapper the committed service names
+  ansible.builtin.set_fact:
+    reconcile_runs_template_wrapper: >-
+      {{ (reconcile_runs_service_text | regex_search('^ExecStart=(\S+ --) ', '\1', multiline=True) | first)
+         if reconcile_runs_service_text is search('^ExecStart=\S+ -- ', multiline=True) else '' }}
+
+- name: Refuse unit text whose substitution points have moved
+  ansible.builtin.assert:
+    that:
+      - reconcile_runs_template_wrapper | length > 0
+      - "'@PLUGIN_ROOT@' in reconcile_runs_service_text"
+      - "'@PRIMARY_REPO@' in reconcile_runs_service_text"
+      - "'@RUN_AS_USER@' in reconcile_runs_service_text"
+      - reconcile_runs_service_text | regex_findall('(?m) --json$') | length == 1
+      - "'Unit=reconcile-runs.service' in reconcile_runs_timer_text"
+    fail_msg: >-
+      {{ reconcile_runs_template_dir }} no longer carries the ExecStart wrapper,
+      the @PLUGIN_ROOT@/@PRIMARY_REPO@/@RUN_AS_USER@ tokens, one trailing --json,
+      or Unit=reconcile-runs.service this role substitutes; update the role with
+      the orchestrator's unit text.
+    success_msg: the orchestrator unit text carries every substitution point
+
+- name: Check each tenant's checkout, config, wrapper and plugin root
+  ansible.builtin.stat:
+    path: "{{ item.1 }}"
+  loop: >-
+    {{ reconcile_runs_resolved | map(attribute='name')
+       | zip(reconcile_runs_resolved | map(attribute='repo')) | list
+       + reconcile_runs_resolved | map(attribute='name')
+       | zip(reconcile_runs_resolved | map(attribute='repo') | map('regex_replace', '$', '/.livespec.jsonc')) | list
+       + reconcile_runs_resolved | map(attribute='name')
+       | zip(reconcile_runs_resolved | map(attribute='wrapper_head')) | list
+       + reconcile_runs_resolved | map(attribute='name')
+       | zip(reconcile_runs_resolved | map(attribute='plugin_root') | map('regex_replace', '$', '/scripts/bin/dispatcher.py')) | list }}
+  loop_control:
+    label: "{{ item.0 }}: {{ item.1 }}"
+  register: reconcile_runs_inputs
+  become: true
+  check_mode: false
+
+- name: Refuse to install a timer whose inputs are missing
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir if item.item.1 in (reconcile_runs_resolved | map(attribute='repo')) else true
+      - item.stat.executable if item.item.1 in (reconcile_runs_resolved | map(attribute='wrapper_head')) else true
+    fail_msg: >-
+      tenant {{ item.item.0 }}: {{ item.item.1 }} is missing or not usable. A
+      timer installed without its checkout, its .livespec.jsonc, an executable
+      credential wrapper or the orchestrator's dispatcher.py fails every pass
+      (without the wrapper, as an absent tenant rather than an absent
+      credential). Provision it before converging this role.
+    success_msg: "{{ item.item.0 }}: {{ item.item.1 }} is present"
+  loop: "{{ reconcile_runs_inputs.results }}"
+  loop_control:
+    label: "{{ item.item.0 }}: {{ item.item.1 }}"
+
+- name: Check the staleness unit's OnFailure= alert unit
+  ansible.builtin.stat:
+    path: >-
+      {{ reconcile_runs_unit_dir }}/{{ reconcile_runs_staleness_on_failure
+         | regex_replace('@.*$', '@') }}.service
+  register: reconcile_runs_alert_unit
+  become: true
+  check_mode: false
+  when: reconcile_runs_staleness_on_failure | length > 0
+
+- name: Refuse an OnFailure= target that is not installed
+  ansible.builtin.assert:
+    that: reconcile_runs_alert_unit.stat.exists
+    fail_msg: >-
+      reconcile_runs_staleness_on_failure names {{ reconcile_runs_staleness_on_failure }},
+      but {{ reconcile_runs_alert_unit.stat.path }} is not installed. A staleness
+      check whose alert unit is missing fails with nobody told; install the alert
+      unit, or clear the variable on a host whose telemetry reads the markers.
+    success_msg: the staleness alert unit is installed
+  when: reconcile_runs_staleness_on_failure | length > 0
+
+# --- Install ---
+
+- name: Create the reconcile-runs success-marker directory
+  ansible.builtin.file:
+    path: "{{ reconcile_runs_state_dir }}"
+    state: directory
+    owner: "{{ reconcile_runs_user }}"
+    group: "{{ reconcile_runs_group }}"
+    mode: "0755"
+  become: true
+
+- name: Install the staleness check
+  ansible.builtin.copy:
+    src: livespec-reconcile-runs-staleness
+    dest: "{{ reconcile_runs_staleness_bin }}"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0755"
+  become: true
+
+- name: Record which timers already exist
+  ansible.builtin.stat:
+    path: "{{ reconcile_runs_unit_dir }}/{{ item }}.timer"
+  loop:
+    - "{{ reconcile_runs_timer_unit }}"
+    - "{{ reconcile_runs_staleness_unit }}"
+  register: reconcile_runs_existing_timers
+  become: true
+  check_mode: false
+
+- name: Render each tenant's reconcile-runs service from the orchestrator's unit text
+  ansible.builtin.copy:
+    content: |
+      # Managed by livespec-dev-tooling role reconcile_runs (tenant {{ item.name }}).
+      # Rendered from {{ reconcile_runs_template_dir }}/reconcile-runs.service.
+      {{ reconcile_runs_service_text
+         | replace(reconcile_runs_template_wrapper, item.wrapper)
+         | replace('@PLUGIN_ROOT@', item.plugin_root)
+         | replace('@PRIMARY_REPO@', item.repo)
+         | replace('@RUN_AS_USER@', reconcile_runs_user) }}
+    dest: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}.service"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  loop: "{{ reconcile_runs_resolved }}"
+  loop_control:
+    label: "{{ item.unit }}.service"
+  register: reconcile_runs_rendered_services
+  become: true
+
+# The dry-run twin: the same user, checkout, wrapper and plugin root with
+# --dry-run, and no timer. `systemctl start --wait <unit>-dry-run.service`
+# proves a held tenant's pass would run; it terminates and releases nothing.
+- name: Render each tenant's dry-run service
+  ansible.builtin.copy:
+    content: |
+      # Managed by livespec-dev-tooling role reconcile_runs (tenant {{ item.name }}, dry run).
+      # Rendered from {{ reconcile_runs_template_dir }}/reconcile-runs.service.
+      {{ reconcile_runs_service_text
+         | replace(reconcile_runs_template_wrapper, item.wrapper)
+         | replace('@PLUGIN_ROOT@', item.plugin_root)
+         | replace('@PRIMARY_REPO@', item.repo)
+         | replace('@RUN_AS_USER@', reconcile_runs_user)
+         | regex_replace('(?m) --json$', ' --dry-run --json') }}
+    dest: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}-dry-run.service"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  loop: "{{ reconcile_runs_resolved }}"
+  loop_control:
+    label: "{{ item.unit }}-dry-run.service"
+  register: reconcile_runs_rendered_dry_runs
+  become: true
+
+- name: Render the host's reconcile-runs timer from the orchestrator's unit text
+  ansible.builtin.copy:
+    content: |
+      # Managed by livespec-dev-tooling role reconcile_runs: starts {{ reconcile_runs_sweep_unit }}.service.
+      # Rendered from {{ reconcile_runs_template_dir }}/reconcile-runs.timer.
+      {{ reconcile_runs_timer_text | replace('Unit=reconcile-runs.service', 'Unit=' ~ reconcile_runs_sweep_unit ~ '.service') }}
+    dest: "{{ reconcile_runs_unit_dir }}/{{ reconcile_runs_timer_unit }}.timer"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  register: reconcile_runs_rendered_timer
+  become: true
+
+- name: Install the sweep service
+  ansible.builtin.template:
+    src: reconcile-runs-sweep.service.j2
+    dest: "{{ reconcile_runs_unit_dir }}/{{ reconcile_runs_sweep_unit }}.service"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  register: reconcile_runs_rendered_sweep
+  become: true
+
+- name: Create the drop-in directories
+  ansible.builtin.file:
+    path: "{{ reconcile_runs_unit_dir }}/{{ item }}.d"
+    state: directory
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0755"
+  loop: >-
+    {{ reconcile_runs_resolved | map(attribute='unit') | map('regex_replace', '$', '.service') | list
+       + [reconcile_runs_timer_unit ~ '.timer'] }}
+  become: true
+
+- name: Install each tenant's service policy (bound, sweep order, dead-man marker)
+  ansible.builtin.template:
+    src: reconcile-runs-policy.conf.j2
+    dest: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}.service.d/10-reconcile-runs-role.conf"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  loop: "{{ reconcile_runs_resolved }}"
+  loop_control:
+    label: "{{ item.unit }}.service"
+  register: reconcile_runs_rendered_policies
+  become: true
+
+- name: Install the host timer's interval
+  ansible.builtin.template:
+    src: reconcile-runs-interval.conf.j2
+    dest: "{{ reconcile_runs_unit_dir }}/{{ reconcile_runs_timer_unit }}.timer.d/10-reconcile-runs-role.conf"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  register: reconcile_runs_rendered_interval
+  become: true
+
+- name: Install the staleness units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ reconcile_runs_unit_dir }}/{{ item | replace('reconcile-runs-staleness', reconcile_runs_staleness_unit) }}"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0644"
+  loop:
+    - reconcile-runs-staleness.service
+    - reconcile-runs-staleness.timer
+  register: reconcile_runs_rendered_staleness
+  become: true
+
+- name: Reload systemd after a unit change
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: reconcile_runs_manage_systemd and (
+    (reconcile_runs_rendered_services.results + reconcile_runs_rendered_dry_runs.results
+     + reconcile_runs_rendered_policies.results + reconcile_runs_rendered_staleness.results
+     + [reconcile_runs_rendered_timer, reconcile_runs_rendered_sweep, reconcile_runs_rendered_interval])
+    | selectattr('changed') | list | length > 0)
+
+# Option (a) of the missing-marker advisory: a tenant enabled here gets its
+# marker now, so no telemetry reading the markers reports it `missing` before
+# its first pass. `creates:` never refreshes an existing marker, so a tenant
+# that really went stale is not hidden.
+- name: Seed the success marker of a newly enabled tenant
+  ansible.builtin.command:
+    argv: [touch, "{{ item.marker }}"]
+    creates: "{{ item.marker }}"
+  loop: "{{ reconcile_runs_resolved | selectattr('effective_enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  become_user: "{{ reconcile_runs_user }}"
+
+# Never `restarted`: a converge must not stop a running timer, because a host
+# whose timer stops while it holds claims it stamped has no reconciler at all.
+# Under --check a timer this run would create does not exist yet, so its state
+# is reported by the render tasks above rather than queried here.
+- name: Hold or run the host's reconcile-runs and staleness timers
+  ansible.builtin.systemd_service:
+    name: "{{ item.0 }}.timer"
+    enabled: "{{ sweep_on }}"
+    state: "{{ 'started' if sweep_on else 'stopped' }}"
+  vars:
+    sweep_on: "{{ reconcile_runs_resolved | selectattr('effective_enabled') | list | length > 0 }}"
+  loop: "{{ [reconcile_runs_timer_unit, reconcile_runs_staleness_unit] | zip(reconcile_runs_existing_timers.results) | list }}"
+  loop_control:
+    label: "{{ item.0 }}.timer"
+  become: true
+  when: reconcile_runs_manage_systemd and (not ansible_check_mode or item.1.stat.exists)
+
+# A timer already running when its file changes is NOT re-activated by the
+# daemon-reload, so a past OnBootSec= never fires again, and OnUnitInactiveSec=
+# counts from a sweep that has never run when the timer has just been pointed
+# at a new sweep unit. Left alone, such a timer never elapses. One sweep started
+# here gives OnUnitInactiveSec= its base. A pass already running is not
+# disturbed: its start job merges with the one the sweep queues.
+- name: Start one sweep after the timer's target or interval changes
+  ansible.builtin.command:
+    argv: [systemctl, start, --no-block, "{{ reconcile_runs_sweep_unit }}.service"]
+  become: true
+  changed_when: true
+  when:
+    - reconcile_runs_manage_systemd
+    - not ansible_check_mode
+    - reconcile_runs_resolved | selectattr('effective_enabled') | list | length > 0
+    - reconcile_runs_rendered_timer.changed or reconcile_runs_rendered_interval.changed

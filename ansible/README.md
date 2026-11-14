@@ -90,7 +90,9 @@ source of truth for how the tool is invoked.
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
 | `restart-k3s-server.yml` | `ci_pool`, and only the SERVER host its confirmation names | nothing — no committed artifact could restart the pool server's k3s unit without rebooting the host |
-| `k3s-window-drain.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names | nothing — no committed artifact could pause runner intake or cordon a pool node |
+| `restart-otel-collector.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could restart a collector whose managed configuration is unchanged |
+| `k3s-datastore-backup.yml` | `ci_pool`, and only the SERVER host each action's confirmation names | nothing — no committed artifact could back up, stop for restore, or restore the server's kine/SQLite datastore |
+| `k3s-window-drain.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names; `uncordon`, `evacuate` and `clear-lost` also only for the node a second confirmation names | nothing — no committed artifact could pause runner intake, cordon a pool node, move a node's recreated pods off it before a planned power-off (`evacuate`), or clear the pods a lost node left behind (`clear-lost`) |
 | `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
 | `claim-token-race-drill.yml` | `ci_pool`, and only the host its confirmation names, raced against the control node | nothing — no second fleet host could act as a ledger claim writer |
 | `k3s-pod-egress-probe.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could measure a pod's path to the incident observer |

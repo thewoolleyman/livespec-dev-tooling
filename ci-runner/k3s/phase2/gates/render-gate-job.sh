@@ -27,6 +27,15 @@
 #                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
 #                      [--pytest-arg ARG ...]
+#                      [--queue LOCALQUEUE] [--repro-stack-interval SECONDS]
+#
+# --queue is the LocalQueue the Job's `kueue.x-k8s.io/queue-name` label names,
+# `gates-lq` by default. --repro-stack-interval renders the reproduction
+# diagnostics described at its block below. Both exist for ONE caller, the
+# operator reproduction route (`python -m livespec_dev_tooling.gate_repro`,
+# livespec-dev-tooling-pkmxgu), which passes `--queue gates-repro-lq`
+# (../kueue/cluster-queue-repro-gates.yaml). The pre-push and pre-commit clients
+# pass neither, so every gate they send renders exactly as it did before.
 #
 # --repo defaults to the basename of --repo-root. --source-url defaults to the
 # in-cluster read-only mirror R4.S4 builds. The resource defaults are the terms
@@ -89,6 +98,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
+# The bounded retry every anonymous github.com read in the Job goes through
+# (fetch-livespec-core and the sibling clones). It ships beside this script,
+# in the repository and in the wheel alike, and is inlined into the manifest.
+FORGE_RETRY="${GATE_FORGE_RETRY_SH:-${SCRIPT_DIR}/forge-retry.sh}"
 # The one declared per-class architecture list (livespec-dev-tooling-ko26ez.6).
 # In this repository it sits one level above gates/; the wheel force-includes it
 # at the same relative place beside the packaged renderer.
@@ -97,6 +110,7 @@ WORKLOAD_ARCH_CONF="${WORKLOAD_ARCH_CONF:-${SCRIPT_DIR}/../workload-arch.conf}"
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
+queue="gates-lq"; repro_stack_interval=""
 check_suite=()
 pytest_argv=()
 private_siblings=()
@@ -131,6 +145,8 @@ while [ $# -gt 0 ]; do
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     --pytest-arg)        pytest_argv+=("$2"); shift 2 ;;
+    --queue)             queue="$2"; shift 2 ;;
+    --repro-stack-interval) repro_stack_interval="$2"; shift 2 ;;
     --private-sibling)   private_siblings+=("$2"); shift 2 ;;
     --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
     --authority-skip-env)     authority_skip_env="$2"; shift 2 ;;
@@ -413,6 +429,12 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
     fi
   done
   clone_command="git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
+  # A private sibling's header config stays a `VAR=value` PREFIX, now on the
+  # forge_retry call. The gate container runs bash, and bash places a function
+  # call's prefix assignments in the environment of every command the function
+  # runs, for that call only. So every retried clone carries the header, no
+  # later (public) clone does, and the token never enters any argv.
+  clone_auth_prefix=""
   if [ "${private}" -eq 1 ]; then
     # The mount is declared once however many private siblings there are: ONE
     # token covers all of them, because the host mints it scoped to exactly the
@@ -442,7 +464,7 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
     # may carry, and `base64` WRAPS at 76 columns — which a 60-odd byte payload
     # exceeds — so its output is joined back into one line: a header value
     # carrying a newline is not a header.
-    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Basic \$(printf 'x-access-token:%s' \"\$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" | base64 | tr -d '\\n')\" ${clone_command}"
+    clone_auth_prefix="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Basic \$(printf 'x-access-token:%s' \"\$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" | base64 | tr -d '\\n')\" "
   fi
   # SHALLOW, like the core fetch and like the consumer's own CI step: nothing
   # reads a sibling's history — a reader wants its current headings and its
@@ -455,7 +477,7 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
   # The termination-log write is best-effort for the same reason the preflight's
   # is — the message is EVIDENCE and the exit status is the verdict.
   gate_sibling_clone_lines="${gate_sibling_clone_lines}
-if ! ${clone_command}; then
+if ! ${clone_auth_prefix}FORGE_RETRY_RESET_DIR='${GATE_SIBLING_CLONES_ROOT}/${sibling_name}' forge_retry 'sibling ${sibling_name}' ${clone_command}; then
   unclonable=\"FATAL: cannot clone cross-repo sibling '${sibling_name}' from ${sibling_url}. Its checks would read the absent clone as an EMPTY tree and silently drop every allowlisted citation to it, so no recipe was run; this gate is RED.\"
   echo \"\${unclonable}\" >&2
   { printf '%s\\n' \"\${unclonable}\" > /dev/termination-log; } 2> /dev/null || true
@@ -632,6 +654,77 @@ if [ -n "${authority_skip_env}" ] || [ "${#authority_skip_members[@]}" -gt 0 ]; 
 echo \":: gate: NOT running ${authority_skip_list} here - each reads an authorization held outside the tree and this Job is handed none; the pushing host runs it against this same tree (skipped through this repository's own ${authority_skip_env})\""
 fi
 
+# --- the reproduction diagnostics (livespec-dev-tooling-pkmxgu) --------------
+# A Job label value, so the character set is bounded to what Kubernetes accepts
+# for one and what a LocalQueue name can be.
+case "${queue}" in
+  "" | -* | *[!a-z0-9-]*)
+    echo "FATAL: --queue '${queue}' is not a LocalQueue name" >&2
+    exit 2 ;;
+esac
+# EMPTY unless the operator route asks for it, which removes the placeholder's
+# whole line. When asked for, it captures stacks WITHOUT `kubectl exec`: the
+# gates credential cannot exec into a pod (`.ai/deleted-gate-pod-diagnosis.md`
+# in livespec-dev-tooling), so everything is written into the pod's own log.
+#
+# THE STACKS COME FROM INSIDE EACH PYTHON PROCESS. A `sitecustomize` placed
+# first on PYTHONPATH arms `faulthandler.dump_traceback_later(N, repeat=True)`
+# in every Python process the gate starts, writing to that process's own
+# `stack-<pid>.txt`. faulthandler's watchdog is a C thread that needs no GIL, so
+# it still dumps a process wedged with the GIL held, which a Python thread could
+# not. A process that lives less than N seconds never dumps. NOT pytest's own
+# `faulthandler_timeout`: pytest arms and CANCELS that same per-process timer
+# around every test, which would disarm this one. NOT py-spy: the gate image
+# carries none, and the container has no CAP_SYS_PTRACE.
+#
+# Every N seconds a background loop prints the process tree and, for each live
+# Python process with a dump, its command line and its LATEST dump. The loop's
+# output goes to the container's stdout, beside the recipes' output and outside
+# the recipe log the member report is parsed from.
+gate_repro_block=""
+if [ -n "${repro_stack_interval}" ]; then
+  case "${repro_stack_interval}" in
+    *[!0-9]* | 0*)
+      echo "FATAL: --repro-stack-interval '${repro_stack_interval}' is not a positive whole number of seconds" >&2
+      exit 2 ;;
+  esac
+  gate_repro_block="echo \":: gate-repro: diagnostics on: every ${repro_stack_interval}s, the process tree and each live Python process's latest stack\"
+export GATE_REPRO_STACK_DIR=\"\$(mktemp -d /tmp/gate-repro-stacks.XXXXXX)\"
+gate_repro_site=\"\$(mktemp -d /tmp/gate-repro-site.XXXXXX)\"
+cat > \"\${gate_repro_site}/sitecustomize.py\" <<'GATE_REPRO_SITE'
+import faulthandler
+import os
+
+_directory = os.environ.get(\"GATE_REPRO_STACK_DIR\", \"\")
+_stream = None
+if _directory:
+    try:
+        _stream = open(os.path.join(_directory, f\"stack-{os.getpid()}.txt\"), \"w\")
+    except OSError:
+        _stream = None
+if _stream is not None:
+    faulthandler.dump_traceback_later(${repro_stack_interval}, repeat=True, file=_stream)
+GATE_REPRO_SITE
+export PYTHONPATH=\"\${gate_repro_site}\${PYTHONPATH:+:\${PYTHONPATH}}\"
+gate_repro_report() {
+  echo \":: gate-repro: \$(date -u +%Y-%m-%dT%H:%M:%SZ) process tree\"
+  ps -eo pid,ppid,etimes,stat,pcpu,rss,args --forest || true
+  for stack in \"\${GATE_REPRO_STACK_DIR}\"/stack-*.txt; do
+    [ -e \"\${stack}\" ] || continue
+    pid=\"\${stack##*/stack-}\"
+    pid=\"\${pid%.txt}\"
+    if [ ! -d \"/proc/\${pid}\" ]; then
+      rm -f \"\${stack}\"
+      continue
+    fi
+    [ -s \"\${stack}\" ] || continue
+    echo \":: gate-repro: python pid \${pid}: \$(tr '\\0\\n' '  ' < \"/proc/\${pid}/cmdline\" 2>/dev/null | cut -c1-400)\"
+    awk '/^Timeout \\(/ { start = NR } { line[NR] = \$0 } END { if (start) for (i = start; i <= NR; i++) print line[i] }' \"\${stack}\" || true
+  done
+}
+( set +e; while sleep ${repro_stack_interval}; do gate_repro_report; done ) &"
+fi
+
 # --- substitution ------------------------------------------------------------
 # `&`, `|` and `\` are the characters sed would reinterpret in a replacement with
 # `|` as the delimiter. URLs and image references carry `/` and `:` freely, which
@@ -689,6 +782,7 @@ gate_arches="$(awk -v n="${gate_class_name}" '$1 == "gate" && $2 == n && n != "g
   exit 2
 }
 substitute GATE_ARCHES       "${gate_arches//,/, }"
+substitute QUEUE             "${queue}"
 substitute CPU               "${cpu}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"
@@ -700,11 +794,16 @@ substitute GATE_RECIPE_NAMES "${quoted_recipe_names}"
 substitute_block GATE_RECIPES "${gate_recipe_lines}"
 # An EMPTY block removes the placeholder's whole line, which is exactly what a
 # repository registering no cross-repo siblings must render.
+[ -f "${FORGE_RETRY}" ] || { echo "FATAL: ${FORGE_RETRY} not found — the gate Job's github.com reads need its forge_retry function" >&2; exit 1; }
+# The function only, without its file-header comments: both placeholders sit in
+# scripts whose own comments already say why the retry is there.
+substitute_block GATE_FORGE_RETRY "$(grep -v '^#' "${FORGE_RETRY}")"
 substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
 # EMPTY for a repository whose authority members this run could not establish,
 # which removes the placeholder's whole line: such a Job runs the members it runs
 # today, where an unreadable authorization FAILS rather than passing.
 substitute_block GATE_AUTHORITY_SKIP "${authority_skip_block}"
+substitute_block GATE_REPRO_DIAGNOSTICS "${gate_repro_block}"
 substitute_block GATE_PRIVATE_SIBLING_VOLUME_MOUNT "${private_sibling_volume_mount}"
 substitute_block GATE_PRIVATE_SIBLING_VOLUME "${private_sibling_volume}"
 

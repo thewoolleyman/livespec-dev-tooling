@@ -43,6 +43,8 @@ ci_converge_unit_directories:
   - ""
   - arc
   - arc/charts
+  # Each homelab worker's host-unique scale-set values (converge step 7).
+  - arc/worker
   - kueue
   - kueue/core
   # The container-worker queue templates (livespec-dev-tooling-ko26ez.7).
@@ -93,6 +95,13 @@ ci_converge_unit_files:
   - src: reconstruct/converge-warm-uv-node-labels.sh
     dest: converge-warm-uv-node-labels.sh
     mode: "0755"
+  # The per-node ALWAYS-ON label reconcile the boot converge's steps 5b and 10h
+  # run (livespec-dev-tooling-crvvxt). Every ARC listener pod selects on the
+  # label it sets, and it reads the same installed `profiles` directory as the
+  # factory-label reconcile above.
+  - src: reconstruct/converge-always-on-node-labels.sh
+    dest: converge-always-on-node-labels.sh
+    mode: "0755"
   - src: arc/converge-hook-pod-template.sh
     dest: arc/converge-hook-pod-template.sh
     mode: "0755"
@@ -140,10 +149,23 @@ ci_converge_unit_files:
   - src: warm-cache/warm-cache-cronjob.yaml
     dest: warm-cache/warm-cache-cronjob.yaml
     mode: "0644"
+  # The thewoolleyman/fabro fork's separately budgeted writer pass
+  # (livespec-dev-tooling-m5m2dl). converge-warm-cache.sh applies the manifest
+  # and loads the script into the warm-cache-populate ConfigMap; missing here,
+  # both reads fail on the host and the whole warm-cache converge stops.
+  - src: warm-cache/warm-cache-fabro-cronjob.yaml
+    dest: warm-cache/warm-cache-fabro-cronjob.yaml
+    mode: "0644"
+  - src: warm-cache/warm-cache-fabro-populate.sh
+    dest: warm-cache/warm-cache-fabro-populate.sh
+    mode: "0644"
   # 0644 and not 0755: this is a ConfigMap PAYLOAD executed inside the populator
   # pod, never on the host.
   - src: warm-cache/warm-cache-populate.sh
     dest: warm-cache/warm-cache-populate.sh
+    mode: "0644"
+  - src: warm-cache/sccache-warm-lag.py
+    dest: warm-cache/sccache-warm-lag.py
     mode: "0644"
   - src: warm-cache/verify-uv-cache.py
     dest: warm-cache/verify-uv-cache.py
@@ -153,6 +175,12 @@ ci_converge_unit_files:
     mode: "0644"
   - src: warm-cache/pypi-proxy/pypi-proxy.yaml
     dest: warm-cache/pypi-proxy/pypi-proxy.yaml
+    mode: "0644"
+  # The shared uv wrapper ConfigMap (livespec-dev-tooling-rpdowy): both
+  # converge-warm-cache.sh (into ci-warm-cache) and converge-ci-stack.sh step 7a
+  # (into arc-runners) apply it, so a missing copy stops both converges.
+  - src: warm-cache/pypi-proxy/pypi-proxy-uv-wrapper.yaml
+    dest: warm-cache/pypi-proxy/pypi-proxy-uv-wrapper.yaml
     mode: "0644"
   # The ghcr pull-through registry mirror (livespec-dev-tooling-y1t5): its
   # apply-bearing converge and the manifest that converge applies. converge-ci-stack.sh
@@ -214,6 +242,12 @@ ci_converge_unit_files:
   - src: gates/render-gate-job.sh
     dest: gates/render-gate-job.sh
     mode: "0755"
+  # The renderer reads forge_retry from beside itself (its SCRIPT_DIR default)
+  # and refuses to render without it, so it ships wherever the renderer does
+  # (livespec-dev-tooling-yjcyay).
+  - src: gates/forge-retry.sh
+    dest: gates/forge-retry.sh
+    mode: "0644"
   # The `factory` namespace's artifacts, applied as a DIRECTORY by the boot
   # converge's step 10e (livespec-dev-tooling-f5e6vl). Both files must be here:
   # the step applies the whole directory, so an installed tree carrying only one

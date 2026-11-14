@@ -174,8 +174,9 @@ EXEMPTIONS: tuple[Exemption, ...] = (
         path="livespec_dev_tooling/budgeted_gh.py",
         reason=(
             "The chokepoint itself. This module IS the sanctioned client's spawn, so "
-            "the one `gh` argv it builds is the boundary every other site is being "
-            "sent to rather than a bypass of it."
+            "the `gh` argvs it builds (the budgeted read and the incident forge "
+            "call's `gh api --include` attempts) are the boundary every other site "
+            "is being sent to rather than a bypass of it."
         ),
     ),
     Exemption(

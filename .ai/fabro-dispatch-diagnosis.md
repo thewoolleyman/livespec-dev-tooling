@@ -208,6 +208,20 @@ still while other plans' pin-gate runs are in flight. The coordinator presses
 `set-merge-hold:<id>:off` itself, after checking master CI, because removing
 the label IS the merge (coordinator, 2026-11-10 ~20:25Z).
 
+A seat never merges a PR whose item carries `merge-hold:on`, even after
+reviewing it. Only the coordinator's staggered lift releases it: one proved,
+green PR at a time, each on a green master. When the regime's stated
+condition ends, the coordinator also removes the label from items that have
+no PR. Measured 2026-11-10: a seat read the label as reserving the merge for
+the reviewing seat and merged three held PRs itself (livespec-dev-tooling#4036,
+livespec-dev-tooling#4044, livespec-dev-tooling#4059).
+
+`admission:manual` marks a hand lane. It MUST carry a ledger comment that
+gives the reason and the end condition. A label with no recorded reason is
+removed by the dispatcher, which records why, and the item then dispatches
+through the factory. Measured 2026-11-10: bd-ib-hmed6n carried the label with
+no reason while its route was a factory seeded route.
+
 **How to apply:** a plan seat whose proved PR is held this way reports it to
 the coordinator and waits. It does not press the valve, and it runs any
 host-captured drift proof only after the merge lands. Look for the input in the

@@ -129,3 +129,10 @@ write-kubeconfig-mode: "0644"
 # ../../../../ansible/restart-k3s-server.yml, in a window coordinated with the
 # maintainer. Rollback: delete this key and run restart-k3s-server.yml again.
 egress-selector-mode: "disabled"
+
+# The DATASTORE SELECTION (embedded etcd: cluster-init, its quota, snapshots off,
+# the compaction interval) is NOT in this file. It is in
+# config.yaml.d/50-embedded-etcd.yaml, which the k3s_config role installs only
+# when k3s_config_embedded_etcd is true (livespec-dev-tooling-qy2nzf). This file
+# is installed by every ci-pool apply, so a key here would arm the conversion on
+# any routine apply.

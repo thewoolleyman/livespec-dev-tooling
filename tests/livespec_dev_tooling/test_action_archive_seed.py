@@ -28,9 +28,12 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
+import yaml
 
 __all__: list[str] = []
 
@@ -59,6 +62,7 @@ _POPULATOR_SECTION = re.compile(
 )
 _ONE_LINE_HELPER = re.compile(r"^(?:log|gen_bytes|gen_files)\(\) \{.*$", re.MULTILINE)
 _MANIFEST_FIELD = re.compile(r"^manifest_field\(\) \{\n.*?\n\}$", re.MULTILINE | re.DOTALL)
+_ACTIONS_RECORD_WAIT_SECONDS = 30
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -157,6 +161,7 @@ def _run_populator(
     budget_bytes: int = 268435456,
     budget_files: int = 512,
     fetched: tuple[str, ...] = (_CONSUMER,),
+    actions: str = "true",
 ) -> tuple[str, Path]:
     warm = root / "warm"
     warm.mkdir(exist_ok=True)
@@ -179,6 +184,7 @@ def _run_populator(
                 f"ACTIONS_GIT_BASE={forge.git_base}",
                 f"ACTIONS_ARCHIVE_BASE=file://{forge.archive_base}",
                 "WARM_CACHE_UV_ONLY=false",
+                f"WARM_CACHE_ACTIONS={actions}",
                 "failed=()",
                 f"fetched=({' '.join(fetched)})",
                 "generation=test-run",
@@ -618,7 +624,42 @@ def test_the_entry_point_reads_the_switch_and_canary_from_the_committed_template
 # ---- the postStart record and the wiring ------------------------------------
 
 
-def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]:
+def _wait_for_actions_record(*, recorded: Path) -> bool:
+    """Allow the detached postStart cache work to publish its actions row."""
+    # The production hook deliberately detaches this fail-soft cache work. A
+    # short poll is ample in isolation but can expire while the xdist
+    # coverage workers contend for a CPU, turning a valid delayed record into
+    # a FileNotFoundError below.
+    deadline = time.monotonic() + _ACTIONS_RECORD_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if recorded.is_file() and any(
+            row.split("\t", 2)[1:2] == ["actions"]
+            for row in recorded.read_text(encoding="utf-8").splitlines()
+        ):
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_wait_for_actions_record_reports_a_timeout(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing detached actions row does not make the scenario test wait forever."""
+    ticks = iter((0.0, 30.1))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    assert _wait_for_actions_record(recorded=tmp_path / "warm-copy.tsv") is False
+
+
+def _post_start(
+    *,
+    root: Path,
+    seeded: bool,
+    switch: str = "",
+    detached_delay_seconds: int = 0,
+    write_actions_record: bool = True,
+) -> dict[str, str]:
     template = _TEMPLATE.read_text(encoding="utf-8")
     block = re.search(
         r"        postStart:\n          exec:\n            command:\n              - sh\n"
@@ -642,6 +683,18 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
         ("/opt/ci-runner/bin", root / "bin"),
     ):
         script = script.replace(absolute, str(local))
+    if detached_delay_seconds:
+        script = script.replace(
+            "(\n",
+            f"(\nsleep {detached_delay_seconds}\n",
+            1,
+        )
+    if not write_actions_record:
+        script = script.replace(
+            'rec actions "$actions_hit" "$actions_gen" "$(ms)" 0 reflink-seed "$actions_err"',
+            ":",
+            1,
+        )
     hook = root / "post-start.sh"
     hook.write_text(script, encoding="utf-8")
     done = subprocess.run(
@@ -666,7 +719,12 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
         "copy_method",
         "error",
     )
-    rows = (work / "_temp" / "_ci_cache" / "warm-copy.tsv").read_text(encoding="utf-8").splitlines()
+    recorded = work / "_temp" / "_ci_cache" / "warm-copy.tsv"
+    assert _wait_for_actions_record(recorded=recorded), (
+        "the detached postStart hook did not record an actions-tier row before "
+        f"the {_ACTIONS_RECORD_WAIT_SECONDS}-second deadline: {recorded}"
+    )
+    rows = recorded.read_text(encoding="utf-8").splitlines()
     parsed = [dict(zip(columns, (row.split("\t") + [""] * 8)[:8], strict=True)) for row in rows]
     mine = [row for row in parsed if row["tier"] == "actions"]
     assert len(mine) == 1, "exactly one actions-tier row per job"
@@ -674,19 +732,41 @@ def _post_start(*, root: Path, seeded: bool, switch: str = "") -> dict[str, str]
 
 
 def test_a_seeded_job_records_an_actions_hit_with_its_generation(tmp_path: Path) -> None:
-    row = _post_start(root=tmp_path, seeded=True)
+    row = _post_start(root=tmp_path, seeded=True, detached_delay_seconds=5)
     assert (row["hit"], row["generation"], row["error"]) == ("true", "20261104T000000Z", "")
 
 
 def test_a_job_with_no_seed_records_an_actions_miss_with_a_reason(tmp_path: Path) -> None:
-    row = _post_start(root=tmp_path, seeded=False)
+    row = _post_start(root=tmp_path, seeded=False, detached_delay_seconds=5)
     assert (row["hit"], row["error"]) == ("false", "actions-seed-absent")
 
 
 def test_the_kill_switch_records_the_actions_tier_cold_and_removes_the_seed(tmp_path: Path) -> None:
-    row = _post_start(root=tmp_path, seeded=True, switch="operator")
+    row = _post_start(root=tmp_path, seeded=True, switch="operator", detached_delay_seconds=5)
     assert (row["hit"], row["error"]) == ("false", "off:operator")
     assert not (tmp_path / "w" / "_warm" / "actions").exists()
+
+
+def test_post_start_names_the_deadline_and_record_path_when_actions_are_missing(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A missing detached actions row is an actionable assertion, not a file read error."""
+    ticks = iter((0.0, 30.1))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("the wait should time out first"))
+
+    with pytest.raises(AssertionError, match=r"30-second deadline: .*warm-copy\.tsv"):
+        _post_start(root=tmp_path, seeded=False, write_actions_record=False)
+
+
+def test_wait_for_actions_record_returns_immediately_for_an_existing_actions_row(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    recorded = tmp_path / "warm-copy.tsv"
+    recorded.write_text("0\tactions\ttrue\n", encoding="utf-8")
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("an existing row must not sleep"))
+
+    assert _wait_for_actions_record(recorded=recorded) is True
 
 
 def test_every_values_file_starts_the_runner_through_the_entry_point() -> None:
@@ -720,6 +800,149 @@ def test_the_actions_budget_lives_beside_the_other_budgets_and_reaches_the_popul
             rf"name: {variable}\n\s+valueFrom:\n\s+configMapKeyRef:\n\s+name: warm-cache-budget\n\s+key: {key}\n",
             cronjob,
         ), variable
+
+
+def _workload_env(*, kind: str, name: str) -> list[dict[str, Any]]:
+    """The populate container's env list of one named workload in the manifest."""
+    documents: list[Any] = list(yaml.safe_load_all(_CRONJOB.read_text(encoding="utf-8")))
+    assert all(isinstance(document, dict) for document in documents)
+    parsed = cast(list[dict[str, Any]], documents)
+    matched = [
+        document
+        for document in parsed
+        if document.get("kind") == kind and (document.get("metadata") or {}).get("name") == name
+    ]
+    assert len(matched) == 1, f"expected one {kind}/{name}"
+    spec = cast(dict[str, Any], matched[0]["spec"])
+    template = spec["jobTemplate"]["spec"]["template"] if kind == "CronJob" else spec["template"]
+    containers = cast(list[dict[str, Any]], template["spec"]["containers"])
+    populate = [container for container in containers if container["name"] == "populate"]
+    assert len(populate) == 1
+    return cast(list[dict[str, Any]], populate[0]["env"])
+
+
+def _budget_refs(env: list[dict[str, Any]]) -> dict[str, str]:
+    """Env names that read a `warm-cache-budget` key, mapped to that key."""
+    refs: dict[str, str] = {}
+    for entry in env:
+        source = cast(dict[str, Any], entry.get("valueFrom") or {})
+        key_ref = cast(dict[str, Any], source.get("configMapKeyRef") or {})
+        if key_ref.get("name") == "warm-cache-budget":
+            refs[str(entry["name"])] = str(key_ref["key"])
+    return refs
+
+
+def test_the_non_carrier_work_volume_daemon_publishes_the_seed_and_hp_does_not() -> None:
+    """livespec-dev-tooling-e2gv6n: gmktec's publisher builds the tree; hp's never does.
+
+    The provisioner reflink-copies a node's OWN `.warm/actions` into each runner
+    work volume there, so a non-carrier ci-workvols node needs its own publisher.
+    hp-xubuntu is runner-only, and SPECIFICATION "What a runner-only node's jobs
+    get" forbids seeding its runner work volumes from this tree, so its publisher
+    leaves the switch unset and, being UV-only, derives it off.
+    """
+    carrier = _workload_env(kind="CronJob", name="warm-cache-populate")
+    per_node = _workload_env(kind="DaemonSet", name="warm-uv-cache-populate")
+    hp = _workload_env(kind="DaemonSet", name="warm-uv-cache-populate-hp")
+    values = {
+        name: {str(e["name"]): e.get("value") for e in env if "value" in e}
+        for name, env in (("carrier", carrier), ("per_node", per_node), ("hp", hp))
+    }
+    assert (
+        "WARM_CACHE_ACTIONS" not in values["carrier"]
+    ), "the carrier keeps the derived default (on, since it is not UV-only)"
+    assert values["per_node"].get("WARM_CACHE_UV_ONLY") == "true"
+    assert values["per_node"].get("WARM_CACHE_ACTIONS") == "true"
+    assert values["hp"].get("WARM_CACHE_UV_ONLY") == "true"
+    assert (
+        "WARM_CACHE_ACTIONS" not in values["hp"]
+    ), "hp's runner-only work volumes must never be seeded with the action archive tree"
+    actions_budget = {
+        "WARM_ACTIONS_BUDGET_BYTES": "actions-bytes",
+        "WARM_ACTIONS_BUDGET_FILES": "actions-files",
+    }
+    assert actions_budget.items() <= _budget_refs(carrier).items()
+    assert (
+        actions_budget.items() <= _budget_refs(per_node).items()
+    ), "the per-node publisher reads the same actions budget the carrier does"
+    assert not set(actions_budget) & set(_budget_refs(hp))
+
+
+_ACTIONS_DEFAULT = re.compile(
+    r'^if \[ -z "\$\{WARM_CACHE_ACTIONS:-\}" \]; then\n.*?\nfi$', re.MULTILINE | re.DOTALL
+)
+_ACTIONS_VALIDATE = re.compile(
+    r'^\[ "\$\{WARM_CACHE_ACTIONS\}" = true \].*?\n\}$', re.MULTILINE | re.DOTALL
+)
+
+
+def _actions_switch(*, uv_only: str, actions: str | None) -> subprocess.CompletedProcess[str]:
+    script = _POPULATE.read_text(encoding="utf-8")
+    default = _ACTIONS_DEFAULT.search(script)
+    validate = _ACTIONS_VALIDATE.search(script)
+    assert default is not None and validate is not None
+    env = {key: value for key, value in os.environ.items() if key != "WARM_CACHE_ACTIONS"}
+    env["WARM_CACHE_UV_ONLY"] = uv_only
+    if actions is not None:
+        env["WARM_CACHE_ACTIONS"] = actions
+    body = "\n".join(
+        [
+            "set -uo pipefail",
+            "log() { printf '%s\\n' \"$*\" >&2; }",
+            default.group(0),
+            validate.group(0),
+            'printf "%s\\n" "${WARM_CACHE_ACTIONS}"',
+        ]
+    )
+    return subprocess.run(
+        ["bash", "-c", body], env=env, capture_output=True, text=True, check=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("uv_only", "actions", "expected"),
+    [
+        ("false", None, "true"),
+        ("true", None, "false"),
+        ("true", "true", "true"),
+        ("false", "false", "false"),
+    ],
+)
+def test_the_actions_switch_defaults_to_the_carrier_rule_and_an_explicit_value_wins(
+    uv_only: str, actions: str | None, expected: str
+) -> None:
+    done = _actions_switch(uv_only=uv_only, actions=actions)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == expected
+
+
+def test_an_actions_switch_that_is_not_true_or_false_fails_closed() -> None:
+    done = _actions_switch(uv_only="true", actions="yes")
+    assert done.returncode == 2
+    assert "WARM_CACHE_ACTIONS must be true or false" in done.stderr
+
+
+def test_with_the_switch_off_the_populator_writes_no_actions_tree(tmp_path: Path) -> None:
+    forge, _shas = _seed_forge(root=tmp_path)
+    failed, warm = _run_populator(root=tmp_path, forge=forge, actions="false")
+    assert failed == ""
+    assert not (warm / "actions").exists() and not (warm / "actions").is_symlink()
+    assert not (warm / "actions-generations").exists()
+    assert not (warm / "actions-seed-last-run.json").exists()
+
+
+def test_the_budget_preflight_is_gated_on_the_actions_switch_not_on_uv_only() -> None:
+    script = _POPULATE.read_text(encoding="utf-8")
+    assert re.search(
+        r'^if \[ "\$\{WARM_CACHE_ACTIONS\}" = true \]; then\n  for v in WARM_ACTIONS_BUDGET_BYTES',
+        script,
+        re.MULTILINE,
+    )
+    assert re.search(
+        r'^if \[ "\$\{WARM_CACHE_ACTIONS\}" = true \]; then\nmkdir -p "\$\{ACTIONS_GEN_ROOT\}"',
+        script,
+        re.MULTILINE,
+    )
 
 
 def test_the_host_gauges_report_the_actions_generation() -> None:

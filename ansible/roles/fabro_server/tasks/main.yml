@@ -94,6 +94,11 @@
     # the only default that leaves the catalog of an instance predating the
     # axis exactly as its server holds it.
     fabro_server_environments: "{{ fabro_server_instance.environments | default([]) }}"
+    # OPTIONAL, and EMPTY by default — the catalog ids this instance has
+    # deliberately retired.  These are not inferred from an omitted active
+    # declaration: an omission can be a typo, while this separate axis is the
+    # operator's explicit authority for a destructive catalog DELETE.
+    fabro_server_retired_environments: "{{ fabro_server_instance.retired_environments | default([]) }}"
     # OPTIONAL, and EMPTY by default, for the same reason: the vault entries
     # this instance must hold, each created only when the vault lacks its name
     # and never overwritten (tasks/vault.yml). An entry spells `name`, `type`
@@ -359,6 +364,24 @@
     success_msg: this instance's declared environments are distinct
   when: fabro_server_environments | length > 1
 
+- name: Refuse an environment id declared both active and retired
+  # This is a preflight rather than a catalog-time conflict: an id cannot be
+  # desired state and a retirement target in one converge.  Refusing before
+  # any host write keeps a malformed mapping from deleting a catalog entry the
+  # later active-environment loop would recreate.
+  ansible.builtin.assert:
+    that:
+      - >-
+        (fabro_server_environments | map(attribute='id') | list)
+        | intersect(fabro_server_retired_environments) | length == 0
+    fail_msg: >-
+      {{ fabro_server_unit_name }} declares environment id(s)
+      {{ (fabro_server_environments | map(attribute='id') | list)
+         | intersect(fabro_server_retired_environments) | join(', ') }} in
+      both environments and retired_environments. An id must be either
+      declared active or explicitly retired, never both.
+    success_msg: no active environment is also declared retired
+
 # --- preflight: the out-of-band state this role refuses to create ----------
 #
 # install.sh's require_inputs, minus the two source files it checked for,
@@ -451,7 +474,9 @@
       {{ fabro_server_binary_path }} is missing or not executable, and this
       instance is not installing one — it declares no binary_source, or it
       declares a source the host already holds. This role never BUILDS a
-      binary. Build it in the pinned factory-integration worktree —
+      binary. Build it from the thewoolleyman/fabro ref of the build this
+      instance pins: factory-integration for the serving v0.408 carrier, or
+      legacy/factory-integration-0254 for the legacy 0.254 build —
       `cargo clean --release -p fabro-spa` then
       `cargo dev build --release -p fabro-cli`, the targeted clean being
       required because Cargo will not otherwise refresh the gitignored SPA
@@ -969,6 +994,17 @@
   # token is read from server.env inside the host-side interpreter, so it is in
   # no argv and never in Ansible's variables; an entry already carrying the
   # instance's current token is left untouched and reports no change.
+  #
+  # It runs in check mode too (check_mode: false below), because the busy probe
+  # after it does (check_mode: false) and cannot answer without this login.
+  # Skipped in check mode, a drift run against an instance whose CLI was never
+  # logged in stopped at the probe with rc 4 "Authentication required" and
+  # reported nothing past it, while the real apply, which runs this step
+  # first, went through. Measured 2026-11-12 on gmktec-xubuntu
+  # fabro-server-homelab-worker-arm64 (:32279), legacy-coordinator-agent GO.
+  # Running it in check mode writes only the same idempotent auth-store entry
+  # a real apply writes, and nothing at all when the entry is current.
+  check_mode: false
   ansible.builtin.command:
     argv:
       - python3
@@ -1375,6 +1411,132 @@
     - not (fabro_server_retained_read_only | bool)
   notify: Fabro instance files changed
 
+# --- resolved settings: report the server's effective values ----------------
+#
+# settings.toml is not the final authority for these values: Fabro supplies
+# defaults, and the running server can resolve a different value than a reader
+# would infer from the file.  The endpoint is therefore the drift-report
+# surface.  This remains a GET-only comparison, including during an apply.
+
+- name: Resolve this instance's settings endpoint declarations
+  # These are exactly the endpoint-visible settings whose values come from an
+  # instance mapping in host_vars.  Constants rendered by settings.toml.j2 and
+  # endpoint settings that Fabro supplies for itself deliberately stay out of
+  # this map: reporting either would turn an undeclared server default into
+  # invented drift.
+  ansible.builtin.set_fact:
+    fabro_server_settings_endpoint_declarations:
+      server.api.url: "https://{{ fabro_server_canonical_host }}/api/v1"
+      server.integrations.github.app_id: "{{ fabro_server_github_app_id }}"
+      server.listen.address: "127.0.0.1:{{ fabro_server_port }}"
+      server.scheduler.max_concurrent_runs: "{{ fabro_server_max_concurrent_runs | int }}"
+      server.web.url: "https://{{ fabro_server_canonical_host }}"
+  check_mode: false
+
+- name: Read the running instance's resolved settings
+  # Every declared instance is read, parked ones included: a stopped
+  # instance has no listener, so its read ends in the unreachable report
+  # below instead of the instance silently producing no result.
+  # Python follows only the declared dotted paths above.  The response can
+  # carry additional settings and defaults without creating a finding, while a
+  # missing declared setting resolves to null and is correctly reported as
+  # drift.  Python is already Ansible's required remote interpreter; unlike
+  # jq, it is not a package this role has to install just to make a read.
+  # A non-200 response, a missing token and a transport error use rc 2,
+  # reserved below for an endpoint that cannot provide a comparison.
+  # The endpoint answers only a bearer-authenticated request, so the instance's
+  # own FABRO_DEV_TOKEN is read from its env file and handed to curl on stdin
+  # as a header, the way the catalog read in environment.yml does: the token
+  # never reaches an argument list or the report.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      token="$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" 2>/dev/null | tail -n 1)"
+      if [ -z "${token}" ]; then
+        printf 'settings endpoint is unreachable: no FABRO_DEV_TOKEN in the instance env file\n'
+        exit 2
+      fi
+      response="$(printf 'Authorization: Bearer %s\n' "${token}" |
+        curl --silent --show-error --connect-timeout 2 --max-time 5 --header @- \
+        --write-out '\n%{http_code}' "${FABRO_SETTINGS_URL}")" || {
+        printf 'settings endpoint is unreachable: transport failure\n'
+        exit 2
+      }
+      status="${response##*$'\n'}"
+      body="${response%$'\n'*}"
+      if [ "${status}" != 200 ]; then
+        printf 'settings endpoint is unreachable: HTTP %s\n' "${status}"
+        exit 2
+      fi
+      comparison_status=0
+      drift="$(printf '%s' "${body}" | python3 -c '
+      import json
+      import os
+      import sys
+
+      try:
+          settings = json.load(sys.stdin)
+          expected = json.loads(os.environ["FABRO_SETTINGS_EXPECTED"])
+      except (json.JSONDecodeError, KeyError):
+          print("settings endpoint is unreachable: invalid JSON response")
+          raise SystemExit(2)
+
+      # The API may wrap the document in a top-level "settings" envelope.
+      if (
+          isinstance(settings, dict)
+          and "server" not in settings
+          and isinstance(settings.get("settings"), dict)
+      ):
+          settings = settings["settings"]
+
+      unit = os.environ["FABRO_SETTINGS_UNIT"]
+      findings = []
+      for setting, declared in expected.items():
+          resolved = settings
+          for segment in setting.split("."):
+              resolved = resolved.get(segment) if isinstance(resolved, dict) else None
+          if resolved != declared:
+              findings.append(
+                  f"DRIFT: {unit} setting {setting}: "
+                  f"declared {json.dumps(declared)}, resolved {json.dumps(resolved)}"
+              )
+      print("\n".join(findings))
+      raise SystemExit(1 if findings else 0)
+      ')" || comparison_status=$?
+      if [ "${comparison_status}" -eq 2 ]; then
+        printf '%s\n' "${drift}"
+        exit 2
+      fi
+      if [ -n "${drift}" ]; then
+        printf '%s\n' "${drift}"
+        exit 1
+      fi
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SETTINGS_URL: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/settings"
+    FABRO_SETTINGS_EXPECTED: "{{ fabro_server_settings_endpoint_declarations | to_json }}"
+    FABRO_SETTINGS_UNIT: "{{ fabro_server_unit_name }}"
+  register: fabro_server_settings_endpoint_read
+  changed_when: fabro_server_settings_endpoint_read.rc == 1
+  failed_when: false
+  check_mode: false
+
+- name: Report settings endpoint drift for this instance
+  ansible.builtin.debug:
+    msg: "{{ fabro_server_settings_endpoint_read.stdout_lines }}"
+  changed_when: fabro_server_settings_endpoint_read.rc == 1
+  when: fabro_server_settings_endpoint_read.rc | default(0) == 1
+
+- name: Report an unreachable settings endpoint for this instance
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: settings endpoint
+      is unreachable; its resolved settings were not treated as matching.
+      {{ fabro_server_settings_endpoint_read.stdout | default('') | trim }}
+  when: fabro_server_settings_endpoint_read.rc | default(0) == 2
+
 # --- supervise -------------------------------------------------------------
 
 - name: Enable the instance and make sure it is running
@@ -1539,6 +1701,7 @@
   # write the wrong instance's catalog.
   ansible.builtin.set_fact:
     fabro_server_environments_url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/environments"
+    fabro_server_runs_url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/runs"
   check_mode: false
 
 - name: Ask this instance's health endpoint again before reading its catalog
@@ -1554,7 +1717,10 @@
   changed_when: false
   check_mode: false
   when:
-    - (fabro_server_environments | length > 0) or (fabro_server_vault_secrets | length > 0)
+    - >-
+      (fabro_server_environments | length > 0)
+      or (fabro_server_retired_environments | length > 0)
+      or (fabro_server_vault_secrets | length > 0)
     - fabro_server_service_state == 'running'
 
 - name: Create the vault entries this instance declares and lacks
@@ -1589,6 +1755,223 @@
     loop_var: fabro_server_environment
     label: "{{ fabro_server_environment.id }}"
   when:
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Read this instance's non-terminal runs before retiring environments
+  # The list is read once for ALL retired ids, before any delete begins. A
+  # run's summary does not carry its selected environment, so the include below
+  # reads each non-terminal run's persisted settings before the refusal decides
+  # whether the catalog may change. The request is GET /api/v1/runs on this
+  # instance's own loopback server, never the CLI's ambient default target.
+  #
+  # The read sends no list of status filters. Each Fabro build refuses, with
+  # HTTP 400, any status variant its own enum lacks, and builds differ: the
+  # gmktec server refused `starting` and `paused` on 2026-11-13
+  # (livespec-dev-tooling-lmuhvi). So every page of runs is read, and a run
+  # counts as non-terminal unless its status is succeeded, failed or archived,
+  # including a status this role has never heard of. An unfiltered listing
+  # hides `removing` runs, which still hold their environment, so a second
+  # paged pass asks for `removing` by name; a build that refuses that filter
+  # fails the task. Any page that is not a JSON object with a `data` list and
+  # a boolean `meta.has_more` fails the task too, so a listing the guard
+  # cannot read in full never reads as "nothing running". The token reaches
+  # curl on stdin (`--header @-`), never in argv. A listing longer than the
+  # page bound leaves meta.has_more true, which the refusal below turns into
+  # a failure.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      python3 - <<'PY'
+      import json
+      import os
+      import subprocess
+      import sys
+      from urllib.parse import urlencode
+
+      TERMINAL = {"succeeded", "failed", "archived"}
+      PAGE_LIMIT = 100
+
+
+      def refuse(reason):
+          sys.exit(f"run listing refused: {reason}")
+
+
+      with open(os.environ["FABRO_SERVER_ENV_FILE"], encoding="utf-8") as env:
+          tokens = [
+              line.rstrip("\n")[len("FABRO_DEV_TOKEN="):]
+              for line in env
+              if line.startswith("FABRO_DEV_TOKEN=")
+          ]
+      if not tokens:
+          refuse("the server env file has no FABRO_DEV_TOKEN")
+      header = f"Authorization: Bearer {tokens[-1]}\n"
+      max_pages = int(os.environ.get("FABRO_SERVER_RUNS_MAX_PAGES", "200"))
+      runs_url = os.environ["FABRO_SERVER_RUNS_URL"]
+
+
+      def read_page(filters, offset):
+          query = urlencode({**filters, "page[limit]": PAGE_LIMIT, "page[offset]": offset})
+          read = subprocess.run(
+              [
+                  "curl", "--silent", "--show-error", "--fail-with-body",
+                  "--header", "@-", "--header", "Accept: application/json",
+                  f"{runs_url}?{query}",
+              ],
+              input=header,
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          if read.returncode != 0:
+              refuse(f"{read.stderr.strip()}: {read.stdout.strip()[:500]}")
+          try:
+              body = json.loads(read.stdout)
+          except ValueError:
+              refuse(f"the listing is not JSON: {read.stdout.strip()[:200]}")
+          if not isinstance(body, dict):
+              refuse("the listing is not a JSON object")
+          data = body.get("data")
+          meta = body.get("meta")
+          if not isinstance(data, list) or not all(isinstance(run, dict) for run in data):
+              refuse("the listing carries no `data` list of runs")
+          if not isinstance(meta, dict) or not isinstance(meta.get("has_more"), bool):
+              refuse("the listing carries no boolean `meta.has_more`")
+          return data, meta["has_more"]
+
+
+      def read_all(filters):
+          runs = []
+          offset = 0
+          pages = 0
+          more = True
+          while more and pages < max_pages:
+              data, more = read_page(filters, offset)
+              pages += 1
+              offset += len(data)
+              runs.extend(data)
+              if not data:
+                  break
+          return runs, more, pages
+
+
+      def kind_of(run):
+          lifecycle = run.get("lifecycle")
+          kind = None
+          if isinstance(lifecycle, dict) and isinstance(lifecycle.get("status"), dict):
+              kind = lifecycle["status"].get("kind")
+          if kind is None:
+              kind = run.get("status")
+          return kind
+
+
+      listed, listed_more, listed_pages = read_all({})
+      removing, removing_more, removing_pages = read_all({"status": "removing"})
+
+      kept = []
+      held = set()
+      for run in listed + removing:
+          if "id" not in run:
+              refuse("a listed run carries no id")
+          kind = kind_of(run)
+          if isinstance(kind, str) and kind in TERMINAL:
+              continue
+          if run["id"] in held:
+              continue
+          held.add(run["id"])
+          kept.append({"id": run["id"], "status": kind})
+
+      print(json.dumps({
+          "data": kept,
+          "meta": {
+              "has_more": listed_more or removing_more,
+              "pages": listed_pages + removing_pages,
+              "read": len(listed) + len(removing),
+          },
+      }))
+      PY
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SERVER_RUNS_URL: "{{ fabro_server_runs_url }}"
+  register: fabro_server_retired_runs_read
+  changed_when: false
+  check_mode: false
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Resolve this instance's non-terminal runs for retirement safety
+  ansible.builtin.set_fact:
+    fabro_server_retired_nonterminal_runs: >-
+      {{ (fabro_server_retired_runs_read.stdout | from_json).data }}
+    fabro_server_retired_runs_have_more: >-
+      {{ (fabro_server_retired_runs_read.stdout | from_json).meta.has_more }}
+    fabro_server_retired_run_environments: []
+  check_mode: false
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Refuse a retirement check whose run listing did not fit in one response
+  ansible.builtin.assert:
+    that:
+      - not (fabro_server_retired_runs_have_more | bool)
+    fail_msg: >-
+      {{ fabro_server_unit_name }} has more non-terminal runs than one catalog
+      safety read returned. The role will not delete a retired environment until
+      it has read every non-terminal run and its selected environment.
+    success_msg: the retirement safety read contains every non-terminal run
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Read every non-terminal run's selected environment
+  ansible.builtin.include_tasks: retired_run.yml
+  loop: "{{ fabro_server_retired_nonterminal_runs }}"
+  loop_control:
+    loop_var: fabro_server_retired_run
+    label: "{{ fabro_server_retired_run.id }}"
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Refuse to retire an environment selected by a non-terminal run
+  ansible.builtin.assert:
+    that:
+      - >-
+        fabro_server_retired_run_environments
+        | selectattr('environment', 'in', fabro_server_retired_environments)
+        | list | length == 0
+    fail_msg: >-
+      Cannot retire environment
+      {{ ((fabro_server_retired_run_environments
+           | selectattr('environment', 'in', fabro_server_retired_environments)
+           | list | first | default({})).environment | default('unknown')) }} from
+      {{ fabro_server_unit_name }}: non-terminal run
+      {{ ((fabro_server_retired_run_environments
+           | selectattr('environment', 'in', fabro_server_retired_environments)
+           | list | first | default({})).id | default('unknown')) }} still selects it.
+      The catalog was left unchanged.
+    success_msg: no non-terminal run selects a retired environment
+  when:
+    - fabro_server_retired_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Delete each retired sandbox environment
+  ansible.builtin.include_tasks: retired_environment.yml
+  loop: "{{ fabro_server_retired_environments }}"
+  loop_control:
+    loop_var: fabro_server_retired_environment
+    label: "{{ fabro_server_retired_environment }}"
+  when:
+    - fabro_server_retired_environments | length > 0
     - fabro_server_service_state == 'running'
     - fabro_server_catalog_health.status | default(-1) == 200
 

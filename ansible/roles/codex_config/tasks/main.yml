@@ -335,23 +335,79 @@
     _codex_config_state: >-
       {{ (_codex_config_line.split() | last) if _codex_config_line | length > 0 else '' }}
 
+- name: Resolve the real path of the operator's Codex config
+  # The Driver's writers (livespec-driver-codex dev-tooling/codex_config_write.py)
+  # take their lock on `<realpath(config.toml)>.livespec-lock`, so the file this
+  # role locks has to be keyed on the same RESOLVED path: a symlinked config.toml
+  # and its target must share one lock. `-m` because the file may not exist yet.
+  # check_mode: false because this is a READ-ONLY probe that a later task reads.
+  ansible.builtin.command:
+    argv: [realpath, -m, "{{ ansible_env.HOME }}/.codex/config.toml"]
+  become: false
+  register: codex_config_config_realpath
+  changed_when: false
+  check_mode: false
+
 - name: Enable the Codex feature
   # `codex features enable` is idempotent on its own, so the listing above is
   # not needed for correctness -- it is needed for REPORTING. Run unconditionally
   # the task would be marked changed on every converge, and a drift report whose
   # every line is a change reports nothing. changed_when is a bare true because
   # the `when` already restricts the task to the case where it changes something.
+  #
+  # SERIALIZED against the Driver's writers (livespec-driver-codex spec v019).
+  # Codex rewrites config.toml read-modify-write and takes no lock itself, so run
+  # unserialized it can drop the `trusted_content_hash` records the observer or
+  # the reconciler is writing, which un-trusts the Driver's hooks and leaves an
+  # untrusted PreToolUse guard failing open. Holding the Driver's flock around the
+  # write is the only serialization provisioning can offer. The wait is bounded by
+  # codex_config_lock_wait_seconds; a timeout exits with
+  # codex_config_lock_timeout_rc (flock -E) BEFORE codex runs, and the assert
+  # below turns that into a failure naming the lock file.
   ansible.builtin.command:
-    argv: [codex, features, enable, "{{ codex_config_feature }}"]
+    argv:
+      - flock
+      - -w
+      - "{{ codex_config_lock_wait_seconds }}"
+      - -E
+      - "{{ codex_config_lock_timeout_rc }}"
+      - "{{ _codex_config_lock_file }}"
+      - codex
+      - features
+      - enable
+      - "{{ codex_config_feature }}"
   become: false
   changed_when: true
+  failed_when: false
+  register: codex_config_feature_enable
   when: _codex_config_state != codex_config_enabled_state
   vars:
+    _codex_config_lock_file: "{{ codex_config_config_realpath.stdout | trim }}.livespec-lock"
     _codex_config_line: >-
       {{ codex_config_feature_list.stdout_lines
          | select('search', '^' ~ codex_config_feature ~ '[ \t]') | first | default('') }}
     _codex_config_state: >-
       {{ (_codex_config_line.split() | last) if _codex_config_line | length > 0 else '' }}
+
+- name: Require the Codex feature enable to have run under the config lock
+  ansible.builtin.assert:
+    that:
+      - codex_config_feature_enable.rc == 0
+    fail_msg: >-
+      {% if codex_config_feature_enable.rc == codex_config_lock_timeout_rc | int -%}
+      Did not obtain the exclusive lock on
+      {{ codex_config_config_realpath.stdout | trim }}.livespec-lock within
+      {{ codex_config_lock_wait_seconds }}s, so codex features enable was NOT run
+      and ~{{ codex_config_user }}/.codex/config.toml was not written. Another
+      Driver writer (the hook-cache observer or the reconciler) holds the lock.
+      {%- else -%}
+      codex features enable {{ codex_config_feature }} exited
+      {{ codex_config_feature_enable.rc }}:
+      {{ codex_config_feature_enable.stderr | default('') }}
+      {%- endif %}
+    success_msg: "codex features enable ran under the config lock"
+  when:
+    - codex_config_feature_enable is not skipped
 
 - name: Read the Codex feature states back
   # KEPT as a command, not dropped. Nothing about `codex features enable`

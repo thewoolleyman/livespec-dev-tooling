@@ -75,6 +75,7 @@ gate-wait *args:
 gate-status *args:
     ./dev-tooling/gate-run.sh status "$@"
 
-# List recent gate runs, newest last.
-gate-list:
-    ./dev-tooling/gate-run.sh list
+# List recent gate runs, newest last; pass --all to include every run.
+[positional-arguments]
+gate-list *args:
+    ./dev-tooling/gate-run.sh list "$@"

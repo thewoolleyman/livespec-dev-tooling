@@ -131,7 +131,7 @@ avg60 is above about 30 (`legacy-coordinator-agent` ruling, 2026-11-04,
 recorded on `livespec-dev-tooling-6e5pyj`). Sandbox throttling with idle cores
 is a sizing question for the sandbox limit, not a sign the node is full.
 
-## Two instruments that lied, and one that only looked like it
+## Three instruments that lied, and one that only looked like it
 
 - **`iostat -dx` column offsets.** In sysstat 12.x the write columns are
   `w/s`=$8, `wkB/s`=$9, `wrqm/s`=$10, `%wrqm`=$11, **`w_await`=$12**,
@@ -147,8 +147,22 @@ is a sizing question for the sandbox limit, not a sign the node is full.
   165–182 s at a 51-runner burst); `systemctl --failed` counting 1 is the
   signal working, not a unit to repair. Read its journal for the class and
   whether it cleared.
+- **`ClusterQueue` cohort membership is `spec.cohortName`.** Kueue v1beta2
+  names the field `spec.cohortName`; v1beta1's `spec.cohort` is absent on
+  every queue here, so a read of it reports every queue cohort-less, which
+  is false. Read `-o custom-columns=NAME:.metadata.name,COHORT:.spec.cohortName`
+  before concluding a queue cannot borrow.
 
 ## `Slow SQL` tracks the backlog's depth, not the cap
+
+> **Datastore era.** This section reads kine over SQLite, poweredge-xubuntu's
+> datastore until the embedded-etcd cut-over (plan k3s-embedded-etcd-datastore,
+> livespec-dev-tooling-qy2nzf). From the cut-over on, kine is gone and so is
+> `Slow SQL`; its absence then proves nothing. Read the same stall as etcd's
+> `apply request took too long` in the k3s journal, and as the
+> `etcd_request_duration_seconds` p99 that the committed
+> `k8s-datastore-request-latency-p99` trigger watches. The backlog-versus-cap
+> reasoning below carries over to that signal unchanged.
 
 kine (the SQLite-on-tmpfs datastore behind the k3s API) logs `Slow SQL`
 for any statement over one second. On this host it is CPU and write-volume

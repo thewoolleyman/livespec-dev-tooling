@@ -170,6 +170,7 @@ def test_arm_refuses_a_changed_tree_record_even_with_a_disposition(
         release="v0.304.0",
         installed_reader_approved=Mock(return_value=True),
         read=forge,
+        changed=Mock(return_value="the changed set is never consulted for a failed record"),
     )(_ARM)
     assert str(refusal).startswith(f"incident-focused-evidence-failed: {_CHANGED}"), refusal
 

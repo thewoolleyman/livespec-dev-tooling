@@ -5,7 +5,8 @@ the reader's verdicts; this module proves the committed `.github/workflows/ci.ym
 actually gives ci-green that verdict. It reads the `ci-green` job's text,
 recovers the reader invocation its step runs, and replays it over the real job
 sets of three runs (the fixtures under `tests/fixtures/ci_green_required_legs/`,
-captured with the same API path and `--jq` projection the step uses).
+captured with the same API path the step reads, in the one-object-per-line shape its
+projection writes).
 
 The replay is the load-bearing assertion. Against the workflow as it stood
 before this change, ci-green carried no reader step: its only failing step
@@ -55,8 +56,13 @@ _NEXT_JOB = re.compile(r"\n(?=  [A-Za-z0-9_-]+:\n)")
 _READER = "python3 -m livespec_dev_tooling.ci_green_required_legs"
 _JOBS_PLACEHOLDER = '"$jobs_file"'
 _API_READ = (
-    'gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs'
-    "?filter=latest&per_page=100\" --jq '.jobs[] | {name, status, conclusion}'"
+    'livespec-forge-read ci-green-run-jobs-read --paginate "repos/${GITHUB_REPOSITORY}'
+    '/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100"'
+)
+_PROJECTION = (
+    'python3 -c \'import json, sys; [print(json.dumps({"name": j["name"], '
+    '"status": j["status"], "conclusion": j["conclusion"]})) for page in '
+    'json.load(open(sys.argv[1])) for j in page["jobs"]]\' "$pages_file"'
 )
 _READER_LINE = (
     "python3 -m livespec_dev_tooling.ci_green_required_legs "
@@ -64,11 +70,11 @@ _READER_LINE = (
 )
 _READER_STEP_HEADER = "      - name: Every required leg was created and concluded success\n"
 _UNREADABLE_BRANCH = (
-    "          read_jobs || { sleep 5; read_jobs; } || { sleep 15; read_jobs; } || {\n"
-    "            echo \"::error::ci-green: could not read this run's jobs from the Actions API;"
+    f'          if ! {_API_READ} > "$pages_file"; then\n'
+    '            echo "::error::ci-green: ci-green-run-jobs-read ended without an answer;'
     ' failing closed"\n'
     "            exit 1\n"
-    "          }\n"
+    "          fi\n"
 )
 _NOT_PINNED = "the reader step is not exactly the pinned text"
 # The reader step exactly as committed. Any edit to it, however small, fails.
@@ -78,10 +84,10 @@ _READER_STEP = (
     + "          GH_TOKEN: ${{ github.token }}\n"
     + "        run: |\n"
     + '          jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"\n'
-    + "          read_jobs() {\n"
-    + f'            {_API_READ} > "$jobs_file"\n'
-    + "          }\n"
+    + '          pages_file="${RUNNER_TEMP}/ci-green-run-jobs-pages.json"\n'
     + _UNREADABLE_BRANCH
+    + f'          jobs_lines="$({_PROJECTION})"\n'
+    + '          printf \'%s\\n\' "$jobs_lines" > "$jobs_file"\n'
     + f"          {_READER_LINE}\n"
 )
 _NEEDS_RESULT_STEP = (

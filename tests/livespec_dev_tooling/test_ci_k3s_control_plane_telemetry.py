@@ -16,7 +16,12 @@ def _executable(*, path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
-def _emit(*, tmp_path: Path, readyz_exit: int = 0) -> dict[str, object]:
+def _emit(
+    *,
+    tmp_path: Path,
+    readyz_exit: int = 0,
+    metrics_text: str | None = None,
+) -> dict[str, object]:
     """Run the emitter against captured API responses and return its OTLP payload."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -25,7 +30,8 @@ def _emit(*, tmp_path: Path, readyz_exit: int = 0) -> dict[str, object]:
     captured = tmp_path / "otlp.json"
     readyz.write_text("[+]etcd ok\n[-]etcd-readiness failed: sqlite busy\n", encoding="utf-8")
     metrics.write_text(
-        "\n".join(
+        metrics_text
+        or "\n".join(
             [
                 'apiserver_storage_size_bytes{storage="kine"} 2048',
                 'etcd_request_duration_seconds_bucket{verb="GET",le="0.1"} 2',
@@ -135,3 +141,84 @@ def test_emitter_records_an_api_failure_instead_of_silence(tmp_path: Path) -> No
         if _attribute(point, "k8s.readiness_check") == "api-server" and point["asInt"] == "0"
     ]
     assert _metric(payload, "livespec.ci_k3s.readiness_latency_seconds")["gauge"]["dataPoints"]
+
+
+def test_emitter_sends_api_server_request_latency_by_verb_and_resource(
+    tmp_path: Path,
+) -> None:
+    """API-server request latency retains only the verb and resource dimensions."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text="\n".join(
+            [
+                'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="0.1"} 2',
+                'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="+Inf"} 4',
+                'apiserver_request_duration_seconds_sum{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 0.9',
+                'apiserver_request_duration_seconds_count{verb="PUT",resource="leases",subresource="",scope="namespace",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 4',
+                'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="0.1"} 3',
+                'apiserver_request_duration_seconds_bucket{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false",le="+Inf"} 5',
+                'apiserver_request_duration_seconds_sum{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 1.2',
+                'apiserver_request_duration_seconds_count{verb="PUT",resource="leases",subresource="",scope="cluster",group="coordination.k8s.io",version="v1",component="apiserver",dry_run="false"} 5',
+                'apiserver_request_duration_seconds_bucket{verb="GET",resource="pods",le="+Inf"} 1',
+                'apiserver_request_duration_seconds_sum{verb="GET",resource="pods"} 0.01',
+                'apiserver_request_duration_seconds_count{verb="GET",resource="pods"} 1',
+                "",
+            ]
+        ),
+    )
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert "apiserver_request_duration_seconds" in {metric["name"] for metric in metrics}
+    points = _metric(payload, "apiserver_request_duration_seconds")["histogram"]["dataPoints"]
+    assert {(_attribute(point, "verb"), _attribute(point, "resource")) for point in points} == {
+        ("PUT", "leases"),
+        ("GET", "pods"),
+    }
+    assert all(
+        {attribute["key"] for attribute in point["attributes"]} == {"verb", "resource"}
+        for point in points
+    )
+    lease_put = next(
+        point
+        for point in points
+        if (_attribute(point, "verb"), _attribute(point, "resource")) == ("PUT", "leases")
+    )
+    assert lease_put["count"] == "9"
+    assert lease_put["sum"] == 2.1
+    assert lease_put["bucketCounts"] == ["5", "4"]
+
+
+def test_emitter_sends_only_504_api_server_response_counts(
+    tmp_path: Path,
+) -> None:
+    """Handler-timeout responses are summed by verb and resource only."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text="\n".join(
+            [
+                'apiserver_request_total{verb="PUT",resource="leases",scope="namespace",code="504"} 2',
+                'apiserver_request_total{verb="PUT",resource="leases",scope="cluster",code="504"} 3',
+                'apiserver_request_total{verb="GET",resource="pods",code="500"} 7',
+                "",
+            ]
+        ),
+    )
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert "apiserver_request_total" in {metric["name"] for metric in metrics}
+    points = _metric(payload, "apiserver_request_total")["sum"]["dataPoints"]
+    assert len(points) == 1
+    assert points[0]["asInt"] == "5"
+    assert {
+        attribute["key"]: attribute["value"]["stringValue"] for attribute in points[0]["attributes"]
+    } == {"verb": "PUT", "resource": "leases"}
+
+
+def test_emitter_omits_handler_timeout_metric_when_there_are_no_504s(
+    tmp_path: Path,
+) -> None:
+    """A scrape without handler timeouts emits no synthetic zero datapoint."""
+    payload = _emit(
+        tmp_path=tmp_path,
+        metrics_text='apiserver_request_total{verb="PUT",resource="leases",code="200"} 9\n',
+    )
+    metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    assert "apiserver_request_total" not in {metric["name"] for metric in metrics}
