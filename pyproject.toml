@@ -184,6 +184,12 @@ dev = [
 
 [tool.livespec_dev_tooling]
 source_trees = ["livespec_dev_tooling"]
+# The delegated gate Job's memory request and limit (contracts.md, "Declared
+# gate resources"). The default is 6Gi. The full-suite green-verified leg at
+# the default 4 workers peaked at 6.78 GB and was OOM-killed (exit 137) twice
+# on 2026-11-14. 8Gi is one gate unit (5 cpu / 8Gi), so every gate lane still
+# admits it (livespec-dev-tooling-ukoeah).
+gate_memory = "8Gi"
 # Directories whose direct-child `.py` modules are consumer-facing INVOCATION
 # surface (`python -m livespec_dev_tooling.<subpackage>.<slug>`), read by
 # `release_bump_classification`. Declared because this library's public surface
