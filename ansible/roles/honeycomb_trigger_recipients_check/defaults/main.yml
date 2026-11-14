@@ -24,13 +24,15 @@ honeycomb_trigger_recipients_check_script: >-
 # check's environment and nowhere else -- never a file, never git, never argv.
 honeycomb_trigger_recipients_check_env_wrapper: /usr/local/bin/with-homelab-env.sh
 
-# The OnFailure target. A CROSS-REPO dependency: the templated unit ships from
-# the dolt-server repo, not from vps-info. It is what makes this check's own
-# failure visible, so a missing one recreates in miniature the outage the check
-# exists to prevent -- a watchman with nobody to report to.
-honeycomb_trigger_recipients_check_alert_unit: dolt-backup-alert@.service
+# The OnFailure target, installed by role host_unit_alert, which dev-host.yml
+# runs before this one. It is what makes this check's own failure visible, so a
+# missing one recreates in miniature the outage the check exists to prevent -- a
+# watchman with nobody to report to. Not dolt-server's dolt-backup-alert@: that
+# handler reports every failure as a dolt backup failure
+# (livespec-dev-tooling-l7f72q).
+honeycomb_trigger_recipients_check_alert_unit: host-unit-alert@.service
 honeycomb_trigger_recipients_check_alert_target: >-
-  dolt-backup-alert@honeycomb-trigger-recipients-check.service
+  host-unit-alert@honeycomb-trigger-recipients-check.service
 
 # The account the check runs as. It must be an account the 1Password wrapper can
 # serve, and it is deliberately not root: the check only reads a remote API.

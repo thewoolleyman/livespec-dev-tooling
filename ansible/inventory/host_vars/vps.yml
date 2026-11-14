@@ -261,10 +261,12 @@ reconcile_runs_tenants:
 # One enabled tenant: its pass (at most the 1800 s bound), the 10 min interval
 # and one more pass. Raise it with each tenant the sweep gains.
 reconcile_runs_stale_after_seconds: 5400
-# This host emits no reconcile-runs gauge, so a stale tenant alerts through the
-# same proven unit-failure path as the dolt-server units (ntfy, plus a Honeycomb
-# event its trigger turns into email), once per stale episode.
-reconcile_runs_staleness_on_failure: dolt-backup-alert@%n.service
+# This host emits no reconcile-runs gauge, so a stale tenant alerts through
+# role host_unit_alert's unit-failure path (ntfy, plus a Honeycomb event its own
+# trigger turns into email), once per stale episode. Never dolt-backup-alert@:
+# that handler reports every failure as a dolt backup failure
+# (livespec-dev-tooling-l7f72q).
+reconcile_runs_staleness_on_failure: host-unit-alert@%n.service
 
 # --- ssh_hardening ---
 ssh_hardening_public_address: 66.94.121.15

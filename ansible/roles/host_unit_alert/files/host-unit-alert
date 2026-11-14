@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# OnFailure= handler for units that livespec-dev-tooling roles install (role
+# host_unit_alert).
+#
+# usage: host-unit-alert <failed-unit>
+#
+# Wiring: a watched unit carries `OnFailure=host-unit-alert@%n.service`, so the
+# argument is the full name of the unit that just failed. The alert names that
+# unit and this host, and nothing else: it never calls a failure a backup
+# failure. dolt-server's dolt-backup-alert@ does, which is why these units no
+# longer route through it.
+#
+# Two channels, each optional and configured by environment (the unit reads
+# them from host_unit_alert_env_file):
+#   HONEYCOMB_INGEST_KEY, HONEYCOMB_DATASET, HONEYCOMB_API
+#       One event: name=host-unit-failure, source=host-unit-alert,
+#       outcome=unit_failure. Its own Honeycomb trigger emails the operator
+#       (HOST_VARS.md records it). `source` keeps it out of the dolt-backup
+#       failure trigger, which counts source in (backup-sync, onfailure).
+#   ALERT_NTFY_TOPIC, ALERT_NTFY_SERVER, ALERT_NTFY_TOKEN, ALERT_EMAIL
+#       One ntfy push, with the failed unit's recent journal.
+#
+# Secrets go to curl on stdin (`--config -`), never in its argv.
+#
+# Exit status: 0 when at least one channel accepted the alert, 1 when every
+# configured channel failed or none is configured, so an alert that reached
+# nobody is a failed unit in the journal rather than a silent success.
+set -uo pipefail
+
+unit="${1:-unknown.unit}"
+host="$(hostname -s 2>/dev/null || printf 'unknown-host')"
+when="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+lines="${HOST_UNIT_ALERT_JOURNAL_LINES:-30}"
+journal="$(journalctl -u "${unit}" -n "${lines}" --no-pager -o short-iso 2>&1 || true)"
+subject="${host}: ${unit} failed"
+summary="unit failure: ${unit} on ${host}"
+
+log() { printf 'host-unit-alert: %s\n' "$*" >&2; }
+
+delivered=0
+
+if [[ -n "${HONEYCOMB_INGEST_KEY:-}" && -n "${HONEYCOMB_DATASET:-}" ]]; then
+  event="$(python3 -I -c '
+import json, sys
+unit, host, when, body = sys.argv[1:]
+print(json.dumps({
+    "name": "host-unit-failure", "source": "host-unit-alert",
+    "outcome": "unit_failure", "severity": "error",
+    "unit": unit, "host": host, "ts": when, "body": body,
+}))' "${unit}" "${host}" "${when}" "${summary}")"
+  if printf 'header = "X-Honeycomb-Team: %s"\n' "${HONEYCOMB_INGEST_KEY}" |
+    curl --config - -fsS -m 10 -X POST \
+      -H 'Content-Type: application/json' -d "${event}" \
+      "${HONEYCOMB_API:-https://api.honeycomb.io}/1/events/${HONEYCOMB_DATASET}" >/dev/null; then
+    delivered=$((delivered + 1))
+    log "Honeycomb event sent for ${unit}"
+  else
+    log "Honeycomb event failed for ${unit}"
+  fi
+fi
+
+if [[ -n "${ALERT_NTFY_TOPIC:-}" ]]; then
+  body="$(printf 'A unit on %s entered the failed state.\n\nUnit: %s\nWhen: %s\n\nInvestigate:\n  systemctl status %s\n  journalctl -u %s -n 80 --no-pager\n\n--- last %s journal lines ---\n%s\n' \
+    "${host}" "${unit}" "${when}" "${unit}" "${unit}" "${lines}" "${journal}")"
+  if {
+    [[ -z "${ALERT_NTFY_TOKEN:-}" ]] || printf 'header = "Authorization: Bearer %s"\n' "${ALERT_NTFY_TOKEN}"
+    [[ -z "${ALERT_NTFY_TOKEN:-}" || -z "${ALERT_EMAIL:-}" ]] || printf 'header = "Email: %s"\n' "${ALERT_EMAIL}"
+  } | curl --config - -fsS -m 15 \
+    -H "Title: ${subject}" -H 'Priority: high' -H 'Tags: rotating_light' \
+    -d "${body}" "${ALERT_NTFY_SERVER:-https://ntfy.sh}/${ALERT_NTFY_TOPIC}" >/dev/null; then
+    delivered=$((delivered + 1))
+    log "ntfy push sent for ${unit}"
+  else
+    log "ntfy push failed for ${unit}"
+  fi
+fi
+
+if ((delivered == 0)); then
+  log "no channel accepted the alert for ${unit}"
+  exit 1
+fi
+exit 0

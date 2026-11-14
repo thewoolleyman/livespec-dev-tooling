@@ -1,0 +1,8 @@
+---
+- name: Reload systemd for the host-unit alert template
+  # The template is only ever started through OnFailure=, so a reload is all a
+  # changed unit file needs. Nothing is started here.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode
