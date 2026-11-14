@@ -83,6 +83,10 @@ all:
               # were the VPS. A rebuilt VPS gets a new machine-id: re-measure
               # `cat /etc/machine-id` on it and update this value.
               # `control_node_identity_file` exists for the guard's own test.
+              # Passing it as an extra var (`-e control_node_identity_file=…`)
+              # also bypasses the guard. That is deliberate: this is a guard
+              # against an ACCIDENTAL run from the wrong controller, not a
+              # security boundary against an operator who sets it on purpose.
               control_node_machine_id: 22d4402d76894de4843c054c6c47ecbe
               # The machine-id of the controller running this ansible: a lookup
               # always runs on the controller, never on the target.

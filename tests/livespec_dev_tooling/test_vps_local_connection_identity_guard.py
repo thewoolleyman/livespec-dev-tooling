@@ -81,12 +81,15 @@ def _control_node_machine_id() -> str:
     return machine_id
 
 
-def _run_play(*, tmp_path: Path, controller_machine_id: str) -> tuple[int, str]:
+def _run_play(
+    *, tmp_path: Path, controller_machine_id: str, gather_facts: bool = False
+) -> tuple[int, str]:
     identity = tmp_path / "machine-id"
     identity.write_text(f"{controller_machine_id}\n", encoding="utf-8")
     play = tmp_path / "play.yml"
     play.write_text(
-        "---\n- name: vps identity guard fixture\n  hosts: vps\n  gather_facts: false\n"
+        "---\n- name: vps identity guard fixture\n  hosts: vps\n"
+        f"  gather_facts: {'true' if gather_facts else 'false'}\n"
         "  tasks:\n    - name: report the resolved connection\n"
         "      ansible.builtin.debug:\n"
         f'        msg: "{_REACHED} {{{{ ansible_connection }}}}"\n',
@@ -129,6 +132,19 @@ def test_a_play_selecting_vps_on_another_controller_refuses_before_any_task(
     assert returncode != 0, output
     assert _REACHED not in output, output
     assert expected in output, output
+    assert _FOREIGN_MACHINE_ID in output, output
+
+
+def test_a_fact_gathering_play_selecting_vps_on_another_controller_refuses_at_fact_gathering(
+    *, tmp_path: Path
+) -> None:
+    returncode, output = _run_play(
+        tmp_path=tmp_path, controller_machine_id=_FOREIGN_MACHINE_ID, gather_facts=True
+    )
+    assert returncode != 0, output
+    assert "TASK [Gathering Facts]" in output, output
+    assert "ok: [vps]" not in output, output
+    assert _REACHED not in output, output
     assert _FOREIGN_MACHINE_ID in output, output
 
 
