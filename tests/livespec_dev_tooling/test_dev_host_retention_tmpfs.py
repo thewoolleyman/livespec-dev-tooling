@@ -123,8 +123,10 @@ def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
     assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
     tmp_root = tmp_path / "tmp"
     live = tmp_root / "claude-1000" / "project" / "live"
-    live.mkdir(parents=True)
-    _age(path=live, seconds=_AGED_SECONDS)
+    dead = tmp_root / "claude-1000" / "project" / "dead"
+    for session in (live, dead):
+        session.mkdir(parents=True)
+        _age(path=session, seconds=_AGED_SECONDS)
     proc_root = tmp_path / "proc"
     live_environment = proc_root / "100" / "environ"
     live_environment.parent.mkdir(parents=True)
@@ -144,7 +146,45 @@ def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert live.exists(), done.stdout
+    assert not dead.exists(), done.stdout
     assert done.stderr == ""
+
+
+def test_retention_removes_no_session_scratch_when_no_environment_can_be_read(
+    *, tmp_path: Path
+) -> None:
+    """A scan that read no environment at all is not a scan that found no live session.
+
+    xargs exits 123 when every grep exits 2, the same status as a scan whose
+    greps merely found no match, so an unreadable process root would otherwise
+    make every aged session look dead. The session leg is skipped with a
+    WARNING and the pytest leg, which does not depend on liveness, still runs.
+    """
+    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
+    tmp_root = tmp_path / "tmp"
+    session = tmp_root / "claude-1000" / "project" / "unreadable"
+    old_pytest = tmp_root / "pytest-of-ubuntu" / "pytest-1"
+    for directory in (session, old_pytest):
+        directory.mkdir(parents=True)
+        _age(path=directory, seconds=_AGED_SECONDS)
+    proc_root = tmp_path / "proc"
+    # Reading a directory as an environment fails like an unreadable /proc file.
+    for pid in ("100", "101"):
+        (proc_root / pid / "environ").mkdir(parents=True)
+
+    done = run_under_hang_guard(
+        ["bash", str(_RETENTION)],
+        env=_hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=tmp_path / "bulk")
+        | {"LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT": str(proc_root)},
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert session.exists(), done.stdout
+    assert "session leg skipped: liveness scan failed" in done.stdout, done.stdout
+    assert not old_pytest.exists(), done.stdout
 
 
 @pytest.mark.integration
