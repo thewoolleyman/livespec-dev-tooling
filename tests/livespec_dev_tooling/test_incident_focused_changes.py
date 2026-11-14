@@ -653,6 +653,44 @@ def test_a_replace_ref_cannot_hide_a_changed_product_file_from_the_reference_clo
     assert all(facts), (facts, status, result)
 
 
+def test_a_graft_cannot_hide_a_changed_product_file_from_the_reference_clone(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    # A graft that makes the head parentless leaves it no merge base with the target.
+    grafts = clone.repo / ".git" / "info" / "grafts"
+    grafts.parent.mkdir(parents=True, exist_ok=True)
+    _ = grafts.write_text(f"{clone.head}\n", encoding="utf-8")
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    authority.add(record=_record(clone=clone, paths={}, covered=()))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "src/widget.py" in reason,
+    ]
+    assert all(facts), (facts, status, result)
+
+
+def test_clone_configuration_cannot_alter_the_changed_set_the_arm_reads(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = _clone(root=tmp_path)
+    # A diff setting the plumbing diff refuses to parse: honoured, it fails the changed-set read.
+    _ = _git(repo=clone.repo, args=["config", "diff.renameLimit", "not-a-number"])
+    application, authority = _observer(tmp_path=tmp_path, monkeypatch=monkeypatch, clone=clone)
+    authority.add(record=_record(clone=clone, paths={}, covered=()))
+    status, result = _arm(application=application, clone=clone)
+    reason = str(result.get("reason"))
+    facts = [
+        status == "403 Forbidden",
+        reason.startswith("incident-focused-evidence-paths-incomplete:"),
+        "src/widget.py" in reason,
+    ]
+    assert all(facts), (facts, status, result)
+
+
 def test_an_in_tree_symlinked_module_uses_its_target_modules_disposition(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
