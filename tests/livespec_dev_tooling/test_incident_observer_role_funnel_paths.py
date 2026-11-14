@@ -37,6 +37,7 @@ _DNS = "node.example.ts.net"
 _HOST = _DNS + ":10000"
 _CALLBACK = "/callback"
 _ORDINARY = "/ordinary-action"
+_PUBLISH = "/ci/publish"
 _PRODUCTION = "http://127.0.0.1:8765"
 _SCRATCH = "http://127.0.0.1:8766"
 _ROLE_VARIABLES = (
@@ -101,7 +102,11 @@ def _serve(*, handlers: dict[str, str]) -> dict[str, Any]:
     }
 
 
-_BOTH = {_CALLBACK: _PRODUCTION + _CALLBACK, _ORDINARY: _PRODUCTION + _ORDINARY}
+_BOTH = {
+    _CALLBACK: _PRODUCTION + _CALLBACK,
+    _ORDINARY: _PRODUCTION + _ORDINARY,
+    _PUBLISH: _PRODUCTION + _PUBLISH,
+}
 # Each node the one playbook run applies the funnel tasks to: its recorded
 # funnel status, whether the tailnet grants it the funnel attribute, and
 # whether a publish on it takes effect.
@@ -233,7 +238,7 @@ def _publish_argv(*, path: str) -> list[str]:
 def test_the_committed_defaults_declare_the_callback_and_the_ordinary_action_paths() -> None:
     defaults = base.role_yaml(relative="defaults/main.yml")
 
-    assert defaults["incident_observer_funnel_paths"] == [_CALLBACK, _ORDINARY]
+    assert defaults["incident_observer_funnel_paths"] == [_CALLBACK, _ORDINARY, _PUBLISH]
     assert defaults["incident_observer_funnel_https_port"] == 10000
     assert "incident_observer_funnel_path" not in defaults
 
@@ -244,7 +249,10 @@ def test_the_live_shape_publishes_only_the_ordinary_action_path(
     outcome = outcomes["live"]
 
     assert outcome.failed is False, outcome.output
-    assert outcome.published == [_publish_argv(path=_ORDINARY)]
+    # Pending paths come out of `difference`, which keeps no order.
+    assert sorted(outcome.published) == sorted(
+        [_publish_argv(path=_ORDINARY), _publish_argv(path=_PUBLISH)]
+    )
 
 
 def test_a_fresh_node_publishes_both_paths_with_the_callback_argv_unchanged(
@@ -253,7 +261,10 @@ def test_a_fresh_node_publishes_both_paths_with_the_callback_argv_unchanged(
     outcome = outcomes["fresh"]
 
     assert outcome.failed is False, outcome.output
-    assert outcome.published == [_publish_argv(path=_CALLBACK), _publish_argv(path=_ORDINARY)]
+    # Pending paths come out of `difference`, which keeps no order.
+    assert sorted(outcome.published) == sorted(
+        [_publish_argv(path=_CALLBACK), _publish_argv(path=_ORDINARY), _publish_argv(path=_PUBLISH)]
+    )
 
 
 def test_a_node_already_publishing_both_paths_publishes_nothing(
@@ -272,7 +283,10 @@ def test_a_path_proxied_anywhere_but_productions_listener_is_published_again(
     outcome = outcomes["elsewhere"]
 
     assert outcome.failed is False, outcome.output
-    assert outcome.published == [_publish_argv(path=_ORDINARY)]
+    # Pending paths come out of `difference`, which keeps no order.
+    assert sorted(outcome.published) == sorted(
+        [_publish_argv(path=_ORDINARY), _publish_argv(path=_PUBLISH)]
+    )
 
 
 @pytest.mark.parametrize(("node", "extra"), [("extra-root", "/"), ("extra-current", "/current")])
@@ -294,8 +308,12 @@ def test_a_publish_that_leaves_a_declared_path_unpublished_refuses(
     outcome = outcomes["discarding"]
 
     assert outcome.failed is True
-    assert outcome.published == [_publish_argv(path=_ORDINARY)]
-    assert "tailscale funnel exited 0 but /ordinary-action" in outcome.output
+    # Pending paths come out of `difference`, which keeps no order.
+    assert sorted(outcome.published) == sorted(
+        [_publish_argv(path=_ORDINARY), _publish_argv(path=_PUBLISH)]
+    )
+    refusal = outcome.output.split("tailscale funnel exited 0 but ", 1)[1].split(" on port", 1)[0]
+    assert set(refusal.split(", ")) == {_ORDINARY, _PUBLISH}
 
 
 def test_an_ungranted_node_publishes_nothing_and_does_not_fail(
