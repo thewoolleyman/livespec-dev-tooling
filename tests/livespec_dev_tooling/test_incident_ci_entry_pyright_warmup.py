@@ -154,6 +154,29 @@ def test_an_already_warmed_environment_skips_provisioning(
     assert code == 0
 
 
+def test_warmup_receives_the_repository_and_stripped_member_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The entrance does not lend its incident credential to provisioning."""
+    repo = _repository(tmp_path=tmp_path, pins_pyright=True)
+    (tmp_path / "pyright-ready").touch()
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        module,
+        "warm_locked_pyright",
+        lambda **kwargs: calls.append(kwargs) or 0,
+    )
+    environ = dict(os.environ) | {"LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN": "secret"}
+
+    _ = _execute(repo=repo, environ=environ, lines=[])
+    assert calls[0]["cwd"] == repo
+    assert "env" in calls[0]
+    warmup_environment = calls[0]["env"]
+    assert isinstance(warmup_environment, dict)
+    assert "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN" not in warmup_environment
+    assert environ["LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"] == "secret"
+
+
 def test_failed_provisioning_without_an_echo_still_launches_no_member(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
