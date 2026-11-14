@@ -21,29 +21,55 @@ def test_timing_annotations_preserve_inventory_order_and_other_declarations() ->
         inventory="""# canonical inventory
 check-lint # purity: tree-pure # incident-timing: fast
 check-coverage # incident-timing: slow # purity: tree-pure
-check-new
 """
     )
-    assert [gate.name for gate in gates] == ["check-lint", "check-coverage", "check-new"]
+    assert [gate.name for gate in gates] == ["check-lint", "check-coverage"]
     assert [gate.command for gate in gates] == [
         ("just", "check-lint"),
         ("just", "check-coverage"),
-        ("just", "check-new"),
     ]
-    assert [selection.selected for selection in select_gates(gates=gates)] == [True, False, False]
+    assert [selection.selected for selection in select_gates(gates=gates)] == [True, False]
 
 
-def test_ambiguous_declarations_never_select_work() -> None:
-    gates = inventory_gates(
-        inventory="""check-duplicate # incident-timing: fast
-check-duplicate # incident-timing: fast
-check-conflicting # incident-timing: fast # incident-timing: slow
-check-invalid # incident-timing: FAST
-check-empty # incident-timing:
-"""
-    )
-    assert len(gates) == 4
-    assert not any(selection.selected for selection in select_gates(gates=gates))
+def test_an_unannotated_member_refuses_naming_it() -> None:
+    # livespec-dev-tooling-dixgta: a member with no timing class is never deferred
+    # in silence; deferring it would let an inventory defer every gate unread.
+    with pytest.raises(ValueError, match=re.escape("'check-new'")):
+        _ = inventory_gates(inventory="check-lint # incident-timing: fast\ncheck-new\n")
+
+
+@pytest.mark.parametrize(
+    ("member", "inventory"),
+    [
+        (
+            "check-duplicate",
+            "check-duplicate # incident-timing: fast\ncheck-duplicate # incident-timing: fast\n",
+        ),
+        (
+            "check-conflicting",
+            "check-conflicting # incident-timing: fast # incident-timing: slow\n",
+        ),
+        ("check-invalid", "check-invalid # incident-timing: FAST\n"),
+        ("check-empty", "check-empty # incident-timing:\n"),
+    ],
+)
+def test_an_unrecognised_timing_declaration_refuses_naming_the_member(
+    *, member: str, inventory: str
+) -> None:
+    with pytest.raises(ValueError, match=re.escape(f"'{member}'")):
+        _ = inventory_gates(inventory=inventory)
+
+
+def test_a_duplicated_member_is_told_it_is_listed_twice_not_that_its_class_is_unrecognised() -> (
+    None
+):
+    # livespec-dev-tooling-dixgta: a member listed twice with valid declarations is a
+    # duplicate, and its refusal says so rather than calling its timing unrecognised.
+    duplicate = "check-twice # incident-timing: fast\ncheck-twice # incident-timing: fast\n"
+    with pytest.raises(ValueError, match=re.escape("'check-twice' is listed 2 times")):
+        _ = inventory_gates(inventory=duplicate)
+    with pytest.raises(ValueError, match="no single recognised incident-timing class"):
+        _ = inventory_gates(inventory="check-invalid # incident-timing: FAST\n")
 
 
 def test_only_recipe_names_become_command_arguments() -> None:
