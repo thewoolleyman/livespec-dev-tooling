@@ -347,6 +347,84 @@ done
     assert "/etc/otel-collector/kubeconfig|--request-timeout=15s get clusterqueues" in kube_reads
 
 
+def _queue_quota_by_queue(*, tmp_path: Path, rows: str) -> dict[str, int]:
+    """Run the attributed-gauges script against canned ClusterQueue rows."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    payload = tmp_path / "metrics.json"
+    (bin_dir / "kubectl").write_text(
+        f"#!/usr/bin/env bash\ncase \"$*\" in\n  *clusterqueues*)\n    cat <<'ROWS'\n{rows}\nROWS\n    ;;\nesac\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "curl").write_text(
+        '#!/usr/bin/env bash\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "-d" ]; then\n'
+        '    printf \'%s\' "$2" > "$OTLP_CAPTURE"\n    exit 0\n  fi\n  shift\ndone\n',
+        encoding="utf-8",
+    )
+    for tool in bin_dir.iterdir():
+        tool.chmod(0o755)
+    completed = subprocess.run(
+        ["bash", str(_OBSERVABILITY / "ci-pool-attributed-gauges.sh")],
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "OTLP_CAPTURE": str(payload),
+            "KUBECONFIG": "/etc/rancher/k3s/k3s.yaml",
+            "CI_POOL_KUEUE_KUBECONFIG": "/etc/otel-collector/kubeconfig",
+            "CI_POOL_KUBECTL": "kubectl",
+        },
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    metrics = {
+        metric["name"]: metric["gauge"]["dataPoints"]
+        for metric in json.loads(payload.read_text(encoding="utf-8"))["resourceMetrics"][0][
+            "scopeMetrics"
+        ][0]["metrics"]
+    }
+    observed: dict[str, int] = {}
+    for point in metrics["livespec.ci_pool.queue_quota"]:
+        attrs = {a["key"]: a["value"]["stringValue"] for a in point["attributes"]}
+        observed[attrs["ci.queue"]] = int(point["asInt"])
+    return observed
+
+
+def test_queue_quota_counts_the_primary_flavor_beside_a_zero_arm64_overflow_flavor(
+    tmp_path: Path,
+) -> None:
+    """A churn-slot-flavor quota of 1 then an arm64 flavor at 0 reads 1, not 0."""
+    observed = _queue_quota_by_queue(
+        tmp_path=tmp_path,
+        rows=(
+            "livespec-overseer-cq|churn-slot-flavor:ci-runner.io/churn-slot=1 "
+            "churn-slot-worker-arm64-flavor:ci-runner.io/churn-slot=0 "
+            "||0|0"
+        ),
+    )
+    assert observed == {"livespec-overseer-cq": 1}
+
+
+def test_queue_quota_sums_every_flavor_of_a_queue(tmp_path: Path) -> None:
+    """A queue at 9 plus an arm64 flavor at 0 reads 9; a second flavor's quota adds."""
+    observed = _queue_quota_by_queue(
+        tmp_path=tmp_path,
+        rows=(
+            "livespec-orchestrator-beads-fabro-cq|churn-slot-flavor:ci-runner.io/churn-slot=9 "
+            "churn-slot-worker-arm64-flavor:ci-runner.io/churn-slot=0 "
+            "||0|0\n"
+            "livespec-dev-tooling-cq|churn-slot-flavor:ci-runner.io/churn-slot=10 "
+            "churn-slot-worker-arm64-flavor:ci-runner.io/churn-slot=1 "
+            "||0|0"
+        ),
+    )
+    assert observed == {
+        "livespec-orchestrator-beads-fabro-cq": 9,
+        "livespec-dev-tooling-cq": 11,
+    }
+
+
 def test_each_timer_is_armed_by_the_role_that_installs_it() -> None:
     """Installed is not enabled. The host-silence heartbeat has to be FIRING for the
     dead-man trigger to mean anything, so arming belongs to the same role."""
