@@ -227,6 +227,33 @@ the coordinator and waits. It does not press the valve, and it runs any
 host-captured drift proof only after the merge lands. Look for the input in the
 launcher's `CAPTURE fabro run` argv line before you diagnose a quiet merge.
 
+## A seeded route is placed by the seed ruling, never by a rider
+
+Measured 2026-11-14 on `livespec-dev-tooling-5lhafp`.
+
+The dispatcher's auto-seed places a SEEDED run's sandbox from the item's
+latest unconsumed `livespec-seed-ruling` comment (`current_ruling`, by
+instant). It does not read a rider. A rider that says "fetch ref X, confirm
+its sha and tree" only instructs the agent after the sandbox is already
+placed. 5lhafp's route 3 and route 4 each named the preserve
+`needs-human/fc9867d0` in a rider. Both runs were placed on the item's
+first seed, `needs-human/a35d05e7` @ `958d644`, from a 10:29Z ruling. That
+seed predated the repair and two Definition of Done amendments. Route 3's
+run ended in a coverage refusal on a tree 219 commits behind master. Route
+4's run was cancelled young once the dispatcher read its goal.
+
+**How to apply:** when you route an item SEEDED, ask the dispatcher seat
+to write the seed ruling for the named ref with `dispatcher.py seed-ruling`,
+origin-verified. Ask it to confirm at LISTED that the goal says "placed on
+commit <sha>". A rider still carries the integrity checks and the stage
+instructions.
+
+When you read a commit's tree for a rider, print `commit=` and `tree=` on
+separate labelled lines. A bare `git rev-parse a b a^{tree} b^{tree}` prints
+four unlabelled ids. On 2026-11-13 one of them was transposed, and it put a
+PR head's tree into cvef23's rider. The run stopped on the rider's own
+integrity check and spent a dispatch cycle.
+
 ## `fabro create` plus `fabro dump` shows what a run actually resolved
 
 Used 2026-09-04 to settle the fleet-wide factory setup outage.
