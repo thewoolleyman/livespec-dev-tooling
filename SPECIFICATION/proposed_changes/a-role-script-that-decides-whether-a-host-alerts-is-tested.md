@@ -1,7 +1,7 @@
 ---
 topic: a-role-script-that-decides-whether-a-host-alerts-is-tested
 author: claude-opus-5-5
-created_at: 2026-11-14T13:21:49Z
+created_at: 2026-11-14T13:41:57Z
 ---
 
 ## Proposal: A role script that decides whether a host alerts is tested in every alert state
@@ -50,3 +50,42 @@ It goes at the end of the section, not next to **A held service is still install
 > And for each condition under which the script stays silent, the test asserts that it exits zero
 
 **3. `tests/heading-coverage.json` (the revise commit, outside `resulting_files[]`).** Add a row for the new scenario heading. Its test runs `ansible/roles/reconcile_runs/files/livespec-reconcile-runs-staleness` in every alert state, and livespec-dev-tooling-ba7ypx owes it. Until that test is on master, the row is a spec-first `"test": "TODO"` row with `work_item` livespec-dev-tooling-ba7ypx. Its reason names the integration tier and ba7ypx, and it is registered in `tests/heading-coverage-debt.json`. `tests/livespec_dev_tooling/test_host_unit_alert.py` (livespec-dev-tooling#4678) already meets the paragraph for role `host_unit_alert`, whose handler keeps no alert-state file.
+
+## Proposal: A unit a role installs alerts through the host-unit alert, never as another service's failure
+
+### Target specification files
+
+- SPECIFICATION/non-functional-requirements.md
+- SPECIFICATION/scenarios.md
+
+### Summary
+
+Add one more obligation to Host provisioning tree, with a scenario. A unit that a role installs routes its `OnFailure=` to this repository's host-unit alert template. That alert names the unit and the host, and has its own Honeycomb trigger. It never names another repository's alert unit, so a failure is never reported as another service's. A committed test fails on any role variable or template naming `dolt-backup-alert@`.
+
+### Motivation
+
+At 12:12:34Z on 2026-11-14, Honeycomb trigger 9HKs4W3UYN8 "dolt-backup run failed" emailed the operator while every dolt backup was succeeding (17 of 17 each hour). The unit that failed was `reconcile-runs-staleness.service`, installed by role `reconcile_runs`. Its `OnFailure=` named dolt-server's `dolt-backup-alert@`, which reports every failure as a backup unit failure. Role `honeycomb_trigger_recipients_check` routed its unit the same way. livespec-dev-tooling-l7f72q added role `host_unit_alert` and rerouted both units (livespec-dev-tooling#4678). It also created trigger 2PdsuwyiqqL "host unit failed", which counts only `source=host-unit-alert` events. That item's filing-stage spec-change-tier judgement found no ratified clause for this behaviour. On 2026-11-14 legacy-coordinator-agent searched every ratified file and confirmed that ## Host provisioning tree says nothing about alerting. It ruled no release, and ruled that this clause folds into this proposal, from the same author and plan. l7f72q's linked topic is relinked here, and its accept waits for this revise. dolt-server's own units (`dolt-backup`, `doltdb`, `dolt-backup-oversized-verify`) are outside this tree and keep their handler. That is the dolt-server owner's call, noted on l7f72q.
+
+### Proposed Changes
+
+**1. `non-functional-requirements.md` §"Host provisioning tree".** Insert this paragraph immediately after the paragraph that Proposal 1 of this file adds (**A role script that decides an alert is tested in every alert state.**):
+
+> **A role-installed unit alerts as itself.** A systemd unit that a role in the provisioning tree installs, and that names an `OnFailure=` alert, MUST name the host-unit alert template that a role in this tree installs (`host-unit-alert@.service`). It MUST NOT name an alert unit that another repository ships for its own services. The alert that template raises MUST name the failed unit and the host, and MUST NOT describe the failure as another service's, for example as a backup failure. A playbook that applies a role naming the template MUST apply the role that installs it first. The template's failure events MUST reach the operator through a Honeycomb trigger of their own, and no other service's failure trigger may count them. The role's `HOST_VARS.md` MUST record that trigger's id, query and window. This repository's committed tests MUST fail when a role default, host variable or template in the provisioning tree names dolt-server's `dolt-backup-alert@`. That is the one shared alert unit known to label every failure as its own.
+
+**2. `scenarios.md`.** Append this scenario after the one Proposal 1 adds:
+
+> ## Scenario: a unit a role installs fails and the operator is told which unit failed, not that a backup failed
+>
+> Given role `reconcile_runs` has installed `reconcile-runs-staleness.service` on a dev host, with its `OnFailure=` naming the host-unit alert
+>
+> When the staleness check exits non-zero
+>
+> Then `host-unit-alert@reconcile-runs-staleness.service.service` starts and sends one Honeycomb event, with `source=host-unit-alert` and `outcome=unit_failure`, naming the unit and the host
+>
+> And the host-unit failure trigger counts that event
+>
+> And the "dolt-backup run failed" trigger does not count it
+>
+> And when no alert channel accepts the alert, the alert unit itself exits non-zero
+
+**3. `tests/heading-coverage.json` (the revise commit).** Add a row for this scenario heading pointing at `tests/livespec_dev_tooling/test_host_unit_alert.py`. That test runs the template's script in each alert state, with Honeycomb and ntfy faked. It reads both units' `OnFailure=` wiring and the role order from the committed variables, and it fails on any non-comment provisioning-tree line naming `dolt-backup-alert@` (livespec-dev-tooling#4678).
