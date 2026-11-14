@@ -40,7 +40,11 @@ from livespec_dev_tooling._incident_enablement_reading import (
 from livespec_dev_tooling._incident_observer_types import ObserverArm
 from livespec_dev_tooling.incident_ci_authority import CiAuthorityBoundary
 from livespec_dev_tooling.incident_ci_policy import CiEvent, CiTarget
-from livespec_dev_tooling.incident_enablement import IdentitySource, ObserverEnablement
+from livespec_dev_tooling.incident_enablement import (
+    FRESHNESS_SECONDS,
+    IdentitySource,
+    ObserverEnablement,
+)
 from livespec_dev_tooling.incident_execution import (
     EXPEDITED_INCIDENT_RESPONSE,
     EXPEDITED_INCIDENT_RESPONSE_REVERT,
@@ -234,6 +238,79 @@ def test_the_hook_asks_the_serving_installation_with_the_query_credential_and_co
         own_identity=lambda: OTHER,
     )
     assert absent(repository=SERVED).reading == "absent"
+
+
+def test_the_hook_reuses_a_fresh_confirmation_until_core_head_moves_or_it_expires(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    moments = iter((100.0, 101.0, 102.0, 103.0, 102.0 + FRESHNESS_SECONDS + 1.0))
+    heads = iter(("1" * 40, "1" * 40, "2" * 40, None, None))
+    identity_reads: list[None] = []
+
+    def read_head() -> str | None:
+        return next(heads)
+
+    def read_identity() -> str | None:
+        identity_reads.append(None)
+        return IDENTITY
+
+    source = IdentitySource(read_head=read_head, read_identity=read_identity)
+    monkeypatch.setattr(
+        "livespec_dev_tooling._incident_enablement_fence.production_identity_source",
+        lambda: source,
+    )
+    monkeypatch.setattr(
+        "livespec_dev_tooling._incident_enablement_fence.time",
+        SimpleNamespace(time=lambda: next(moments)),
+        raising=False,
+    )
+    reader = installation_reader(
+        environ={
+            "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN": "query-secret",
+            "XDG_STATE_HOME": str(tmp_path),
+        },
+        post=Post(answer=_answer(status="enabled", armed=True)),
+    )
+
+    readings = [reader(repository=SERVED).reading for _ in range(5)]
+
+    assert readings == ["enabled", "enabled", "enabled", "enabled", "unavailable"]
+    assert len(identity_reads) == 2
+
+
+@pytest.mark.parametrize(
+    "cached",
+    [
+        "not json",
+        "[]",
+        json.dumps({"at": "now", "head": "1" * 40, "identity": IDENTITY}),
+    ],
+)
+def test_the_hook_does_not_use_a_malformed_local_confirmation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cached: str
+) -> None:
+    confirmation = (
+        tmp_path
+        / "livespec-dev-tooling"
+        / "incident-enablement"
+        / f"{hashlib.sha256(SERVED.encode()).hexdigest()}.json"
+    )
+    confirmation.parent.mkdir(parents=True)
+    confirmation.write_text(cached, encoding="utf-8")
+    source = IdentitySource(read_head=lambda: "1" * 40, read_identity=lambda: None)
+    monkeypatch.setattr(
+        "livespec_dev_tooling._incident_enablement_fence.production_identity_source",
+        lambda: source,
+    )
+    reader = installation_reader(
+        environ={
+            "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN": "query-secret",
+            "XDG_STATE_HOME": str(tmp_path),
+        },
+        post=Post(answer=_answer(status="enabled", armed=True)),
+    )
+
+    assert reader(repository=SERVED).reading == "unavailable"
 
 
 def test_the_hook_reads_no_installation_and_unavailable_without_an_answer() -> None:
