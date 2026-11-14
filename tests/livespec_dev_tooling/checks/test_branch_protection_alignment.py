@@ -244,6 +244,7 @@ def _install_fake_gh(
     rules_returncode: int = 0,
     ruleset_payload: str = '{"bypass_actors": []}',
     ruleset_returncode: int = 0,
+    ruleset_api_replies: list[tuple[str, str, int]] | None = None,
 ) -> str:
     """Install fake `gh` + `git` shell stubs at tmp_path/bin, return PATH including it.
 
@@ -310,6 +311,36 @@ def _install_fake_gh(
         ";;\n"
         "esac\n"
     )
+    ruleset_replies_block = ""
+    if ruleset_api_replies is not None:
+        response_cases = ""
+        for index, (reply_stdout, reply_stderr, reply_returncode) in enumerate(
+            ruleset_api_replies, start=1
+        ):
+            stderr_block = (
+                ""
+                if not reply_stderr
+                else f"cat >&2 <<'RULESET_REPLY_ERR_{index}_EOF'\n{reply_stderr}\nRULESET_REPLY_ERR_{index}_EOF\n"
+            )
+            response_cases += (
+                f"{index})\n"
+                f"cat <<'RULESET_REPLY_{index}_EOF'\n{reply_stdout}\nRULESET_REPLY_{index}_EOF\n"
+                f"{stderr_block}"
+                f"exit {reply_returncode}\n"
+                ";;\n"
+            )
+        ruleset_replies_block = (
+            'if [ "$1" = "api" ] && [ "${2##*/}" = "26758787" ]; then\n'
+            f"  count_file='{bin_dir}/gh.ruleset-count'\n"
+            '  count=$(cat "$count_file" 2>/dev/null || echo 0)\n'
+            "  count=$((count + 1))\n"
+            '  printf \'%s\\n\' "$count" > "$count_file"\n'
+            '  case "$count" in\n'
+            f"{response_cases}"
+            "  *) exit 98 ;;\n"
+            "  esac\n"
+            "fi\n"
+        )
     rulesets_block = (
         'if [ "$1" = "api" ] && [ "$2" = "--paginate" ]; then\n'
         f"cat <<'RULES_EOF'\n{rules_payload}\nRULES_EOF\n"
@@ -317,6 +348,7 @@ def _install_fake_gh(
         "fi\n"
         'case "$2" in\n'
         "*/rulesets/*)\n"
+        f"{ruleset_replies_block}"
         f"cat <<'RULESET_EOF'\n{ruleset_payload}\nRULESET_EOF\n"
         f"exit {ruleset_returncode}\n"
         ";;\n"
@@ -1308,6 +1340,23 @@ def test_a_gate_held_only_by_a_ruleset_with_an_app_bypass_is_aligned(
         in argv_log
     )
     assert "repos/test-owner/test-repo/rulesets/26758787" in argv_log
+
+
+def test_ruleset_bypass_read_retries_a_missing_list_before_using_an_app_only_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A transient missing bypass list does not reject the later App-only answer."""
+    result = _ruleset_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        ruleset_api_replies=[
+            ('{"name": "incomplete response"}', "", 0),
+            (_APP_BYPASS, "", 0),
+        ],
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert (tmp_path / "bin" / "gh.ruleset-count").read_text(encoding="utf-8").strip() == "2"
 
 
 def test_an_absent_classic_status_check_object_is_an_empty_contribution_not_a_skip(
