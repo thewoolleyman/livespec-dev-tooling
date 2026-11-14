@@ -334,7 +334,8 @@ readonly STALL_SNAPSHOT_PS_CEILING_S=20
 # only when the file itself could not be written. Never touches output.log or
 # the progress stamp, so the stall window is not renewed.
 write_stall_snapshot() {
-    local dir="$1" group="$2" stall="$3" snapshot="$dir/stall-snapshot"
+    local dir="$1" group="$2" stall="$3"
+    local snapshot="$dir/stall-snapshot"
     local table="" reason="" status=0 pid csv="" note=""
     local -a pids=() ps_command=()
     local -A seen=()
@@ -349,7 +350,7 @@ write_stall_snapshot() {
             pids+=("$pid")
         done < <(group_member_pids "$group"; descendant_pids "$group"; stamped_pids "$dir/progress.stamp")
         csv="$(IFS=,; printf '%s' "${pids[*]:-}")"
-        ps_command=(ps -ww -o pid,ppid,sid,etime,wchan:32,args --forest -p "$csv")
+        ps_command=(ps -ww -o 'pid,ppid,sid,etime,wchan:32,args' --forest -p "$csv")
         if command -v timeout >/dev/null 2>&1; then
             ps_command=(timeout "$STALL_SNAPSHOT_PS_CEILING_S" "${ps_command[@]}")
         fi
