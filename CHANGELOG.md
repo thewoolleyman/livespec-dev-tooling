@@ -58,6 +58,33 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.208.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.207.0...v1.208.0) (2026-11-14)
+
+
+### Features
+
+* **ansible:** a dispatch-only host gets the registry role's client logins and nothing else (livespec-dev-tooling-yyadq6) ([65b3e45](https://github.com/thewoolleyman/livespec-dev-tooling/commit/65b3e4527f88e02ca4c55734f49a81635e34c0ec))
+* **ansible:** reconcile_runs role owns the reconcile-runs timer for every dispatched tenant (livespec-dev-tooling-oxwre7) ([96d8397](https://github.com/thewoolleyman/livespec-dev-tooling/commit/96d8397200907459dd5c1d453e88bbb23f520054))
+* preserve retry failure text in summaries ([60e6b29](https://github.com/thewoolleyman/livespec-dev-tooling/commit/60e6b29aa45f1478bec9fa6c9f1c93b8b7fb0408))
+
+
+### Bug Fixes
+
+* **ansible:** dev_host_memory_bounds names the scratchpad mount unit with systemd-escape and removes the mis-named file ([1a26298](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1a262986da390fa3a8ad038e89007b40103d32ae))
+* **ansible:** reconcile_runs holds a second host, alerts a stale tenant once, and renders under test (livespec-dev-tooling-oxwre7) ([89426bb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89426bb2b882c45e34320ea82c37a3bb4f08e370))
+* **ansible:** the dispatch-client play refuses a render switched on, so the one-writer rule is code, not prose (livespec-dev-tooling-yyadq6) ([6ea327f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ea327f9340611305524997f0eabd2c975f98a66))
+* **backup:** back up Git state in the Arq snapshot, as restic already does ([e979be9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e979be96df6c6e00c260642814c3021783b75d95))
+* bound conflict sweep retries ([66b6ecd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/66b6ecd7e8330aa15346c53e13159653cae073e7))
+* **ci:** revert 71220a770 so export-telemetry runs the exporter path that was green (livespec-dev-tooling-ii557b) ([3324c23](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3324c2392079e9dc3157b500c1ccdfe251b69884))
+* clear observer sweep state ([509f37a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/509f37a074223299074f1159304b81c61545385e))
+* expose detached gate quiet ticks ([c742221](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c742221a2dbdb8a96d1dc7ba42cac5bfdb8d6858))
+* flake-retry records keep the first 4000 characters and the first non-empty line ([af445a1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af445a12f4dc983e49f73c422ecf55a5ca31d947))
+* **incident-observer:** keep a cleared sweep cleared when the call holds a conflict receipt ([f504d1f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f504d1fac3094aa68f1d534ced6d74f0a2aac3dc))
+* **incident:** the incident-ci entrance provisions locked pyright before it fans out its members (livespec-dev-tooling-xdt4ue) ([b2bc5a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2bc5a66cd95da0cc6310086dcf087074a3b2af9))
+* **pre-push:** ignore deletions when classifying seed and preserve pushes ([f9789f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f9789f8d1264da16b805595ec610df8ad1bef263))
+* refuse unavailable gate venue selector ([2de977a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2de977a15b6c1e66614939b419a4091dfdb16a31))
+* retain malformed selector diagnostics ([4b26a47](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b26a47eb0b47d17509ee0aabe5877b43b816d94))
+
 ## [1.207.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.206.0...v1.207.0) (2026-11-13)
 
 

@@ -742,7 +742,15 @@ stopping points.
 3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
    the mise-managed lefthook hooks actually run. Never pass
    `--no-verify`; if a hook fails, fix the cause or halt with the
-   failure.
+   failure. The rule covers every way of skipping hooks and every git
+   step, a local one included: `-c core.hooksPath=/dev/null` on a
+   `git rebase --continue` is the same bypass. Continue a conflicted
+   rebase as `mise exec -- just gate-start -- env GIT_EDITOR=true mise
+   exec -- git rebase --continue` and read its verdict. If a bypassed
+   step has already been taken and nothing is pushed, `git rebase
+   --abort`, redo it with hooks on, and tell the coordinator
+   (legacy-coordinator-agent ruling, 2026-11-14, after a seat did this
+   on the v215 branch: "the rule has no exception").
 4. Open a PR, wait for required checks, and merge through the PR using
    the repo's rebase-merge discipline.
 5. After merge, refresh `/data/projects/livespec-dev-tooling` to

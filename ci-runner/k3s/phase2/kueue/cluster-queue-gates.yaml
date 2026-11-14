@@ -205,12 +205,29 @@ spec:
       # ci-runtime-and-cost's measured hp read): gate jobs on hp-xubuntu ran
       # 3.2-6.4x their gmktec-xubuntu wall time, hp read 0.14% idle with
       # CI-slice CPU pressure avg60 33, and its 10 cpu of gate requests took
-      # CPU from hp's own CI slots. So gmktec is tried first, the PowerEdge
+      # CPU from hp's own CI slots. So gmktec was tried first, the PowerEdge
       # second, and hp last. The 2026-11-07 order (hp, PowerEdge, gmktec) and
       # its read are in DERIVATION.md "The PowerEdge lane and the flavor order
-      # (2026-11-07)". Only the ORDER changed; every lane keeps its size.
-      # REVERT: restore that order (gates-hp-flavor, gates-poweredge-flavor,
-      # gates-flavor), apply this file, then rerun ./converge-worker-queues.sh.
+      # (2026-11-07)".
+      #
+      # 2026-11-14 RE-READ under the same FASTEST-FIRST rule (plan
+      # gate-job-resources, livespec-dev-tooling-ukoeah; the coordinator's
+      # pre-authorized reversible route for the poweredge OVERCOMMIT). Gate pod
+      # wall time, pods over 2 min, the 6 h to 2026-11-14 00:2xZ, p50 / p95 in
+      # minutes (Honeycomb query ztfYCLKQeQS):
+      #   - livespec-dev-tooling: gamingpc 8.5/9.0, gmktec 20.0/21.5,
+      #     hp 19.0/25.5, poweredge 35.5/38.5;
+      #   - livespec-orchestrator-beads-fabro: gamingpc 6.5/7.5,
+      #     gmktec 11.5/18.5, hp 14.8/18.0, poweredge 20.2/31.0;
+      #   - livespec-overseer: gamingpc 4.0/5.0, gmktec 6.5/8.0, hp 8.8/9.0,
+      #     poweredge 12.0/15.5.
+      # poweredge read 0.1% idle with BestEffort full avg60 43 (00:08Z), with
+      # 31 cores of gates, 18 of factory and 17 of CI workflow pods. So the
+      # order is now gamingpc, gmktec, hp, PowerEdge: the slowest lane takes
+      # only overflow. Only the ORDER changed; every lane keeps its size.
+      # REVERT: restore the 2026-11-09 order (gates-flavor,
+      # gates-poweredge-flavor, gates-hp-flavor, gates-gamingpc-flavor), apply
+      # this file, then rerun ./converge-worker-queues.sh.
       # This committed order is the STATIC lane order. It does not follow load
       # as it moves, so ../gate-placement/reconcile-gate-lane-order.sh reorders
       # the LIVE queue from measured node readings (livespec-dev-tooling-gvo7fa),
@@ -219,60 +236,15 @@ spec:
       # flavor list from its installed copy, so keep each flavor name unquoted
       # at this indent.
       flavors:
-        - name: gates-flavor
-          resources:
-            # Three concurrent gates at roughly 5 cpu / 6 Gi each. cpu is the
-            # binding term at exactly 3 x 5; memory carries headroom above
-            # 3 x 6 = 18 Gi so an under-estimated gate does not make memory
-            # bind first before a soak has measured one. 24 Gi is about half of
-            # the ~50 GiB the plan's research/001 section 3 item 5 found
-            # available to pods on this node without evicting the LLM model
-            # from its 64 GiB iGPU carveout. Derivation in full: DERIVATION.md
-            # "The gates quota on gmktec-xubuntu (2026-09-08)".
-            - name: "cpu"
-              nominalQuota: 15
-            - name: "memory"
-              nominalQuota: 24Gi
-        - name: gates-poweredge-flavor
-          resources:
-            # Six concurrent gates, six gate units of 5 cpu / 8 Gi (2026-11-11,
-            # 07:53Z). The lane went from two to four at 04:57Z. At 07:53Z it was
-            # full at four with gates pending, while the node had 49.7 cpu of
-            # requests free and read 63% idle. Six gates leave about 20 cpu of
-            # requests for factory growth. Derivation: DERIVATION.md "The
-            # PowerEdge gate lane to six gates (2026-11-11)".
-            - name: "cpu"
-              nominalQuota: 30
-            - name: "memory"
-              nominalQuota: 48Gi
-        - name: gates-hp-flavor
-          resources:
-            # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
-            # plan gate-job-resources; legacy-coordinator-agent GO cb187a57).
-            # hp is the last full lane in flavor order, so a gate reaches it
-            # only after gmktec and poweredge are full. Measured over the whole
-            # current layout (2026-11-11T08:45Z to 2026-11-12T10:20Z, 297
-            # five-minute buckets of gate pods per node): hp ran no gate in 76%
-            # of buckets and two or more in at most 10.8%, which is an upper
-            # bound, nearly all of it one overflow burst while gamingpc's lane
-            # was held at zero. Kueue admission waits read 0-2 s. With the
-            # gamingpc lane open, the fleet keeps 12 gate slots, the most the
-            # worst burst used, and the second slot's 5 cpu / 8 Gi of reserved
-            # requests go to factory sandboxes. Revert to 10 / 16Gi if a gate
-            # waits over five minutes for a lane.
-            - name: "cpu"
-              nominalQuota: 5
-            - name: "memory"
-              nominalQuota: 8Gi
         - name: gates-gamingpc-flavor
           resources:
             # One concurrent gate at 5 cpu / 6 Gi. gamingpc-xubuntu expects
             # 14500m CPU / ~26.5 GiB allocatable, split a third each to CI,
             # gates and factory (its profile's header): the gate third is
             # 4833m, and the "at least one unit per class" floor lifts it to one
-            # 5-cpu gate. 8 Gi gives the 6 Gi request 2 Gi of headroom. LAST in
-            # the order: its gate speed is unmeasured, and the lane-order
-            # reconciler moves it once it has a read.
+            # 5-cpu gate. 8 Gi gives the 6 Gi request 2 Gi of headroom. FIRST in
+            # the order from 2026-11-14: it now has a speed read, and it is the
+            # fastest x86 lane (see the order note above).
             #
             # Held at zero 2026-11-11 to 2026-11-12 while full-suite gates here
             # hung (livespec-dev-tooling-ddy5xu): AppArmor on this node denied
@@ -301,6 +273,51 @@ spec:
               nominalQuota: 5
             - name: "memory"
               nominalQuota: 8Gi
+        - name: gates-flavor
+          resources:
+            # Three concurrent gates at roughly 5 cpu / 6 Gi each. cpu is the
+            # binding term at exactly 3 x 5; memory carries headroom above
+            # 3 x 6 = 18 Gi so an under-estimated gate does not make memory
+            # bind first before a soak has measured one. 24 Gi is about half of
+            # the ~50 GiB the plan's research/001 section 3 item 5 found
+            # available to pods on this node without evicting the LLM model
+            # from its 64 GiB iGPU carveout. Derivation in full: DERIVATION.md
+            # "The gates quota on gmktec-xubuntu (2026-09-08)".
+            - name: "cpu"
+              nominalQuota: 15
+            - name: "memory"
+              nominalQuota: 24Gi
+        - name: gates-hp-flavor
+          resources:
+            # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
+            # plan gate-job-resources; legacy-coordinator-agent GO cb187a57).
+            # From 2026-11-14 hp is third in flavor order, before poweredge (see
+            # the order note above). Measured, under the 2026-11-12 order, over the whole
+            # current layout (2026-11-11T08:45Z to 2026-11-12T10:20Z, 297
+            # five-minute buckets of gate pods per node): hp ran no gate in 76%
+            # of buckets and two or more in at most 10.8%, which is an upper
+            # bound, nearly all of it one overflow burst while gamingpc's lane
+            # was held at zero. Kueue admission waits read 0-2 s. With the
+            # gamingpc lane open, the fleet keeps 12 gate slots, the most the
+            # worst burst used, and the second slot's 5 cpu / 8 Gi of reserved
+            # requests go to factory sandboxes. Revert to 10 / 16Gi if a gate
+            # waits over five minutes for a lane.
+            - name: "cpu"
+              nominalQuota: 5
+            - name: "memory"
+              nominalQuota: 8Gi
+        - name: gates-poweredge-flavor
+          resources:
+            # Six concurrent gates, six gate units of 5 cpu / 8 Gi (2026-11-11,
+            # 07:53Z). The lane went from two to four at 04:57Z. At 07:53Z it was
+            # full at four with gates pending, while the node had 49.7 cpu of
+            # requests free and read 63% idle. Six gates leave about 20 cpu of
+            # requests for factory growth. Derivation: DERIVATION.md "The
+            # PowerEdge gate lane to six gates (2026-11-11)".
+            - name: "cpu"
+              nominalQuota: 30
+            - name: "memory"
+              nominalQuota: 48Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass
