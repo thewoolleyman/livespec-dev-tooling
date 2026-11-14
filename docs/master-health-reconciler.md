@@ -462,8 +462,11 @@ Accepted risks, named in the ruling:
 
 Follow-up owed: isolate the observer on its own host.
 
-Arming is still gated. `wire-fleet-member` refuses to install the shim into
+Arming is gated. `wire-fleet-member` refuses to install the shim into
 livespec-dev-tooling until `master_health_observer.HOSTED_REACHABILITY_PROOFS`
-records the URL of a GitHub-hosted run that reached the released route. That
-proof needs a real hosted run against the published path, so this change does
-not record it.
+records the URL of a GitHub-hosted run that reached the released route. The map
+now records run
+https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/42922861122:
+a GitHub-hosted runner, the released v1.193.0 client, and this step's env, with
+the connect address resolved empty. It got HTTP 202 and the exact ownership
+answer, and a no-token POST in the same run got 403.
