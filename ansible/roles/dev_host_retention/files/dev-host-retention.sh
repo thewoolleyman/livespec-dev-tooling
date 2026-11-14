@@ -94,27 +94,54 @@ unremovable_paths() {
     printf '%s\n' "$1" | grep -oE '(/[A-Za-z0-9._@+-]+)+' | sort -u
 }
 
+# Hands every path in the uv cache that another user owns back to the cache
+# owner. The walk has a time budget because a full walk of the dev host's cache
+# (5.3 million entries) takes about 29 minutes, far past any budget the unit can
+# spare. The budget stops the walk, so what the walk had not reached is left
+# unvisited.
+#
+# The stamp records the START of the last walk that ran to its end or to its
+# budget. Stamping only a walk that completed could never engage on the host the
+# incremental design is for: every run took the full-walk branch, was cut off,
+# and left no stamp. So a cut-off walk is stamped too, and the next run walks
+# only what changed after that point. The cost is stated plainly: a foreign path
+# older than that point that the cut-off walk never reached is no longer swept;
+# a path the prune cannot remove is still named by the prune's own log. The
+# start of the walk, not its end, is the stamp, so a path written while the walk
+# ran is newer than the stamp and is walked next time.
 restore_uv_cache_ownership() {
-    local cache_dir=$1 owner_uid=$2 owner_gid=$3 stamp newer_path
-    local -a walk=(find "$cache_dir" -xdev ! -user "$owner_uid")
+    local cache_dir=$1 owner_uid=$2 owner_gid=$3 stamp started ran status candidate=""
+    local -a walk=(find "$cache_dir" -xdev)
     stamp="$RETENTION_STATE_DIR/uv-cache-ownership.stamp"
     if ! mkdir -p "$RETENTION_STATE_DIR"; then
         log "WARNING: could not create retention state directory $RETENTION_STATE_DIR; restoring all foreign uv-cache paths"
         stamp=
     fi
-    if [[ -n $stamp && -e $stamp ]]; then
-        newer_path=$(find "$cache_dir" -xdev -newer "$stamp" -print -quit)
-        if [[ -z $newer_path ]]; then
-            return 0
-        fi
-        walk=(find "$cache_dir" -xdev -newer "$stamp" ! -user "$owner_uid")
+    if [[ -n $stamp ]]; then
+        candidate="$stamp.candidate"
+        touch "$candidate" || candidate=
+        [[ ! -e $stamp ]] || walk+=(-newer "$stamp")
     fi
-    if timeout --kill-after=5s "$UV_OWNERSHIP_BUDGET_SECONDS" \
-        "${walk[@]}" -exec chown -h "$owner_uid:$owner_gid" {} + 2>/dev/null; then
-        [[ -z $stamp ]] || touch "$stamp"
-        return 0
-    fi
-    log "WARNING: uv-cache ownership walk exceeded its ${UV_OWNERSHIP_BUDGET_SECONDS}s budget; pruning continues"
+    walk+=(! -user "$owner_uid")
+    started=$SECONDS
+    timeout --kill-after=5s "$UV_OWNERSHIP_BUDGET_SECONDS" \
+        "${walk[@]}" -exec chown -h "$owner_uid:$owner_gid" {} + 2>/dev/null
+    status=$?
+    ran=$((SECONDS - started))
+    case $status in
+        0)
+            log "uv-cache ownership walk ran ${ran}s and completed"
+            ;;
+        124 | 137)
+            log "WARNING: uv-cache ownership walk exceeded its ${UV_OWNERSHIP_BUDGET_SECONDS}s budget; it ran ${ran}s and was cut off before it completed; pruning continues"
+            ;;
+        *)
+            log "WARNING: uv-cache ownership walk ran ${ran}s and ended with status $status before it completed; its stamp is not advanced; pruning continues"
+            [[ -z $candidate ]] || rm -f "$candidate"
+            candidate=
+            ;;
+    esac
+    [[ -z $candidate ]] || mv -f "$candidate" "$stamp"
 }
 
 uv_cache_is_in_use() {
