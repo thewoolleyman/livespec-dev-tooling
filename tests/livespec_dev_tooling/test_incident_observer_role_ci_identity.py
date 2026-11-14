@@ -15,6 +15,7 @@ from tests.livespec_dev_tooling import test_incident_observer_role_production_un
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 _SHA = "1" * 40
+_RELEASED_PUBLISHER_SHA = "2145d1d639a398c2cc3ed68a437baf92aeec7baf"
 _RENDER_POLICY = "Render this installation's CI identity policy from its inventory entry"
 _INSTALL_POLICY = "Install the CI identity policy, private to the controller account"
 _CI_TASKS = (
@@ -43,6 +44,12 @@ def test_no_approved_publisher_commit_provisions_no_policy() -> None:
     base.assert_production_render_matches_fixture(
         rendered=base.render_installation(variables=variables), variables=variables
     )
+
+
+def test_production_configuration_provisions_the_released_publisher() -> None:
+    variables = base.production_variables()
+
+    assert variables["incident_observer_ci_publisher_shas"] == [_RELEASED_PUBLISHER_SHA]
 
 
 def test_an_approved_publisher_commit_binds_the_policy_into_the_manifest() -> None:
