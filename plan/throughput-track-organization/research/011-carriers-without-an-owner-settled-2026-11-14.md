@@ -15,13 +15,13 @@ charts live on the board `livespec throughput` (ytZuuVuT4BQ). Note 003's 9.64/h 
 ## How each item was settled
 
 Every item below was put to the session that owns the row or to the track coordinator on 2026-11-14 between
-14:2xZ and 14:5xZ, by SendMessage. Each decided, and recorded the decision on its own epic. "Held" means
+14:19Z and 14:31Z, by SendMessage. Each decided, and recorded the decision on its own epic. "Held" means
 throughput-plans-coordinator (livespec-dev-tooling-r7iuj6) carries the item as a routing question for
 legacy-coordinator-agent or the named candidate seat; the item is OFF the ranked rows and is no lever's carrier.
 
 ## The 25 parentless orchestrator items
 
-| Item | State at 14:2xZ | Decision | Decided by, recorded on |
+| Item | State at 14:1xZ | Decision | Decided by, recorded on |
 |---|---|---|---|
 | bd-ib-08ehv | backlog | ACCEPTED, carrier of row 3 (Y1); adopted under bd-ib-ft26pi | factory-run-yield, bd-ib-ft26pi |
 | bd-ib-yq55nk | ready | ACCEPTED, carrier of row 3 (Y1); adopted under bd-ib-ft26pi | factory-run-yield, bd-ib-ft26pi |
@@ -57,7 +57,7 @@ the row's owner as not carriers and are held for routing. No report item or leve
 ## Carriers that another plan already holds
 
 The data records' per-item overlap bullets name items that touch a report item from inside a plan that does not
-own that item's row. Each already sits in exactly one plan (parent read from the ledger at 14:2xZ). None is moved,
+own that item's row. Each already sits in exactly one plan (parent read from the ledger at 14:1xZ). None is moved,
 and none makes its plan a second owner of the row: the row owner in note 010's table is unchanged, and the item
 stays with the plan that holds it. throughput-plans-coordinator reads them as neighbours of the row, not as its
 carriers.
@@ -96,7 +96,7 @@ coordinator's to make when a row's measurement shows the item limits the metric.
 ## The plan github-rate-limit-guard-false-positives (N4)
 
 livespec-driver-claude-mbg4zg, classed CORE for G1 in the other-repositories record: a DEPENDENT that
-github-request-budget-discipline coordinates with, by that owner's decision on livespec-httc (2026-11-14 ~14:3xZ).
+github-request-budget-discipline coordinates with, by that owner's decision on livespec-httc (2026-11-14 ~14:2xZ).
 It keeps its own work, the guard's false-positive rate and rollout. G1, the shared login's REST budget, has one
 owner: github-request-budget-discipline. This replaces note 005's D9 line "decided by coordinator".
 
@@ -113,7 +113,8 @@ owner: github-request-budget-discipline. This replaces note 005's D9 line "decid
 
 ## Row 6b
 
-publish-draft-green-work-loss (bd-ib-acrr56) was asked on its epic at 11:29:35Z and again at ~14:4xZ to accept or
+publish-draft-green-work-loss (bd-ib-acrr56) was asked on its epic at 11:29:35Z and again at 14:24:48Z to accept or
 refuse row 6b (Y3). Its seat is on vmi3006760 and cannot be reached by SendMessage from this plan's session.
-legacy-coordinator-agent ruled at 12:57:28Z that the acceptance is that plan's. Its answer, or the coordinator's
-ruling in its place, is recorded on bd-ib-acrr56 and in the track summary scope event, not in this note.
+legacy-coordinator-agent ruled at 12:57:28Z that the acceptance is that plan's, and at 14:31:08Z, on
+livespec-dev-tooling-q26e3c, that publish-draft-green-work-loss owns Y3 with its four carriers and that nothing
+moves. The seat then recorded "ACCEPT row 6b" as a scope event on bd-ib-acrr56. Row 6b has an accepted owner.
