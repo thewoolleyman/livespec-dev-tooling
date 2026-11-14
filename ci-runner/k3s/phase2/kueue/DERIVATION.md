@@ -2503,9 +2503,10 @@ pressure P50 51). Runners are placed by churn-slot fraction among nodes with a
 free slot ("Runner placement follows admission capacity"), so an extra runner
 can land on gmktec when its fraction is lowest; this change does not steer it.
 
-**CI-side read at +2 h.** Owner: plan gate-job-resources
-(livespec-dev-tooling-ukoeah). About two hours after the apply, read, against
-the same window before the apply and recorded on livespec-dev-tooling-ukoeah:
+**CI-side read at +2 h.** Owner: ci-runtime-and-cost, whose window starts at
+the apply time posted on livespec-dev-tooling-ib3oe3. About two hours after the
+apply, read, against the same window before the apply and recorded on
+livespec-dev-tooling-ukoeah:
 orchestrator CI queue wait (GitHub jobs API, created to started, PR and master
 runs) p50 and p95; orchestrator CI job duration p50, counting only spans with
 duration_ms under one day; orchestrator admitted runners above quota 4 and
@@ -2515,8 +2516,10 @@ otherwise.
 
 **Measured revert trigger.** Judged over the 2 h after the apply. Revert to 14
 if poweredge-xubuntu `k8s.node.cpu.usage` P50 exceeds 60 cores, or its host CPU
-pressure some.avg60 P50 exceeds 10, or the orchestrator's CI queue-wait p50 or
-p95 rises above its pre-apply value by more than its noise band.
+pressure some.avg60 P50 exceeds 10, or gmktec-xubuntu's host CPU pressure
+some.avg60 P50 exceeds 55 (it read P50 50.5 and P90 70 before the apply, with
+CPU P50 32 of 32), or the orchestrator's CI queue-wait p50 or p95 rises above
+its pre-apply value by more than its noise band.
 
 **Revert.** Restore `maxRunners: 14` in
 `ci-runner/k3s/phase2/arc/values-livespec-orchestrator-beads-fabro.yaml`, the
