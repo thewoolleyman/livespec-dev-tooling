@@ -255,6 +255,23 @@
       // /etc/livespec/sandbox-capabilities`, the image this repository's committed run
       // config resolves. Edit it by hand, in the same change that moves the image.
       "sandbox_capabilities": ["terminal", "tmux", "headless_browser", "herdr"],
+      // Shared heading-coverage registers are dispatcher record files. The
+      // primary registry can merge its independently added rows entry by entry;
+      // the derived debt register is regenerated from that merged registry, not
+      // hand-merged during a refresh conflict.
+      "record_files": [
+        {
+          "path": "tests/heading-coverage.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"]
+        },
+        {
+          "path": "tests/heading-coverage-debt.json",
+          "format": "json-array",
+          "key": ["spec_root", "spec_file", "heading"],
+          "generator": ["uv", "run", "python", "-m", "livespec_dev_tooling.heading_coverage_debt"]
+        }
+      ],
       // Dispatch-time toolchain and conformance premises, in the shape the
       // Dispatcher's typed repository integration contract reads
       // (`dispatcher.prepare_toolchain.*`, `dispatcher.conformance.*`).
