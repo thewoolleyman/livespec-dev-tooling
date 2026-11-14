@@ -36,9 +36,11 @@ attribution only. The rule, agreed by throughput-plans-coordinator, throughput-m
   check fails again first, the red is real and the merge stays in its ordinary not-green class.
 - The headline definition is unchanged: such a merge still counts NOT GREEN in M1. The headline shows it as its own
   not-green class, and a separately labelled diagnostic rate (never quoted as M1) counts it green.
-- Known limit: a fix-forward that edits the failing test (rather than reverting) cannot be told apart from check runs
-  alone, because the failing test's identity is in the job logs, not the check name. Note 007's per-run attributions
-  are the cross-check for that case.
+- Fix-forward guard: no commit between the covering run and the run that passes its failing checks may touch a failing
+  test or a file the coverage table reports with missed lines or partial branches. Both are read from the failed jobs'
+  logs, by the method of stale-base-merge-options' note 007 (FAILED or ERROR `tests/...` lines, and coverage rows with
+  miss or brpart above 0), and the touched files from a compare of the two commits. A pass that follows such a touch
+  is a fix-forward, not a flake, and the merge stays in its ordinary not-green class.
 
 First measurement, livespec-dev-tooling, trailing 24 h at 2026-11-14 ~11:1xZ: 5 merges fall in the class, among them
 #4617 and #4640, whose covering run 43575401935 failed on the flake `test_gate_sandbox_range_and_bootstrap.py:351` that
