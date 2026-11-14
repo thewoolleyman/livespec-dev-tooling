@@ -1269,8 +1269,15 @@ def test_arm_passes_the_remaining_interval_and_the_sixty_second_repeat_to_the_de
     assert "--on-unit-inactive=60" in argv
     assert "--timer-property=AccuracySec=1s" in argv
     assert "--property=TimeoutStartSec=900" in argv
-    assert argv[-2:] == ("rollback", "run-a")
-    assert argv[-3] == str(model.GUARD_EXECUTABLE)
+    assert argv[-6:] == (
+        "rollback",
+        "run-a",
+        "--state-root",
+        str(tmp_path / "var"),
+        "--runtime-root",
+        str(tmp_path / "run"),
+    )
+    assert argv[-7] == str(model.GUARD_EXECUTABLE)
 
 
 def test_a_retried_arm_keeps_the_first_deadline_and_creates_no_second_timer(
@@ -1332,7 +1339,9 @@ def test_arm_refuses_and_triggers_a_rollback_when_any_account_is_in_the_docker_g
     assert "ci" in outcome.reason
     assert state.read_phase(paths=paths, run="run-a") == "published"
     assert state.read_deadline(paths=paths, run="run-a") is None
-    assert fake.calls_named(name="systemd_run")[0].detail == model.rollback_argv(run="run-a")
+    assert fake.calls_named(name="systemd_run")[0].detail == model.rollback_argv(
+        run="run-a", paths=paths
+    )
 
 
 def test_start_refuses_when_the_dead_man_timer_unit_is_not_active(tmp_path: Path) -> None:
@@ -1628,21 +1637,31 @@ def test_recover_takes_the_same_lock_and_decides_through_the_same_table(
 def test_the_command_line_parses_an_operation_a_run_and_the_state_roots(
     tmp_path: Path,
 ) -> None:
-    """The role invokes the guard as `<guard> <op> <run>`; the roots are overridable.
+    """The role invokes the guard as `<guard> <op> <run>` plus both roots.
 
-    The defaults are the specification's two locations, so an operator
-    typing the short form reaches the real host state; the overrides
-    exist so a disposable acceptance host can be driven somewhere else.
+    The guard has no default for either root, so the short form an
+    operator might type is refused (see `test_docker_engine_guard_required_roots`)
+    and every invocation names the locations it acts on; the window stays
+    defaulted because it is a bound, not a location.
     """
     cli = _cli()
     assert "parse_request" in cli.__all__
 
-    default = cli.parse_request(argv=["reserve", "run-a"])
-    assert default.operation == "reserve"
-    assert default.run == "run-a"
-    assert str(default.paths.state_root) == "/var/lib/docker-engine-guard"
-    assert str(default.paths.runtime_root) == "/run/docker-engine-guard"
-    assert default.window_seconds == _WINDOW_SECONDS
+    named = cli.parse_request(
+        argv=[
+            "reserve",
+            "run-a",
+            "--state-root",
+            str(tmp_path / "var"),
+            "--runtime-root",
+            str(tmp_path / "run"),
+        ]
+    )
+    assert named.operation == "reserve"
+    assert named.run == "run-a"
+    assert named.paths.state_root == tmp_path / "var"
+    assert named.paths.runtime_root == tmp_path / "run"
+    assert named.window_seconds == _WINDOW_SECONDS
 
     overridden = cli.parse_request(
         argv=[

@@ -6,6 +6,7 @@
 #     --property=TimeoutStartSec=<budget> --property=TimeoutStopSec=30
 #     --property=KillMode=control-group --property=SendSIGKILL=yes
 #     /usr/local/libexec/docker-engine-guard <op> <run> --window-seconds=<W>
+#       --state-root <state root> --runtime-root <runtime root>
 #
 # so a stalled guard, and every child of it, is gone within its budget plus 30 s
 # whatever happens to the controller, and the guard's lock goes with it. `start`
@@ -49,6 +50,11 @@
       - "{{ docker_engine_op }}"
       - "{{ docker_engine_op_run }}"
       - "--window-seconds={{ docker_engine_window_seconds }}"
+      # The guard has no default for either root, so every operation names them.
+      - --state-root
+      - "{{ docker_engine_state_root }}"
+      - --runtime-root
+      - "{{ docker_engine_runtime_root }}"
   # The controller waits through Ansible's async poller rather than holding one
   # SSH channel open for up to the operation's whole budget; the unit's own
   # lifetime never depends on either.

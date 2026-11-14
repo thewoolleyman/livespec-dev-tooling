@@ -192,8 +192,9 @@ def test_a_failed_sample_records_it_and_triggers_a_rollback_it_never_waits_for(
     # ran on would have sampled twenty times: ONE sample is the proof that
     # the observer exited rather than carrying on over a doomed run.
     assert len(fake.calls_named(name="sample")) == 1
-    assert fake.calls_named(name="systemd_run")[0].detail == model.rollback_argv(run="run-a")
-    assert "--no-block" in model.rollback_argv(run="run-a")
+    triggered = model.rollback_argv(run="run-a", paths=_paths(root=tmp_path))
+    assert fake.calls_named(name="systemd_run")[0].detail == triggered
+    assert "--no-block" in triggered
     assert outcome.verdict == "refuse"
     assert "dns" in outcome.reason
 
