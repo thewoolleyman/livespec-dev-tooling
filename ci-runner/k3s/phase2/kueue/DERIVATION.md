@@ -1722,6 +1722,70 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
+### The gmktec gate lane to two gates (2026-11-14)
+
+This section sits ahead of the PowerEdge 2026-11-14 section, out of date order,
+for the same reason that one does: it avoids colliding with concurrent edits at
+the end of this file.
+
+**What was wrong.** legacy-dispatcher-agent pauses factory placements while a
+node's BestEffort `cpu.pressure` full avg60 reads above 30. On gmktec it fired
+repeatedly on 2026-11-14: at 17:32, 17:43, 18:01 and 18:13Z, then from 18:26Z
+to past 18:41Z (36.29 at 18:41:20Z). Each episode lasted 5-15 min. Live factory
+load was 14 runs against a fleet cap of 16. Honeycomb `metrics`, the SUM of
+`k8s.pod.cpu.usage` on gmktec-xubuntu by namespace, tracks every episode. In
+18:26-18:41Z:
+- `gates` held about 26 of the node's 32 cores;
+- `factory` fell to about 4;
+- `arc-runners` fell to under 1.
+
+The seven orchestrator gate pods on the node over 17:25-18:45Z averaged 9-13
+cpu each and peaked at 14-22.5. Their request is 5 cpu. Gates are Burstable
+with no cpu limit, so the lane quota counts 5 per gate while each admitted
+orchestrator gate adds about 10-20 real cores, and their CFS weight starves the
+BestEffort slice. Earlier shares on the node, from the v223 proposal
+(livespec-dev-tooling#4705):
+- 15:33-17:38Z: gates 73.7%, arc-runners 13.3%, factory 12.8%;
+- 13:30-15:33Z: gates 67.8%, arc-runners 14.1%, factory 18.0%.
+
+**What changed.** `gates-flavor` goes from 15 cpu / 24 Gi to 10 cpu / 16 Gi,
+which is two gate units of 5 cpu / 8 Gi, the floor v223 set. `node-cpu-budget.yaml`
+gate_cpu moves with it. `tests/spec/test_gates_queue_gate_unit.py` moves to the
+two-Job derivation in the same commit, as the v223 grade required. Ruled by
+legacy-coordinator-agent (58d68f5e) and carried by throughput-plans-coordinator
+(livespec-dev-tooling-r7iuj6) under plan gate-job-resources
+(livespec-dev-tooling-ukoeah). The fleet-wide fix, a cpu limit or a larger
+declared request on gate Jobs that burst past their request, is the next lever
+and is not part of this change.
+
+**Expected effect.** About 10 of gmktec's gate cores (one orchestrator gate's
+real use) free up for the BestEffort CI and factory pods. Fewer
+`cpu.pressure` episodes should pause factory placement on gmktec, and gmktec's
+arc-runners share of pod CPU should rise from 13.3% to at least 20% over the
+2 h after the apply.
+
+**CI-side read at +2 h.** Owner: throughput-plans-coordinator, for plan
+gate-job-resources (epic livespec-dev-tooling-ukoeah). It covers:
+- `gates-cq` pending workloads;
+- the gate pod p50 per node for livespec-dev-tooling and
+  livespec-orchestrator-beads-fabro;
+- gmktec's BestEffort `cpu.pressure` full avg60, and the count of dispatcher
+  placement pauses on gmktec;
+- gmktec's SUM of `k8s.pod.cpu.usage` by namespace (gates, factory,
+  arc-runners).
+
+**Revert trigger.** Within 6 h of the apply, EITHER of these restores
+`gates-flavor` to 15 cpu / 24 Gi and `node-cpu-budget.yaml` gate_cpu to 15:
+- (a) `gates-cq` shows 1 or more pending for 15 min or longer;
+- (b) the livespec-dev-tooling gate pod p50 on any node other than gmktec rises
+  above 1.25x its 03:05-09:09Z value (M4 10.0, gamingpc 11.0, hp 21.5 min), or
+  the PowerEdge's rises above 1.25x 16.2 min.
+A restore of 15 cpu still satisfies v223's two-Job floor. Apply the change and
+any restore with `just ansible-apply ansible/ci-pool.yml --tags
+ci_converge_unit --limit gmktec-xubuntu`.
+
+**Result.** Due within 24 h of this commit, recorded here.
+
 ### The PowerEdge gate lane back to four gates (2026-11-14)
 
 This section sits ahead of the two 2026-11-11 PowerEdge sections it reverses

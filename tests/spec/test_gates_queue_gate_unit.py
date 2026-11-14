@@ -7,7 +7,7 @@ place: `converge-worker-queues.sh` reads it to size the worker flavors, and
 these tests fail, naming the flavor, when a fleet literal stops being a whole
 number of units. They assert that DERIVATION and never a literal quota or unit
 value, as `SPECIFICATION/contracts.md` requires of tests over committed
-configuration. The gmktec `gates-flavor` floor of three default-size gate Jobs
+configuration. The gmktec `gates-flavor` floor of two default-size gate Jobs
 is the gate lane headroom rule of the delegated pre-push gate contract in that
 same file, and the renderer's default request fitting inside one unit keeps a
 default gate from counting as more than one (plan gate-job-resources,
@@ -31,7 +31,7 @@ _PHASE2 = Path(__file__).resolve().parents[2] / "ci-runner" / "k3s" / "phase2"
 _QUEUE_FILE = _PHASE2 / "kueue" / "cluster-queue-gates.yaml"
 _RENDERER = _PHASE2 / "gates" / "render-gate-job.sh"
 _HEADROOM_LANE = "gates-flavor"
-_HEADROOM_GATES = 3
+_HEADROOM_GATES = 2
 _MEMORY = re.compile(r"^(?P<amount>0|[1-9][0-9]*)Gi$")
 _RENDERER_DEFAULTS = re.compile(
     r'^cpu="(?P<cpu>[0-9]+)"; memory="(?P<memory>[^"]+)";', re.MULTILINE
@@ -98,7 +98,7 @@ def test_every_fleet_gate_lane_is_the_same_whole_number_of_gate_units_in_cpu_and
     )
 
 
-def test_the_gmktec_lane_holds_three_default_size_gate_jobs() -> None:
+def test_the_gmktec_lane_holds_two_default_size_gate_jobs() -> None:
     lanes = _fleet_lanes(queue=_gates_cq())
     default_cpu, default_memory = _renderer_default()
     cpu, memory = lanes[_HEADROOM_LANE]

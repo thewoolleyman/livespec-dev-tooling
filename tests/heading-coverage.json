@@ -3673,8 +3673,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the gmktec gate lane keeps room for two default-size gate Jobs",
-    "test": "tests.spec.test_gates_queue_gate_unit.test_the_gmktec_lane_holds_three_default_size_gate_jobs",
-    "reason": "Integration-tier: tests/spec/test_gates_queue_gate_unit.py reads the committed cluster-queue-gates.yaml and the renderer's default request from render-gate-job.sh, and fails naming the gates-flavor lane when that lane's nominal cpu or memory quota is below three default-size gate Jobs. It asserts the derivation, never a literal quota (v187 Gate lane headroom, livespec-dev-tooling-brggiu). v223 lowered the floor to two Jobs. Until the implementing change moves it to the two-Job derivation (gate-job-resources, livespec-dev-tooling-ukoeah), the three-Job assertion is stricter than the clause, and it holds while the committed lane stays at 15 CPU."
+    "test": "tests.spec.test_gates_queue_gate_unit.test_the_gmktec_lane_holds_two_default_size_gate_jobs",
+    "reason": "Integration-tier: tests/spec/test_gates_queue_gate_unit.py reads the committed cluster-queue-gates.yaml and the renderer's default request from render-gate-job.sh, and fails naming the gates-flavor lane when that lane's nominal cpu or memory quota is below two default-size gate Jobs. It asserts the derivation, never a literal quota (v187 Gate lane headroom, livespec-dev-tooling-brggiu; v223 lowered the floor from three Jobs to two, livespec-dev-tooling-ukoeah)."
   },
   {
     "spec_root": "SPECIFICATION",

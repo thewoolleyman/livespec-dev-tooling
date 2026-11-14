@@ -275,18 +275,17 @@ spec:
               nominalQuota: 8Gi
         - name: gates-flavor
           resources:
-            # Three concurrent gates at roughly 5 cpu / 6 Gi each. cpu is the
-            # binding term at exactly 3 x 5; memory carries headroom above
-            # 3 x 6 = 18 Gi so an under-estimated gate does not make memory
-            # bind first before a soak has measured one. 24 Gi is about half of
-            # the ~50 GiB the plan's research/001 section 3 item 5 found
-            # available to pods on this node without evicting the LLM model
-            # from its 64 GiB iGPU carveout. Derivation in full: DERIVATION.md
-            # "The gates quota on gmktec-xubuntu (2026-09-08)".
+            # Two concurrent gates, two gate units of 5 cpu / 8 Gi (2026-11-14,
+            # down from three). The orchestrator's Burstable gates use 9-13 cpu
+            # each on average, against a 5-cpu request, so three admitted gates
+            # held about 26 of the node's 32 cores and starved the BestEffort
+            # CI and factory pods. v223 lowered the spec floor to two Jobs.
+            # Derivation: DERIVATION.md "The gmktec gate lane to two gates
+            # (2026-11-14)".
             - name: "cpu"
-              nominalQuota: 15
+              nominalQuota: 10
             - name: "memory"
-              nominalQuota: 24Gi
+              nominalQuota: 16Gi
         - name: gates-hp-flavor
           resources:
             # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
