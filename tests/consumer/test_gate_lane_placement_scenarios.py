@@ -41,6 +41,9 @@ _NOW = 1_800_000_000
 _BEAT = "2027-01-15T08:00:00Z"  # == _NOW
 _GMK, _PE, _HP = "gmktec-xubuntu", "poweredge-xubuntu", "hp-xubuntu"
 _FLAVOR = {_GMK: "gates-flavor", _PE: "gates-poweredge-flavor", _HP: "gates-hp-flavor"}
+# The committed static order of cluster-queue-gates.yaml restricted to these three
+# lanes (gamingpc, gmktec, hp, poweredge since the 2026-11-14 fastest-first re-read).
+_STATIC = [_GMK, _HP, _PE]
 _GATE_CPU = 5
 
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
@@ -201,7 +204,7 @@ class _Cluster:
 def _pool(
     tmp_path: Path, nodes: list[_Json], *, lanes: list[str] | None = None, quota_cpu: int = 10
 ) -> _Cluster:
-    lanes = lanes or [_GMK, _PE, _HP]
+    lanes = lanes or _STATIC
     return _Cluster(
         tmp_path,
         nodes=nodes,
@@ -240,8 +243,8 @@ def test_a_gate_job_submitted_while_every_lane_is_saturated_is_still_admitted(
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
     assert not cluster.patched()
-    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE], _FLAVOR[_HP]]
-    assert cluster.admit() == _PE
+    assert cluster.order == [_FLAVOR[n] for n in _STATIC]
+    assert cluster.admit() == _HP
     assert "all-lanes-saturated:static-order" in run.stdout
 
 
@@ -262,7 +265,7 @@ def test_a_pass_after_a_saturation_lifts_restores_the_static_order(tmp_path: Pat
     cluster.write("nodes.json", {"items": [_free(_GMK), _free(_PE), _free(_HP)]})
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
-    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE], _FLAVOR[_HP]]
+    assert cluster.order == [_FLAVOR[n] for n in _STATIC]
     assert "CHANGE" in run.stdout
 
 
@@ -378,7 +381,7 @@ def test_a_saturated_new_node_sorts_behind_the_unsaturated_lanes(tmp_path: Path)
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
     # newbox is not in the committed order, so the static order puts it last.
-    assert cluster.order == [_FLAVOR[_GMK], _FLAVOR[_PE], _FLAVOR[_HP], "gates-newbox-flavor"]
+    assert cluster.order == [*(_FLAVOR[n] for n in _STATIC), "gates-newbox-flavor"]
 
 
 def test_a_lane_whose_node_cannot_run_the_gate_architecture_is_neither_free_nor_read(
@@ -388,7 +391,7 @@ def test_a_lane_whose_node_cannot_run_the_gate_architecture_is_neither_free_nor_
     cluster = _pool(tmp_path, [arm, _free(_PE), _free(_HP)])
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
-    assert cluster.order == [_FLAVOR[_PE], _FLAVOR[_HP], _FLAVOR[_GMK]]
+    assert cluster.order == [_FLAVOR[_HP], _FLAVOR[_PE], _FLAVOR[_GMK]]
     assert f"{_GMK}(ineligible-architecture)" in run.stdout
     assert "UNREAD" not in run.stdout
 
@@ -427,7 +430,7 @@ def test_container_worker_flavors_stay_in_front_and_quota_is_never_changed(
     quota = {f["name"]: f["resources"] for f in before["spec"]["resourceGroups"][0]["flavors"]}
     run = cluster.reconcile()
     assert run.returncode == 0, run.stderr
-    assert cluster.order == [worker, _FLAVOR[_PE], _FLAVOR[_HP], _FLAVOR[_GMK]]
+    assert cluster.order == [worker, _FLAVOR[_HP], _FLAVOR[_PE], _FLAVOR[_GMK]]
     after = json.loads((cluster.fake / "cq.json").read_text(encoding="utf-8"))
     assert {
         f["name"]: f["resources"] for f in after["spec"]["resourceGroups"][0]["flavors"]
