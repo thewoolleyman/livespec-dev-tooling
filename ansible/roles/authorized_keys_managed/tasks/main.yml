@@ -48,7 +48,8 @@
     mode: "0600"
     marker: "# {mark} ANSIBLE MANAGED authorized_keys_managed: {{ item.name }}"
     block: >-
-      restrict,port-forwarding,permitopen="{{ item.permitopen }}",permitlisten="invalid.invalid:1",command="/bin/false" {{ item.public_key }}
+      restrict,port-forwarding,permitopen="{{ item.permitopen }}",permitlisten="invalid.invalid:1",command="/usr/bin/setpriv --pdeathsig KILL
+      /usr/bin/sleep infinity" {{ item.public_key }}
   become: true
   loop: "{{ authorized_keys_managed_entries }}"
   loop_control:

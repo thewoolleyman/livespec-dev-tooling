@@ -133,7 +133,9 @@ def _expected_block(*, entry: dict[str, str]) -> str:
         [
             _MARKER.format(mark="BEGIN", name=entry["name"]),
             'restrict,port-forwarding,permitopen="127.0.0.1:3307",'
-            'permitlisten="invalid.invalid:1",command="/bin/false" ' + entry["public_key"],
+            'permitlisten="invalid.invalid:1",'
+            'command="/usr/bin/setpriv --pdeathsig KILL /usr/bin/sleep infinity" '
+            + entry["public_key"],
             _MARKER.format(mark="END", name=entry["name"]),
             "",
         ]
