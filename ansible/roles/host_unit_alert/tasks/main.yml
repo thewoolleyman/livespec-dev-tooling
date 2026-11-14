@@ -1,0 +1,22 @@
+---
+- name: Install the host-unit alert script
+  ansible.builtin.copy:
+    src: host-unit-alert
+    dest: "{{ host_unit_alert_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the host-unit alert template unit
+  ansible.builtin.template:
+    src: host-unit-alert@.service.j2
+    dest: "{{ host_unit_alert_unit_dir }}/{{ host_unit_alert_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the host-unit alert template
+
+- name: Reload systemd before a later role names the template
+  ansible.builtin.meta: flush_handlers

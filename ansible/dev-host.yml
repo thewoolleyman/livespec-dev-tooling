@@ -57,6 +57,10 @@
       tags: [codex_config]
     - role: honeycomb_mcp
       tags: [honeycomb_mcp]
+    # The OnFailure= alert template the roles below name. It runs first so
+    # their alert-unit checks find it installed.
+    - role: host_unit_alert
+      tags: [host_unit_alert]
     - role: honeycomb_trigger_recipients_check
       tags: [honeycomb_trigger_recipients_check]
     - role: otel_collector

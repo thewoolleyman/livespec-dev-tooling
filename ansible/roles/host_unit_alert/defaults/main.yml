@@ -1,0 +1,14 @@
+---
+# host_unit_alert -- the OnFailure= alert for units that livespec-dev-tooling
+# roles install. See HOST_VARS.md.
+
+# The template name a watched unit names as `OnFailure=<prefix>%n.service`.
+host_unit_alert_unit: host-unit-alert@.service
+host_unit_alert_unit_dir: /etc/systemd/system
+host_unit_alert_bin: /usr/local/libexec/host-unit-alert
+
+# The alert channels' configuration (Honeycomb ingest key and dataset, ntfy
+# topic). The dev host reuses dolt-server's alert file, so these alerts reach the
+# same dataset and phone as dolt-server's own; a missing file is not fatal to the
+# unit, but every alert then exits 1 with "no channel accepted the alert".
+host_unit_alert_env_file: /etc/doltdb/alert.env.local

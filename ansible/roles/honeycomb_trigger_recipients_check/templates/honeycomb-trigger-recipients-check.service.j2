@@ -2,9 +2,9 @@
 [Unit]
 Description=Assert critical Honeycomb triggers still have recipients attached
 Documentation=file://{{ honeycomb_trigger_recipients_check_checkout }}/plan/dolt-reboot-safety/handoff.md
-# The check that watches the watchman must not itself fail silently. Reuse the
-# dolt-server alert handler (Honeycomb event -> trigger -> email, + ntfy) whose
-# delivery is proven.
+# The check that watches the watchman must not itself fail silently. Role
+# host_unit_alert's handler sends a Honeycomb event its own trigger emails, plus
+# an ntfy push.
 OnFailure={{ honeycomb_trigger_recipients_check_alert_target }}
 
 [Service]

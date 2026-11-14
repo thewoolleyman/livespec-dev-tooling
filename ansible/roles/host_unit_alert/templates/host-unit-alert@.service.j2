@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# Instanced alert unit (role host_unit_alert). A watched unit carries
+# OnFailure=host-unit-alert@%n.service, so %i is the full name of the unit that
+# failed. No [Install]: it only ever starts through OnFailure=.
+[Unit]
+Description=Alert that %i failed on this host (role host_unit_alert)
+# No OnFailure= here: an alert about a failed alert would loop.
+
+[Service]
+Type=oneshot
+# Root, to read the failed unit's journal. It touches nothing on the host; it
+# only reads the journal and posts the alert.
+EnvironmentFile=-{{ host_unit_alert_env_file }}
+ExecStart={{ host_unit_alert_bin }} %i

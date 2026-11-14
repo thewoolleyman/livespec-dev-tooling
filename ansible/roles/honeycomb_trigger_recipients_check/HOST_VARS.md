@@ -32,6 +32,6 @@ under a different account.
   endpoints at all. The role asserts that it resolves, for the account the unit
   runs as, before its first changed task, and refuses otherwise: apply it only
   after the key is in the Environment.
-- `dolt-backup-alert@.service`, from the `dolt-server` repo. It is this unit's
-  `OnFailure` target. The role warns when it is absent: that dependency decides
+- `host-unit-alert@.service`, from role `host_unit_alert`, which
+  `dev-host.yml` runs first. It is this unit's `OnFailure` target. The role warns when it is absent: that dependency decides
   only whether a failing run is HEARD, not whether the check can run.

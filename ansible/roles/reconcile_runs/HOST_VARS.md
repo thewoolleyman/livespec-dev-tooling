@@ -32,7 +32,7 @@ that dispatches factory runs. It replaces the hand-run
   each enabled tenant whose marker is missing or older than
   `reconcile_runs_stale_after_seconds`.
   - With `reconcile_runs_staleness_on_failure` set (the dev host:
-    `dolt-backup-alert@%n.service`), the unit fails, and so alerts, only when
+    `host-unit-alert@%n.service`), the unit fails, and so alerts, only when
     the stale set changes or the last alert is a day old.
   - With it empty (a host whose own telemetry reads the markers, such as
     hetzner-xubuntu), the unit fails on every stale check.
@@ -99,7 +99,7 @@ reconcile_runs_interval: 10min           # OnUnitInactiveSec: idle gap between s
 reconcile_runs_boot_delay: 5min
 reconcile_runs_timeout_seconds: 1800     # one pass's bound
 reconcile_runs_stale_after_seconds: 14400
-reconcile_runs_staleness_on_failure: ""   # e.g. dolt-backup-alert@%n.service
+reconcile_runs_staleness_on_failure: ""   # e.g. host-unit-alert@%n.service
 ```
 
 Use the explicit `/home/ubuntu/...` paths. These are system units, and in a
@@ -153,7 +153,7 @@ journalctl -u <unit>-dry-run.service -n 50 --no-pager
   marker stay on the host until an operator removes them. The sweep no longer
   wants it, so it never runs.
 - **The OnFailure= alert unit.** On the dev host this is
-  `dolt-backup-alert@.service`, from the dolt-server repository. The role
+  `host-unit-alert@.service`, from role `host_unit_alert`. The role
   refuses to install the staleness unit when the named alert unit is missing.
 - **First sweep.** If a converge changes the timer or its interval on a host
   that is already enabled, the role starts one sweep. Without that sweep, a

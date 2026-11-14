@@ -128,14 +128,14 @@
   # A WARNING, not a refusal, and the asymmetry is deliberate. The ExecStart
   # dependencies above decide whether the check can run at all; this one decides
   # only whether its FAILURE is heard. The check still does useful work without
-  # it, and the unit ships from a different repo (dolt-server), so refusing here
-  # would couple this role's applicability to another repo's rollout order.
+  # it, and the unit ships from a different role (host_unit_alert), so refusing
+  # here would couple this role's applicability to that role's rollout order.
   ansible.builtin.debug:
     msg: >-
       WARNING: {{ honeycomb_trigger_recipients_check_alert_unit }} is not
       installed in {{ honeycomb_trigger_recipients_check_unit_dir }}, so this
       check's OnFailure target does not resolve and a failing run will notify
-      nobody. It ships from the dolt-server repo.
+      nobody. Role host_unit_alert installs it.
   when: not honeycomb_trigger_recipients_check_alert_stat.stat.exists
 
 - name: Make the check script executable in the checkout

@@ -187,11 +187,13 @@
   when: reconcile_runs_staleness_on_failure | length > 0
 
 - name: Refuse an OnFailure= target that is not installed
+  # The message rebuilds the path: a missing file's stat result has no `path`.
   ansible.builtin.assert:
     that: reconcile_runs_alert_unit.stat.exists
     fail_msg: >-
       reconcile_runs_staleness_on_failure names {{ reconcile_runs_staleness_on_failure }},
-      but {{ reconcile_runs_alert_unit.stat.path }} is not installed. A staleness
+      but {{ reconcile_runs_unit_dir }}/{{ reconcile_runs_staleness_on_failure
+      | regex_replace('@.*$', '@') }}.service is not installed. A staleness
       check whose alert unit is missing fails with nobody told; install the alert
       unit, or clear the variable on a host whose telemetry reads the markers.
     success_msg: the staleness alert unit is installed
