@@ -2372,16 +2372,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: each state-writing livespec_dev_tooling entry point (the flake-retry filer, the Docker engine install guard and its preflight), run as a subprocess without its state-location flag, exits non-zero naming the flag and leaves a sentinel host path untouched. livespec-dev-tooling-6cgj2e owns it.",
+    "test": "tests.consumer.test_state_writing_cli_scenarios.test_a_state_writing_cli_invoked_without_its_state_path_flag_refuses_and_touches_no_host_state",
+    "reason": "Consumer-tier: drives each state-writing entry point's own command line without one state-location flag -- the flake-retry filer's `--state-dir`, the Docker engine install guard's `--state-root` and `--runtime-root`, and the guard preflight's `--state-root` -- and asserts it exits non-zero naming the flag with no directory or file written and no host built (work-item livespec-dev-tooling-6cgj2e).",
     "work_item": "livespec-dev-tooling-6cgj2e"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the repository's invoker scan, run over a fixture systemd unit or ansible template that invokes a state-writing entry point without one of its state-location flags, fails naming the invoker file and the missing flag. livespec-dev-tooling-6cgj2e owns it.",
+    "test": "tests.consumer.test_state_writing_cli_scenarios.test_a_committed_invoker_that_omits_a_state_writing_clis_state_path_flag_fails_the_test_suite",
+    "reason": "Consumer-tier: runs the invoker scan over a fixture systemd unit template that starts the flake-retry filer without `--state-dir` and asserts the finding names the invoker file and the missing flag, with a control arm asserting this repository's own committed invokers are clean; `tests.livespec_dev_tooling.test_state_cli_invokers` holds the scan's other shapes (work-item livespec-dev-tooling-6cgj2e).",
     "work_item": "livespec-dev-tooling-6cgj2e"
   },
   {

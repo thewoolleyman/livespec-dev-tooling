@@ -240,13 +240,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a committed invoker that omits a state-writing CLI's state-path flag fails the test suite",
-    "work_item": "livespec-dev-tooling-6cgj2e",
-    "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a config-value-only change of .livespec.jsonc leaves a test that names no changed key retried",
     "work_item": "livespec-dev-tooling-n3dr3z",
     "first_seen": "2026-11-09"
@@ -964,13 +957,6 @@
     "heading": "## Scenario: a stalled suite-green run names the tests that were still running",
     "work_item": "livespec-dev-tooling-h2i4u2",
     "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a state-writing CLI invoked without its state-path flag refuses and touches no host state",
-    "work_item": "livespec-dev-tooling-6cgj2e",
-    "first_seen": "2026-11-12"
   },
   {
     "spec_root": "SPECIFICATION",
