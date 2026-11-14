@@ -298,7 +298,7 @@ def main() -> int:
         workers=max_workers,
         skip=list(skip_set),
     )
-    if warm_locked_pyright(cwd=cwd, already_warmed=already_warmed) != 0:
+    if warm_locked_pyright(cwd=cwd, env=dict(os.environ), already_warmed=already_warmed) != 0:
         _write(text="ERROR: pyright provisioning failed; no check target started.\n")
         return 1
     results = _run_all(
