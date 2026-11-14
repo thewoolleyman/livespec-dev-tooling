@@ -5664,3 +5664,37 @@ And the host-unit failure trigger counts that event
 And the "dolt-backup run failed" trigger does not count it
 
 And when no alert channel accepts the alert, the alert unit itself exits non-zero
+
+## Scenario: self_hosted_routing passes a guarded merge_group route and fails an unguarded one
+
+```gherkin
+Given a workflow whose gating job routes to a gating self-hosted label and whose on: set includes merge_group
+
+And the workflow declares a hosted, read-only guard job that the gating job needs
+
+And the gating job's merge_group route selects self-hosted capacity only on the guard's true output and otherwise names a hosted literal
+
+And the consumer declares a non-empty merge_queue_author_allowlist
+
+And each gating job that needs the guard carries if: ${{ !cancelled() }}
+
+When self_hosted_routing runs
+
+Then it reports no finding for that workflow
+
+And when the gating job's needs: omits the guard job, self_hosted_routing fails naming the workflow file and the merge_group trigger
+
+And when the gating job lacks the !cancelled() condition and ci-green carries no ci_green_required_legs step, self_hosted_routing fails naming the workflow file
+```
+
+## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue
+
+```gherkin
+Given livespec-dev-tooling is owned by an organization
+
+And no active ruleset on its default branch carries a merge_queue rule
+
+When branch_protection_alignment runs with an admin-scoped token
+
+Then it exits 4 with one fail finding whose failure_mode is merge_queue_absent
+```
