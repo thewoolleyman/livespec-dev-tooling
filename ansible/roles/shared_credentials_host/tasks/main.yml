@@ -419,3 +419,8 @@
   ansible.builtin.import_tasks: mint.yml
   when: shared_credentials_host_mint_bootstrap_key | bool
   tags: [never, poweredge_bootstrap_mint]
+
+- name: Probe the consumer's launch, value-free
+  ansible.builtin.import_tasks: probe.yml
+  when: shared_credentials_host_probe | bool
+  tags: [never, shared_credentials_probe]

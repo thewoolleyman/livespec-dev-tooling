@@ -122,3 +122,12 @@ shared_credentials_host_mint_dir: /root/shared-credentials-bootstrap-mint
 shared_credentials_host_mint_account: "672283019497"
 shared_credentials_host_mint_region: us-west-2
 shared_credentials_host_mint_issuer_role_arn: arn:aws:iam::672283019497:role/OrganizationAccountAccessRole
+
+# The value-free launch probe (tasks/probe.yml), imported behind
+# shared_credentials_host_probe and the `never` tag, so no converge or drift report runs
+# it. It launches the named consumer through the installed launcher and prints, for each
+# expected variable, only its name and byte count, plus how many AWS_* names the child
+# saw; it never prints a value. Per-host values live in host_vars (HOST_VARS.md).
+shared_credentials_host_probe: false
+shared_credentials_host_probe_consumer: ""
+shared_credentials_host_probe_names: []
