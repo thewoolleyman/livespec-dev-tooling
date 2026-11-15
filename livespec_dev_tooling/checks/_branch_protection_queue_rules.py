@@ -50,9 +50,10 @@ def parse_object(*, completed: GhRead) -> dict[str, object] | None:
 def restriction_state(*, completed: GhRead) -> str:
     """Classify the classic push-restrictions read: `none`, `exception` or `unreadable`.
 
-    Only a restrictions object that names someone allowed to push is an
-    exception. A failed read other than GitHub's "not enabled" answer, or a
-    malformed body, is unreadable, never "no restrictions".
+    "none" needs `users`, `teams` and `apps` all PRESENT as empty lists; a
+    non-empty one is an exception. A failed read other than GitHub's "not
+    enabled" answer, a malformed body, or an object of any other shape is
+    unreadable, never "no restrictions".
     """
     combined = f"{completed.stdout}\n{completed.stderr}"
     if completed.returncode != 0 and _RESTRICTIONS_NOT_ENABLED in combined:
@@ -60,9 +61,10 @@ def restriction_state(*, completed: GhRead) -> str:
     body = parse_object(completed=completed)
     if body is None:
         return "unreadable"
-    holders = (body.get(key) for key in _RESTRICTION_HOLDERS)
-    named = (cast("list[object]", h) for h in holders if isinstance(h, list))
-    return "exception" if any(named) else "none"
+    holders = [body.get(key) for key in _RESTRICTION_HOLDERS]
+    if not all(isinstance(holder, list) for holder in holders):
+        return "unreadable"
+    return "exception" if any(cast("list[list[object]]", holders)) else "none"
 
 
 def uses_guarded_merge_group(*, workflows_dir: Path, gating_labels: tuple[str, ...]) -> bool:
