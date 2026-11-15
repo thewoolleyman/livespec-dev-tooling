@@ -5871,3 +5871,17 @@ When branch_protection_alignment runs with an admin-scoped token
 
 Then it exits 4 with one fail finding whose failure_mode is merge_queue_absent
 ```
+
+## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration
+
+```gherkin
+Given `ansible/ansible.cfg` sets `pipelining = True`
+
+When an operator runs `just ansible-drift` or `just ansible-apply` from the repository root
+
+Then the ansible command the recipe runs resolves `ansible/ansible.cfg` as its configuration file
+
+And `DEFAULT_PIPELINING` is `True` for that command
+
+And `check-ansible-recipes-load-config` fails when a recipe's ansible invocation resolves no configuration file
+```

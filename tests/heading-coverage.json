@@ -4192,5 +4192,13 @@
     "test": "TODO",
     "reason": "Spec-first (v225): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running branch_protection_alignment against a recorded organization-owned rulesets answer with no merge_queue rule; the proposal named the unit tier, but this repository's scenario rows run at the consumer tier. livespec-dev-tooling-mvqo6h owns it.",
     "work_item": "livespec-dev-tooling-mvqo6h"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration",
+    "test": "TODO",
+    "reason": "Spec-first (ansible-recipes-load-ansible-cfg): a real test at the integration tier or above (this repository's scenario rows run at the consumer tier, `tests.consumer`) is owed for this scenario, running each ansible recipe's invocation from the repository root and asserting the resolved config file and DEFAULT_PIPELINING; it implements check-ansible-recipes-load-config. livespec-dev-tooling-d2ysfg owns it.",
+    "work_item": "livespec-dev-tooling-d2ysfg"
   }
 ]

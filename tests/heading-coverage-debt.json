@@ -1818,5 +1818,12 @@
     "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
     "work_item": "livespec-dev-tooling-vobfwi",
     "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration",
+    "work_item": "livespec-dev-tooling-d2ysfg",
+    "first_seen": "2026-11-15"
   }
 ]
