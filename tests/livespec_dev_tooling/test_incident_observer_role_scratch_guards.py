@@ -49,6 +49,10 @@ _PUBLISH = "Publish only the declared paths through a path-scoped funnel"
 _STAT = "Read each scratch path on the host as root, without following a link"
 _GIT_LINKS = "Read every link below the scratch reference clone's git directory"
 _LINK = "Refuse a scratch path that is a symbolic link on the host"
+_INTERPRETER_STAT = (
+    "Read the scratch venv's interpreter on the host as root, without following a link"
+)
+_INTERPRETER = "Refuse a scratch venv interpreter that resolves into a path production owns"
 _GUARD = (
     "not (incident_observer_scratch | bool)"
     " and incident_observer_scratch_name is not defined"
@@ -382,6 +386,57 @@ def test_the_host_check_refuses_a_link_at_any_depth_below_the_reference_git_dire
 
     assert completed.returncode != 0, completed.stdout
     assert _named_link(path=link) in completed.stdout
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/opt/livespec-incident/venv/bin/python",
+        "/opt/livespec-incident/venv/bin/python3.12",
+        "/var/lib/livespec-incident/receipts/python",
+    ],
+)
+def test_the_host_check_refuses_a_scratch_venv_interpreter_linked_into_production(
+    tmp_path: Path, *, target: str
+) -> None:
+    home = tmp_path / "home"
+    paths = _tree(home=home)
+    interpreter = paths["incident_observer_venv"] / "bin" / "python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(target)
+
+    completed = _run_host_check(
+        root=tmp_path, paths=paths, task_names=(_INTERPRETER_STAT, _INTERPRETER)
+    )
+
+    assert completed.returncode != 0, completed.stdout
+    assert str(interpreter) in completed.stdout
+
+
+def test_the_host_check_passes_a_scratch_venv_interpreter_linked_to_the_system_python(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    paths = _tree(home=home)
+    interpreter = paths["incident_observer_venv"] / "bin" / "python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to("/usr/bin/python3")
+
+    completed = _run_host_check(
+        root=tmp_path, paths=paths, task_names=(_INTERPRETER_STAT, _INTERPRETER)
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_the_host_check_passes_an_absent_scratch_venv_interpreter(tmp_path: Path) -> None:
+    paths = _tree(home=tmp_path / "home")
+
+    completed = _run_host_check(
+        root=tmp_path, paths=paths, task_names=(_INTERPRETER_STAT, _INTERPRETER)
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_the_host_check_refuses_a_link_the_control_node_cannot_see_behind_an_unreadable_parent(
