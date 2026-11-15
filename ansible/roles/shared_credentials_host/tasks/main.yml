@@ -216,6 +216,40 @@
 # unpacked 0775 on poweredge-xubuntu, 2026-11-15), which the assertion below refuses.
 # This runs outside the install block so it also repairs an interpreter an earlier
 # converge already unpacked, and reports changed only where a mode actually moves.
+# A recursive `file` task reports `changed` in check mode on every run, because the tree holds
+# about 1048 symlinks whose lrwxrwxrwx bits it cannot predict (measured 2026-11-15 on
+# poweredge-xubuntu after the incident apply). That would leave the drift report permanently
+# unclean. So measure first, skipping symlinks (Linux ignores their mode bits), and strip only
+# when a real file or directory is group- or world-writable or not root-owned.
+- name: Find interpreter-tree paths that are group- or world-writable or not root-owned
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ shared_credentials_host_python_prefix }}"
+      - "!"
+      - -type
+      - l
+      - (
+      - -perm
+      - /022
+      - -o
+      - "!"
+      - -user
+      - root
+      - -o
+      - "!"
+      - -group
+      - root
+      - )
+      - -print
+      - -quit
+  register: shared_credentials_host_python_loose
+  changed_when: false
+  check_mode: false
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - shared_credentials_host_python_installed.stat.exists or not ansible_check_mode
+
 - name: Strip group and world write from the pinned interpreter tree
   ansible.builtin.file:
     path: "{{ shared_credentials_host_python_prefix }}"
@@ -227,6 +261,7 @@
   when:
     - shared_credentials_host_python_on_path.rc != 0
     - not ansible_check_mode or shared_credentials_host_python_installed.stat.exists
+    - shared_credentials_host_python_loose is skipped or (shared_credentials_host_python_loose.stdout | default('') | length > 0)
 
 - name: Read back the pinned delivery interpreter's version
   ansible.builtin.command:
