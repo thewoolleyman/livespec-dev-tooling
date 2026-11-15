@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterator
 from functools import partial
 
 from livespec_dev_tooling._flake_retry_root_terms import (
+    DOUBT,
     NOT_ROOTED,
     Key,
     RootTerm,
@@ -104,6 +105,8 @@ def _parameter_term(
     *, name: str, default: ast.expr | None, requested: bool, context: TermContext
 ) -> RootTerm:
     """A parameter is rooted through a fixture of its name, a rooted default or supplied value."""
+    if requested and name == "request":
+        return DOUBT
     keys: set[Key] = {("fixture", name), ("fixture", "*")}
     if requested:
         keys.add(("request", name))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 
-__all__: list[str] = ["division_operands"]
+__all__: list[str] = ["division_operands", "path_operands"]
 
 
 def division_operands(*, expression: ast.expr) -> tuple[ast.expr, ...]:
@@ -15,3 +15,30 @@ def division_operands(*, expression: ast.expr) -> tuple[ast.expr, ...]:
             *division_operands(expression=expression.right),
         )
     return (expression,)
+
+
+def path_operands(*, expression: ast.expr) -> tuple[ast.expr, ...] | None:
+    """Return the ordered operands of one supported path construction."""
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Div):
+        return division_operands(expression=expression)
+    return _call_path_operands(call=expression) if isinstance(expression, ast.Call) else None
+
+
+def _call_path_operands(*, call: ast.Call) -> tuple[ast.expr, ...] | None:
+    """Return operands from a path-construction call, when its shape is known."""
+    callee = call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, "attr", "")
+    if callee == "join" and len(call.args) > 1:
+        return tuple(call.args)
+    if callee == "with_name" and isinstance(call.func, ast.Attribute) and call.args:
+        return (call.func.value, call.args[0])
+    if callee in {"Path", "PurePath", "PosixPath", "PurePosixPath"}:
+        if len(call.args) > 1:
+            return tuple(call.args)
+        if len(call.args) == 1 and isinstance(call.args[0], ast.JoinedStr):
+            formatted = [
+                value.value
+                for value in call.args[0].values
+                if isinstance(value, ast.FormattedValue)
+            ]
+            return tuple(formatted) or (call.args[0],)
+    return None

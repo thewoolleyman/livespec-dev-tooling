@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling._flake_retry_changed_names import changed_names
 from livespec_dev_tooling._flake_retry_closure import (
     conftest_chain,
     from_import_sources,
@@ -23,6 +24,7 @@ from livespec_dev_tooling._flake_retry_closure import (
 from livespec_dev_tooling._flake_retry_naming import named, own_spans
 from livespec_dev_tooling._flake_retry_parameters import PYTEST_FIXTURES
 from livespec_dev_tooling._flake_retry_places import repository_places, request_span
+from livespec_dev_tooling._flake_retry_request_indirection import request_indirection
 from livespec_dev_tooling._flake_retry_root_terms import DOUBT, Key, RootTerm, ascended
 from livespec_dev_tooling._flake_retry_roots import module_root_terms, solve_keys
 from livespec_dev_tooling._flake_retry_roots import reached as reached_from
@@ -99,6 +101,13 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         if id(node) not in path_component_nodes
         or (Path(node.value).suffix and id(node) not in operand_ids)
     }
+    literals.update(
+        place
+        for node in index.nodes
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "with_name"
+        for place in [places.get(id(node))]
+        if place is not None
+    )
     dependent: list[tuple[RootTerm, frozenset[str], frozenset[str]]] = []
     undeterminable = any(chain.undeterminable for chain in chains)
     for chain, base in zip(chains, base_terms, strict=True):
@@ -110,6 +119,7 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         dependent.extend(
             [(term, chain.names | chain.segments, chain.names)] if term.through else []
         )
+    undeterminable = undeterminable or (bool(dependent) and request_indirection(tree=tree))
     return _ModuleFacts(
         imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
         literals=frozenset(literals),
@@ -183,27 +193,11 @@ def _closure(
             terms=bindings, queries=(key for term, _, _ in dependent for key in term.through)
         )
         for term, names, spelled in dependent:
-            found, unknowable = named(spans=reached_from(term=term, located=located), names=spelled)
+            spans = reached_from(term=term, located=located)
+            found, unknowable = named(spans=spans, names=spelled)
             literals.update(found | (names if term.through & rooted else set()))
             undeterminable = undeterminable or unknowable
     return set(reached), literals, undeterminable
-
-
-def _changed_names(*, paths: set[Path]) -> set[str]:
-    """Produce whole literal spellings that can identify changed code or data paths.
-
-    A literal may name the changed file, its filename, or an entire directory
-    prefix. Individual directory components are deliberately not candidates:
-    a common name such as ``livespec_dev_tooling`` is not a path to every
-    directory that happens to contain that segment.
-    """
-    names: set[str] = set()
-    for path in paths:
-        names.update((path.as_posix(), path.name))
-        names.update(parent.as_posix() for parent in path.parents if parent != Path())
-        if path.suffix == ".py":
-            names.add(".".join(path.with_suffix("").parts))
-    return names
 
 
 def _unsafe_change_reason(*, repo_root: Path, change_paths: set[Path]) -> str | None:
@@ -276,7 +270,7 @@ def retry_withheld_reason_for(
     changed_modules = {path.relative_to(repo_root) for path in modules} & change_paths
     if changed_modules:
         return f"changed closure module {min(changed_modules).as_posix()}"
-    named_literals = literals & _changed_names(paths=change_paths)
+    named_literals = literals & changed_names(paths=change_paths)
     return f"closure string literal {min(named_literals)!r}" if named_literals else None
 
 

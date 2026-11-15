@@ -24,7 +24,8 @@ import ast
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from functools import partial
 
-from livespec_dev_tooling._flake_retry_parameters import Thunk, fixture_name, parameter_sites
+from livespec_dev_tooling._flake_retry_function_terms import function_sites
+from livespec_dev_tooling._flake_retry_parameters import Thunk
 from livespec_dev_tooling._flake_retry_root_terms import (
     DOUBT,
     Key,
@@ -86,39 +87,6 @@ def _container_sites(
         yield binding_key(name=name, scope=owner, context=context), value
 
 
-def _returned_term(*, scope: Scope, context: TermContext) -> RootTerm:
-    """What a function returns or yields, read in the function's own scope."""
-    return union(
-        terms=(
-            base_term(expression=value, context=context)
-            for value in context.index.returns.get(id(scope), [])
-        )
-    )
-
-
-def _function_sites(
-    *, function: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda, context: TermContext
-) -> Iterator[tuple[Key, Thunk]]:
-    """A function binds its name to what it returns or yields, and each parameter it takes."""
-    body = function.body if isinstance(function.body, list) else [function.body]
-    inner = context.index.scope_of[id(body[0])]
-    outer = context.index.scope_of[id(function)]
-    if not isinstance(function, ast.Lambda):
-        returned = partial(_returned_term, scope=inner, context=context)
-        yield binding_key(name=function.name, scope=outer, context=context), returned
-        if outer.is_class:
-            yield ("attribute", function.name), returned
-        fixture = fixture_name(function=function)
-        if fixture is not None:
-            yield ("fixture", fixture), returned
-    yield from parameter_sites(
-        function=function,
-        in_class=outer.is_class,
-        key_of=lambda name: binding_key(name=name, scope=inner, context=context),
-        context=context,
-    )
-
-
 def _import_term(*, alias: ast.alias, context: TermContext) -> RootTerm:
     """A name imported from a closure module is that module's binding; anything else is a doubt."""
     source = context.import_sources.get(id(alias))
@@ -161,7 +129,7 @@ def _node_sites(*, node: ast.AST, context: TermContext) -> Iterator[tuple[Key, T
     elif isinstance(node, ast.withitem) and node.optional_vars:
         pairs = [(node.optional_vars, node.context_expr)]
     elif isinstance(node, _FUNCTIONS):
-        yield from _function_sites(function=node, context=context)
+        yield from function_sites(function=node, context=context)
     elif isinstance(node, ast.Import | ast.ImportFrom | ast.ClassDef):
         yield from _declaration_sites(node=node, scope=scope, context=context)
     for target, value in pairs:
