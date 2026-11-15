@@ -76,7 +76,7 @@ def _unauthenticated(*, digest: str, cause: str) -> FleetReport:
 
 def _applicable_consumers(*, manifest: Manifest) -> tuple[str, ...]:
     return tuple(f"{manifest.owner}/{m.repo}" for m in manifest.members) + tuple(
-        f"{manifest.owner}/{a.repo}"
+        manifest.adopter_repository(adopter=a)
         for a in manifest.adopters
         if a.profile != ("instruction-only",)
     )
@@ -84,7 +84,7 @@ def _applicable_consumers(*, manifest: Manifest) -> tuple[str, ...]:
 
 def _guidance_consumers(*, manifest: Manifest) -> tuple[str, ...]:
     return tuple(
-        f"{manifest.owner}/{a.repo}"
+        manifest.adopter_repository(adopter=a)
         for a in manifest.adopters
         if a.profile == ("instruction-only",)
     )

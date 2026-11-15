@@ -149,6 +149,17 @@ class Manifest:
     owner: str
     members: tuple[FleetMember, ...]
     adopters: tuple[Adopter, ...]
+    adopter_owner: str | None = None
+
+    def adopter_repository(self, *, adopter: Adopter) -> str:
+        """The fully-qualified repository for one adopter.
+
+        Fleet members always resolve through ``owner``. Adopters use their
+        entry-specific owner first, then the manifest's adopter default, and
+        finally the fleet owner for manifests that predate the owner keys.
+        """
+        owner = adopter.owner or self.adopter_owner or self.owner
+        return f"{owner}/{adopter.repo}"
 
     def member_names(self) -> frozenset[str]:
         """The set of member repo names (for the discovery sweep)."""
@@ -242,6 +253,7 @@ def _parse_adopter(*, entry: object) -> Adopter | None:
     record = cast("dict[str, object]", entry)
     repo = record.get("repo")
     posture = record.get("posture")
+    owner = record.get("owner")
     if not isinstance(repo, str) or not repo:
         return None
     profile = _parse_profile(profile=record.get("profile"))
@@ -249,7 +261,9 @@ def _parse_adopter(*, entry: object) -> Adopter | None:
         return None
     if not isinstance(posture, str) or posture not in ADOPTER_POSTURES:
         return None
-    return Adopter(repo=repo, profile=profile, posture=posture)
+    if owner is not None and not isinstance(owner, str):
+        return None
+    return Adopter(repo=repo, profile=profile, posture=posture, owner=owner)
 
 
 def _parse_adopters(*, raw: object) -> Result[tuple[Adopter, ...], _AdopterFailure]:
@@ -313,7 +327,10 @@ def parse_manifest(*, source: str) -> Result[Manifest, ManifestParseError]:
         return Failure(ManifestParseError(reason="root-not-object"))
     mapping = cast("dict[str, object]", data)
     owner = mapping.get("owner")
-    if not isinstance(owner, str):
+    adopter_owner = mapping.get("adopter_owner")
+    if not isinstance(owner, str) or (
+        adopter_owner is not None and not isinstance(adopter_owner, str)
+    ):
         return Failure(ManifestParseError(reason="owner-not-string"))
     members_raw = mapping.get("fleet")
     if members_raw is None:
@@ -324,4 +341,11 @@ def parse_manifest(*, source: str) -> Result[Manifest, ManifestParseError]:
     adopters = _parse_adopters(raw=mapping.get("adopters"))
     if isinstance(adopters, Failure):
         return Failure(ManifestParseError(reason=adopters.failure()))
-    return Success(Manifest(owner=owner, members=members.unwrap(), adopters=adopters.unwrap()))
+    return Success(
+        Manifest(
+            owner=owner,
+            members=members.unwrap(),
+            adopters=adopters.unwrap(),
+            adopter_owner=adopter_owner,
+        )
+    )
