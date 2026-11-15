@@ -483,6 +483,25 @@ fabro_server_instances:
         type: file
         description: GitHub App 4688510 (mi-homelab-factory-bot) private key, selected per run
         from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
+      # The per-run App selection source for the livespec-ai org's repositories
+      # after the org cutover (stale-base-merge-options, note 009): a run whose
+      # repository config names [run.integrations.github.app] app_id_secret =
+      # ORG_GITHUB_APP_ID and private_key_secret =
+      # /livespec-ai/github/livespec-ai-factory-bot/private-key publishes as the
+      # org App 5761962 (one installation covering every livespec-ai repository),
+      # not as the personal fleet App above, which cannot reach livespec-ai/*.
+      # Same shape and the same file-not-token reason as homelab's pair above.
+      # The key comes from the control node's credential wrapper, which projects
+      # the org App's key as GITHUB_PRIVATE_KEY_ORG. Inert until a repository's
+      # dispatcher.factories.petri.github_app names this pair.
+      - name: ORG_GITHUB_APP_ID
+        type: token
+        description: GitHub App id of the livespec-ai org App (livespec-ai-factory-bot); an id, not a secret
+        value: "5761962"
+      - name: /livespec-ai/github/livespec-ai-factory-bot/private-key
+        type: file
+        description: GitHub App 5761962 (livespec-ai-factory-bot) private key, selected per run
+        from_controller_env: GITHUB_PRIVATE_KEY_ORG
       - name: OPENAI_API_KEY
         type: token
         description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
