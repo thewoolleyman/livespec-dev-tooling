@@ -470,8 +470,10 @@ detached gate's lack of stdin (`git commit -F -`) is covered in
   Green.
 - After a long gate, `git log -1` the base before any reset. A soft
   `git reset origin/master` onto a master that MOVED stages reverse upstream
-  changes. Kill the gate (its pid file is under `tmp/gate-runs/<run>/`) and
-  rebuild from `git reset --hard origin/master` plus the re-added test.
+  changes. Kill the gate (its pid file is under `tmp/gate-runs/<run>/`),
+  rebuild from origin/master on a fresh branch (or a fresh worktree), and
+  re-add the test. Use `reset --hard` only when the branch holds nothing but
+  that test, after `git log origin/master..` shows no other unpushed commit.
 
 Before any Red gate, run `ruff check .` and pyright on the stub. Moved here from
 a host-local agent memory note by `livespec-dev-tooling-xykmob`.
