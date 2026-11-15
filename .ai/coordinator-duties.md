@@ -146,6 +146,51 @@ address-honeycomb-alerts can be used for now.  Eventually we will have a dedicat
 be responsible for telemetry management." The carrier is livespec-dev-tooling-jgkhr5 (owner ci-runtime-and-cost). The
 interim collector is plan address-honeycomb-alerts (bd-ib-xkwdap).
 
+**Rule INCIDENT-FIRST: a real breakage that stops work flowing is an incident by default.** Every tick asks whether a
+real breakage is stopping work flowing through the factory or the ecosystem: a red master, an exhausted credential or
+rate budget, a held factory, a jammed queue. If one is, it is an INCIDENT, and the expedited flow
+(EXPEDITED_INCIDENT_RESPONSE / _REVERT, `docs/incident-execution.md`) is used wherever it moves work faster, although
+the flow is incomplete today. When the incident path itself is broken, repairing it is the first incident action,
+driven out of order under OVERRIDE-THEN-BACKFILL (§5) and never waited out behind the normal lane. The flow is never
+ruled out because the work is "planned plan work" or because "the tool is broken": judge by impact, ask what makes it
+work, and invent no restriction on it without the maintainer's words. The maintainer, 2026-11-15 ~18:2xZ in the
+throughput-plans-coordinator seat, recorded on epic `livespec-dev-tooling-r7iuj6` at 18:18:09Z and in the scope event
+on epic `livespec-dev-tooling-6tgd2z` at 18:20:15Z: "Record this guidance to leverage the incident recovery process as
+much as we can right now, knowing that it is incomplete. The goal is to get the stale-base-merge-options plan done, and
+that is a tool we have to get it done. Record this in your plan directive as continuing guidance: you should always
+consider using the incident flow when it will help move things along and when there is actually a breakage that is
+stopping work from flowing through the factory and ecosystem. And record this in your loop and anywhere else that will
+help you remember it." Measured 2026-11-15: throughput-plans-coordinator ruled "no incident" at ~16:5xZ and called the
+flow "for broken masters, not planned work" at ~18:1xZ. Its own copy of this rule is in its charter
+(livespec-dev-tooling#4816).
+
+**Rule INCIDENT-IS-A-RECORD: an incident counts only once its record exists, and every repair commit after that rides
+the fast lane.**
+
+- An incident is declared only by `incident_authority.py file-incident` (one item per repair branch and PR), in the
+  same tick as the decision, and the declaration names the item id(s). An incident declared only in comments is not an
+  incident, and no seat says "running as an incident" until the item exists.
+- Each coordinator tick prints, for every incident declared on a watched epic, whether its record (the incident item's
+  genesis, carrying an incident identity) exists. A missing record is that tick's first action: the coordinator opens
+  it, or has the owner open it, that same tick.
+- **REPAIR-COMMITS-ON-THE-LANE.** Every repair commit after the filing carries the incident identity and goes through
+  the expedited lane: the genesis, the wrapper-form commit with the Factory-Override trailer, the fast checks only, and
+  the deferred obligations recorded. Work already inside a running gate finishes there, and the chain is used if that
+  gate refuses or dies.
+- A "circular" or "broken lane" objection is tested half by half before it is accepted: name which half is broken (the
+  local fast hooks, or the CI-side incident-ci and observer reach), and route around only that half.
+
+The maintainer, 2026-11-15 ~19:2x-19:3xZ, recorded in the scope events on epic `livespec-dev-tooling-r7iuj6` at
+19:25:06Z and on epic `livespec-dev-tooling-6tgd2z` at 19:19:54Z: "So you're saying I told you to run this as an
+incident, and you told me you would, and then you actually just fucking didn't do it?", "Why ISNT that the incident
+protocol is skipping the full check aggregate gate", and, in the coordinator's seat, "Yes, do your job. Stay on top of
+this. Unfuck things." Measured 2026-11-15: the 18:18Z incident (xyi5vu) was declared in comments only, and no incident
+item existed until ~19:3xZ, so for about an hour every step-3 repair commit ran the full 15-20 min aggregate. The
+coordinator backed it at 18:2xZ without checking for a record, and at 19:3xZ gave "no objection" to a hand-land whose
+stated basis was that the lane was "circular". Only the CI half was broken (hosted incident-ci cannot reach the
+observer); the local fast commit lane worked. The mechanical carrier, an INCIDENTS section in
+`scripts/coordinator/top5` (declared in comments versus record exists), is owed by the coordinator.
+
 ## 3. Unblock blocked seats every tick
 
 **Rule P1: every tick starts with priorities 1-5, in order.** Before any peer message is answered, run
@@ -241,7 +286,13 @@ sees it, and may choose "Yes". Billing and paid-credit prompts stay the maintain
 Claude Code's "Dangerous rm operation" prompt and the coordinator listed it for them: "What I want you to do is prevent
 the blockage. I don't really care about dangerous commands." Prevention is livespec-dev-tooling#4732, which puts
 `CLAUDE_CODE_EVEN_MORE_DANGEROUSLY_SKIP_PERMISSIONS=1` in every fleet host's process environment, because a PreToolUse
-allow hook was measured not to suppress the built-in check.
+allow hook was measured not to suppress the built-in check. On 2026-11-15 at 09:36:57Z the coordinator narrowed this
+rule (coordinators never type an approval into another seat's tool-permission prompt) after central-credential-service
+objected. The maintainer withdrew the narrowing, typed in the central-credential-service seat at 17:23:59Z and recorded
+on epic `livespec-dev-tooling-6tgd2z` at 17:24:09Z, verbatim: "YES IT MAY", meaning a coordinator MAY approve another
+seat's tool-permission prompt. Decision pickers are unchanged. Measured 2026-11-15: the coordinator kept carrying
+"PERMISSION-PROMPT ruling (recommend: keep the narrowing)" under FOR THE MAINTAINER through its 20:13Z handoff, hours
+after the maintainer had answered it.
 
 **Never ask the maintainer to relay a message.** The coordinator never asks the maintainer to carry a message to any
 seat. A Claude seat on vps, hetzner-xubuntu or gamingpc-xubuntu is reached by
@@ -318,6 +369,12 @@ PR is ready, so before grading a PR PASS, read whether its repository is inside 
 Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T05:56:04Z. Measured 2026-11-15: the coordinator passed
 livespec-overseer#3089 inside the overseer merge quiet for expedited-incident-response-flag's 5v2ajq correction, and the
 incident had to re-stage.
+
+**A QUIET OFF gate never holds an incident roll (coordinator's reading).** A merge quiet holds paused work, and an
+incident roll is never paused work, so it lands on its own route inside a quiet window instead of waiting for QUIET OFF.
+Measured 2026-11-15: console#1391 (igjtqq's wheel-pin fix for livespec-console-beads-fabro's red master) was ruled at
+12:16Z to wait for QUIET OFF. The ~15:2xZ ruling on igjtqq ("an incident roll is not paused work") ran it at once: it
+merged as 25b413ce at 15:19:17Z, and console master was green at 15:24:37Z.
 
 **fabro-currency's pickers are answered like any seat's.** The maintainer, 2026-11-02 ~22:26Z: "WHY THGE FUCK ARE YOU
 LETTING IT B LOCK???" A ruling at 18:57Z had recorded "I'll talk to it myself" as "the coordinator does not direct
@@ -401,6 +458,19 @@ approve checks at capture or approve time, the coordinator reads an item's tier 
 Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T04:19:28Z and 04:51:10Z. Measured 2026-11-15: bd-ib-qdy2k7
 (a test-existence bullet on a workflow-edit deliverable) and bd-ib-x73d36 (an unparseable governing-heading verdict)
 reached the coordinator as approve-ready and refused at the valve.
+
+**After a revise ratifies, name the ratified headings in References before pressing `approve:` (coordinator's
+reading).** The item's References must name the `## ` headings the revise just ratified, and the tier is re-read after
+that edit (a References repair voids a prior tier release, above). Pressing approve first leaves an item that refuses
+at the valve or fails dod_gate on a missing governing heading. Recorded in the 15:55Z and 16:22Z handoffs on epic
+`livespec-dev-tooling-6tgd2z` on 2026-11-15, and applied that day to xyi5vu after livespec-dev-tooling#4806 (its
+References gained "## Runner-pool node rebuild recipe" and the two new scenario headings).
+
+**A tier release cites a clause on master, never a peer's "the spec states it" (coordinator's reading).** Before
+pressing `release-spec-tier`, read the clause on a fetched origin/master and cite it (file and line). A seat's claim
+that the spec states the behaviour is not that read. Measured 2026-11-15 (18:14Z handoff on epic
+`livespec-dev-tooling-6tgd2z`): dolt-server-5ma2qg's tier was not released, because the spec on master states no backup
+elapsed-time fields.
 
 **Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
 reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
@@ -534,8 +604,24 @@ maintainer had to ask why it was held. Ruling recorded on epic `livespec-dev-too
 (livespec-dev-tooling-rlwppp) lands, a seat on hetzner-xubuntu cannot SendMessage to the coordinator on vmi3006760; its
 asks arrive as TO COORDINATOR ledger comments on its plan epic, or relayed by the maintainer. Every tick reads those
 comments for every moved seat, and replies go through `herdr --machine <m> pane send-text <pane> "<text>"` then
-`send-keys <pane> Enter`. Never ask the maintainer to relay. Measured 2026-11-14 ~01:1xZ: gate-job-resources'
-successor relayed through the maintainer's paste.
+`send-keys <pane> Enter` (that reply route is superseded by rule NO-PANE-TYPING below). Never ask the maintainer to
+relay. Measured 2026-11-14 ~01:1xZ: gate-job-resources' successor relayed through the maintainer's paste.
+
+**Rule NO-PANE-TYPING: the coordinator messages a seat only by SendMessage, to the name ListAgents prints.** The
+coordinator never types text into a seat pane (`herdr pane send-text`) on any machine; for the coordinator this narrows
+the "typing into its pane is still allowed" clauses above and in CLAUDE.md. Read `ListAgents` fresh each time: a seat
+may be listed under a generated or conversation-title name instead of its seat name, and the listed name is its
+address. A seat absent from the listing gets a comment on its plan's epic. Remote Control drops after a login change
+are reconnected by livespec-overseer's caam-delivery-push keep-alive sweep, never by the coordinator. Picker keypresses
+stay under "message first, keypress last" above. Every resume reads `.ai/distributed-sendmessage-protocol.md` in full.
+The maintainer, 2026-11-15 ~17:4x-17:5xZ in the coordinator's seat, recorded in the scope event and its correction on
+epic `livespec-dev-tooling-6tgd2z` at 17:39:54Z and 17:41:08Z: "WHY THE FUCK ARE YOU TYPING DIRECTLY INTO ITS
+PANE!!!!", then "NO THERE"S LITERALLY GUIDANCE AND A WHOLE MECHANISM WITH REMOTE CONTROL THAT LETS YOU DO IT???
+WHY?????" and "WHY DIDN"T YOU READ IT?" Measured 2026-11-15 ~16:55-17:45Z: the coordinator typed `/remote-control`,
+`/rename` and two ruling pointers into hetzner seat panes, the busy throughput-plans-coordinator and
+stale-base-merge-options panes among them, because it never opened the protocol file. After caam's 16:47:30Z rotation,
+hetzner seats re-joined Remote Control under generated names (provisional-fleet-launch as
+"hetzner-xubuntu-lively-curry" at the 20:13Z handoff), so name-addressed sends to the seat names failed.
 
 ## 4. The owning session decides first
 
@@ -598,6 +684,12 @@ throughput-plans-coordinator may dispatch Release Please at once for such a rele
 2026-11-15 ~02:3xZ in the throughput-plans-coordinator seat, recorded on epic `livespec-dev-tooling-6tgd2z` at
 02:04:31Z: "Yes I want you to take both of those recommendations and do them". First use: v0.332.2, after
 livespec-orchestrator-beads-fabro#5328 merged.
+
+**A Release Please PR is not auto-enqueued under the merge queue (coordinator's reading).** In a repository whose
+master goes through GitHub's merge queue, the Release Please PR's author is not on the auto-enqueue path, so a green
+release PR sits until someone enqueues it. Whoever dispatches or waits on a release enqueues its PR. Measured
+2026-11-15 (15:55Z handoff on epic `livespec-dev-tooling-6tgd2z`): livespec-dev-tooling#4787 (1.213.0) was enqueued by
+hand at 15:39:20Z.
 
 **A hand-landed carrier closes through the valves that exist today, never through a future factory feature.** An item
 implemented and merged outside the factory, for example under a local-only expedited exception, is closed by the
@@ -671,6 +763,12 @@ disarm-workflow copies on matching secret names and missed client-id versus app-
 it shipped. The maintainer, on that day's misses: "How are you making this fix mechanical and permanane for your
 coordinator plan and the dispatcher (if necessry?"
 
+**A coverage-row reason says "integration tier or above" (coordinator's reading).** A spec-first `"test": "TODO"` row
+in `tests/heading-coverage.json` names the tier its owed test runs at as "integration tier or above"; pre-commit
+refused "host-captured tier". A grade of a revise PR reads each new row's reason for it (CLAUDE.md "Revise co-edit
+discipline"). Recorded in the 15:55Z handoff on epic `livespec-dev-tooling-6tgd2z` on 2026-11-15, and carried as a
+revise nit on tenant-fleet-credentials' livespec-dev-tooling#4800 that day.
+
 **A go/no-go script must exit 0 at the known-good state (coordinator's reading).** A grade of a go/no-go or readiness
 script runs it against the state that should pass; a non-zero exit there is a defect in the script, not a NO-GO.
 Recorded in the 4d606f00 FINAL handoff on epic `livespec-dev-tooling-6tgd2z` (2026-11-15T03:12:43Z), carried from the
@@ -723,6 +821,21 @@ the caam 0.1.25 upgrade: "Yes, it's a requirement right?  Just do it, why are yo
 make sure the plan has a rollback plan". A seat whose own standing rule needs the maintainer's word in its own session
 (caam-anthropic-loop-runner's credential rule) still gets that word there; the coordinator tells the maintainer which
 tab.
+
+**Under a maintainer-priority plan the coordinator delegates and is never a gate (coordinator's reading).** When the
+maintainer makes a plan the coordinator's top priority, the coordinator delegates its grades and valves on that plan
+until the plan archives. The plan's coordinating seat grades every PR itself, with one independent subagent reviewer
+for spec, workflow or credential-path changes, and its PASS is the merge GO. It, or the plan's own seat, presses the
+valves (approve, accept, release-spec-tier, reconcile-merged) under the coordinator's R301/R493 delegation, records the
+basis on each item, and reads the tier and References before approve. When a valve refuses the seat on authority, the
+seat posts the exact refusal as an ESCALATION on epic `livespec-dev-tooling-6tgd2z`, and the coordinator presses it
+within its next turn. The maintainer, 2026-11-15 ~17:4xZ in the coordinator's seat, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 17:36:44Z: "I AM SICK OF SEEING "waiting for legacy coordinators grade". YOU ARE
+TURNING INTO A BOTTLE NECK. GET THIS MIGRATION PLAN DONE! I TOLD YOU THAT IS YOUR ONLY FOCUS!!!!!"; and in the
+throughput-plans-coordinator seat, recorded by that seat at 17:39:15Z on epic `livespec-dev-tooling-6tgd2z`: "I have
+told the legacy overseer that its number one job is to support you and finishing stale-base-merge-options.  You should
+not have had to wait on an approval for it.  If it stalls on anything you need YELL AT IT UNTIL IT RESPONDS." First
+use: livespec-orchestrator-beads-fabro#5350, graded by an independent reviewer and merged 17:37:09Z.
 
 **Rule SLASH: a seat slash command is never a maintainer ask.** `/remote-control`, `/reload-plugins`, `/mcp` reconnects
 and similar seat-side slash commands never go under `FOR THE MAINTAINER`. The maintainer, 2026-11-14 ~19:1xZ, recorded
@@ -789,10 +902,13 @@ run autonomously, never block."
 - A coordinator or dispatcher seat never calls AskUserQuestion, and never ends a turn waiting for an answer.
 - It decides what it can under R301 and reports the decision.
 - It never does a docs commit, push, rebase or PR wait in its own foreground turn. Each goes to a background subagent with the exact change, so the seat keeps answering peers and alerts. Maintainer correction 2026-11-02 ~18:2xZ: "You blocked yourself."
-- **A background helper must background its gate-wait (coordinator's reading).** A helper subagent that runs
-  `just gate-wait` in its own foreground can exceed its tool-call ceiling and stall. It runs the gate-wait
-  backgrounded (`run_in_background: true`) and reads the VERDICT line from its output. Measured 2026-11-09: this
-  caused two helper stalls.
+- **A background helper waits on its gate in the foreground, in bounded calls (coordinator's reading).** The gate
+  itself always runs detached (`just gate-start`). A helper subagent's own background completion notices do not
+  reach it, so it does not background its wait: it runs `just gate-wait <run-id>` in the foreground with a tool
+  timeout under its ceiling, re-runs the same wait if that call times out (killing gate-wait is harmless), and reads
+  the VERDICT line. This replaces the 2026-11-09 reading that a helper backgrounds its gate-wait. Measured
+  2026-11-09: a foreground wait with no bound caused two helper stalls. Measured 2026-11-15 (15:55Z handoff on epic
+  `livespec-dev-tooling-6tgd2z`): two helpers stalled waiting on background notices that never arrived.
 - An ask that is genuinely the maintainer's (an irreversible host mutation, secrets or credential creation, a values
   call) goes in the tick report as plain text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping.
   The item waits; the seat does not.
@@ -1082,6 +1198,14 @@ COMPLETED: <plan-slug (epic-id)> archived <ref>, seat closed <UTC> — acknowled
 A plan whose children are closed but which still owes its proof, review or archive is NOT complete. It stays on the
 list with its true status word, and its seat stays open.
 
+**A maintainer-set mode for a plan ends only when that plan archives (coordinator's reading).** A mode such as "support
+it however is needed; stop everything else to clear the road for it" does not end at a milestone inside the plan, such
+as a merge quiet's QUIET OFF. Read its end from the maintainer's words; when they name none, it ends at the plan's
+archive. The maintainer, 2026-11-15 ~17:4xZ in the coordinator's seat, recorded on epic `livespec-dev-tooling-6tgd2z` at
+17:36:44Z: "You read something as ending it when the fucking plan wasn't closed." Measured 2026-11-15: the coordinator
+read the 08:55Z cutover mode for stale-base-merge-options (livespec-dev-tooling-xowhol) as ended at the 16:20:51Z QUIET
+OFF and went back to other plans from ~16:25Z to ~17:4xZ.
+
 **A priority whose owner is already CLOSED is dropped without asking.** When the plan or work item that owns a
 priority has already been closed by its owner (a plan completely closed in the sense above, or a single owning work
 item in `closed`), the coordinator drops the priority itself: a `priorities-record` append naming the closure, reported
@@ -1131,6 +1255,19 @@ merge latency on the factory path) is routed to throughput-plans-coordinator (li
 hetzner-xubuntu, workspace throughput-improvements) by SendMessage, or by a ledger comment on r7iuj6 when SendMessage
 cannot reach it. The coordinator does not work them itself. That seat moves one high-priority throughput problem at a
 time during the token crunch.
+
+**Rule FACTORY-GREEN-WATCH: every tick prints the last factory green per repository.** For each repository the factory
+serves, print the time of its last GREEN factory run and the runs since it, from the dispatch records or, failing
+those, the drive journal. A repository with no factory green for 2 h while work is launchable, or whose every run since
+a change fails before its first node, is a STOP-THE-LINE incident that tick: a filed incident record under
+INCIDENT-IS-A-RECORD (§2), routed to the owner of the failing layer. Merged-PR counts do not stand in for it, because a
+hand-landed PR counts there while the factory is dead. throughput-plans-coordinator applies the same rule (its charter,
+livespec-dev-tooling#4816). The maintainer, 2026-11-15 ~19:5xZ in the throughput-plans-coordinator seat, recorded in
+the scope event on epic `livespec-dev-tooling-r7iuj6` at 19:50:24Z: "Are you even running anything through the factory
+rather than building everything locally?" Measured 2026-11-15: no livespec-ai factory run had gone green since the org
+cutover (~10:xxZ). petri's vault lacked ORG_GITHUB_APP_ID because committed route 133614d79 (10:19Z) was never
+converged on gmktec-xubuntu, and only a canary found it, at 19:43Z. The mechanical line in `scripts/coordinator/top5`
+is owed by the coordinator, which owns that script; until it ships, the tick reads it by hand.
 
 **Rule STRANDED-CAPACITY: a binding cap beside an idle node is a stall (coordinator's reading).** A cap or quota binds
 when its use is at its limit while launchable work waits. When it binds while a node it covers sits idle, that is a
@@ -1195,6 +1332,20 @@ Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T03:05:04Z, and adop
 expedited-incident-response-flag seat. Measured 2026-11-15: the dispatcher's stale overseer clone read a tier against
 the pre-v114 spec, and a stale `refs/pull/5323/merge` on old master 405dd70d made orchestrator#5323's red-green-replay
 refuse.
+
+**A re-key gate reads the projected secret, not only the rendered template (coordinator's reading).** A gate that
+proves a credential re-key (a new App id, key or owner) reads the secret file or Secret the consumer actually loads, by
+a value-free read such as its app id or hash. A clean drift of the rendered templates cannot see a stale projected
+secret. Measured 2026-11-15 (16:16Z addendum on epic `livespec-dev-tooling-6tgd2z`): the observers' re-drift read
+clean, yet the drill arm on livespec-dev-tooling#4801 was refused 403 because `/etc/livespec-incident/recovery-app.json`
+still held the old recovery App 5656677; it was re-keyed to the org App 5761967 at 16:09:38Z.
+
+**Never reorder the merge queue (coordinator's reading).** The coordinator does not dequeue, re-enqueue or jump a PR in
+GitHub's merge queue. A reorder rebuilds the queue, and every rebuild orphans the running merge_group runs. A PR that
+must go first is routed to the queue's owner (stale-base-merge-options, livespec-dev-tooling-xowhol), who rules any
+jump in a window with no live group. Measured 2026-11-15: the coordinator's 17:38Z dequeue and jump of
+livespec-dev-tooling#4803 was one of three queue rebuilds that orphaned five merge_group runs, which
+throughput-plans-coordinator cancelled (17:57Z tick record on epic `livespec-dev-tooling-6tgd2z`).
 
 **Rule G: when a fleet-class defect is fixed in one repository, sweep the fleet for it the same day.** A defect whose
 shape can exist in other fleet repositories (a shared check, recipe, workflow or reuse path) gets a same-day sweep of
@@ -1561,6 +1712,13 @@ on an idle percentage alone.
 of what a job did. Measured 2026-11-07 ~17:1x-17:4xZ: three capacity conclusions in one hour rested on those, and two
 reversed on the first job read. The hp-xubuntu 6 / gmktec-xubuntu 17 GO was withdrawn on the reason that the caps do
 not reach master runs, and a job then showed that master jobs do run on the PR scale set.
+
+**A CI-limit claim cites the job's own block (coordinator's reading).** A ruling about a CI job's limit (a timeout, a
+runner, a resource) cites the line inside that job's own block in the workflow, never a grep hit for the key. Recorded
+in the coordinator's correction on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T14:17:07Z. Measured 2026-11-15:
+the coordinator read check-per-file-coverage's cancelled 63-min attempt on livespec-dev-tooling#4787 as a timeout, from
+`timeout-minutes: 60` at ci.yml:475, which belongs to check-coverage; check-per-file-coverage's limit is 180. The
+attempt had been cancelled by hand, and the stop-the-line built on that reading was withdrawn.
 
 **Read a launch-hold figure over ssh on that node (coordinator's reading).** Read a node's idle and CI-slice pressure
 on the node itself, not on the dispatching host: `ssh <host> cat
