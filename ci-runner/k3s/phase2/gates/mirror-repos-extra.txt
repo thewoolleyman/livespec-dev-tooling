@@ -1,0 +1,18 @@
+# Repositories that get a gates mirror though no ARC values file names them.
+#
+# ./converge-gates-mirror.sh derives its mirror set from ../arc/values-*.yaml,
+# which covers every repository whose CI runs on this pool. A repository that
+# sets `delegated_gate` or `delegated_pre_commit` in pyproject.toml
+# [tool.livespec_dev_tooling], but runs its CI on hosted runners, still sends
+# its gate Jobs here, so it is listed below. The converge unions this list with
+# the derived set.
+#
+# Add a repository here when it adopts a delegated gate key and has no values
+# file. Remove it when it gains a values file, or when it drops both keys.
+# Names must be plain [A-Za-z0-9._-] names; the converge refuses anything else.
+#
+# Fleet sweep 2026-11-15, origin default branch of every local fleet clone:
+# every delegated adopter has a values file except the repository below.
+
+# delegated_pre_commit = true; CI on ubuntu-latest (dolt-server-g7euna).
+dolt-server
