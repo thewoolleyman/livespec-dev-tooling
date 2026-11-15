@@ -681,6 +681,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new scale-set values file adds its scale set and leaves every existing scale set at its revision",
+    "work_item": "livespec-dev-tooling-xyi5vu",
+    "first_seen": "2026-11-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
@@ -1559,6 +1566,13 @@
     "heading": "## Scenario: one fleet-wide command adopts the current plugin builds in every fleet member and refuses a split adoption",
     "work_item": "livespec-dev-tooling-7upzav",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: removing a scale-set values file uninstalls that scale set and no other",
+    "work_item": "livespec-dev-tooling-xyi5vu",
+    "first_seen": "2026-11-15"
   },
   {
     "spec_root": "SPECIFICATION",
