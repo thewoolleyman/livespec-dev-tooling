@@ -59,6 +59,10 @@ A resume of this plan starts the coordinator `/loop` with no interval IN THE SAM
    - Below them: the start→open stall list (over 72 h), and the AWAITING MASTER VERDICT block.
 
    There are NO targets: the metrics must keep improving. Any repository outside its noise band in the bad direction, or OVER its per-repository AWAITING MASTER VERDICT threshold (min(180, max(60, 2 x master-cycle p50 + 30)) min), or with unrun merges, gets a root-cause read routed to an owning plan THAT tick. The table costs Honeycomb queries against the MCP key's shared budget of about 100 an hour. If the newest event in dataset `pr-throughput` is older than 30 minutes, say so above the table and tell throughput-metric: a stale table is worse than none.
+1b. **Nodes, enumerated from the cluster.** Every tick, list the nodes from the cluster itself, never from a fixed list: `ssh cwoolley@poweredge-xubuntu sudo -n k3s kubectl get nodes -o wide` and `ssh cwoolley@poweredge-xubuntu sudo -n k3s kubectl top nodes`. `scripts/coordinator/fleet-utilization.sh` hard-coded three nodes, so gamingpc-xubuntu and macbook-m4-max-homelab-worker were invisible after they joined.
+   - For each node, print CPU in use, its taints, and which workload classes run there (factory, ARC CI, gate Jobs).
+   - A node idle while another is saturated is routed THAT tick to the plan that owns cluster placement and node enrollment. This seat directs; it does not carry placement itself.
+   - A newly joined node is not "enrolled" until it appears in the capacity reads.
 2. **Seats.** `herdr agent list` on hetzner-xubuntu, workspace throughput-improvements; read each seat's pane; a seat reading `blocked`, or idle with an executable next action, is unblocked or prompted this tick. Seats are reached ONLY with the SendMessage tool (ListAgents, then the session name), NEVER by typing into a pane: no `herdr agent prompt`, `herdr pane send-text`, `herdr pane run` or `tmux send-keys`, per `.ai/distributed-sendmessage-protocol.md`. A seat on another machine with no Remote Control row gets a ledger comment on its plan epic instead.
 3. **Levers.** For each row of the track table: owner, carrier state, next action, what changed since the last tick, and its measured effect on the metric where one exists.
 4. **In flight.** Open PRs of the track's plans, named as `repository#N`, and anything waiting on a spec ratification or the dispatcher.
@@ -74,6 +78,10 @@ The fleet CI pool stall of 2026-11-13/14 is retold, with its causes and its guar
 - A grader's brief for an alarm or trigger PR checks the platform's limits (a Honeycomb trigger's frequency against its time range) and the bound of any exclusion; legacy-coordinator-agent caught both on #4650 and #4599 where this seat's graders had not.
 
 It also tracks G1-G8 to closure as inherited waits; G3 is withdrawn.
+
+## Standing rule from 2026-11-15
+
+- Every tick reads every cluster node (step 1b). Measured at 07:50Z: poweredge 85%, hp 51%, M4 28% (tainted, homelab-worker class), gmktec 15%, gamingpc 5% (untainted), while this seat's tick read no nodes at all. The maintainer: "You need to understand the cluster."
 
 ## The track's plans and their tabs (2026-11-14 ~01:0xZ)
 
