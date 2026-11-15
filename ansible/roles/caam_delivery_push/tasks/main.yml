@@ -69,11 +69,41 @@
           - "{{ caam_delivery_push_ref }}"
       changed_when: true
 
-    - name: Install and restart the push service from the moved checkout
+- name: Read the checkout's commit after the converge
+  ansible.builtin.command:
+    argv: [git, -C, "{{ caam_delivery_push_checkout }}", rev-parse, HEAD]
+  register: caam_delivery_push_head_after
+  changed_when: false
+
+- name: Read the commit the push service was last installed from
+  ansible.builtin.command:
+    argv: [cat, "{{ caam_delivery_push_stamp | expanduser }}"]
+  register: caam_delivery_push_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install the push service from the checkout's commit
+  when: >-
+    caam_delivery_push_installed.rc != 0
+    or caam_delivery_push_installed.stdout | trim != caam_delivery_push_head_after.stdout
+  block:
+    - name: Install and restart the push service
       ansible.builtin.command:
         argv: "{{ caam_delivery_push_install_command }}"
         chdir: "{{ caam_delivery_push_checkout }}"
       changed_when: true
+
+    - name: Create the install stamp's directory
+      ansible.builtin.file:
+        path: "{{ caam_delivery_push_stamp | expanduser | dirname }}"
+        state: directory
+        mode: "0700"
+
+    - name: Record the commit the push service was installed from
+      ansible.builtin.copy:
+        dest: "{{ caam_delivery_push_stamp | expanduser }}"
+        content: "{{ caam_delivery_push_head_after.stdout }}\n"
+        mode: "0600"
 
 - name: Read the push service's state
   ansible.builtin.command:
@@ -97,12 +127,6 @@
       | sha256sum | cut -d' ' -f1
     executable: /bin/bash
   register: caam_delivery_push_pinned
-  changed_when: false
-
-- name: Read the checkout's commit after the converge
-  ansible.builtin.command:
-    argv: [git, -C, "{{ caam_delivery_push_checkout }}", rev-parse, HEAD]
-  register: caam_delivery_push_head_after
   changed_when: false
 
 - name: Report the read-back
