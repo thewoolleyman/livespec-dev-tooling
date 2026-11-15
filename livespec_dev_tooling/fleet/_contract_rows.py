@@ -51,7 +51,10 @@ from livespec_dev_tooling.fleet._rows_canonical_check_slugs import (
     CANONICAL_CHECK_SLUGS_HINT,
     assert_canonical_check_slugs_wired,
 )
-from livespec_dev_tooling.fleet._rows_claude_plugin import assert_claude_plugin_currency
+from livespec_dev_tooling.fleet._rows_claude_plugin import (
+    assert_claude_plugin_currency,
+    assert_session_start_orchestrator_hold,
+)
 from livespec_dev_tooling.fleet._rows_decision_authority import (
     assert_decision_authority_section,
 )
@@ -188,6 +191,15 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "and make the justfile ensure-plugins recipe the standard "
             "`mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins` "
             "wrapper, or declare livespecPluginCurrencySuccessor with mechanism + documentedIn"
+        ),
+    ),
+    _manual_committed_file_row(
+        row_id="session-start-orchestrator-hold",
+        assert_member=assert_session_start_orchestrator_hold,
+        manual_hint=(
+            "wire SessionStart through the standard ensure-plugins recipe and pin "
+            "livespec-dev-tooling at v1.191.0 or newer so only "
+            "adopt-orchestrator-build moves the installed orchestrator build"
         ),
     ),
     # The github-state slice, verbatim and in position, from

@@ -16,6 +16,7 @@ import json
 
 from test_rows_files import _MEMBER, make_context, tree_table
 
+from livespec_dev_tooling.fleet import _rows_claude_plugin as plugin_rows
 from livespec_dev_tooling.fleet._context import GhResult, RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._rows_claude_plugin import (
     CLAUDE_SETTINGS,
@@ -34,6 +35,12 @@ _PLUGIN_SETTINGS_ARGS: tuple[str, ...] = (
 _PLUGIN_JUSTFILE_ARGS: tuple[str, ...] = (
     "api",
     "repos/acme/widget/contents/justfile?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+_PLUGIN_PYPROJECT_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/pyproject.toml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -69,6 +76,10 @@ _STANDARD_JUSTFILE = (
     "next:\n"
     "    echo done\n"
 )
+_SYNCING_JUSTFILE = (
+    "ensure-plugins:\n"
+    "    mise exec -- uv run python -m livespec_dev_tooling.fleet.ensure_plugins\n"
+)
 
 
 def _plugin_currency_table(
@@ -85,6 +96,68 @@ def _plugin_currency_table(
     if justfile is not None:
         table[_PLUGIN_JUSTFILE_ARGS] = GhResult(returncode=0, stdout=justfile, stderr="")
     return table
+
+
+def test_session_start_orchestrator_hold_names_a_stale_pin_and_missing_sync_as_moves() -> None:
+    """The fleet row proves the provisioner carries the hold before it runs."""
+    assert hasattr(plugin_rows, "assert_session_start_orchestrator_hold")
+    stale_table = _plugin_currency_table(paths=[CLAUDE_SETTINGS, "justfile", "pyproject.toml"])
+    stale_table[_PLUGIN_PYPROJECT_ARGS] = GhResult(
+        returncode=0,
+        stdout=("[tool.uv.sources]\n" 'livespec-dev-tooling = { git = "x", tag = "v1.190.9" }\n'),
+        stderr="",
+    )
+    stale = plugin_rows.assert_session_start_orchestrator_hold(
+        ctx=make_context(table=stale_table), member=_MEMBER
+    )
+    assert isinstance(stale, RowFinding)
+    assert "widget" in stale.message
+    assert "would move" in stale.message
+    assert "v1.190.9" in stale.message
+    assert "v1.191.0" in stale.message
+
+    unsynced_table = _plugin_currency_table(paths=[CLAUDE_SETTINGS, "justfile", "pyproject.toml"])
+    unsynced_table[_PLUGIN_PYPROJECT_ARGS] = GhResult(
+        returncode=0,
+        stdout=("[tool.uv.sources]\n" 'livespec-dev-tooling = { git = "x", tag = "v1.191.0" }\n'),
+        stderr="",
+    )
+    unsynced = plugin_rows.assert_session_start_orchestrator_hold(
+        ctx=make_context(table=unsynced_table), member=_MEMBER
+    )
+    assert isinstance(unsynced, RowFinding)
+    assert "sync" in unsynced.message
+    assert "ensure-plugins" in unsynced.message
+
+    invalid_table = _plugin_currency_table(
+        paths=[CLAUDE_SETTINGS, "justfile", "pyproject.toml"],
+        justfile=_SYNCING_JUSTFILE,
+    )
+    invalid_table[_PLUGIN_PYPROJECT_ARGS] = GhResult(
+        returncode=0,
+        stdout=("[tool.uv.sources]\n" 'livespec-dev-tooling = { git = "x", tag = "release" }\n'),
+        stderr="",
+    )
+    invalid = plugin_rows.assert_session_start_orchestrator_hold(
+        ctx=make_context(table=invalid_table), member=_MEMBER
+    )
+    assert isinstance(invalid, RowFinding)
+    assert "release" in invalid.message
+
+    synced_table = _plugin_currency_table(
+        paths=[CLAUDE_SETTINGS, "justfile", "pyproject.toml"],
+        justfile=_SYNCING_JUSTFILE,
+    )
+    synced_table[_PLUGIN_PYPROJECT_ARGS] = GhResult(
+        returncode=0,
+        stdout=("[tool.uv.sources]\n" 'livespec-dev-tooling = { git = "x", tag = "v1.191.0" }\n'),
+        stderr="",
+    )
+    synced = plugin_rows.assert_session_start_orchestrator_hold(
+        ctx=make_context(table=synced_table), member=_MEMBER
+    )
+    assert isinstance(synced, RowPass)
+    assert "keeps" in synced.note
 
 
 def test_claude_plugin_currency_edge_outcomes() -> None:
