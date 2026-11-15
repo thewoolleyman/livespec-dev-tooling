@@ -134,10 +134,19 @@ recipe is in the header of `ansible/claude-messaging.yml`.
   its pane or a ledger comment on the item or plan it owns.
 
 - **Its Remote Control dropped.** When the claude.ai login on a host changes,
-  running sessions print "Remote Control disconnected" and stay off the
-  network until `/remote-control` is run in them (follow-up
-  livespec-dev-tooling-2mlr3g). Typing `/remote-control` into an idle pane and
-  approving the "Enable Remote Control" picker is a correct use of pane input.
+  running sessions print "Remote Control disconnected" and drop off the
+  network. You normally do nothing: livespec-overseer's `caam-delivery-push`
+  service sweeps every herdr pane on vps, hetzner-xubuntu and gamingpc-xubuntu
+  every 30 seconds (its contracts.md "Remote Control keep-alive sweep"). It
+  reads each session's own record (`~/.claude/sessions/<pid>.json`,
+  `bridgeSessionId`) to see whether it is on Remote Control, re-runs
+  `/remote-control` in an idle disconnected seat whose input box is empty (at
+  most once per ten minutes), presses Enter on the "Enable Remote Control"
+  dialog and Escape on the Remote Control status panel, and sends an ntfy push
+  when a seat stays off for more than five minutes. Seats in tmux and on the
+  Macs are outside it. If a seat is still off after that, typing
+  `/remote-control` into its idle pane and approving the dialog is a correct
+  use of pane input.
 
 If SendMessage cannot reach a session, typing into its pane is allowed. Check
 it is idle, keep it short, and say who you are.
