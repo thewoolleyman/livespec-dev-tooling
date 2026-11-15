@@ -1,0 +1,10 @@
+---
+# Group variables for `caam_role_holder`, the credential-rotation role holder
+# (ansible/caam-role-holder.yml, role caam_delivery_push).
+
+# The livespec-overseer commit the role holder's checkout must contain. Changing it is
+# a deploy: a reviewed change here, then `just ansible-apply ansible/caam-role-holder.yml`
+# from the control node. 6fa9b40f is livespec-overseer#3099 (merged 2026-11-15T22:30:51Z):
+# Remote Control reconnects under the session's own name and retries the not-connected
+# panel (SPECIFICATION v116; DoD 4 carrier overseer-fdwat6).
+caam_delivery_push_ref: 6fa9b40f60161750801b6f7f35bd36b9245a1f32

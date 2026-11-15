@@ -1,0 +1,51 @@
+---
+# The value-free launch probe (livespec-overseer item overseer-l6k62o, third
+# assertion). Read-only: it writes nothing and reports `changed: false`. Run from the
+# vps control node:
+#
+#   just ansible-apply ansible/ci-pool.yml --limit <server> \
+#     --tags shared_credentials_probe -e shared_credentials_host_probe=true
+#
+# The child prints `name=<NAME> bytes=<N>` per expected variable (`printenv NAME | wc -c`,
+# so a set value counts its trailing newline and an unset one is 0) and
+# `aws_names=<N>`. No value ever reaches stdout, a register or the log.
+
+- name: Refuse a probe with no consumer or no expected variable
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_probe_consumer | length > 0
+      - shared_credentials_host_probe_names | length > 0
+    fail_msg: >-
+      shared_credentials_host_probe_consumer and shared_credentials_host_probe_names must
+      be set in this host's host_vars. Nothing was launched.
+    quiet: true
+
+- name: Launch the consumer and report variable names and byte counts only
+  ansible.builtin.command:
+    argv: >-
+      {{ ['/usr/bin/python3', '-I', shared_credentials_host_artifact_dest, 'launch',
+          '--manifest', shared_credentials_host_manifest_dest,
+          '--consumer', shared_credentials_host_probe_consumer, '--',
+          '/bin/sh', '-c',
+          'for n in "$@"; do printf "name=%s bytes=%s\n" "$n" "$(printenv "$n" | wc -c)"; done;'
+          ~ ' printf "aws_names=%s\n" "$(env | cut -d= -f1 | grep -c "^AWS_")"',
+          'probe'] + shared_credentials_host_probe_names }}
+  register: shared_credentials_host_probe_result
+  changed_when: false
+
+- name: Report the probe
+  ansible.builtin.debug:
+    msg: "{{ shared_credentials_host_probe_result.stdout_lines }}"
+
+- name: Refuse an empty expected variable or any AWS_* variable in the child
+  ansible.builtin.assert:
+    that:
+      - >-
+        shared_credentials_host_probe_result.stdout_lines
+        | select('match', '^name=\S+ bytes=([2-9]|[1-9][0-9]+)$') | list | length
+        == shared_credentials_host_probe_names | length
+      - "'aws_names=0' in shared_credentials_host_probe_result.stdout_lines"
+    fail_msg: >-
+      The consumer's child lacked a non-empty expected variable or saw an AWS_* variable;
+      see the reported names and byte counts.
+    quiet: true

@@ -65,6 +65,15 @@ all:
         # tailscale-admin record.
         hetzner-xubuntu:
           ansible_user: ubuntu
+    # The credential-rotation ROLE HOLDER (livespec-overseer plan
+    # central-credential-service): the one host that runs caam-delivery-push and pushes
+    # credentials to the listed hosts. THE ONE PLACE the role is bound to a machine;
+    # ansible/caam-role-holder.yml selects this group, never a host name, so moving the
+    # role is a change to this membership plus a converge. The host keeps every variable
+    # its other groups give it (the vps's control-node connection guard included).
+    caam_role_holder:
+      hosts:
+        vps: {}
     legacy:
       children:
         dev_hosts:

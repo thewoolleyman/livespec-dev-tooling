@@ -1,0 +1,25 @@
+---
+# Converge the credential-rotation ROLE HOLDER's livespec-overseer checkout to the
+# commit group_vars/caam_role_holder.yml pins, and (re)install its caam-delivery-push
+# user service from it (livespec-overseer plan central-credential-service, item
+# overseer-iyfjbo.2). The role holder is whichever host the `caam_role_holder`
+# inventory group holds; moving the role (contracts.md "Moving the role") is a change to
+# that group's membership, and nothing here names a machine.
+#
+#   just ansible-drift ansible/caam-role-holder.yml
+#   just ansible-apply ansible/caam-role-holder.yml
+#
+# A deploy is a reviewed change to caam_delivery_push_ref plus an apply. A second apply
+# with the ref unchanged reports no change. The play prints a read-back: the checkout's
+# commit, the deployed sweep's sha256 beside the pinned commit's, and the unit's state.
+#
+# ROLLBACK: the role only fast-forwards, so a checkout that already contains the pin is
+# left where it is. To go back, revert the offending livespec-overseer change upstream
+# and pin the revert.
+# Run from the control node: the vps entry uses a local connection valid only there.
+- name: Credential-rotation role holder push service
+  hosts: caam_role_holder
+  gather_facts: false
+  roles:
+    - role: caam_delivery_push
+      tags: [caam_delivery_push]

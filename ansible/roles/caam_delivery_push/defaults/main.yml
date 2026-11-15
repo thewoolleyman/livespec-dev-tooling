@@ -1,0 +1,31 @@
+---
+# caam_delivery_push -- converge the credential-rotation ROLE HOLDER's livespec-overseer
+# checkout to a pinned ref and (re)install its caam-delivery-push user service
+# (livespec-overseer SPECIFICATION/contracts.md §"Enrolled-host delivery"; plan
+# central-credential-service, epic overseer-iyfjbo, item overseer-iyfjbo.2).
+#
+# It replaces the hand path that fleet_host_guard refuses: fast-forwarding that checkout
+# and re-running `just install-caam-delivery-push` by hand (2026-11-14, #3026/#3050/#3052).
+# The role holder is chosen by the `caam_role_holder` inventory group, never by a host
+# name, so moving the role is a change to that group's membership.
+
+# The commit the checkout must contain: a full 40-hex sha, declared in
+# group_vars/caam_role_holder.yml by a reviewed change. Empty is refused.
+caam_delivery_push_ref: ""
+
+# The role holder's livespec-overseer checkout, its remote, and the commands the role
+# runs in it. The install command is the repository's own idempotent recipe; it
+# rewrites the unit's ExecStart to this checkout's entry point and restarts it.
+caam_delivery_push_checkout: /data/projects/livespec-overseer
+caam_delivery_push_remote: origin
+caam_delivery_push_install_command: [mise, exec, --, just, install-caam-delivery-push]
+caam_delivery_push_unit: caam-delivery-push.service
+caam_delivery_push_active_command:
+  - systemctl
+  - --user
+  - is-active
+  - "{{ caam_delivery_push_unit }}"
+
+# The file whose deployed bytes the read-back compares against the pinned commit's:
+# the keep-alive sweep the service ships to every listed host.
+caam_delivery_push_readback_path: overseer/remote_control_sweep.py
