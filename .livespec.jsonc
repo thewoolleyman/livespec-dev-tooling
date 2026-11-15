@@ -108,7 +108,11 @@
   //   }
   //
   // Credential-injection wrapper (fleet default) prefixed to the beads CLIs so a bare invocation self-heals its tenant secret.
-  "credential_wrapper": ["/usr/local/bin/with-livespec-env.sh", "--"],
+  // livespec-ai org cutover (stale-base-merge-options note 009): host-side GitHub
+  // App mints for this repository use the org App livespec-ai-factory-bot (5761962),
+  // which the wrapper projects as GITHUB_APP_ID_ORG / GITHUB_PRIVATE_KEY_ORG; the
+  // /bin/sh hop maps that pair onto the runtime's GITHUB_APP_ID / GITHUB_PRIVATE_KEY.
+  "credential_wrapper": ["/usr/local/bin/with-livespec-env.sh", "--", "/bin/sh", "-c", "GITHUB_APP_ID=\"$GITHUB_APP_ID_ORG\" GITHUB_PRIVATE_KEY=\"$GITHUB_PRIVATE_KEY_ORG\" exec \"$@\"", "sh"],
   // Cross-harness plugin-resolution (Conformance Pattern concern #2): this
   // library ships no command/skill surface to resolve from a harness, so both
   // harnesses are declared exempt. The always-on `check-plugin-resolution`
@@ -649,7 +653,13 @@
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-bbe693847/fabro",
           "secret_channel": "native_secrets",
-          "environment": "factory-python"
+          "environment": "factory-python",
+          // The org App pair in petri's vault (livespec-dev-tooling gmktec-xubuntu host_vars),
+          // so factory runs for this repository publish as livespec-ai-factory-bot.
+          "github_app": {
+            "app_id_secret": "ORG_GITHUB_APP_ID",
+            "private_key_secret": "/livespec-ai/github/livespec-ai-factory-bot/private-key"
+          }
         },
         // `candidate` is gmktec's fabro-server-candidate (:32278), the permanent
         // mirror of `petri` and plan fabro-currency's dogfood factory (maintainer
