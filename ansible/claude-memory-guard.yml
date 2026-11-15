@@ -1,0 +1,29 @@
+---
+# Refuse writes into local agent memory (~/.claude/projects/<slug>/memory/,
+# ~/.codex/memories/) in every project on the maintainer's interactive hosts,
+# through a Claude Code managed-settings PreToolUse hook, and route the content
+# to AGENTS.md / .ai/<topic>.md by pull request or to the ledger. Work item
+# livespec-dev-tooling-pik7f2; the role's defaults say why it is managed
+# policy and what it deliberately leaves unset (allowManagedHooksOnly,
+# autoMemoryEnabled).
+#
+#   just ansible-drift ansible/claude-memory-guard.yml
+#   just ansible-apply ansible/claude-memory-guard.yml
+#
+# ROLLBACK, removing the guard from a host: delete
+# /etc/claude-code/managed-settings.d/40-memory-write-guard.json, take the
+# host out of interactive_claude_hosts in the same change, and restart the
+# Claude Code sessions there. Do it as a committed change, never by hand. KEEP
+# /usr/local/lib/claude-code/memory-write-guard/ until every session started
+# before the rollback has restarted: such a session still runs the cached hook,
+# and `python3 <missing file>` exits 2, which BLOCKS every Bash and file-tool
+# call (the retired pane-input guard did exactly that, 2026-11-14).
+#
+# Run from the control node (the dev host). Managed hooks are read when a
+# session starts, so a session already running is guarded only once restarted.
+- name: Claude Code memory-write guard
+  hosts: interactive_claude_hosts
+  gather_facts: false
+  roles:
+    - role: claude_memory_write_guard
+      tags: [claude_memory_write_guard]

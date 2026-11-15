@@ -25,8 +25,10 @@
 #   interactive_claude_hosts — machines where the maintainer runs interactive
 #                   Claude Code sessions; ansible/claude-messaging.yml forces
 #                   SendMessage over pane typing there (plan
-#                   distributed-sendmessage). hetzner-xubuntu is one too, but
-#                   its own repository, hetzner-xubuntu-info, converges it.
+#                   distributed-sendmessage), and ansible/claude-memory-guard.yml
+#                   installs the managed memory-write guard there
+#                   (livespec-dev-tooling-pik7f2). hetzner-xubuntu is one too,
+#                   but its own repository, hetzner-xubuntu-info, converges it.
 #
 # A play names one of these GROUPS, never a host: a machine is bound only here
 # and in host_vars (livespec-dev-tooling-prdxxe; `just
@@ -145,7 +147,8 @@ all:
         usb_backup_hosts:
           hosts:
             poweredge-xubuntu:
-        # Interactive Claude Code hosts (ansible/claude-messaging.yml).
+        # Interactive Claude Code hosts (ansible/claude-messaging.yml,
+        # ansible/claude-memory-guard.yml).
         interactive_claude_hosts:
           hosts:
             vps:
