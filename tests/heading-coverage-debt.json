@@ -478,9 +478,30 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test whose closure names a changed file through the working directory is touched",
+    "work_item": "livespec-dev-tooling-wc23r2",
+    "first_seen": "2026-11-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test whose closure reaches a changed path through getattr, an alias of request or another path form fails at once",
+    "work_item": "livespec-dev-tooling-k3lpwj",
+    "first_seen": "2026-11-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a fix-forward claim from outside the claimant set is ignored",
     "work_item": "livespec-dev-tooling-lugvnr",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fixture imported from another test module is judged in the module that defines it",
+    "work_item": "livespec-dev-tooling-k3lpwj",
+    "first_seen": "2026-11-15"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -628,6 +649,13 @@
     "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
     "work_item": "livespec-dev-tooling-h6jsgv",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a module-level name bound to string literals only keeps a joined closure path determinate",
+    "work_item": "livespec-dev-tooling-k3lpwj",
+    "first_seen": "2026-11-15"
   },
   {
     "spec_root": "SPECIFICATION",
