@@ -840,6 +840,42 @@ def test_discovery_sweep_uses_fleet_shape_wording() -> None:
     assert log.events == ["fleet-shaped repo is not registered in the fleet manifest"]
 
 
+def test_discovery_sweep_counts_registered_adopters_as_known() -> None:
+    """A registered adopter is declared IN the manifest, so the sweep must not flag it.
+
+    The finding is for a fleet-shaped owner repo "NOT declared in the manifest"
+    (contracts.md section "Sibling discovery"; livespec non-functional-requirements
+    section "Fleet membership contract", Discovery safety net). An `adopters` entry
+    is such a declaration — livespec-website (2026-11-15) is a `livespec-*`-named
+    adopter under the fleet owner, and the sweep kept flagging it after
+    registration because `known` read the `fleet` array alone. The unregistered
+    straggler beside it must still be flagged, and the member-ci scoping set
+    (`member_names`) stays fleet-only: an adopter is not a member.
+    """
+    table = _green_table()
+    table[_MANIFEST_ARGS] = raw(
+        text=(
+            '{"owner": "acme", "members": [{"repo": "widget", "class": "library"}], '
+            '"adopters": [{"repo": "livespec-site", "owner": "acme", '
+            '"profile": ["baseline"], "posture": "none"}]}'
+        )
+    )
+    table[_REPOS_ARGS] = ok(
+        payload=[
+            {"name": "livespec-site", "topics": []},
+            {"name": "livespec-straggler", "topics": []},
+        ]
+    )
+    ctx = make_context(table=table)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
+    log = RecordingLog()
+
+    assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=log) == 1
+    flagged = log.fields_for(event="fleet-shaped repo is not registered in the fleet manifest")
+    assert [fields["repo"] for fields in flagged] == ["livespec-straggler"]
+    assert manifest.member_names() == frozenset({"widget"})
+
+
 def test_discovery_sweep_unreadable_repo_list_warns_and_passes() -> None:
     table = _green_table()
     del table[_REPOS_ARGS]

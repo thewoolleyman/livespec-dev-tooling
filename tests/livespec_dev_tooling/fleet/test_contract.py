@@ -69,6 +69,25 @@ def test_parse_manifest_accepts_commented_jsonc() -> None:
     assert manifest.adopters == ()
 
 
+def test_declared_names_is_members_plus_adopters_and_member_names_is_members_only() -> None:
+    """`declared_names` feeds the discovery sweep; `member_names` scopes member-ci.
+
+    A registered adopter is declared in the manifest (so the discovery safety
+    net must know it) without being a fleet member (so member-ci scoping must
+    not accept it) — two different sets, read off one manifest.
+    """
+    outcome = parse_manifest(
+        source=(
+            '{"owner": "acme", "fleet": [{"repo": "widget", "class": "library"}], '
+            '"adopters": [{"repo": "livespec-site", "profile": ["baseline"], "posture": "none"}]}'
+        )
+    )
+    assert isinstance(outcome, Success), outcome
+    manifest = outcome.unwrap()
+    assert manifest.member_names() == frozenset({"widget"})
+    assert manifest.declared_names() == frozenset({"widget", "livespec-site"})
+
+
 def test_parse_manifest_reads_fleet_key() -> None:
     # The manifest fleet array is read from the `fleet` key (the locked
     # rename of the legacy `members` key); a `fleet`-only manifest with no
