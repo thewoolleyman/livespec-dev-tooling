@@ -38,7 +38,7 @@
 # `fsGroupChangePolicy: OnRootMismatch` (livespec-lvtu). A runner-image bump
 # rewrites this file with every other values file
 # (../container-hook/README.md "Runner-image bump procedure").
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-dev-tooling"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
 
 runnerScaleSetName: "livespec-dev-master-k3s"

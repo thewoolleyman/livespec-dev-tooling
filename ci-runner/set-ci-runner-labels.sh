@@ -60,7 +60,7 @@ set -euo pipefail
 
 USAGE="usage: set-ci-runner-labels.sh OWNER/REPO LABEL [LABEL...] [--set-tier] [--dry-run]
 
-  OWNER/REPO   the target repository, e.g. thewoolleyman/livespec-overseer
+  OWNER/REPO   the target repository, e.g. livespec-ai/livespec-overseer
   LABEL        one or more runner labels, written as a JSON array in the order
                given, e.g. livespec-overseer-k3s   (hosted labels are those
                beginning ubuntu, windows, or macos; anything else is treated as
@@ -74,9 +74,9 @@ USAGE="usage: set-ci-runner-labels.sh OWNER/REPO LABEL [LABEL...] [--set-tier] [
                write nothing. Reads only.
 
   Examples:
-    set-ci-runner-labels.sh thewoolleyman/livespec-overseer livespec-overseer-k3s --dry-run
-    set-ci-runner-labels.sh thewoolleyman/livespec-overseer livespec-overseer-k3s --set-tier
-    set-ci-runner-labels.sh thewoolleyman/livespec-overseer ubuntu-latest"
+    set-ci-runner-labels.sh livespec-ai/livespec-overseer livespec-overseer-k3s --dry-run
+    set-ci-runner-labels.sh livespec-ai/livespec-overseer livespec-overseer-k3s --set-tier
+    set-ci-runner-labels.sh livespec-ai/livespec-overseer ubuntu-latest"
 
 STRICT_TIER="all_external_contributors"
 SET_TIER=0

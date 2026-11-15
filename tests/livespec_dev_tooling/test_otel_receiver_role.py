@@ -76,7 +76,7 @@ def test_the_receiver_runs_a_pinned_release_at_or_after_the_floor() -> None:
     assert tuple(int(part) for part in match.groups()) >= _FLOOR, version
     assert _scalar(text=defaults, name="otel_receiver_orchestrator_floor") == "0.210.0"
     assert _scalar(text=defaults, name="otel_receiver_orchestrator_remote").endswith(
-        "thewoolleyman/livespec-orchestrator-beads-fabro.git"
+        "livespec-ai/livespec-orchestrator-beads-fabro.git"
     )
     clone = next(task for task in _tasks() if "ansible.builtin.git:" in task)
     assert 'dest: "{{ otel_receiver_orchestrator_dir }}"' in clone, clone

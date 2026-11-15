@@ -586,7 +586,7 @@ to get the expedited plan done." The exception ends when that plan is archived w
 
 **The release window is waived for P1 carriers only.** As each expedited-incident-response-flag slice PR merges, the
 owning seat (or the coordinator) dispatches Release Please at once
-(`gh workflow run release-please.yml -R thewoolleyman/livespec-dev-tooling`, and the orchestrator's when its release
+(`gh workflow run release-please.yml -R livespec-ai/livespec-dev-tooling`, and the orchestrator's when its release
 is windowed) instead of waiting for the 4-hourly cron. No other plan or repository gets the waiver. Maintainer ruling
 2026-11-05 ~21:27Z, recorded on epic `livespec-dev-tooling-bqnzcm` at 21:26:06Z. Its purpose was to move the first
 usable incident fix from about 05:00-09:00Z to about 01:00-02:00Z on 2026-11-06. Measured 2026-11-05: the coordinator

@@ -14,7 +14,7 @@
 # especially. This template is held in lockstep with the live files by
 # ../container-hook/runner-image.sh `assert_values_pins_agree`, which reads
 # every values-*.yaml here, so a bump rewrites this file too.
-githubConfigUrl: "https://github.com/thewoolleyman/<REPO>"
+githubConfigUrl: "https://github.com/livespec-ai/<REPO>"
 githubConfigSecret: arc-github-app-installation
 
 runnerScaleSetName: "<REPO>-local-ci-k3s"

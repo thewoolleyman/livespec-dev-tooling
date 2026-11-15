@@ -1,4 +1,4 @@
-# Homelab worker node image: ghcr.io/thewoolleyman/livespec-worker-node.
+# Homelab worker node image: ghcr.io/livespec-ai/livespec-worker-node.
 #
 # Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
 # nodes": "Worker image" — built from this repository's sources as a native
@@ -109,7 +109,7 @@ COPY crictl.yaml /etc/crictl.yaml
 RUN systemctl enable containerd.service tailscaled.service kubelet.service otel-collector.service otel-collector-pods.service \
  && mkdir -p /var/lib/kubelet /var/lib/containerd /var/lib/tailscale /etc/homelab-worker /etc/otel-collector
 
-LABEL org.opencontainers.image.source="https://github.com/thewoolleyman/livespec-dev-tooling" \
+LABEL org.opencontainers.image.source="https://github.com/livespec-ai/livespec-dev-tooling" \
       org.opencontainers.image.description="livespec homelab worker node: upstream kubelet and containerd, no K3s agent"
 
 ENTRYPOINT ["/sbin/init"]

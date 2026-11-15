@@ -142,7 +142,7 @@ fabro_server_instances:
     # and this instance's 2.
     environments:
       - id: livespec-ci
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
+        image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.93.5
         cpu: 4
         memory: 8GB
     # STOPPED 2026-10-18 (livespec-dev-tooling-hkf457, plan bd-ib-fyozyd): the

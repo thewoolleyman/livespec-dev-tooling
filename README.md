@@ -8,7 +8,7 @@ Distributes the canonical ruff/pyright/coverage gates, AST checks,
 CI-alignment checks, and red-green-replay discipline as a Python
 package plus composite GitHub Actions and reusable workflows.
 
-Consumed by [`livespec`](https://github.com/thewoolleyman/livespec),
+Consumed by [`livespec`](https://github.com/livespec-ai/livespec),
 every `livespec-impl-*` plugin, and any future livespec-governed
 sibling library or application.
 
@@ -35,7 +35,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v0.1.0" }
+livespec-dev-tooling = { git = "https://github.com/livespec-ai/livespec-dev-tooling.git", tag = "v0.1.0" }
 ```
 
 Invoke any check via:
@@ -49,7 +49,7 @@ uv run python -m livespec_dev_tooling.checks.<slug>
 ```yaml
 jobs:
   setup:
-    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v0.1.0
+    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v0.1.0
     with:
       checks: '["check-lint", "check-format", "check-types", "check-coverage"]'
 ```
@@ -57,8 +57,8 @@ jobs:
 Or, for a single composite action:
 
 ```yaml
-- uses: thewoolleyman/livespec-dev-tooling/.github/actions/setup@v0.1.0
-- uses: thewoolleyman/livespec-dev-tooling/.github/actions/run-check@v0.1.0
+- uses: livespec-ai/livespec-dev-tooling/.github/actions/setup@v0.1.0
+- uses: livespec-ai/livespec-dev-tooling/.github/actions/run-check@v0.1.0
   with:
     check-name: check-lint
 ```
@@ -111,7 +111,7 @@ from livespec_dev_tooling.testing.cli_e2e import (
 def test_cli_e2e(*, tmp_path: Path) -> None:
     config = HarnessConfig(
         impl_plugin_id="livespec-impl-git-jsonl",
-        marketplace="thewoolleyman/livespec",
+        marketplace="livespec-ai/livespec",
         enabled_plugins=("livespec@livespec", "livespec-impl-git-jsonl@..."),
         plugin_install_dirs=(...,),                       # installed plugin roots
         fixtures_root=Path("tests/e2e-cli/fixtures"),
@@ -275,9 +275,9 @@ The livespec fleet dogfoods its own telemetry. CI runs, Red→Green commit-gate 
 
 ## More
 
-- [`livespec`](https://github.com/thewoolleyman/livespec) — the
+- [`livespec`](https://github.com/livespec-ai/livespec) — the
   parent plugin governing this library's specification.
-- [`livespec-orchestrator-beads-fabro`](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro)
+- [`livespec-orchestrator-beads-fabro`](https://github.com/livespec-ai/livespec-orchestrator-beads-fabro)
   — the implementation plugin currently tracking this library's
   work-items in a per-repo beads/Dolt **tenant database** on the shared
   dolt-server (tenant `livespec-dev-tooling`); its client config is

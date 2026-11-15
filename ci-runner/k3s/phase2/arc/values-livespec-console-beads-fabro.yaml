@@ -17,10 +17,10 @@
 # ci-runner-supervisor unit (systemctl cat ci-runner-supervisor,
 # read 2026-08-16) currently runs:
 #
-#   --repos "thewoolleyman/livespec:75 thewoolleyman/livespec-dev-tooling:63 \
-#     thewoolleyman/livespec-driver-codex:67 thewoolleyman/livespec-driver-claude:66 \
-#     thewoolleyman/livespec-orchestrator-git-jsonl:66 thewoolleyman/livespec-overseer:65 \
-#     thewoolleyman/livespec-runtime:64 thewoolleyman/livespec-console-beads-fabro:16"
+#   --repos "livespec-ai/livespec:75 livespec-ai/livespec-dev-tooling:63 \
+#     livespec-ai/livespec-driver-codex:67 livespec-ai/livespec-driver-claude:66 \
+#     livespec-ai/livespec-orchestrator-git-jsonl:66 livespec-ai/livespec-overseer:65 \
+#     livespec-ai/livespec-runtime:64 livespec-ai/livespec-console-beads-fabro:16"
 #
 # Those eight per-repo slot counts SUM TO EXACTLY 482 (75+63+67+66+66+65+64+16),
 # the physical host-wide cap — i.e. the live config apportions the FIXED
@@ -33,7 +33,7 @@
 # smallest in the fleet, which at the current capacity C=16 gives it a
 # nominalQuota of 1 — a guaranteed floor, not a cap: cohort borrowing lets
 # it burst well above 1 whenever its peers are idle.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-console-beads-fabro"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-console-beads-fabro"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
 # SHORT NAME, deliberately: livespec-s43svm.22 root-caused a hard Kubernetes

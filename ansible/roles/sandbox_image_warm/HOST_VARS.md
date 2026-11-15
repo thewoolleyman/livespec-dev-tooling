@@ -11,7 +11,7 @@ below. Everything above that section describes the docker warm.
 
 **Why it exists.** On 2026-10-20 at 08:09:51-52Z two runs started within one
 second on `hp-xubuntu` and both needed
-`ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.118.5`, a tag the
+`ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.118.5`, a tag the
 host did not hold (it held `v1.118.4` and older). Each run's pull tore down the
 other's containerd leases and both died in sandbox init with
 `Failed to pull Docker image ... causes=[Docker stream error]` in 0.8 s and
@@ -60,7 +60,7 @@ something to differ from.
 | `sandbox_image_warm_unit_dir` | `/etc/systemd/system` | where the two units are installed |
 | `sandbox_image_warm_service` | `<name>.service` | the oneshot unit the timer triggers |
 | `sandbox_image_warm_timer` | `<name>.timer` | the timer the converge enables and starts |
-| `sandbox_image_warm_image` | `ghcr.io/thewoolleyman/livespec-fabro-sandbox` | the image whose tags are warmed |
+| `sandbox_image_warm_image` | `ghcr.io/livespec-ai/livespec-fabro-sandbox` | the image whose tags are warmed |
 | `sandbox_image_warm_tag_prefixes` | `[python-agent]` | the layer prefixes to warm; one reference per prefix, `<image>:<prefix>-v<version>` |
 | `sandbox_image_warm_pin_url` | this repository's `.release-please-manifest.json` on `master` | where the version is read from |
 | `sandbox_image_warm_lock_dir` | `/run/<name>` | where the per-reference lock files live; on tmpfs, because a lock has no meaning across a reboot |
@@ -104,7 +104,7 @@ To read what the host has warmed, and when it last tried:
 ```bash
 systemctl list-timers livespec-sandbox-image-warm.timer
 journalctl -u livespec-sandbox-image-warm.service --since -1h
-docker image inspect ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v<version>
+docker image inspect ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v<version>
 ```
 
 A warm that could not read the pin exits NON-ZERO and pulls nothing, so a failed

@@ -141,7 +141,7 @@ _FLEET_UNIT = "fabro-server"
 _HOMELAB_UNIT = "fabro-server-mi-homelab"
 _CANDIDATE_ENVIRONMENT = {
     "id": "livespec-ci",
-    "image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5",
+    "image": "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.93.5",
     "cpu": "4",
     "memory": "8GB",
 }

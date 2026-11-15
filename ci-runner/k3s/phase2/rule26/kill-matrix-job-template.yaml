@@ -52,7 +52,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: kill-matrix
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.189.1
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.189.1
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-lc"]
           args:
@@ -67,9 +67,9 @@ spec:
               exec > >(tee -a "$out/run.log") 2>&1
               echo ":: start $(date -u +%FT%TZ) on $(hostname)"
               rm -rf /data/orchestrator /data/dev-tooling
-              git clone --quiet https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro /data/orchestrator
+              git clone --quiet https://github.com/livespec-ai/livespec-orchestrator-beads-fabro /data/orchestrator
               git -C /data/orchestrator checkout --quiet --detach @@ORCH_SHA@@
-              git clone --quiet https://github.com/thewoolleyman/livespec-dev-tooling /data/dev-tooling
+              git clone --quiet https://github.com/livespec-ai/livespec-dev-tooling /data/dev-tooling
               git -C /data/dev-tooling checkout --quiet --detach @@ENGINE_SHA@@
               cd /data/orchestrator
               uv sync --frozen

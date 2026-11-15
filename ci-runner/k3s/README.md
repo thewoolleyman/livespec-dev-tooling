@@ -268,7 +268,7 @@ migration, and it landed on the per-repository scale sets under
 ## GitHub registration scope — REPOSITORY, not organization (`thewoolleyman` is a personal account)
 
 `arc/values-host-unique.yaml` (and, before its retirement, `arc/values.yaml`) sets
-`githubConfigUrl` to `https://github.com/thewoolleyman/livespec-dev-tooling`
+`githubConfigUrl` to `https://github.com/livespec-ai/livespec-dev-tooling`
 — a specific REPOSITORY, not the account-root form
 `https://github.com/thewoolleyman`. This was discovered live during
 `livespec-s43svm.14`: the account-root form routes ARC's controller to

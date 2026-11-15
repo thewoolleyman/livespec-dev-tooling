@@ -56,7 +56,7 @@ instance:
 ```yaml
 environments:
   - id: livespec-ci
-    image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
+    image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.93.5
     cpu: 4
     memory: 8GB
 ```
@@ -578,7 +578,7 @@ authenticates onto a private tailnet.
 
 `ghcr.io` and its CDN, whose addresses are not committable literals either. Read
 from the same `environments` entry quoted above: the image is
-`ghcr.io/thewoolleyman/livespec-fabro-sandbox`, pinned by the orchestrator's
+`ghcr.io/livespec-ai/livespec-fabro-sandbox`, pinned by the orchestrator's
 `implement-work-item` workflow.
 
 Expressed as `0.0.0.0/0` with everything private excepted —

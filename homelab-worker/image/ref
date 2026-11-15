@@ -2,4 +2,4 @@
 # 61920e47 (livespec-dev-tooling#4509, livespec-dev-tooling-rz23sl: the image
 # carries otel-collector-pods.service, the separate pod-span collector unit the
 # split collector pin in telemetry/collector.ref needs), tag sha-61920e4.
-ghcr.io/thewoolleyman/livespec-worker-node@sha256:8a9de2631ef815d5f67a21df35b72ae27578f3e7d5ffa2b7cbfb837bd7860141
+ghcr.io/livespec-ai/livespec-worker-node@sha256:8a9de2631ef815d5f67a21df35b72ae27578f3e7d5ffa2b7cbfb837bd7860141

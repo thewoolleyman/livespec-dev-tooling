@@ -35,7 +35,7 @@
 # nominalQuota is a DIFFERENT number from this file's maxRunners — a
 # different term of the same min(); see README.md "Two enforcement
 # points, two DIFFERENT numbers" and ../kueue/DERIVATION.md.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec"
+githubConfigUrl: "https://github.com/livespec-ai/livespec"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
 runnerScaleSetName: "livespec-local-ci-k3s"

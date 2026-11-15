@@ -56,7 +56,7 @@ unavailable", NEEDS_ATTENTION.
 Measured 2026-11-05 on livespec-orchestrator-beads-fabro item bd-ib-fgjehy. To
 honour a "write nothing in the checkout" brief, the codex replayer bwrap-bound
 an empty directory over the repo's `tmp/`. Its `host_verified` record
-(https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/pull/4237#issuecomment-6650019983)
+(https://github.com/livespec-ai/livespec-orchestrator-beads-fabro/pull/4237#issuecomment-6650019983)
 was valid, but the pass it triggered parked the item. Re-running
 `dispatcher.py reconcile-merged --item bd-ib-fgjehy` from a normal shell,
 against the real journal, passed and closed the item.

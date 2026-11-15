@@ -35,7 +35,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: control
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.40.1
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.40.1
           # Case 1 probes a HARDLINK copy of the live generation made through
           # the writable mount below instead of a job's seed (this pod has no
           # work volume): /warm/uv is the `uv` symlink to the current

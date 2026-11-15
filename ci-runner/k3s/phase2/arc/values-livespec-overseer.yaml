@@ -13,7 +13,7 @@
 # whose suite does not exercise intra-pod ptrace/signal today is latent-broken
 # rather than unaffected. This file remains the reference implementation and
 # carries the full root-cause comment; the sibling files point back here.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-overseer"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-overseer"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
 runnerScaleSetName: "livespec-overseer-k3s"

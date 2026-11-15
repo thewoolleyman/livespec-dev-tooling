@@ -1019,7 +1019,7 @@ check-main-guard:
     uv run python -m livespec_dev_tooling.checks.main_guard
 
 # Refuse a committed `.claude/settings.json` that pins a shared
-# `thewoolleyman/livespec*` plugin marketplace to any ref other than `release`.
+# `livespec-ai/livespec*` plugin marketplace to any ref other than `release`.
 # The plugin marketplace registry is HOST-GLOBAL — one ref per marketplace name,
 # shared by every checkout — so a tag pin here rewrites the slot every sibling
 # repo reads and silently breaks their `ensure-plugins`.

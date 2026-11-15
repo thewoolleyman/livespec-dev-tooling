@@ -36,7 +36,7 @@ _DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "sandbox_image_warm" / "defaults"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 # The debug callback prints the message as a JSON string: `"msg": "RENDERED=[...]"`.
 _RENDERED = re.compile(r'^\s*"msg": (?P<msg>"RENDERED=.*")$', re.MULTILINE)
-_BASE = "https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/ansible/inventory/host_vars"
+_BASE = "https://raw.githubusercontent.com/livespec-ai/livespec-dev-tooling/master/ansible/inventory/host_vars"
 # Generous: a cold `uvx` resolves and caches ansible-core before the play runs.
 _PLAYBOOK_TIMEOUT_SECONDS = 600
 

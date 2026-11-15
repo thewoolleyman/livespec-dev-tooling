@@ -1,6 +1,6 @@
 [Unit]
 Description=Self-hosted GitHub Actions runner for {{ gha_runner_repo }} (labels {{ gha_runner_labels }})
-Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/tree/master/ansible/roles/gha_runner
+Documentation=https://github.com/livespec-ai/livespec-dev-tooling/tree/master/ansible/roles/gha_runner
 After=network-online.target docker.service
 Wants=network-online.target docker.service
 # A runner that cannot register or cannot reach GitHub restarts forever; bound

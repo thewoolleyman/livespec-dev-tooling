@@ -52,7 +52,7 @@ runs:
       # is not importable until the very `uv sync` it wraps has run. Three
       # levels up from GITHUB_ACTION_PATH is the livespec-dev-tooling checkout
       # root under BOTH consumption shapes: a remote
-      # `uses: thewoolleyman/livespec-dev-tooling/.github/actions/setup@<ref>`
+      # `uses: livespec-ai/livespec-dev-tooling/.github/actions/setup@<ref>`
       # (action path under _actions/.../<ref>/.github/actions/setup) and this
       # repo's own `uses: ./.github/actions/setup` (under the workspace).
       run: python3 "${GITHUB_ACTION_PATH}/../../../livespec_dev_tooling/uv_sync_resilient.py"

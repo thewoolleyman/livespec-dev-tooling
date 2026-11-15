@@ -291,8 +291,8 @@
 #
 # THE ci.repository DERIVATION, and its one exception.
 #   For a QUEUE: the pool's ClusterQueues are named `<repository>-cq`, so
-#   ci.repository = "thewoolleyman/" + the name with that suffix removed
-#   (`livespec-dev-tooling-cq` -> `thewoolleyman/livespec-dev-tooling`). The
+#   ci.repository = "livespec-ai/" + the name with that suffix removed
+#   (`livespec-dev-tooling-cq` -> `livespec-ai/livespec-dev-tooling`). The
 #   owner is a constant here because this pool serves one GitHub owner; it is
 #   overridable as CI_POOL_REPO_OWNER. ONE queue on the live cluster is NOT a
 #   repository — `phase1-proof-cq`, the Kueue proof queue, which is
@@ -311,7 +311,7 @@
 #   `status.jobRepositoryName` is populated only while a job is ASSIGNED, so
 #   deriving from it would drop a runner that exists but has not been handed
 #   a job — exactly the population a board wants to see. The value is a URL
-#   (`https://github.com/thewoolleyman/livespec-dev-tooling`); the repository
+#   (`https://github.com/livespec-ai/livespec-dev-tooling`); the repository
 #   is its last two path segments. A URL that does not yield two segments
 #   (an organization- or enterprise-level scale set) contributes to
 #   runners_total but to NO per-repository datapoint, and the omission is
@@ -373,7 +373,7 @@ START_WINDOW_S="${CI_POOL_START_WINDOW_S:-60}"
 # 127.0.0.1, and the ten seconds this was paid for the two new listings.
 POST_MAX_TIME="${CI_POOL_POST_MAX_TIME:-5}"
 # The GitHub owner every queue name on this pool is a repository of.
-REPO_OWNER="${CI_POOL_REPO_OWNER:-thewoolleyman}"
+REPO_OWNER="${CI_POOL_REPO_OWNER:-livespec-ai}"
 # Space-separated ClusterQueue names that are NOT repositories. Belt and
 # braces beside the churn-slot filter, which already excludes this one.
 NON_REPO_QUEUES="${CI_POOL_NON_REPO_QUEUES:-phase1-proof-cq}"

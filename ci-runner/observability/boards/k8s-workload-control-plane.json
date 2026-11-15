@@ -27,7 +27,7 @@
         "width": 12
       },
       "text_panel": {
-        "content": "# Kubernetes workloads and control plane\n\nWhether what runs on the k3s nodes, and the cluster that schedules it, is healthy: pod phases, restarts and termination reasons per namespace (`factory` and `factory-mi-homelab` included), PersistentVolumeClaim phases, Warning events, ResourceQuota used against hard, API server readiness by check, the kine datastore, the controllers every job passes through, and Kueue ClusterQueues. The node-level companion is the **Kubernetes node load** board.\n\n**This board is code**: `ci-runner/observability/boards/k8s-workload-control-plane.json` in `thewoolleyman/livespec-dev-tooling`, converged by `apply-boards.sh`; triggers beside it in `../triggers/k8s-*.json`. Plan `kubernetes-node-observability` (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l."
+        "content": "# Kubernetes workloads and control plane\n\nWhether what runs on the k3s nodes, and the cluster that schedules it, is healthy: pod phases, restarts and termination reasons per namespace (`factory` and `factory-mi-homelab` included), PersistentVolumeClaim phases, Warning events, ResourceQuota used against hard, API server readiness by check, the kine datastore, the controllers every job passes through, and Kueue ClusterQueues. The node-level companion is the **Kubernetes node load** board.\n\n**This board is code**: `ci-runner/observability/boards/k8s-workload-control-plane.json` in `livespec-ai/livespec-dev-tooling`, converged by `apply-boards.sh`; triggers beside it in `../triggers/k8s-*.json`. Plan `kubernetes-node-observability` (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l."
       }
     },
     {

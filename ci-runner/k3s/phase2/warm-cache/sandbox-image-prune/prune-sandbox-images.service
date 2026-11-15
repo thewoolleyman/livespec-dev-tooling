@@ -26,7 +26,7 @@
 # same line the sibling arc-log-archive unit carries.
 [Unit]
 Description=Prune surplus Fabro sandbox images from this node's containerd
-Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ci-runner/k3s/phase2/warm-cache/README.md
+Documentation=https://github.com/livespec-ai/livespec-dev-tooling/blob/master/ci-runner/k3s/phase2/warm-cache/README.md
 Requires=k3s.service
 After=k3s.service network-online.target
 

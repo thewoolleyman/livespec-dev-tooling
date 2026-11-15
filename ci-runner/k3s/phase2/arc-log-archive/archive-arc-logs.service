@@ -9,7 +9,7 @@
 # named explicitly rather than inherited.
 [Unit]
 Description=Archive ARC controller and listener logs before the kubelet rotates them
-Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ci-runner/k3s/phase2/README.md
+Documentation=https://github.com/livespec-ai/livespec-dev-tooling/blob/master/ci-runner/k3s/phase2/README.md
 After=network-online.target
 
 [Service]

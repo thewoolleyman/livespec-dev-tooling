@@ -5,7 +5,7 @@ This tree provisions the four pre-Talos Ubuntu machines — `vps`,
 home-grown installer/converge shell that grew across three repositories.
 
 livespec work-item `livespec-sab5gn.4`; rationale, the estate inventory and
-the phase plan are in `thewoolleyman/livespec` at
+the phase plan are in `livespec-ai/livespec` at
 `plan/k3s-on-gmktec-for-vps-usage/research/004-ansible-migration-direction-2026-09-09.md`
 and `.../005-ansible-migration-estate-inventory-2026-09-09.md`.
 

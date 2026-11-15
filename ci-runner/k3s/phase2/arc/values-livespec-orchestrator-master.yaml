@@ -2,7 +2,7 @@
 # for livespec-orchestrator-beads-fabro. GitHub assigns generic ARC runners
 # before Kueue sees a pod, so master traffic needs its own runs-on label and
 # LocalQueue to avoid waiting behind pull-request coverage shards.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-orchestrator-beads-fabro"
 githubConfigSecret: arc-github-app-installation
 
 runnerScaleSetName: "livespec-orchestrator-master-k3s"
