@@ -52,3 +52,56 @@
     marker: "<!-- {mark} ANSIBLE MANAGED claude_distributed_sendmessage -->"
     block: "{{ lookup('ansible.builtin.file', 'managed-memory.md') }}"
   become: true
+
+- name: Export the seat no-stall environment for login shells
+  ansible.builtin.copy:
+    content: |
+      # ANSIBLE MANAGED by claude_distributed_sendmessage: no permission prompt may
+      # stall a Claude Code seat (see the role defaults for the measurement).
+      {% for k, v in claude_distributed_sendmessage_seat_env.items() %}
+      export {{ k }}={{ v }}
+      {% endfor %}
+    dest: "{{ claude_distributed_sendmessage_profile_snippet }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Ensure each shell rc's directory exists (zsh is absent on bash-only hosts)
+  ansible.builtin.file:
+    path: "{{ item | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ claude_distributed_sendmessage_shell_rcs }}"
+
+- name: Export the seat no-stall environment from every shell's always-read rc
+  # profile.d covers login shells only; a herdr pane's shell is often not one.
+  ansible.builtin.blockinfile:
+    path: "{{ item }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED claude_distributed_sendmessage seat no-stall"
+    block: |
+      {% for k, v in claude_distributed_sendmessage_seat_env.items() %}
+      export {{ k }}={{ v }}
+      {% endfor %}
+  become: true
+  loop: "{{ claude_distributed_sendmessage_shell_rcs }}"
+
+- name: Export the seat no-stall environment to the systemd user manager
+  ansible.builtin.copy:
+    content: |
+      # ANSIBLE MANAGED by claude_distributed_sendmessage: seat no-stall.
+      {% for k, v in claude_distributed_sendmessage_seat_env.items() %}
+      {{ k }}={{ v }}
+      {% endfor %}
+    dest: "{{ claude_distributed_sendmessage_environment_d }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
