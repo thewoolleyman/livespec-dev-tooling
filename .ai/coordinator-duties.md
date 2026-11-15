@@ -763,6 +763,16 @@ critical-path tenant gets the fleet credentials (plan tenant-fleet-credentials, 
 homelab's token was slot anthropic-6, out of weekly quota until Nov 19 08:00Z; it was re-copied from anthropic-4
 (homelab#1197) and homelab now keeps slot _4 (homelab#1198).
 
+**Rule OVERRIDE-THEN-BACKFILL: a committed-route ordering never deadlocks a plan.** When a committed-route ordering would
+deadlock a plan (merge-before-apply, CI waits, or a guard refusing a route only on its path), the coordinator makes the
+change now and backfills the GitOps record the same day: the PR merges, a drift from master reads no change, and an
+audit record goes on the plan epic. An item's own safety gates stay, and every override step is logged with the refusal
+it overrode. The maintainer, 2026-11-15, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at ~07:4xZ:
+"This is ridiculous. We're deadlocking ourselves. I authorize you to override whenever you need to, to get this
+unblocked. Whenever the GitOps changes we need to do, we can backfill them. Just make the changes now." Measured
+2026-11-15: the writer-key mint (hetzner-xubuntu-info#181) sat about an hour, blocked by merge-first ordering and by
+fleet_host_guard refusing the hetzner seat's ssh to the VPS.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
