@@ -48,7 +48,7 @@ MUST be invoked under `with-livespec-env.sh` so the secret projection is present
 
 No other text in the bullet changes; no new runtime backend requirement is introduced.
 
-## Proposal: Ledger reach names the installed wrapper, drops the Keychain clause, and forbids a second-backend fallback
+## Proposal: Ledger reach names the installed wrapper and drops the Keychain clause
 
 ### Target specification files
 
@@ -56,11 +56,11 @@ No other text in the bullet changes; no new runtime backend requirement is intro
 
 ### Summary
 
-The Ledger reach rule says the tenant credential comes through `the 1Password environment wrapper`, which on macOS reads its token through the Keychain. Name only the installed wrapper path, drop the backend-specific Keychain clause, and add that the wrapper MUST NOT fall back to a second backend. The tunnel, the committed loopback address and tenant isolation are unchanged; no AWS reader or Darwin seal is required before a host converts.
+The Ledger reach rule says the tenant credential comes through `the 1Password environment wrapper`, which on macOS reads its token through the Keychain. Name only the installed wrapper path and drop the backend-specific Keychain clause. The tunnel, the committed loopback address and tenant isolation are unchanged; no AWS reader or Darwin seal is required before a host converts.
 
 ### Motivation
 
-livespec v249 (thewoolleyman/livespec#3252) keeps `/usr/local/bin/with-livespec-env.sh` and its calling convention while its backend becomes homelab's shared-credentials launcher at each host's conversion, with no dual-backend fallback. The 1Password and Keychain wording describes one backend that is being replaced; the interface sentence stays true before and after conversion. Plan epic overseer-iyfjbo, change-plan entry T05.
+livespec v249 (thewoolleyman/livespec#3252) keeps `/usr/local/bin/with-livespec-env.sh` and its calling convention while its backend becomes homelab's shared-credentials launcher at each host's conversion. The 1Password and Keychain wording describes one backend that is being replaced; the interface sentence stays true before and after conversion. Plan epic overseer-iyfjbo, change-plan entry T05.
 
 ### Proposed Changes
 
@@ -73,7 +73,7 @@ The tenant credential MUST come through the 1Password environment wrapper, `/usr
 with
 
 ```
-The tenant credential MUST come through `/usr/local/bin/with-livespec-env.sh`. It MUST NOT come from a credential file copied from another host, and the wrapper MUST NOT fall back to a second backend.
+The tenant credential MUST come through `/usr/local/bin/with-livespec-env.sh`. It MUST NOT come from a credential file copied from another host.
 ```
 
 No other text in the paragraph changes.
