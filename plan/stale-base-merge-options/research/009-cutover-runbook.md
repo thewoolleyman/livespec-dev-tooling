@@ -21,7 +21,12 @@ owns the halt procedure and the phase outline; this note fixes the ORDER and the
 4. Every held PR is green, apart from checks named in its body with their note-005 class (owner-equality, live read by
    org/repo, org-ref `uses:` not yet resolvable).
 5. The image mirror has been re-run with the halt-time pins, and every pinned image is present at `ghcr.io/livespec-ai`
-   (yqpwy3).
+   (yqpwy3). At the halt, run `python3 -I plan/stale-base-merge-options/research/data/org-move/image_pins.py.txt
+   --out /tmp/image-pins-need.txt` from the livespec-dev-tooling checkout. If it reports any NEED, dispatch
+   `gh workflow run mirror.yml -R livespec-ai/fleet-image-mirror -f images="$(cat /tmp/image-pins-need.txt)"`, then
+   re-run the script until it reports `need=0`. Read every UNREADABLE and FIXTURE/absent line against the known
+   fixture list in the script's docstring. The baseline on 2026-11-15 was 43 of 43 real pins present, after mirror
+   runs 43659542203 and 43660558376.
 6. The org App secrets are verified through `GET /app` for livespec-ai-factory-bot (5761962) and
    livespec-ai-incident-recovery (5761967). DONE 2026-11-14.
 7. Hosted minutes fit. GO on cost, accepted 2026-11-15 ~00:0xZ (§5).
