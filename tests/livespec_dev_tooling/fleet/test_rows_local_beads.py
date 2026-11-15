@@ -145,6 +145,19 @@ def test_tenant_secret_absent_is_warning_finding(*, tmp_path: Path) -> None:
     assert "BEADS_DOLT_PASSWORD" in outcome.message
 
 
+def test_missing_tenant_secret_diagnostic_names_configured_wrapper_without_backend(
+    *, tmp_path: Path
+) -> None:
+    """The absent-tenant-secret warning names the configured wrapper, not a backend."""
+    ctx = _ctx(checkout=_with_beads(tmp_path=tmp_path), table={_SECRET_PROBE: _FAIL})
+    outcome = reconcile_beads_tenant_secret(ctx=ctx)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert "BEADS_DOLT_PASSWORD" in outcome.message
+    assert "configured credential wrapper" in outcome.message
+    assert "1Password" not in outcome.message
+
+
 def test_config_committed_is_excluded_without_beads(*, tmp_path: Path) -> None:
     """Not a beads-backed repo is INAPPLICABLE, not unevaluable."""
     outcome = reconcile_beads_config_committed(ctx=_ctx(checkout=tmp_path))
