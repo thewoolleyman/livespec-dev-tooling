@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Inventory the fleet's pinned old-owner images and check each against the org registry.
+
+Written for go/no-go 5 of plan/stale-base-merge-options/research/009-cutover-runbook.md: at the
+halt, every image a fleet repository pins must exist at ghcr.io/<new-owner> with the digest the
+old name serves. Run it with `python3 -I image_pins.py.txt [--workspace ~/workspace]`. It reads each
+fleet repository's origin/master tree, so every clone listed in FLEET must exist under --workspace,
+and the script fetches origin master for each one first. It mutates nothing on the forge.
+
+For each `ghcr.io/<old-owner>/<name>:<tag>` it finds, it resolves the tag anonymously on both
+registries. It prints one line per tag: `present`, `NEED`, `FIXTURE/absent` (the old name does not
+serve the tag: a test fixture, or a pin to an unpublished tag) or `UNREADABLE`. Then it writes the
+NEED set in the input format of livespec-ai/fleet-image-mirror's `mirror.yml`
+("name tag sha256:digest" per line) to --out. Dispatch it with:
+
+    gh workflow run mirror.yml -R livespec-ai/fleet-image-mirror -f images="$(cat <out>)"
+
+Exit status: 0 when no tag is NEED or UNREADABLE, 1 otherwise. Read every UNREADABLE and
+FIXTURE/absent line before calling go/no-go 5 GO. The run of 2026-11-15 ~01:2xZ reported
+43 present, 0 NEED, 9 FIXTURE/absent and 4 UNREADABLE (403). All 13 non-present names were
+test-fixture strings, not live pins: livespec-python:v1.64.2 (in
+ci-runner/k3s/phase2/gates/render-gate-job-exit-tests.sh), some-other-image:python-v0.43.2,
+some-other-image:v1.0.0 and something-else:v1.1.0. A NEW UNREADABLE or FIXTURE/absent name at the
+halt is read before GO.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+FLEET = (
+    "livespec",
+    "livespec-dev-tooling",
+    "livespec-orchestrator-beads-fabro",
+    "livespec-overseer",
+    "livespec-console-beads-fabro",
+    "livespec-driver-claude",
+    "livespec-driver-codex",
+    "livespec-driver-pi",
+    "livespec-orchestrator-git-jsonl",
+    "livespec-runtime",
+)
+EXCLUDE = (":!SPECIFICATION/history", ":!CHANGELOG.md", ":!plan", ":!archive")
+ACCEPT = ",".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
+
+
+def pins(*, workspace: Path, old_owner: str) -> list[tuple[str, str]]:
+    pattern = re.compile(rf"ghcr\.io/{re.escape(old_owner)}/([a-z0-9._-]+):([A-Za-z0-9._-]+)")
+    found: set[tuple[str, str]] = set()
+    for repo in FLEET:
+        clone = workspace / repo
+        subprocess.run(["git", "-C", str(clone), "fetch", "-q", "origin", "master"], check=True)
+        grep = subprocess.run(
+            ["git", "-C", str(clone), "grep", "-h", "-o", "-E", pattern.pattern, "origin/master", "--", ".", *EXCLUDE],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        for match in pattern.finditer(grep.stdout):
+            name, tag = match.group(1), match.group(2)
+            if tag.endswith(("-", "v")):
+                continue  # a template prefix such as python-agent-v, not a tag
+            found.add((name, tag))
+    return sorted(found)
+
+
+def digest(*, owner: str, name: str, tag: str) -> str | None:
+    token_url = f"https://ghcr.io/token?scope=repository:{owner}/{name}:pull"
+    with urllib.request.urlopen(token_url, timeout=20) as response:
+        token = json.load(response)["token"]
+    request = urllib.request.Request(
+        f"https://ghcr.io/v2/{owner}/{name}/manifests/{tag}",
+        method="HEAD",
+        headers={"Authorization": f"Bearer {token}", "Accept": ACCEPT},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.headers.get("Docker-Content-Digest")
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--workspace", type=Path, default=Path.home() / "workspace")
+    parser.add_argument("--old-owner", default="thewoolleyman")
+    parser.add_argument("--new-owner", default="livespec-ai")
+    parser.add_argument("--out", type=Path, default=Path("image-pins-need.txt"))
+    args = parser.parse_args()
+
+    need: list[str] = []
+    unreadable = 0
+    for name, tag in pins(workspace=args.workspace, old_owner=args.old_owner):
+        try:
+            source = digest(owner=args.old_owner, name=name, tag=tag)
+        except (urllib.error.URLError, OSError) as error:
+            print(f"UNREADABLE {name} {tag} {error}")
+            unreadable += 1
+            continue
+        if source is None:
+            print(f"FIXTURE/absent {name} {tag}")
+            continue
+        try:
+            target = digest(owner=args.new_owner, name=name, tag=tag)
+        except (urllib.error.URLError, OSError):
+            target = None
+        if target == source:
+            print(f"present {name} {tag} {source}")
+        else:
+            print(f"NEED {name} {tag} {source}")
+            need.append(f"{name} {tag} {source}")
+    args.out.write_text("".join(f"{line}\n" for line in need))
+    print(f"need={len(need)} unreadable={unreadable} out={args.out}")
+    return 1 if need or unreadable else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
