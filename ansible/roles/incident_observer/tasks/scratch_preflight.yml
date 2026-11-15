@@ -244,3 +244,41 @@
       is a symbolic link on the host; a scratch path must be a real directory or
       file, or not exist. Nothing has been written, stopped or removed.
     success_msg: no scratch path is a link on the host
+
+- name: Read the scratch venv's interpreter on the host as root, without following a link
+  # A venv's own `bin/python` is normally a link to the system interpreter, so
+  # a link here is not refused outright; its resolved target is judged below.
+  # The venv build is skipped when this path exists (`creates`), and the
+  # release install then runs THROUGH it, so a link into production's venv
+  # would send the scratch install into production. `lnk_source` is the host's
+  # own `realpath`, and is set for a dangling link as well.
+  ansible.builtin.stat:
+    path: "{{ incident_observer_venv }}/bin/python"
+    follow: false
+    get_checksum: false
+  become: true
+  check_mode: false
+  register: incident_observer_scratch_interpreter_stat
+
+- name: Refuse a scratch venv interpreter that resolves into a path production owns
+  # Both ends of the link are judged: its immediate target, which may itself
+  # be a link, and the host's own `realpath` of the whole chain. A link to
+  # production's venv interpreter is refused even though that one is itself a
+  # link to the system python and so resolves outside production.
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (incident_observer_scratch_interpreter_stat.stat.islnk | default(false))
+        or ([incident_observer_scratch_interpreter_stat.stat.lnk_source | default(''),
+             incident_observer_scratch_interpreter_stat.stat.lnk_target | default(''),
+             [incident_observer_venv ~ '/bin',
+              incident_observer_scratch_interpreter_stat.stat.lnk_target | default('')]
+             | path_join | realpath]
+            | select('match', '^(/opt/livespec-incident|/var/lib/livespec-incident|/etc/livespec-incident)(/|$)')
+            | list | length == 0)
+    fail_msg: >-
+      {{ incident_observer_venv }}/bin/python is a symbolic link into a path
+      production owns ({{ incident_observer_scratch_interpreter_stat.stat.lnk_target | default('') }});
+      the scratch install would write into production's venv. Nothing has been
+      written, stopped or removed.
+    success_msg: the scratch venv's interpreter does not resolve into a path production owns
