@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.214.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.213.0...v1.214.0) (2026-11-15)
+
+
+### Features
+
+* **ansible:** pinned CPython 3.13 for the shared-credentials delivery where root's PATH lacks it (livespec-dev-tooling-xyi5vu) ([15e31a8](https://github.com/livespec-ai/livespec-dev-tooling/commit/15e31a8520e72d8848e69b20452a3e14002d1597))
+* **ansible:** poweredge-xubuntu shared-credentials adopter composition (livespec-dev-tooling-xyi5vu) ([518a1ff](https://github.com/livespec-ai/livespec-dev-tooling/commit/518a1ffd8752516e4523879a83fa145c55b3f576))
+
+
+### Bug Fixes
+
+* **ansible:** shared_credentials_host escalates on the target (livespec-dev-tooling-xyi5vu) ([0203cf8](https://github.com/livespec-ai/livespec-dev-tooling/commit/0203cf837b2ce62511a5365ba313546c4020b732))
+* **reconcile_runs:** match the family wrapper by resolved path, not basename ([3c7f758](https://github.com/livespec-ai/livespec-dev-tooling/commit/3c7f758039a0e3ddb30f350e3c660af83ac69033))
+* **reconcile_runs:** resolve the tenant credential_wrapper at run time (bd-ib-ft426g companion) ([2bf2d21](https://github.com/livespec-ai/livespec-dev-tooling/commit/2bf2d216a7f9f494d08c1f4a5366e6af471aff07))
+
 ## [1.213.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.212.0...v1.213.0) (2026-11-15)
 
 
