@@ -1,0 +1,22 @@
+---
+# fleet_git_credential_helper -- the git credential helper shim the fleet clones
+# on this host name in .git/config. See HOST_VARS.md.
+
+# The shim itself, at the path every clone's credential.https://github.com.helper
+# already names. Changing it orphans those clones' config.
+fleet_git_credential_helper_dest: /home/ubuntu/.local/bin/livespec-agent-github-credential-helper
+fleet_git_credential_helper_owner: ubuntu
+fleet_git_credential_helper_group: ubuntu
+fleet_git_credential_helper_mode: "0775"
+
+# The livespec-runtime helper that speaks git's credential protocol and mints the
+# installation token.
+fleet_git_credential_helper_runtime_helper: >-
+  /data/projects/livespec-runtime/.venv/bin/livespec-github-credential-helper
+
+# The family wrapper the original path runs under.
+fleet_git_credential_helper_family_wrapper: /usr/local/bin/with-livespec-env.sh
+
+# The tenant wrapper a route-C clone mints through. The shim tests for it at
+# run time, so a host without it keeps the original path.
+fleet_git_credential_helper_tenant_wrap: /usr/local/libexec/livespec-tenant-wrap.sh

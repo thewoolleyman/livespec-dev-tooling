@@ -49,6 +49,12 @@
       tags: [keyring_quota]
     - role: tmux_config
       tags: [tmux_config]
+    # The git credential helper shim every fleet clone here names in its
+    # .git/config (livespec-orslcm Pillar 3). Clones whose committed
+    # .livespec.jsonc remaps to the livespec-ai org App mint through their
+    # credential_wrapper; see roles/fleet_git_credential_helper/HOST_VARS.md.
+    - role: fleet_git_credential_helper
+      tags: [fleet_git_credential_helper]
     - role: claude_code_hooks
       tags: [claude_code_hooks]
     - role: claude_ntfy
