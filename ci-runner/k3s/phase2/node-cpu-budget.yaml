@@ -30,4 +30,4 @@ nodes:
     gate_cpu: 5             # gates-hp-flavor
   gamingpc-xubuntu:
     allocatable_cpu: 12     # capacity 16; kubelet reserves take 4
-    gate_cpu: 5             # gates-gamingpc-flavor
+    gate_cpu: 10            # gates-gamingpc-flavor (5 -> 10, 2026-11-15)
