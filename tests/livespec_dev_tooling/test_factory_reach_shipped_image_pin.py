@@ -59,7 +59,7 @@ _IMAGE_LINE = re.compile(rf"^\s*{_IMAGE_KEY}=(?P<image>\S+)\s*$", re.MULTILINE)
 
 # An image the fleet's own build never publishes, so its presence in a rendered
 # manifest can only mean the script read the decoy workflow.
-_DECOY_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:decoy-never-published"
+_DECOY_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox:decoy-never-published"
 _DECOY_WORKFLOW = (
     "jobs:\n  check:\n    runs-on: ubuntu-latest\n    container:\n" f"      image: {_DECOY_IMAGE}\n"
 )

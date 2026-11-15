@@ -36,14 +36,14 @@ __all__: list[str] = ["OBSERVED_REPOSITORY", "SERVED_REPOSITORIES", "read_contro
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
 # This library's own installation keeps the unit and configuration it always had; a test
 # pins them to the role's defaults.
-OBSERVED_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+OBSERVED_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 # Every repository a production installation serves, in the order the role's committed
 # inventory declares them; a test holds this equal to that inventory.
 SERVED_REPOSITORIES: tuple[str, ...] = (
     OBSERVED_REPOSITORY,
-    "thewoolleyman/livespec",
-    "thewoolleyman/livespec-orchestrator-beads-fabro",
-    "thewoolleyman/livespec-overseer",
+    "livespec-ai/livespec",
+    "livespec-ai/livespec-orchestrator-beads-fabro",
+    "livespec-ai/livespec-overseer",
 )
 _UNIT = "livespec-incident-observer.service"
 _CONFIG = "/etc/livespec-incident/controller.json"

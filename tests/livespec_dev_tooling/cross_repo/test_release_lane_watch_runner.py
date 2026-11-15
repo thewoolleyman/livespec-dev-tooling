@@ -7,7 +7,7 @@ must never be read as a green lane, because a watcher that cannot measure and
 reports healthy is the vacuous pass the whole watcher exists to remove.
 
 No network is reached. `urllib.request.urlopen` is substituted per test, and the
-run history replayed through it is the same RECORDED `thewoolleyman/livespec`
+run history replayed through it is the same RECORDED `livespec-ai/livespec`
 `release-tag.yml` window the sibling `test_release_lane_watch` module documents:
 the `v0.37.0` failure of 2026-08-20 over the `v0.30.3` green of 2026-08-12, and
 the `v0.37.1` green of 2026-08-21 that ended the block.
@@ -38,7 +38,7 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.cross_repo.release_lane_watch_runner import fetch_runs, main
 
-_SLUG = "thewoolleyman/livespec"
+_SLUG = "livespec-ai/livespec"
 _WORKFLOW = "release-tag.yml"
 _TOKEN = "forge-token-for-the-double"
 

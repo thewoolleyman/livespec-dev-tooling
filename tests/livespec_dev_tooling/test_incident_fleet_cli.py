@@ -598,11 +598,9 @@ def test_the_production_environment_cannot_be_steered_by_the_caller(
         tmp_path
     )
     assert environment.read_manifest() is None
-    assert any("github.com/thewoolleyman/livespec.git" in part for a in asked for part in a)
+    assert any("github.com/livespec-ai/livespec.git" in part for a in asked for part in a)
     assert (
-        environment.read_serving(
-            repository="thewoolleyman/livespec", capability="no-such-capability"
-        )
+        environment.read_serving(repository="livespec-ai/livespec", capability="no-such-capability")
         is None
     )
 
@@ -699,7 +697,7 @@ asked = []
 units = {}
 versions = {
     OBSERVED_REPOSITORY: "v1.2.3@" + "a" * 40,
-    "thewoolleyman/livespec": "v4.5.6@" + "b" * 40,
+    "livespec-ai/livespec": "v4.5.6@" + "b" * 40,
 }
 
 def add_process(repository, pid, config_path, version):
@@ -717,7 +715,7 @@ def add_process(repository, pid, config_path, version):
     (entry / "stat").write_text(str(pid) + " (python) " + " ".join(fields), encoding="utf-8")
 
 add_process(OBSERVED_REPOSITORY, 9101, "/etc/livespec-incident/controller.json", versions[OBSERVED_REPOSITORY])
-add_process("thewoolleyman/livespec", 9102, "/etc/livespec-incident/controller-livespec.json", versions["thewoolleyman/livespec"])
+add_process("livespec-ai/livespec", 9102, "/etc/livespec-incident/controller-livespec.json", versions["livespec-ai/livespec"])
 add_process("scratch", 9103, "/etc/livespec-incident/controller-scratch.json", "v9.9.9@" + "s" * 40)
 units = {
     "livespec-incident-observer.service": 9101,
@@ -753,10 +751,10 @@ readers = {
     "driver-hooks": lambda *, probe, repository: "fixture-release",
 }
 read_serving = host_serving_reader(probe=probe, readers=readers)
-manifest = json.dumps({"owner": "thewoolleyman", "fleet": [{"repo": "livespec-dev-tooling", "class": "enforcement-suite"}, {"repo": "livespec", "class": "enforcement-suite"}, {"repo": "unserved", "class": "enforcement-suite"}], "adopters": []})
+manifest = json.dumps({"owner": "livespec-ai", "fleet": [{"repo": "livespec-dev-tooling", "class": "enforcement-suite"}, {"repo": "livespec", "class": "enforcement-suite"}, {"repo": "unserved", "class": "enforcement-suite"}], "adopters": []})
 digest = hashlib.sha256(manifest.encode()).hexdigest()
 claims = []
-for repository in (*versions, "thewoolleyman/unserved"):
+for repository in (*versions, "livespec-ai/unserved"):
     for surface, capability in SURFACE_CAPABILITY.items():
         value = read_serving(repository=repository, capability=capability)
         build = value if isinstance(value, str) else value.build if value is not None else "unverified-release"
@@ -798,9 +796,9 @@ def test_run_as_a_child_process_reads_controller_and_recovery_from_each_serving_
 ) -> None:
     completed = _controller_installations_child(tmp_path=tmp_path)
     lines = completed.stdout.splitlines()
-    dev_tooling = "thewoolleyman/livespec-dev-tooling"
-    livespec = "thewoolleyman/livespec"
-    unserved = "thewoolleyman/unserved"
+    dev_tooling = "livespec-ai/livespec-dev-tooling"
+    livespec = "livespec-ai/livespec"
+    unserved = "livespec-ai/unserved"
     dev_controller = "v1.2.3@" + "a" * 40
     livespec_controller = "v4.5.6@" + "b" * 40
 

@@ -135,7 +135,7 @@ _LOCKSTEP_PYTHON_VERSION = "3.10.16\n"
 _FACTORY_REACH_PIN_PATH = Path("ci-runner") / "k3s" / "phase2" / "factory"
 _FACTORY_REACH_PIN_NAME = "factory-reach-image.env"
 _CI_WORKFLOW_PATH = Path(".github") / "workflows" / "ci.yml"
-_LOCKSTEP_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.0"
+_LOCKSTEP_SANDBOX_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.42.0"
 _LOCKSTEP_FACTORY_REACH_PIN = (
     "# fixture pin file\n" "\n" f"FACTORY_REACH_SANDBOX_IMAGE={_LOCKSTEP_SANDBOX_IMAGE}\n"
 )
@@ -695,7 +695,7 @@ def test_rejects_a_shipped_factory_reach_pin_drifted_from_the_workflow(
         python_version=_LOCKSTEP_PYTHON_VERSION,
         factory_reach_pin=_LOCKSTEP_FACTORY_REACH_PIN.replace(
             _LOCKSTEP_SANDBOX_IMAGE,
-            "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.41.0",
+            "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.41.0",
         ),
     )
 
@@ -761,7 +761,7 @@ def test_rejects_a_workflow_declaring_two_distinct_container_images(
             f"  gate:\n    runs-on: ubuntu-latest\n    container:\n"
             f"      image: {_LOCKSTEP_SANDBOX_IMAGE}\n",
             "  gate:\n    runs-on: ubuntu-latest\n    container:\n"
-            "      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.42.0\n",
+            "      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v1.42.0\n",
         ),
     )
 

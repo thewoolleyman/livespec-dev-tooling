@@ -15,7 +15,7 @@ __all__: list[str] = []
 
 _MODULE = "livespec_dev_tooling.ci_run_telemetry"
 _MODULE_PATH = Path(__file__).resolve().parents[2] / "livespec_dev_tooling" / "ci_run_telemetry.py"
-_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 _RUN_ID = 42
 
 

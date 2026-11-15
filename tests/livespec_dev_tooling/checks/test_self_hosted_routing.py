@@ -798,7 +798,7 @@ def test_router_call_on_forbidden_trigger_fails_closed(
         "  workflow_dispatch:\n"
         "jobs:\n"
         "  select-ci-runner:\n"
-        "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/"
+        "    uses: livespec-ai/livespec-dev-tooling/.github/workflows/"
         "reusable-ci-runner-router.yml@v1\n"
         "    with:\n"
         '      local-runner-labels: \'["self-hosted","local-ci"]\'\n'

@@ -132,7 +132,7 @@ def test_discover_pyproject_uv_sources_emits_record(*, tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "consumer"\n\n'
         "[tool.uv.sources]\n"
-        'livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.3.0" }\n'
+        'livespec-runtime = { git = "https://github.com/livespec-ai/livespec-runtime.git", tag = "v0.3.0" }\n'
         "\n[tool.ruff]\nline-length = 100\n",
         encoding="utf-8",
     )
@@ -234,7 +234,7 @@ def test_discover_vendor_jsonc_emits_record(*, tmp_path: Path) -> None:
                 "libraries": [
                     {
                         "name": "livespec_runtime",
-                        "upstream_url": "https://github.com/thewoolleyman/livespec-runtime",
+                        "upstream_url": "https://github.com/livespec-ai/livespec-runtime",
                         "upstream_ref": "v0.2.0",
                         "vendored_at": "2026-04-26T06:05:33Z",
                     }

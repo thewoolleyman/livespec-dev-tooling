@@ -7,7 +7,7 @@ as for what it produces, because the caller folds cannot-measure notices in
 beside the failing ones precisely so that an unobserved lane cannot reach it.
 
 No I/O, no fixtures, no forge: the notice lines replayed here are the sibling
-`notice_text` renderings of the same RECORDED `thewoolleyman/livespec`
+`notice_text` renderings of the same RECORDED `livespec-ai/livespec`
 `release-tag.yml` window the `test_release_lane_watch` modules document.
 """
 

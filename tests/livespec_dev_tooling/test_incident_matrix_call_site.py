@@ -45,7 +45,7 @@ __all__: list[str] = []
 
 _REPOSITORY = "owner/repo"
 _BASE = "b" * 40
-_USES = "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1.191.0"
+_USES = "livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1.191.0"
 _GUARDED_WITH = (
     f"      incident-omitted: {GUARDED_OMITTED}\n      incident-ci-result: {GUARDED_RESULT}\n"
 )

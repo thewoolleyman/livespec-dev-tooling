@@ -240,8 +240,8 @@ def test_an_editable_install_of_another_checkout_is_unverified(fleet: _Fleet) ->
 SHA = "d" * 40
 TAG_SHA = "e" * 40
 SELF_SHA = "f" * 40
-TEMPLATE = "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml"
-ACTION = "thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries"
+TEMPLATE = "livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml"
+ACTION = "livespec-ai/livespec-dev-tooling/.github/actions/publish-flake-retries"
 WORKFLOWS = ".github/workflows/"
 
 
@@ -293,7 +293,7 @@ class _Remote:
         return HostProbe(clones_root=None, proc_root=Path("/proc"), home=Path("/"), run=run)
 
     def read(self) -> str | ServingReading | None:
-        return read_templates(probe=self.probe(), repository="thewoolleyman/consumer")
+        return read_templates(probe=self.probe(), repository="livespec-ai/consumer")
 
     def shown(self) -> list[str]:
         return [a[-1] for a in self.asked if "show" in a]
@@ -309,7 +309,7 @@ def test_a_pinned_commit_is_the_serving_build_and_is_read_from_the_remote_defaul
     listed = next(a for a in remote.asked if "ls-tree" in a)
     assert listed[-1] == WORKFLOWS
     assert remote.shown() == [f"HEAD:{WORKFLOWS}ci.yml"]
-    assert any("thewoolleyman/consumer.git" in part for a in remote.asked for part in a)
+    assert any("livespec-ai/consumer.git" in part for a in remote.asked for part in a)
     assert sum("clone" in a for a in remote.asked) == 1
     assert not any("ls-remote" in a for a in remote.asked)
 
@@ -357,7 +357,7 @@ def test_the_same_pin_repeated_is_one_serving_build() -> None:
 
 
 def test_only_this_librarys_templates_count_as_pins() -> None:
-    ci = _ci("thewoolleyman/livespec/.github/workflows/x.yml@v9.9.9", "actions/cache@v5")
+    ci = _ci("livespec-ai/livespec/.github/workflows/x.yml@v9.9.9", "actions/cache@v5")
     assert _Remote(workflows=ci).read() is None
 
 
@@ -419,7 +419,7 @@ def test_a_consumer_running_its_own_local_workflows_is_read_from_its_default_bra
         build="", detail="no clone of consumer on this host", head=SELF_SHA
     )
     lookup = next(a for a in remote.asked if "ls-remote" in a)
-    assert any("thewoolleyman/consumer.git" in part for part in lookup)
+    assert any("livespec-ai/consumer.git" in part for part in lookup)
 
 
 def test_a_local_workflow_consumer_with_an_unreadable_head_is_unverified() -> None:
@@ -439,14 +439,14 @@ def test_an_unreachable_remote_is_unverified() -> None:
         return IOFailure(InvocationNotPerformed(argv=tuple(args), kind=BINARY_ABSENT, detail="x"))
 
     probe = HostProbe(clones_root=None, proc_root=Path("/proc"), home=Path("/"), run=run)
-    assert read_templates(probe=probe, repository="thewoolleyman/consumer") is None
+    assert read_templates(probe=probe, repository="livespec-ai/consumer") is None
 
 
 def _library(
     *, workflows: dict[str, str], remote: dict[str, str]
 ) -> tuple[str | ServingReading | None, _Remote]:
     remote_ = _Remote(workflows=workflows, remote=remote)
-    served = read_templates(probe=remote_.probe(), repository="thewoolleyman/livespec-dev-tooling")
+    served = read_templates(probe=remote_.probe(), repository="livespec-ai/livespec-dev-tooling")
     return served, remote_
 
 
@@ -464,7 +464,7 @@ def test_this_librarys_own_ci_serves_its_local_templates_not_its_release_lane_se
         build="", detail="no clone of livespec-dev-tooling on this host", head=SELF_SHA
     )
     lookup = next(a for a in remote.asked if "ls-remote" in a)
-    assert "https://github.com/thewoolleyman/livespec-dev-tooling.git" in lookup
+    assert "https://github.com/livespec-ai/livespec-dev-tooling.git" in lookup
     assert "HEAD" in lookup
 
 
@@ -912,10 +912,10 @@ def test_recovery_authorization_is_read_only_through_a_verified_controller() -> 
     asked: list[list[str]] = []
     recovery = PRODUCTION_READERS["recovery-authorization"]
     assert (
-        recovery(probe=_asking_probe(asked=asked), repository="thewoolleyman/livespec-dev-tooling")
+        recovery(probe=_asking_probe(asked=asked), repository="livespec-ai/livespec-dev-tooling")
         is None
     )
-    assert recovery(probe=_asking_probe(asked=asked), repository="thewoolleyman/livespec") is None
+    assert recovery(probe=_asking_probe(asked=asked), repository="livespec-ai/livespec") is None
     assert all(args[0] == "systemctl" for args in asked)
     assert not any("gh" in args for args in asked)
 

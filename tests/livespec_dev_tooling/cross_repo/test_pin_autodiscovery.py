@@ -124,13 +124,13 @@ def test_discover_all_pin_formats_coexisting(*, tmp_path: Path) -> None:
         "  test:\n"
         "    runs-on: ubuntu-latest\n"
         "    container:\n"
-        "      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.20.0\n",
+        "      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v0.20.0\n",
         encoding="utf-8",
     )
     workflow_toml = tmp_path / ".fabro" / "workflows" / "ci" / "workflow.toml"
     workflow_toml.parent.mkdir(parents=True)
     workflow_toml.write_text(
-        'docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v0.19.0"\n',
+        'docker = "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v0.19.0"\n',
         encoding="utf-8",
     )
     dockerfile = tmp_path / "docker" / "fabro-sandbox" / "agent" / "Dockerfile"
@@ -148,7 +148,7 @@ def test_discover_all_pin_formats_coexisting(*, tmp_path: Path) -> None:
                     "livespec-driver-claude": {
                         "source": {
                             "source": "github",
-                            "repo": "thewoolleyman/livespec-driver-claude",
+                            "repo": "livespec-ai/livespec-driver-claude",
                             "ref": "v0.2.1",
                         }
                     }
@@ -190,14 +190,14 @@ def test_discover_all_pin_formats_coexisting(*, tmp_path: Path) -> None:
         {
             "pin_format": "fabro_sandbox_docker_image",
             "file_path": ".fabro/workflows/ci/workflow.toml",
-            "pin_key": "ghcr.io/thewoolleyman/livespec-fabro-sandbox",
+            "pin_key": "ghcr.io/livespec-ai/livespec-fabro-sandbox",
             "current_value": "python-rust-v0.19.0",
             "source_repo": "livespec-dev-tooling",
         },
         {
             "pin_format": "fabro_sandbox_docker_image",
             "file_path": ".github/workflows/ci.yml",
-            "pin_key": "ghcr.io/thewoolleyman/livespec-fabro-sandbox",
+            "pin_key": "ghcr.io/livespec-ai/livespec-fabro-sandbox",
             "current_value": "python-v0.20.0",
             "source_repo": "livespec-dev-tooling",
         },

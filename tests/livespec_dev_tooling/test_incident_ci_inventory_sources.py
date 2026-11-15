@@ -25,9 +25,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 _ENTRIES = _ROOT / "livespec_dev_tooling/data/incident-ci-inventory"
 _SOURCES = _ROOT / "tests/fixtures/incident_ci_inventory_sources"
 _ADOPTERS = (
-    "thewoolleyman/livespec",
-    "thewoolleyman/livespec-orchestrator-beads-fabro",
-    "thewoolleyman/livespec-overseer",
+    "livespec-ai/livespec",
+    "livespec-ai/livespec-orchestrator-beads-fabro",
+    "livespec-ai/livespec-overseer",
 )
 
 
@@ -78,7 +78,7 @@ def test_a_released_entry_loads_and_has_a_runnable_execution_view(repository):
 
 def test_the_orchestrator_factory_provenance_job_reads_as_not_run_on_this_event():
     targets = module.load_repository_inventory(
-        repository="thewoolleyman/livespec-orchestrator-beads-fabro"
+        repository="livespec-ai/livespec-orchestrator-beads-fabro"
     )
     view = execution_view(targets=targets)
     assert view is not None
@@ -89,7 +89,7 @@ def test_the_orchestrator_factory_provenance_job_reads_as_not_run_on_this_event(
 
 
 def test_livespec_release_gate_members_read_as_not_run_on_this_event():
-    targets = module.load_repository_inventory(repository="thewoolleyman/livespec")
+    targets = module.load_repository_inventory(repository="livespec-ai/livespec")
     view = execution_view(targets=targets)
     assert view is not None
     _executed, conditional, attribution = view

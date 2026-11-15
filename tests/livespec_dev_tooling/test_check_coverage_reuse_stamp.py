@@ -369,7 +369,7 @@ def test_github_actions_consumer_records_one_structured_reuse_outcome(
         script="check-coverage.sh",
         extra={
             "GITHUB_ACTIONS": "true",
-            "GITHUB_REPOSITORY": "thewoolleyman/livespec-dev-tooling",
+            "GITHUB_REPOSITORY": "livespec-ai/livespec-dev-tooling",
             "GITHUB_RUN_ID": "456",
             "GITHUB_JOB": "check-coverage",
             "GITHUB_STEP_SUMMARY": str(summary),
@@ -380,7 +380,7 @@ def test_github_actions_consumer_records_one_structured_reuse_outcome(
 
     assert len(outcomes) == 1, result.stdout
     assert outcomes[0] == {
-        "repository": "thewoolleyman/livespec-dev-tooling",
+        "repository": "livespec-ai/livespec-dev-tooling",
         "run_id": "456",
         "job_id": "check-coverage",
         "duration_ms": outcomes[0]["duration_ms"],

@@ -20,9 +20,9 @@ incident_observer_release: v1.205.0
 # release above; the scratch variables set this from their own release pin so a
 # proof may install a candidate tag without changing production.
 incident_observer_serving_release: "{{ incident_observer_release }}"
-incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
+incident_observer_release_repo: https://github.com/livespec-ai/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
-incident_observer_repository: thewoolleyman/livespec-dev-tooling
+incident_observer_repository: livespec-ai/livespec-dev-tooling
 # The ONE branch the observer binds, watches and recovers, with the recovery
 # principal it drives (controller.json's optional `target_branch`). Empty
 # leaves the key out of controller.json, so the installation serves master and
@@ -61,7 +61,7 @@ incident_observer_required_jobs:
 # `read-current` reader (docs/incident-observer-service.md). Cloned at this tag,
 # root-owned, next to the venv. Its tenant credential is NOT provisioned here.
 incident_observer_reader_release: v0.315.1
-incident_observer_reader_repo: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+incident_observer_reader_repo: https://github.com/livespec-ai/livespec-orchestrator-beads-fabro.git
 incident_observer_reader_script_relative: .claude-plugin/scripts/bin/incident_authority.py
 
 # --- accounts ---------------------------------------------------------------
@@ -238,7 +238,7 @@ incident_observer_funnel_paths:
 #   reader_env_var    the control-node environment variable that carries THAT
 #                     tenant's credential; an apply refuses when it is not projected
 incident_observer_installations:
-  - repository: thewoolleyman/livespec-dev-tooling
+  - repository: livespec-ai/livespec-dev-tooling
     repository_id: 1245319543
     owner_id: 158
     required_jobs:
@@ -272,7 +272,7 @@ incident_observer_installations:
   # rendered into the clone's pointer. The apply proves that credential opens the
   # served tenant before it serves (tasks/converge.yml), so a later per-tenant
   # password cannot silently cross.
-  - repository: thewoolleyman/livespec
+  - repository: livespec-ai/livespec
     repository_id: 1215509712
     owner_id: 158
     required_jobs:
@@ -292,7 +292,7 @@ incident_observer_installations:
     port: 8770
     tenant_project_id: a2a7f557-5359-45a6-9246-786a87ea7d18
     reader_env_var: BEADS_DOLT_PASSWORD
-  - repository: thewoolleyman/livespec-orchestrator-beads-fabro
+  - repository: livespec-ai/livespec-orchestrator-beads-fabro
     repository_id: 1262632932
     owner_id: 158
     required_jobs:
@@ -319,7 +319,7 @@ incident_observer_installations:
     port: 8771
     tenant_project_id: 6a35844e-3c68-4ea6-bca0-703c27007af3
     reader_env_var: BEADS_DOLT_PASSWORD
-  - repository: thewoolleyman/livespec-overseer
+  - repository: livespec-ai/livespec-overseer
     repository_id: 1307110964
     owner_id: 158
     required_jobs:

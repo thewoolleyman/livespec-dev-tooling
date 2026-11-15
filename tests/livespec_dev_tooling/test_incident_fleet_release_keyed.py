@@ -442,7 +442,7 @@ def test_a_reason_is_named_only_where_a_claim_cannot_classify_against_what_was_r
 def _templates(repo: _Repo, *, head: str) -> ServingReading:
     reading = read_templates(
         probe=_host(repo, HEAD=head).probe(),
-        repository="thewoolleyman/livespec-dev-tooling",
+        repository="livespec-ai/livespec-dev-tooling",
     )
     assert isinstance(reading, ServingReading)
     return reading

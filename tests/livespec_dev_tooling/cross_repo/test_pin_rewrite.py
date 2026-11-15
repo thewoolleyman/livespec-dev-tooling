@@ -116,7 +116,7 @@ def test_rewrite_vendor_jsonc_upstream_ref() -> None:
 
 def test_rewrite_github_workflow_uses_ref() -> None:
     """The reusable workflow `uses:` ref is rewritten for the named workflow key."""
-    key = "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml"
+    key = "livespec-ai/livespec-dev-tooling/.github/workflows/reusable-bump.yml"
     text = (
         "jobs:\n"
         "  bump:\n"
@@ -144,14 +144,14 @@ def test_rewrite_claude_settings_extra_known_marketplace_source_ref() -> None:
         '    "livespec": {\n'
         '      "source": {\n'
         '        "source": "github",\n'
-        '        "repo": "thewoolleyman/livespec",\n'
+        '        "repo": "livespec-ai/livespec",\n'
         '        "ref": "v0.7.3"\n'
         "      }\n"
         "    },\n"
         '    "livespec-driver-claude": {\n'
         '      "source": {\n'
         '        "source": "github",\n'
-        '        "repo": "thewoolleyman/livespec-driver-claude",\n'
+        '        "repo": "livespec-ai/livespec-driver-claude",\n'
         '        "ref": "v0.2.1"\n'
         "      }\n"
         "    }\n"

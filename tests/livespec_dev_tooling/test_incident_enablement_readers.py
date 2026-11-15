@@ -57,7 +57,7 @@ from livespec_dev_tooling.incident_observer_admission import arm_before_merge
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
 
-SERVED = "thewoolleyman/livespec-dev-tooling"
+SERVED = "livespec-ai/livespec-dev-tooling"
 IDENTITY = "a" * 64
 OTHER = "b" * 64
 NOT_ENABLED = "incident mode is not enabled for owner/repo at installation"

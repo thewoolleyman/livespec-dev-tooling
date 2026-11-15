@@ -26,7 +26,7 @@ def _git(*, stdout: str, returncode: int = 0) -> tuple[CommandRunner, list[list[
 
 
 def test_the_fleet_owner_is_fixed() -> None:
-    assert FLEET_OWNER == "thewoolleyman"
+    assert FLEET_OWNER == "livespec-ai"
 
 
 def test_the_clones_root_is_the_parent_of_the_primary_checkout_this_code_belongs_to() -> None:

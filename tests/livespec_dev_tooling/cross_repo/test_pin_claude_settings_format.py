@@ -39,7 +39,7 @@ def test_discover_claude_settings_extra_known_marketplace_pin_emits_record(
             "livespec": {
                 "source": {
                     "source": "github",
-                    "repo": "thewoolleyman/livespec",
+                    "repo": "livespec-ai/livespec",
                     "ref": "v0.7.3",
                 }
             }
@@ -81,7 +81,7 @@ def test_discover_claude_settings_release_ref_is_moving_alias_not_pin(*, tmp_pat
             "livespec": {
                 "source": {
                     "source": "github",
-                    "repo": "thewoolleyman/livespec",
+                    "repo": "livespec-ai/livespec",
                     "ref": "release",
                 }
             }
@@ -99,14 +99,14 @@ def test_discover_claude_settings_source_repo_filter(*, tmp_path: Path) -> None:
             "livespec": {
                 "source": {
                     "source": "github",
-                    "repo": "thewoolleyman/livespec",
+                    "repo": "livespec-ai/livespec",
                     "ref": "v0.7.3",
                 }
             },
             "livespec-driver-claude": {
                 "source": {
                     "source": "github",
-                    "repo": "thewoolleyman/livespec-driver-claude",
+                    "repo": "livespec-ai/livespec-driver-claude",
                     "ref": "v0.2.1",
                 }
             },

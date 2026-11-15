@@ -13,7 +13,7 @@ Every case runs through `main()` with the runner's environment, real workspace
 copies and a forge read per path, beside the authorized negative control.
 
 Re-review of 2bfd031a, finding A: ONLY the canonical
-`thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@<ref>`
+`livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@<ref>`
 (owner and repo case-insensitive) is the matrix call site. A local file merely
 named `reusable-check-matrix.yml`, or the same path under another owner, is a
 reusable workflow like any other: walked when local, refused when remote.
@@ -40,10 +40,10 @@ __all__: list[str] = []
 
 _REPOSITORY = "owner/repo"
 _BASE = "b" * 40
-_MATRIX = "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1"
+_MATRIX = "livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1"
 _LOCAL_MATRIX = "./.github/workflows/reusable-check-matrix.yml"
 _OTHER_OWNER = "evil/x/.github/workflows/reusable-check-matrix.yml@main"
-_MATRIX_CASED = "TheWoolleyman/LiveSpec-Dev-Tooling/.github/workflows/reusable-check-matrix.yml@v1"
+_MATRIX_CASED = "LiveSpec-AI/LiveSpec-Dev-Tooling/.github/workflows/reusable-check-matrix.yml@v1"
 
 
 def _guarded(*, uses: str, name: str = "shared") -> str:

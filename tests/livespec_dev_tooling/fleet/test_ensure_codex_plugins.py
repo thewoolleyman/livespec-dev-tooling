@@ -48,19 +48,19 @@ _FLEET_DIR = Path(__file__).resolve().parents[3] / "livespec_dev_tooling" / "fle
 _MANIFEST: dict[str, object] = {
     "extraKnownMarketplaces": {
         "livespec": {
-            "source": {"source": "github", "repo": "thewoolleyman/livespec", "ref": "release"}
+            "source": {"source": "github", "repo": "livespec-ai/livespec", "ref": "release"}
         },
         "livespec-driver-codex": {
             "source": {
                 "source": "github",
-                "repo": "thewoolleyman/livespec-driver-codex",
+                "repo": "livespec-ai/livespec-driver-codex",
                 "ref": "release",
             }
         },
         "livespec-orchestrator-beads-fabro": {
             "source": {
                 "source": "github",
-                "repo": "thewoolleyman/livespec-orchestrator-beads-fabro",
+                "repo": "livespec-ai/livespec-orchestrator-beads-fabro",
                 "ref": "release",
             }
         },
@@ -75,13 +75,13 @@ _MANIFEST: dict[str, object] = {
 # The exact command sequence the hand-written body runs, in its order: every
 # marketplace added, then every marketplace upgraded, then every plugin added.
 _EXPECTED: tuple[tuple[str, ...], ...] = (
-    ("codex", "plugin", "marketplace", "add", "thewoolleyman/livespec", "--ref", "release"),
+    ("codex", "plugin", "marketplace", "add", "livespec-ai/livespec", "--ref", "release"),
     (
         "codex",
         "plugin",
         "marketplace",
         "add",
-        "thewoolleyman/livespec-driver-codex",
+        "livespec-ai/livespec-driver-codex",
         "--ref",
         "release",
     ),
@@ -90,7 +90,7 @@ _EXPECTED: tuple[tuple[str, ...], ...] = (
         "plugin",
         "marketplace",
         "add",
-        "thewoolleyman/livespec-orchestrator-beads-fabro",
+        "livespec-ai/livespec-orchestrator-beads-fabro",
         "--ref",
         "release",
     ),
@@ -200,7 +200,7 @@ def test_a_fifth_plugin_needs_no_code_change() -> None:
             "livespec-overseer": {
                 "source": {
                     "source": "github",
-                    "repo": "thewoolleyman/livespec-overseer",
+                    "repo": "livespec-ai/livespec-overseer",
                     "ref": "release",
                 }
             },
@@ -216,7 +216,7 @@ def test_a_fifth_plugin_needs_no_code_change() -> None:
             "plugin",
             "marketplace",
             "add",
-            "thewoolleyman/livespec-overseer",
+            "livespec-ai/livespec-overseer",
             "--ref",
             "release",
         ),
@@ -234,13 +234,13 @@ def test_a_marketplace_without_a_ref_omits_the_flag() -> None:
     """
     module = _codex_module()
     manifest = {
-        "extraKnownMarketplaces": {"livespec": {"source": {"repo": "thewoolleyman/livespec"}}},
+        "extraKnownMarketplaces": {"livespec": {"source": {"repo": "livespec-ai/livespec"}}},
         "enabledPlugins": {"livespec@livespec": True},
     }
 
     commands = _planned(module=module)(settings_text=json.dumps(manifest))
 
-    assert commands[0] == ("codex", "plugin", "marketplace", "add", "thewoolleyman/livespec")
+    assert commands[0] == ("codex", "plugin", "marketplace", "add", "livespec-ai/livespec")
 
 
 def test_a_manifest_entry_with_no_readable_source_is_skipped() -> None:
@@ -295,7 +295,7 @@ def test_an_unreadable_enablement_plans_no_plugin_command() -> None:
     module = _codex_module()
     manifest = {
         "extraKnownMarketplaces": {
-            "livespec": {"source": {"repo": "thewoolleyman/livespec", "ref": "release"}}
+            "livespec": {"source": {"repo": "livespec-ai/livespec", "ref": "release"}}
         },
         "enabledPlugins": "not a list or mapping",
     }
@@ -303,7 +303,7 @@ def test_an_unreadable_enablement_plans_no_plugin_command() -> None:
     commands = _planned(module=module)(settings_text=json.dumps(manifest))
 
     assert commands == (
-        ("codex", "plugin", "marketplace", "add", "thewoolleyman/livespec", "--ref", "release"),
+        ("codex", "plugin", "marketplace", "add", "livespec-ai/livespec", "--ref", "release"),
         ("codex", "plugin", "marketplace", "upgrade", "livespec"),
     )
 
@@ -347,9 +347,9 @@ def test_a_marketplace_with_nothing_enabled_from_it_is_reported() -> None:
     module = _codex_module()
     manifest = {
         "extraKnownMarketplaces": {
-            "livespec": {"source": {"repo": "thewoolleyman/livespec", "ref": "release"}},
+            "livespec": {"source": {"repo": "livespec-ai/livespec", "ref": "release"}},
             "livespec-driver-codex": {
-                "source": {"repo": "thewoolleyman/livespec-driver-codex", "ref": "release"}
+                "source": {"repo": "livespec-ai/livespec-driver-codex", "ref": "release"}
             },
         },
         "enabledPlugins": {"livespec@livespec": True},
@@ -380,7 +380,7 @@ def test_a_command_that_refused_is_reported_with_its_exit_code() -> None:
 
     assert findings == (
         "command failed with exit 2: codex plugin marketplace add "
-        "thewoolleyman/livespec --ref release",
+        "livespec-ai/livespec --ref release",
     )
     assert len(recorder.calls) == 1, "provisioning must stop at the first refusal"
 

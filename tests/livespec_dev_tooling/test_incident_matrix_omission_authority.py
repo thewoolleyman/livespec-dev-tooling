@@ -43,7 +43,7 @@ _GUARDED = (
 )
 _CALLER = (
     "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
-    "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/"
+    "    uses: livespec-ai/livespec-dev-tooling/.github/workflows/"
     "reusable-check-matrix.yml@v1.191.0\n    with:\n"
     "      checks: '[\"heading_coverage\"]'\n"
     + _GUARDED

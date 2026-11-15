@@ -429,7 +429,7 @@ _RATIONALE_DOC_RELPATH = ".ai/gate-runtime-vs-harness-patience.md"
 # from the module under test: an import would compare the string to itself.
 _OWNING_REPO = "livespec-dev-tooling"
 _RATIONALE_DOC_URL = (
-    "https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/"
+    "https://github.com/livespec-ai/livespec-dev-tooling/blob/master/"
     ".ai/gate-runtime-vs-harness-patience.md"
 )
 

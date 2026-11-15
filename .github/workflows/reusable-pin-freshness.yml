@@ -29,7 +29,7 @@
 #
 # Consumers invoke this workflow from their own `pin-freshness.yml`
 # shim via
-# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@vX.Y.Z`
+# `uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@vX.Y.Z`
 # (with optional `with: { staleness_threshold_releases: N }` override
 # and `secrets: inherit`).
 #
@@ -99,7 +99,7 @@ jobs:
       - name: Checkout livespec-dev-tooling support modules
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 
@@ -316,7 +316,7 @@ jobs:
       - name: Checkout livespec-dev-tooling support modules
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 

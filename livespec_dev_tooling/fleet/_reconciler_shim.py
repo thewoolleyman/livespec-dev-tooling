@@ -316,7 +316,7 @@ jobs:
       - name: Checkout the livespec-dev-tooling decision modules
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 

@@ -46,7 +46,7 @@ _ITEM = "livespec-dev-tooling-9yb4"
 # not escape `/`, so the URL travels through it verbatim.
 _CONVENTION_CITATION = (
     "docs/work-item-interpolation-delimiters.md in the livespec-dev-tooling repo that "
-    "ships this check (https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/"
+    "ships this check (https://github.com/livespec-ai/livespec-dev-tooling/blob/master/"
     "docs/work-item-interpolation-delimiters.md)"
 )
 

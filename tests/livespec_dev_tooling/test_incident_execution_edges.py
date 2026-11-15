@@ -21,7 +21,7 @@ def _identity(*, module: object) -> object:
         incident_item_id="livespec-dev-tooling-incident",
         attempt_id="attempt-001",
         phase="expedited-repair",
-        repository="thewoolleyman/livespec-dev-tooling",
+        repository="livespec-ai/livespec-dev-tooling",
         base_sha="a" * 40,
         head_sha="b" * 40,
         operation_id="operation-001",

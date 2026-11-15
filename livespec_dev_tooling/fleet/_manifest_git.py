@@ -2,7 +2,7 @@
 
 WHY THIS MODULE EXISTS, and it is a measurement rather than a
 preference. `check-fleet-conformance` reads ONE file from
-`thewoolleyman/livespec` — `.livespec-fleet-manifest.jsonc` — and that
+`livespec-ai/livespec` — `.livespec-fleet-manifest.jsonc` — and that
 read is the run's ROOT FACT: without it no member is known, so its loss
 is a PRECONDITION failure (exit 1) rather than one row's named skip. A
 red default branch then trips the Dispatcher's master-CI admission gate

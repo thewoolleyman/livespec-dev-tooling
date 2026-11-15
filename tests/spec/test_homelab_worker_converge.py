@@ -263,7 +263,7 @@ def test_an_image_not_pinned_by_digest_is_refused_before_any_container_change(
         (f"{_IMAGE} true", None, "already running"),
         (f"{_IMAGE} false", "start", "starting existing container"),
         (
-            "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "b" * 64 + " true",
+            "ghcr.io/livespec-ai/livespec-worker-node@sha256:" + "b" * 64 + " true",
             "rm",
             "replacing",
         ),

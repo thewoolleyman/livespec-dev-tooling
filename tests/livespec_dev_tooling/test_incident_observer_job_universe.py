@@ -149,7 +149,7 @@ def test_an_unspellable_templated_name_fails_by_job() -> None:
 
 def _registration() -> ObserverRegistration:
     return ObserverRegistration(
-        repository="thewoolleyman/livespec-dev-tooling",
+        repository="livespec-ai/livespec-dev-tooling",
         incident_item_id="livespec-dev-tooling-incident",
         attempt_id="repair-1",
         operation_id="operation-1",

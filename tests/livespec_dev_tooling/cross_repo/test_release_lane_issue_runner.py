@@ -13,7 +13,7 @@ below records every call rather than just the last one:
   lane health even though the durable signal now lives in the issue.
 
 No network is reached. `urllib.request.urlopen` is substituted per test, and the
-run history replayed through it is the same RECORDED `thewoolleyman/livespec`
+run history replayed through it is the same RECORDED `livespec-ai/livespec`
 `release-tag.yml` window the sibling `test_release_lane_watch` modules document:
 the `v0.37.0` failure of 2026-08-20 over the `v0.30.3` green of 2026-08-12, and
 the `v0.37.1` green of 2026-08-21 that ended the block.
@@ -39,7 +39,7 @@ from livespec_dev_tooling.cross_repo.release_lane_issue_runner import (
     main,
 )
 
-_SLUG = "thewoolleyman/livespec"
+_SLUG = "livespec-ai/livespec"
 _LANE = "release-tag.yml"
 _OTHER_LANE = "release-please.yml"
 _TOKEN = "forge-token-for-the-double"

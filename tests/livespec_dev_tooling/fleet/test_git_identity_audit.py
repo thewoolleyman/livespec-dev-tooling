@@ -182,7 +182,7 @@ def test_complete_scope_emits_deterministic_schema_versioned_pass(tmp_path: Path
         "history_scanned": False,
         "hosts": list(_HOSTS),
         "inventory": str(tmp_path / "legacy.yml"),
-        "owned_github_origin": "thewoolleyman",
+        "owned_github_origin": ["livespec-ai", "thewoolleyman"],
     }
     assert report["summary"] == {
         "blind": 0,
@@ -194,7 +194,7 @@ def test_complete_scope_emits_deterministic_schema_versioned_pass(tmp_path: Path
     }
     assert report["dispositions"]["poweredge-xubuntu-info"] == "owned; audited"
     assert report["dispositions"]["mi-homelab/homelab"] == (
-        "not owned by thewoolleyman; excluded and unmodified"
+        "not owned by an audited owner; excluded and unmodified"
     )
     assert report["fabro_evidence"]["verified_author"] == {
         "email": CANONICAL_EMAIL,

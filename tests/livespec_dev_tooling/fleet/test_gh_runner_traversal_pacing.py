@@ -187,11 +187,11 @@ def test_a_later_call_waits_out_a_throttle_an_earlier_one_hit(gh: _Harness) -> N
     """
     runner = _paced_runner()
     gh.script(script=[(1, _RATE_LIMITED_STDERR)])
-    _ = runner(args=["api", "repos/thewoolleyman/livespec"])
+    _ = runner(args=["api", "repos/livespec-ai/livespec"])
 
     boundary = len(gh.events)
     gh.script(script=[(0, "")])
-    _ = runner(args=["api", "repos/thewoolleyman/livespec/contents/x"])
+    _ = runner(args=["api", "repos/livespec-ai/livespec/contents/x"])
 
     later = gh.events[boundary:]
     assert later, "the second call did nothing at all"

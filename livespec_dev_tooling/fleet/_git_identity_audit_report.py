@@ -12,7 +12,10 @@ __all__: list[str] = []
 CANONICAL_NAME = "Chad Woolley"
 CANONICAL_EMAIL = "thewoolleyman@gmail.com"
 FORBIDDEN_EMAILS = ("chad@thewoolleyman.com",)
-OWNER = "thewoolleyman"
+# Every GitHub owner whose clones the audit treats as owned. The fleet moved to the
+# livespec-ai organization (plan stale-base-merge-options), while poweredge-xubuntu-info
+# and the other personal repositories stay with thewoolleyman, so both are audited.
+OWNERS = ("livespec-ai", "thewoolleyman")
 EXPECTED_SANDBOX_DIGESTS = frozenset(
     {
         "sha256:83e0bec519eb412d82a1136627193564e356bfa8091f2b9171597141c9d3ed33",
@@ -61,7 +64,7 @@ def base_report(*, inventory_path: Path, findings: list[str]) -> dict[str, objec
             "history_scanned": False,
             "hosts": ["gmktec-xubuntu", "hp-xubuntu", "poweredge-xubuntu", "vps"],
             "inventory": str(inventory_path),
-            "owned_github_origin": OWNER,
+            "owned_github_origin": list(OWNERS),
         },
         "findings": findings,
     }
@@ -92,9 +95,9 @@ def observed_dispositions(
             "owned; audited" if poweredge_seen else "owned; not observed; audit incomplete"
         ),
         "mi-homelab/homelab": (
-            "not owned by thewoolleyman; excluded and unmodified"
+            "not owned by an audited owner; excluded and unmodified"
             if homelab_seen
-            else "not owned by thewoolleyman; not observed; audit incomplete"
+            else "not owned by an audited owner; not observed; audit incomplete"
         ),
     }
 

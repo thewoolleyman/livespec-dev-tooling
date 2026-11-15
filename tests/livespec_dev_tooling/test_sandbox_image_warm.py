@@ -9,7 +9,7 @@ includes for that host.
 
 WHAT BROKE, MEASURED. On 2026-10-20 at 08:09:51-52Z two runs started within one
 second on hp-xubuntu and both needed
-`ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.118.5`, a tag the
+`ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.118.5`, a tag the
 host did not hold (it held v1.118.4 and older). Each run's pull tore down the
 other's containerd leases and both died in sandbox init with "Failed to pull
 Docker image ... causes=[Docker stream error]" in 0.8 s and 3.3 s. The tag was in
@@ -95,7 +95,7 @@ _ROLE_DOC = _ROLE / "HOST_VARS.md"
 # own cadence and nobody has to apply anything for a new tag to arrive.
 _ARM_TASK = "Enable and start the sandbox image warm timer"
 
-_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 _PREFIX = "python-agent"
 _VERSION = "1.118.5"
 _REFERENCE = f"{_IMAGE}:{_PREFIX}-v{_VERSION}"
@@ -493,7 +493,7 @@ def test_a_containerd_warm_pulls_every_process_spec_image_through_the_cri(
     )
 
 
-_ARM64_REFERENCE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-sha-abc1234-arm64"
+_ARM64_REFERENCE = "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-sha-abc1234-arm64"
 _ARM64_HOST_VARS = f"""
 fabro_server_instances:
   - unit_name: fabro-server-worker

@@ -20,7 +20,7 @@ from livespec_dev_tooling.fleet._local_context import CommandRunner, command_ans
 __all__: list[str] = ["FLEET_OWNER", "HostProbe", "production_probe"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-3wcldx
-FLEET_OWNER = "thewoolleyman"
+FLEET_OWNER = "livespec-ai"
 _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 

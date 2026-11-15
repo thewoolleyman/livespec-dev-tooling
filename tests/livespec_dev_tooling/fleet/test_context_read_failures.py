@@ -49,12 +49,12 @@ def test_forbidden_read_is_recorded_with_its_cause() -> None:
         result=GhResult(returncode=1, stdout="", stderr="gh: Resource not accessible (HTTP 403)")
     )
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is None
     assert len(ctx.read_failures) == 1
     failure = ctx.read_failures[0]
     assert failure.kind == "forbidden", f"got {failure.kind!r}"
     assert failure.returncode == 1
-    assert "repos/thewoolleyman/livespec" in failure.path
+    assert "repos/livespec-ai/livespec" in failure.path
 
 
 def test_not_found_is_distinguishable_from_forbidden() -> None:
@@ -71,7 +71,7 @@ def test_rate_limited_is_its_own_kind() -> None:
         result=GhResult(returncode=1, stdout="", stderr="gh: API rate limit exceeded (HTTP 429)")
     )
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is None
     assert ctx.read_failures[0].kind == "rate_limited"
 
 
@@ -79,7 +79,7 @@ def test_server_error_is_its_own_kind() -> None:
     """A 5xx is the server's fault and is the other retryable class."""
     ctx = _ctx(result=GhResult(returncode=1, stdout="", stderr="gh: Bad gateway (HTTP 502)"))
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is None
     assert ctx.read_failures[0].kind == "server_error"
 
 
@@ -87,7 +87,7 @@ def test_transport_failure_is_distinguishable_from_an_http_status() -> None:
     """`gh` absent or the network down is neither an HTTP status nor a 404."""
     ctx = _ctx(result=GhResult(returncode=127, stdout="", stderr="gh CLI not on PATH"))
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is None
     assert ctx.read_failures[0].kind == "transport"
 
 
@@ -95,7 +95,7 @@ def test_malformed_payload_is_distinguishable_from_a_failed_fetch() -> None:
     """A 200 carrying non-JSON is a DIFFERENT failure from never reaching the API."""
     ctx = _ctx(result=GhResult(returncode=0, stdout="{not json", stderr=""))
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is None
     assert ctx.read_failures[0].kind == "malformed_payload"
 
 
@@ -132,7 +132,7 @@ def test_a_token_in_stderr_is_redacted() -> None:
         )
     )
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is None
     detail = ctx.read_failures[0].detail
     assert "ghs_AbCdEf0123456789AbCdEf0123456789" not in detail, f"token leaked: {detail!r}"
     assert "REDACTED" in detail, f"redaction should be visible, not silent: {detail!r}"
@@ -142,5 +142,5 @@ def test_a_successful_read_records_nothing() -> None:
     """The happy path is unchanged and leaves no diagnostic residue."""
     ctx = _ctx(result=GhResult(returncode=0, stdout='{"default_branch": "master"}', stderr=""))
 
-    assert ctx.api_object(path="repos/thewoolleyman/livespec") is not None
+    assert ctx.api_object(path="repos/livespec-ai/livespec") is not None
     assert ctx.read_failures == []

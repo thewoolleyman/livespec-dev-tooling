@@ -52,7 +52,7 @@ def _walk(*, root: Path, source_repo: str | None = None) -> list[dict[str, str]]
 
 def _uses_lines(*, repo: str, workflow: str, ref: str) -> str:
     """One reusable-workflow `uses:` line, the shape both a workflow and a template carry."""
-    return f"    uses: thewoolleyman/{repo}/.github/workflows/{workflow}@{ref}\n"
+    return f"    uses: livespec-ai/{repo}/.github/workflows/{workflow}@{ref}\n"
 
 
 def _write_workflow(*, root: Path, parts: tuple[str, ...], name: str, body: str) -> Path:
@@ -157,7 +157,7 @@ def test_walk_uses_discovers_a_jinja_workflow_template(*, tmp_path: Path) -> Non
     assert result[0]["file_path"] == ".github/workflows/pin-freshness.yml.jinja"
     assert (
         result[0]["pin_key"]
-        == "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml"
+        == "livespec-ai/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml"
     )
     assert result[0]["source_repo"] == "livespec-dev-tooling"
 

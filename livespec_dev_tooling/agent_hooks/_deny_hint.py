@@ -140,7 +140,7 @@ _UNRESOLVED: bool = False
 # ANY venue (livespec-dev-tooling-5ug6).
 _OWNING_REPO = "livespec-dev-tooling"
 _RATIONALE_DOC = ".ai/gate-runtime-vs-harness-patience.md"
-_RATIONALE_DOC_URL = f"https://github.com/thewoolleyman/{_OWNING_REPO}/blob/master/{_RATIONALE_DOC}"
+_RATIONALE_DOC_URL = f"https://github.com/livespec-ai/{_OWNING_REPO}/blob/master/{_RATIONALE_DOC}"
 
 # Further reading, and SAID to be further reading: the remedy above is
 # complete on its own, so a reader who cannot reach the doc has still been

@@ -55,7 +55,7 @@ __all__: list[str] = [
 # Every repository an independent incident observer watches. It is kept equal to
 # the observer role's `incident_observer_repository` by a test, so installing an
 # observer for a repository and fencing its reconciler are one committed change.
-OBSERVED_REPOSITORIES = frozenset({"thewoolleyman/livespec-dev-tooling"})
+OBSERVED_REPOSITORIES = frozenset({"livespec-ai/livespec-dev-tooling"})
 # The committed opt-in that admits ARMING the reconciler in an observed
 # repository: the URL of a GitHub-hosted Actions run that reached the observer's
 # POST /ordinary-action. The reconciler must stay on hosted runners, and the

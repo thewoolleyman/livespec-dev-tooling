@@ -53,7 +53,7 @@ _SCRIPT = (
 )
 _TIMEOUT_SECONDS = 120
 
-_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 _PREFIX = "python-agent"
 _OLD_VERSION = "1.145.0"
 _NEW_VERSION = "1.146.1"

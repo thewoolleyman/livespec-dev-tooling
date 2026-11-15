@@ -23,7 +23,7 @@ from livespec_dev_tooling.cross_repo import fabro_image_pin_rewrite, pin_autodis
 
 __all__: list[str] = []
 
-_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 _ENV_PATH = Path("ci-runner/k3s/phase2/factory/factory-reach-image.env")
 _ENV_REL = str(_ENV_PATH)
 _OLD_TAG = "python-v1.110.0"
