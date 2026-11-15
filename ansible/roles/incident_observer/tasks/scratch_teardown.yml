@@ -31,6 +31,7 @@
       - "/var/lib/systemd/timers/stamp-{{ incident_observer_fetch_unit_name }}.timer"
       - "{{ incident_observer_config_path }}"
       - "{{ incident_observer_manifest_path }}"
+      - "{{ incident_observer_install_dir }}"
     incident_observer_production_files: >-
       {{ [incident_observer_production.incident_observer_unit_path,
           incident_observer_production.incident_observer_config_path,
@@ -108,7 +109,7 @@
   become: true
   when: incident_observer_scratch_units.results[1].stat.exists
 
-- name: Remove the scratch unit files, timer stamp, controller.json and manifest
+- name: Remove the scratch unit files, release install, timer stamp, controller.json and manifest
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent

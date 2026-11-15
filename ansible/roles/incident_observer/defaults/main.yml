@@ -16,6 +16,10 @@
 # (v1.183.1 is the first that does), so the role installs the release and
 # nothing beside it.
 incident_observer_release: v1.205.0
+# The release this particular installation serves. Production keeps the normal
+# release above; the scratch variables set this from their own release pin so a
+# proof may install a candidate tag without changing production.
+incident_observer_serving_release: "{{ incident_observer_release }}"
 incident_observer_release_repo: https://github.com/thewoolleyman/livespec-dev-tooling.git
 # The repository the observer serves (controller.json `repository`).
 incident_observer_repository: thewoolleyman/livespec-dev-tooling
@@ -346,8 +350,9 @@ incident_observer_fetch_interval: 5min
 # False for production. ansible/incident-observer-scratch.yml sets it, with the
 # instance's own paths, port, unit names and target branch, from
 # vars/scratch.yml; this role then converges a SECOND observer beside
-# production that shares production's venv, reader clone and secret files
-# read-only and writes none of them, and publishes no funnel. The committed
+# production with its own release install and venv. It shares production's
+# reader clone and secret files read-only, publishes no funnel, and never
+# writes production's release install. The committed
 # teardown is ansible/incident-observer-scratch-teardown.yml
 # (tasks/scratch_teardown.yml). livespec-dev-tooling-32qdja; README.md
 # §"The scratch-branch instance".

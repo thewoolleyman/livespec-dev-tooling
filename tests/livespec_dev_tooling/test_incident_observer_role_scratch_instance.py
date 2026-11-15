@@ -56,7 +56,6 @@ _LOADER_KEYS = {
     "query_secret",
     "port",
 }
-_VENV_REFUSAL = "Refuse a scratch apply onto a venv production does not already serve"
 _SCRATCH_ROOT_TASK = "Create the scratch instance's own root beside production's state"
 _SHARED_WRITES = (
     "Install the interpreter's venv module and git",
@@ -64,9 +63,6 @@ _SHARED_WRITES = (
     "Create the root-owned installation directories",
     "Create the protected configuration directory",
     "Create the controller account's home",
-    "Create the isolated venv on the system interpreter",
-    "Install the manifest renderer outside the package and the clones",
-    "Install the released distribution from its tag, never from a checkout",
     "Clone the canonical reader at its released tag",
     "Write each secret from the control node's projected environment",
     "Write the canonical reader's credential as the unit's environment file",
@@ -110,15 +106,6 @@ def _context(*, variables: dict[str, Any]) -> dict[str, Any]:
         **resolved,
         "incident_observer_production": base.role_yaml(relative="defaults/main.yml"),
     }
-
-
-def _holds(*, task: dict[str, Any], context: dict[str, Any]) -> bool:
-    """Whether every condition of the task's assert holds in the context."""
-    jinja = base.ansible_jinja()
-    return all(
-        jinja.compile_expression(condition)(**context)
-        for condition in task["ansible.builtin.assert"]["that"]
-    )
 
 
 def _scratch_removed() -> list[str]:
@@ -237,6 +224,9 @@ def test_the_scratch_units_run_the_scratch_controller_json_and_fetch_the_scratch
         if line.startswith("ExecStart=")
     ]
 
+    assert exec_start.startswith(
+        "ExecStart=/opt/livespec-incident-scratch-thhgeg/venv/bin/python -I "
+    )
     assert exec_start.endswith(f"--config {destinations['incident_observer_config_path']}")
     assert (
         destinations["incident_observer_reference_dir"]
@@ -278,34 +268,38 @@ def test_the_loader_reads_the_branch_the_role_renders_and_master_when_none(host)
     assert loaded.target_branch == "master"
 
 
-@pytest.mark.parametrize(
-    ("installed", "stdout", "holds"),
-    [
-        (
-            True,
-            base.production_variables()["incident_observer_release"].removeprefix("v") + "\n",
-            True,
-        ),
-        (True, "1.187.0\n", False),
-        (False, "", False),
-    ],
-)
-def test_a_scratch_apply_refuses_a_venv_production_does_not_already_serve(
-    *, installed: bool, stdout: str, holds: bool
-) -> None:
-    task = _task(relative="tasks/converge.yml", name=_VENV_REFUSAL)
-    context = _context(variables=scratch_variables(overrides={}))
-    context["incident_observer_installed"] = installed
-    context["incident_observer_installed_version"] = {"rc": 0, "stdout": stdout}
+def test_the_scratch_instance_has_an_isolated_venv_and_its_own_release_pin() -> None:
+    production = base.production_variables()
+    scratch = base.resolve(variables=scratch_variables(overrides={}))
+    alternate = base.resolve(
+        variables=scratch_variables(overrides={"incident_observer_scratch_release": "v9.9.9"})
+    )
 
     assert (
-        context["incident_observer_release"]
-        == base.production_variables()["incident_observer_release"]
+        scratch.get("incident_observer_scratch_release") == production["incident_observer_release"]
     )
-    assert task["when"] == (
-        "(incident_observer_scratch | bool) or incident_observer_installation_name is defined"
+    assert (
+        scratch.get("incident_observer_serving_release") == production["incident_observer_release"]
     )
-    assert _holds(task=task, context=context) is holds
+    assert scratch["incident_observer_venv"] == "/opt/livespec-incident-scratch-thhgeg/venv"
+    assert scratch["incident_observer_venv"] != production["incident_observer_venv"]
+    assert alternate.get("incident_observer_serving_release") == "v9.9.9"
+
+    tasks = {task["name"]: task for task in base.role_yaml(relative="tasks/converge.yml")}
+    create_venv = tasks["Create the isolated venv on the system interpreter"]
+    install_release = tasks["Install the released distribution from its tag, never from a checkout"]
+
+    assert create_venv["ansible.builtin.command"]["argv"][-1] == "{{ incident_observer_venv }}"
+    assert "incident_observer_serving_release" in str(install_release["ansible.builtin.command"])
+    jinja = base.ansible_jinja()
+    assert jinja.compile_expression(create_venv["when"])(**alternate)
+    assert jinja.compile_expression(install_release["when"])(
+        **{
+            **alternate,
+            "incident_observer_installed": False,
+            "incident_observer_installed_version": {"rc": 1, "stdout": ""},
+        }
+    )
 
 
 @pytest.mark.parametrize("name", [*_SHARED_WRITES, *_FUNNEL])
@@ -343,12 +337,12 @@ def test_the_teardown_play_runs_the_teardown_tasks_on_the_same_instance() -> Non
     }
 
 
-def test_the_teardown_removes_exactly_the_scratch_units_stamp_controller_json_and_manifest() -> (
+def test_the_teardown_removes_exactly_the_scratch_units_install_stamp_controller_json_and_manifest() -> (
     None
 ):
     removal = _task(
         relative="tasks/scratch_teardown.yml",
-        name="Remove the scratch unit files, timer stamp, controller.json and manifest",
+        name="Remove the scratch unit files, release install, timer stamp, controller.json and manifest",
     )
 
     assert _scratch_removed() == [
@@ -358,6 +352,7 @@ def test_the_teardown_removes_exactly_the_scratch_units_stamp_controller_json_an
         "/var/lib/systemd/timers/stamp-livespec-incident-reference-fetch-scratch.timer",
         "/etc/livespec-incident/controller-scratch-thhgeg.json",
         "/etc/livespec-incident/released-installation-scratch-thhgeg.json",
+        "/opt/livespec-incident-scratch-thhgeg",
     ]
     assert removal["ansible.builtin.file"]["state"] == "absent"
     assert removal["loop"] == "{{ incident_observer_scratch_removed }}"

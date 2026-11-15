@@ -92,25 +92,6 @@
   check_mode: false
   when: incident_observer_installed
 
-- name: Refuse a scratch apply onto a venv production does not already serve
-  # The scratch instance and every further installation share production's venv
-  # and reader clone and write neither: installing a release there would change
-  # the package production's manifest hashes without restarting production.
-  # Converge production first (livespec-dev-tooling-lqp2qx for installations).
-  ansible.builtin.assert:
-    that:
-      - incident_observer_installed
-      - (incident_observer_installed_version.rc | default(1)) == 0
-      - >-
-        ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
-        == incident_observer_release
-    fail_msg: >-
-      {{ incident_observer_venv }} does not serve {{ incident_observer_release }};
-      converge production (ansible/dev-host.yml --tags incident_observer) at that
-      release before the scratch instance. Nothing has been written.
-    success_msg: the shared venv serves {{ incident_observer_release }}
-  when: (incident_observer_scratch | bool) or incident_observer_installation_name is defined
-
 - name: Install the interpreter's venv module and git
   ansible.builtin.apt:
     name:
@@ -210,6 +191,22 @@
   become: true
   when: incident_observer_scratch | bool
 
+- name: Create the scratch instance's isolated release install directories
+  # Scratch owns this tree, including its venv and manifest renderer. It sits
+  # outside production's /opt/livespec-incident tree, so a candidate release
+  # can be proved before the production release changes.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ incident_observer_install_dir }}"
+    - "{{ incident_observer_bin_dir }}"
+  when: incident_observer_scratch | bool
+
 - name: Create a further installation's own root beside production's state
   # Its state directory and reference clone are siblings beneath it, as
   # production's are beneath the controller account's home
@@ -249,10 +246,11 @@
     creates: "{{ incident_observer_venv }}/bin/python"
   become: true
   when: >-
-    not (incident_observer_scratch | bool)
-    and incident_observer_scratch_name is not defined
-    and incident_observer_target_branch | default('', true) | length == 0
-    and incident_observer_installation_name is not defined
+    (incident_observer_scratch | bool)
+    or (not (incident_observer_scratch | bool)
+        and incident_observer_scratch_name is not defined
+        and incident_observer_target_branch | default('', true) | length == 0
+        and incident_observer_installation_name is not defined)
 
 - name: Install the released distribution from its tag, never from a checkout
   # Only when the venv does not already serve this release: pip rebuilds a
@@ -269,17 +267,18 @@
       - install
       - --quiet
       - --no-cache-dir
-      - "livespec-dev-tooling @ git+{{ incident_observer_release_repo }}@{{ incident_observer_release }}"
+      - "livespec-dev-tooling @ git+{{ incident_observer_release_repo }}@{{ incident_observer_serving_release }}"
   become: true
   when: >-
-    not (incident_observer_scratch | bool)
-    and incident_observer_scratch_name is not defined
-    and incident_observer_target_branch | default('', true) | length == 0
-    and incident_observer_installation_name is not defined
+    ((incident_observer_scratch | bool)
+     or (not (incident_observer_scratch | bool)
+         and incident_observer_scratch_name is not defined
+         and incident_observer_target_branch | default('', true) | length == 0
+         and incident_observer_installation_name is not defined))
     and (not incident_observer_installed
-    or (incident_observer_installed_version.rc | default(1)) != 0
-    or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
-       != incident_observer_release)
+         or (incident_observer_installed_version.rc | default(1)) != 0
+         or ('v' ~ (incident_observer_installed_version.stdout | default('') | trim))
+            != incident_observer_serving_release)
   changed_when: true
   notify: Restart the incident observer onto its installation
 
@@ -309,7 +308,7 @@
   ansible.builtin.git:
     repo: "{{ incident_observer_reference_repo | default(incident_observer_release_repo) }}"
     dest: "{{ incident_observer_reference_dir }}"
-    version: "{{ incident_observer_reference_version | default(incident_observer_release) }}"
+    version: "{{ incident_observer_reference_version | default(incident_observer_serving_release) }}"
     umask: "0022"
   become: true
   become_user: "{{ incident_observer_user }}"
@@ -443,10 +442,11 @@
     mode: "0755"
   become: true
   when: >-
-    not (incident_observer_scratch | bool)
-    and incident_observer_scratch_name is not defined
-    and incident_observer_target_branch | default('', true) | length == 0
-    and incident_observer_installation_name is not defined
+    (incident_observer_scratch | bool)
+    or (not (incident_observer_scratch | bool)
+        and incident_observer_scratch_name is not defined
+        and incident_observer_target_branch | default('', true) | length == 0
+        and incident_observer_installation_name is not defined)
 
 - name: Install the CI identity policy renderer beside the manifest renderer
   ansible.builtin.copy:
@@ -498,7 +498,7 @@
     msg: >-
       {{ incident_observer_reference_dir }} has not been cloned yet, so this dry
       run cannot read its tenant connection or its released tag; an apply
-      clones it at {{ incident_observer_release }}, writes its ledger pointer
+      clones it at {{ incident_observer_serving_release }}, writes its ledger pointer
       and renders the manifest from it.
   when: incident_observer_account_ready and not incident_observer_reference_ready
 
@@ -601,7 +601,7 @@
       - -C
       - "{{ incident_observer_release_reference_dir | default(incident_observer_reference_dir) }}"
       - rev-parse
-      - "{{ incident_observer_release }}^{commit}"
+      - "{{ incident_observer_serving_release }}^{commit}"
   become: true
   become_user: "{{ incident_observer_user }}"
   register: incident_observer_revision
@@ -700,7 +700,7 @@
            incident_observer_venv ~ '/bin/python',
            '-I',
            incident_observer_bin_dir ~ '/render_released_installation.py',
-           '--release', incident_observer_release,
+           '--release', incident_observer_serving_release,
            '--revision', incident_observer_revision.stdout | trim,
            '--reader-release', incident_observer_reader_release,
            '--reader-script',
@@ -775,7 +775,7 @@
       no installation exists at {{ incident_observer_venv }} yet, so this dry
       run cannot render the manifest, load the installation or start the unit;
       an apply creates the {{ incident_observer_user }} account and its
-      reference clone, installs {{ incident_observer_release }}, renders and
+      reference clone, installs {{ incident_observer_serving_release }}, renders and
       verifies the manifest, then starts {{ incident_observer_unit_name }}.
   when: not incident_observer_installed or not incident_observer_account_ready
 

@@ -324,6 +324,10 @@ instance is the same role applied with another variable set,
   `/var/lib/livespec-incident/scratch-<name>/`, loopback port 8766, and units
   `livespec-incident-observer-scratch` and
   `livespec-incident-reference-fetch-scratch` (service and timer).
+- its own release install, venv and manifest renderer under
+  `/opt/livespec-incident-scratch-<name>/`. Its
+  `incident_observer_scratch_release` defaults to production's
+  `incident_observer_release`, but may name a different release tag.
 
 `<name>` defaults to `thhgeg`; `-e incident_observer_scratch_name=<name>` moves
 every path and the branch together, and `-e
@@ -342,10 +346,14 @@ or remove anything:
 
 - scratch mode is on, the name is one safe segment, the branch starts with
   `incident-scratch/`, and the port is not production's;
-- every shared value (home, configuration directory, `/opt` install, venv and
-  reader directories, account, the three secret files, `reader.env`,
-  `recovery-app.json`, repository) is exactly production's;
-- every per-instance path is exactly the layout the name fixes;
+- every protected shared value (home, configuration directory, reader
+  directory, account, the three secret files, `reader.env`, `recovery-app.json`
+  and repository) is exactly production's. The production home and
+  configuration-directory parents are the explicit exceptions: scratch state
+  and config files live beneath them, but can never be or contain either
+  production parent;
+- every per-instance path, including its scratch-named `/opt` release install
+  and venv, is exactly the layout the name fixes;
 - after `realpath` normalization (a trailing slash, `..`), no scratch path is,
   sits inside or contains any path production owns. Production's home and
   configuration directory are parents a scratch path may sit inside, never be
@@ -374,24 +382,24 @@ sit under a dynamic `include_role` the same way. Ansible's `--start-at-task`
 can only follow static includes, so naming any converge, preflight or teardown
 task finds nothing to run. Naming one of the includes starts the run there,
 and the scratch include still runs the preflight first. As a further layer,
-every production-shared write (apt, the account, the shared directories, the
-venv, the release install, the reader clone, the secrets, `reader.env`,
-`recovery-app.json`, the manifest renderer) and every funnel task carries its
-own guard on the task itself. That guard refuses whenever the scratch flag, the
+every production-shared write (apt, the account, the protected directories,
+the reader clone, the secrets, `reader.env` and `recovery-app.json`) and every
+funnel task carries its own guard on the task itself. That guard refuses whenever the scratch flag, the
 scratch name or a target branch is set, so production's public funnel paths
 are never re-pointed by a scratch run.
 `tests/livespec_dev_tooling/test_incident_observer_role_scratch_guards.py`
 runs the real pinned `ansible-playbook` with `--start-at-task` at every scratch
 write over a recording connection, and finds nothing run.
 
-The scratch apply then writes none of production's shared installation: no
-apt package, account, shared directory, venv, release install, reader clone,
-manifest renderer, secret, `reader.env` or `recovery-app.json`. It publishes no
-funnel and never restarts production's unit. It also refuses when the shared
-venv does not already serve `incident_observer_release` (converge production
-first). Every refusal comes before the scratch apply's first write, so its
-"Nothing has been written" is true. The observer and its principal then refuse
-every action whose registered branch is not the scratch branch
+The scratch apply writes none of production's shared installation: no apt
+package, account, protected directory, venv, release install, reader clone,
+secret, `reader.env` or `recovery-app.json`. It creates and runs from its own
+scratch-named venv and release install, so an `incident_observer_scratch_release`
+different from production's release can be proved before production is rolled.
+It publishes no funnel and never restarts production's unit. Every refusal
+comes before the scratch apply's first write, so its "Nothing has been written"
+is true. The observer and its principal then refuse every action whose
+registered branch is not the scratch branch
 (livespec-dev-tooling-thhgeg).
 
 ### How the scratch instance binds and observes: no webhook

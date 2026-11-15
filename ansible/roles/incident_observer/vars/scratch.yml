@@ -1,7 +1,8 @@
 ---
 # The scratch-branch incident observer instance: the variable set that turns
 # this role's ONE installation into a second one beside production, at its own
-# controller.json, manifest, state directory, reference clone, port and units,
+# controller.json, manifest, state directory, reference clone, release install,
+# port and units,
 # bound to a scratch branch instead of master. livespec-dev-tooling-32qdja.
 #
 # Loaded by ansible/incident-observer-scratch.yml (the apply) and by
@@ -14,7 +15,7 @@
 # on their own: `-e incident_observer_target_branch=incident-scratch/<x>`,
 # `-e incident_observer_port=<n>`. Every PATH and unit name below is fixed by
 # the name: tasks/scratch_preflight.yml refuses an override of any single one,
-# any shared value moved off production's, and any normalized path that is,
+# any protected shared value moved off production's, and any normalized path that is,
 # sits inside or contains a path production owns, before anything is written.
 #
 # The controller.json stays in production's configuration directory on
@@ -24,7 +25,15 @@
 incident_observer_scratch: true
 incident_observer_scratch_name: thhgeg
 incident_observer_target_branch: "incident-scratch/{{ incident_observer_scratch_name }}-proof"
+# A scratch proof can exercise a release that production does not serve yet.
+# This resolves from the production release by default, but can be changed with
+# `-e incident_observer_scratch_release=<tag>` without moving production.
+incident_observer_scratch_release: "{{ incident_observer_release }}"
+incident_observer_serving_release: "{{ incident_observer_scratch_release }}"
 incident_observer_scratch_root: "{{ incident_observer_home }}/scratch-{{ incident_observer_scratch_name }}"
+incident_observer_install_dir: "/opt/livespec-incident-scratch-{{ incident_observer_scratch_name }}"
+incident_observer_venv: "{{ incident_observer_install_dir }}/venv"
+incident_observer_bin_dir: "{{ incident_observer_install_dir }}/bin"
 incident_observer_config_path: "{{ incident_observer_etc_dir }}/controller-scratch-{{ incident_observer_scratch_name }}.json"
 incident_observer_manifest_path: "{{ incident_observer_etc_dir }}/released-installation-scratch-{{ incident_observer_scratch_name }}.json"
 incident_observer_state_dir: "{{ incident_observer_scratch_root }}/receipts"

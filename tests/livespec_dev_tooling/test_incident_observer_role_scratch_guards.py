@@ -60,13 +60,10 @@ _GUARDED = (
     "Create the root-owned installation directories",
     "Create the protected configuration directory",
     "Create the controller account's home",
-    "Create the isolated venv on the system interpreter",
-    "Install the released distribution from its tag, never from a checkout",
     "Clone the canonical reader at its released tag",
     "Write each secret from the control node's projected environment",
     "Write the canonical reader's credential as the unit's environment file",
     "Write the recovery App credential the principal reads beside controller.json",
-    "Install the manifest renderer outside the package and the clones",
     "Read this node's tailscale serve and funnel configuration",
     "Read whether the tailnet grants this node the funnel attribute",
     "Name the funnel grant and each public path's current disposition",
@@ -77,6 +74,9 @@ _GUARDED = (
 )
 _SCRATCH_PATH_VARIABLES = (
     "incident_observer_scratch_root",
+    "incident_observer_install_dir",
+    "incident_observer_venv",
+    "incident_observer_bin_dir",
     "incident_observer_state_dir",
     "incident_observer_reference_dir",
     "incident_observer_config_path",
@@ -293,10 +293,14 @@ def _named_link(*, path: Path) -> str:
 
 
 def _tree(*, home: Path) -> dict[str, Path]:
-    """The eight scratch paths beneath a throwaway home, in the role's layout."""
+    """The scratch paths, including its isolated release install, in the role's layout."""
     root = home / "scratch-32qdja-drill"
+    install = home.parent / "opt" / "livespec-incident-scratch-32qdja-drill"
     names = (
         root,
+        install,
+        install / "venv",
+        install / "bin",
         root / "receipts",
         root / "reference",
         home / "controller-scratch-32qdja-drill.json",

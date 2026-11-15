@@ -44,11 +44,10 @@ _NAME = (
     "Refuse scratch variables without scratch mode, an unsafe name, a non-scratch branch"
     " or production's port"
 )
-_SHARED = "Refuse a scratch run that would move anything the two instances share"
+_SHARED = "Refuse a scratch run that would move any protected shared value"
 _LAYOUT = "Refuse a scratch layout other than the one its name fixes"
 _DISJOINT = "Refuse any scratch path that is, sits inside, or contains a path production owns"
 _ASSERTS = (_NAME, _SHARED, _LAYOUT, _DISJOINT)
-_VENV = "Refuse a scratch apply onto a venv production does not already serve"
 _READY = "Name whether the reference clone can be read on this run"
 _TEARDOWN_NAMES = "Name what the teardown removes and every production path it reads back"
 _READ_BACK = "Refuse a teardown that moved a byte of production"
@@ -279,7 +278,7 @@ _CASES: list[tuple[str, dict[str, Override], frozenset[str]]] = [
     (
         "moved-venv",
         {"incident_observer_venv": lambda p: p["incident_observer_install_dir"] + "/v2"},
-        frozenset({_SHARED}),
+        frozenset({_LAYOUT, _DISJOINT}),
     ),
     (
         "moved-home",
@@ -536,8 +535,6 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
         )
 
     apply = base.role_yaml(relative=_APPLY)
-    converge = base.role_yaml(relative=_CONVERGE)
-    venv = [task.get("name") for task in converge].index(_VENV)
 
     # main.yml only dispatches, through DYNAMIC includes: the scratch path to the
     # converge body runs the preflight first, and nothing below is reachable by
@@ -563,7 +560,6 @@ def test_the_apply_and_the_teardown_take_the_same_preflight_before_any_write() -
         None,
     ]
     assert apply[1]["ansible.builtin.include_tasks"] == "converge.yml"
-    assert venv < first_scratch_write(converge)
     assert include.items() <= teardown[0].items()
     assert first_scratch_write(teardown) > 0
 
