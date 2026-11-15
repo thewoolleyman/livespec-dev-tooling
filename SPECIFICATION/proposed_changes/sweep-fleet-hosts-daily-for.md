@@ -27,7 +27,7 @@ Append the following paragraph to `non-functional-requirements.md` §"Interactiv
 
 For each Claude Code memory file, the sweep MUST resolve its owning repository from the project directory name: it MUST find, on that host, the git checkout or worktree whose absolute path Claude Code encodes to that name, and read that checkout's `origin` remote. When the remote names a repository of the fleet, the file resolves to that repository. A Codex store file, or a Claude Code file whose project does not resolve to a fleet repository, MUST be listed in the run output as unresolved, naming the host and the full path, and MUST NOT file a work item.
 
-For each resolved file, the sweep MUST file one migration work item in the owning repository's ledger, through that repository's own ledger access on the control node. The item MUST name the host, the full path and the file name, MUST instruct that durable guidance in the file be migrated into the repository's `AGENTS.md` or a referenced `.ai/<topic>.md` by pull request and that the local copy then be deleted and the directory read back, and MUST carry the marker `memory-sweep: <host>:<full path>`. Before filing, the sweep MUST query that ledger for an open item carrying the same marker, and while one exists it MUST NOT file a second item for that host and path.
+For each resolved file, the sweep MUST file one migration work item in the owning repository's ledger, through that repository's own ledger access on the control node. The item MUST name the host, the full path and the file name, MUST instruct that durable guidance in the file be migrated into the repository's `AGENTS.md` or a referenced `.ai/<topic>.md` by pull request and that the local copy then be deleted and the directory read back, and MUST carry the marker `memory-sweep: <host>:<full path>`. The item MUST NOT contain any of the file's content: it MUST carry only the host, the full path, the file name, the file's size and the sha256 of its content, because a memory note may hold private or credential-adjacent text and the ledger is shared and durable. The migration itself MUST be performed on the host by that repository's seat, which reads the file there and lands its durable guidance by pull request. Before filing, the sweep MUST query that ledger for an open item carrying the same marker, and while one exists it MUST NOT file a second item for that host and path.
 
 A host the sweep cannot reach, and a ledger it cannot read or write, MUST appear in the run's output with the failure reason the attempt reported. Such a failure MUST NOT stop the sweep from covering the remaining hosts and files.
 
@@ -44,6 +44,8 @@ When the sweep runs
 Then that repository's ledger holds one open work item that names the host, the full path and the file, and carries the marker `memory-sweep: <host>:<full path>`
 
 And the file is still present on the host
+
+And the filed item MUST NOT contain the file's text, carrying only the host, the full path, the file name, its size and the sha256 of its content
 
 ## Scenario: a repeated sweep files no second migration item while the first is open
 
