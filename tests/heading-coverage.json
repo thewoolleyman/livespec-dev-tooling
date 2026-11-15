@@ -2326,6 +2326,38 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test whose closure names a changed file through the working directory is touched",
+    "test": "TODO",
+    "reason": "Spec-first (v228): a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose change set contains tests/fixtures/data.json and whose failing test names that file only through Path.cwd(), and in a second case only through request.config.rootpath, asserting that the test fails at once with no re-run. livespec-dev-tooling-wc23r2 owns it.",
+    "work_item": "livespec-dev-tooling-wc23r2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failing test whose closure reaches a changed path through getattr, an alias of request or another path form fails at once",
+    "test": "TODO",
+    "reason": "Spec-first (v229): a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose change set contains tests/widgets/data/sample.json and whose failing test names tests/widgets/data/ only through one of the listed request, getattr, alias, renamed-helper-parameter, os.path, f-string or with_name forms, asserting for each form that the test fails at once with no re-run. livespec-dev-tooling-k3lpwj owns it.",
+    "work_item": "livespec-dev-tooling-k3lpwj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fixture imported from another test module is judged in the module that defines it",
+    "test": "TODO",
+    "reason": "Spec-first (v229): a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository where tests/a/test_user.py imports a fixture from tests/b/test_source.py, asserting that a change under the defining module's data directory, and for a request-based fixture a change under the importing test's data directory, each makes the test fail at once with no re-run. livespec-dev-tooling-k3lpwj owns it.",
+    "work_item": "livespec-dev-tooling-k3lpwj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a module-level name bound to string literals only keeps a joined closure path determinate",
+    "test": "TODO",
+    "reason": "Spec-first (v229): a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose failing test joins Path(__file__).resolve().parents[1] / CLAIMS_RELATIVE_PATH with a literal-only module-level name, asserting that a change to docs/unrelated.md re-runs the test and a change to config/incident-fleet-evidence.json fails it at once with no re-run. livespec-dev-tooling-k3lpwj owns it.",
+    "work_item": "livespec-dev-tooling-k3lpwj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a change set that touches the build or the plugin disables every retry",
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository with a controlled change set; livespec-dev-tooling-mdqkkz owns it. (Re-owned from closed livespec-dev-tooling-crxcy4 on 2026-11-11.)",
