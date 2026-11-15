@@ -157,11 +157,16 @@ health` check run published by `ci-green`; the gate's read-and-decide change
 with the 24 h constant and the needs-attention alert; the live or drilled
 proof; the fleet roll (release, then every consumer's pin).
 
-## INTERIM, live now (recorded as this plan's first scope event)
+## INTERIM (recorded as this plan's first scope event; used and ENDED)
 
 Until the tolerance ships, the maintainer's bypass ruling IS how this plan
-applies to the current quota incident `livespec-dev-tooling-zq2i4c` and to any
-other external red during the livespec-ai migration. Its terms:
+applies to an external red during the livespec-ai migration. It was used for
+the quota incident `livespec-dev-tooling-zq2i4c` and ENDED when master's
+`ci.yml` push run 43774413100 on `40eb3f432` read SUCCESS (ci-green success,
+23:39Z 2026-11-15; confirmed by throughput-plans-coordinator at 23:41Z). If
+master turns red again from an external cause before the mechanism ships, the
+interim applies again under the same words and bounds, and this seat messages
+throughput-plans-coordinator BEFORE any skip is used. Its terms:
 
 - `SKIP_TARGETS=check-master-ci-green` ONLY; every other gate member runs and
   every other PR check stays required and green.
@@ -176,9 +181,9 @@ other external red during the livespec-ai migration. Its terms:
 - It ENDS the moment master's `ci.yml` push run on livespec-ai/livespec-dev-
   tooling reads SUCCESS; from then on check-master-ci-green binds as before.
 
-This seat runs the interim with throughput-plans-coordinator, which drives
-the plan; the interim is not a Definition of Done assertion, because it ends
-when the plan ships.
+This seat runs any re-armed interim with throughput-plans-coordinator, which
+drives the plan; the interim is not a Definition of Done assertion, because it
+ends when the plan ships.
 
 ## Deferrals
 
