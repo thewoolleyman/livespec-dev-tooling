@@ -189,6 +189,55 @@ ENV MISE_TRUSTED_CONFIG_PATHS=/__w:/workspace
 # The python layer's build-time probe proves it under a real 0x0 pty.
 ENV COLUMNS=200 LINES=50
 
+# PACKAGE-MANAGER STORES AND CACHES LIVE OUTSIDE /workspace, in every layer.
+#
+# /workspace is the Fabro sandbox clone root, and in a Kubernetes pod it is the
+# pod's only volume (a hostPath mount) while HOME=/root is on the container
+# filesystem: two devices. pnpm hard-links from its store, and when its default
+# store under HOME is on a different device than the checkout it falls back to
+# `<mount root>/.pnpm-store`, which is `/workspace/.pnpm-store` — INSIDE the
+# clone, where `git add -A` sweeps it into a commit. openbrain run
+# 01M6WF7GHVJX committed files of 119 and 124 MB that way and GitHub refused
+# the push (GH001, 100 MB), so the run produced no pull request. No
+# repository should depend on its own .gitignore to stay safe, so the location
+# of each store and cache is named here, once, and inherited by every layer
+# stacked on this one (python, python-rust, python-rust-fuzz, agent).
+#
+# One ENV per name, one pair per line: the shape test reads them that way.
+#   npm_config_store_dir          pnpm's content-addressable store. pnpm reads
+#                                 `npm_config_*` for its own settings.
+#   npm_config_cache              npm's cache.
+#   BUN_INSTALL_CACHE_DIR         bun's install cache.
+#   UV_CACHE_DIR                  uv's cache (also the uv default today, stated
+#                                 so it cannot drift).
+#   PIP_CACHE_DIR                 pip's cache.
+#   npm_config_package_import_method=copy
+#                                 the store and the checkout are on different
+#                                 devices, so a hard link can never succeed;
+#                                 copy states what happens rather than leaving
+#                                 pnpm to try, fail, and fall back per file.
+ENV npm_config_store_dir=/root/.local/share/pnpm/store
+ENV npm_config_cache=/root/.cache/npm
+ENV BUN_INSTALL_CACHE_DIR=/root/.cache/bun/install/cache
+ENV UV_CACHE_DIR=/root/.cache/uv
+ENV PIP_CACHE_DIR=/root/.cache/pip
+ENV npm_config_package_import_method=copy
+
+# Every location above is probed in this same step, so a layer that publishes a
+# store inside the clone fails the image build instead of shipping.
+RUN set -eu; \
+    for location in \
+        "${npm_config_store_dir:?}" "${npm_config_cache:?}" \
+        "${BUN_INSTALL_CACHE_DIR:?}" "${UV_CACHE_DIR:?}" "${PIP_CACHE_DIR:?}"; do \
+        case "$location" in \
+            /workspace|/workspace/*) \
+                echo "package-manager location $location is inside /workspace" >&2; \
+                exit 1 ;; \
+            /*) ;; \
+            *) echo "package-manager location $location is not absolute" >&2; exit 1 ;; \
+        esac; \
+    done
+
 # A reusable sandbox has no author fallback: each workflow must inject and
 # validate its operator identity explicitly. `user.useConfigOnly` also keeps
 # Git from inventing an address from the container hostname when injection is
