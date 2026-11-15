@@ -16,6 +16,7 @@ branch are pinned the same way, so no `gh` or `git` subprocess runs.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -58,6 +59,12 @@ _MERGE_GROUP_WORKFLOW = (
     "  check:\n"
     "    runs-on: [self-hosted, local-ci]\n"
 )
+_NO_RULE_PAGES: list[object] = [[]]
+_PUSH_EXCEPTION = {"users": [{"login": "someone"}], "teams": [], "apps": []}
+_NOT_ENABLED = GhRead(
+    returncode=1, stdout='{"message": "Push restrictions not enabled"}', stderr="HTTP 404"
+)
+_SERVER_ERROR = GhRead(returncode=1, stdout="", stderr="HTTP 502: Bad Gateway")
 _FIVE_RULES = (
     "merge_queue_absent",
     "merge_queue_concurrency_below_floor",
@@ -79,15 +86,26 @@ def _recovery_only() -> dict[str, object]:
     return {"bypass_actors": [{"actor_type": "Integration", "actor_id": _RECOVERY_APP_ID}]}
 
 
+@dataclass(frozen=True, kw_only=True)
+class _Raw:
+    """A forge body answered verbatim with exit 0, such as a malformed one."""
+
+    raw: str
+
+
 @dataclass(kw_only=True)
 class _Forge:
     """The forge state one test answers with, keyed by what the check reads."""
 
     repo: str = "livespec-dev-tooling"
     owner_type: str | None = "Organization"
-    rule_pages: list[object] = field(default_factory=lambda: [[_queue_rule()]])
+    rule_pages: object = field(default_factory=lambda: [[_queue_rule()]])
     rulesets: dict[int, object] = field(default_factory=lambda: {_RULESET_ID: _recovery_only()})
-    restrictions: bool = False
+    # None: classic protection answers "Push restrictions not enabled"; a GhRead
+    # is answered verbatim; any other value is the restrictions object.
+    restrictions: object = None
+    # How many times each ruleset read fails with a 5xx before it is answered.
+    ruleset_failures: int = 0
     admins_enabled: bool = True
     fork_policy: str | None = "all_external_contributors"
     calls: list[str] = field(default_factory=list)
@@ -106,15 +124,22 @@ class _Forge:
             base: {"owner": {"type": self.owner_type}} if self.owner_type else {"name": self.repo},
         }
         answers.update({f"{base}/rulesets/{i}": body for i, body in self.rulesets.items()})
-        if self.restrictions:
-            answers[f"{base}/branches/master/protection/restrictions"] = {"users": []}
+        restrictions = self.restrictions if self.restrictions is not None else _NOT_ENABLED
+        answers[f"{base}/branches/master/protection/restrictions"] = restrictions
         if self.fork_policy is not None:
             answers[f"{base}/actions/permissions/fork-pr-contributor-approval"] = {
                 "approval_policy": self.fork_policy
             }
+        if "/rulesets/" in path and self.ruleset_failures > 0:
+            self.ruleset_failures -= 1
+            return _SERVER_ERROR
         if path not in answers:
             return GhRead(returncode=1, stdout='{"message": "Not Found"}', stderr="HTTP 404")
-        return GhRead(returncode=0, stdout=json.dumps(answers[path]), stderr="")
+        answer = answers[path]
+        if isinstance(answer, GhRead):
+            return answer
+        stdout = answer.raw if isinstance(answer, _Raw) else json.dumps(answer)
+        return GhRead(returncode=0, stdout=stdout, stderr="")
 
 
 def _run(
@@ -144,6 +169,11 @@ def _run(
     monkeypatch.setattr(_branch_protection_api.shutil, "which", _which)
     monkeypatch.setattr(_branch_protection_api, "_resolve_owner_repo", _owner_repo)
     monkeypatch.setattr(_branch_protection_api, "_default_branch_from_git", lambda: "master")
+
+    def _no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(time, "sleep", _no_wait)
     for module in (
         _branch_protection_api,
         _branch_protection_rulesets,
@@ -171,7 +201,7 @@ def test_queue_required_repository_without_a_merge_queue_rule_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """DoD 6 and the v225 scenario: no merge_queue rule -> exit 4, merge_queue_absent."""
-    forge = _Forge(rule_pages=[[]], rulesets={})
+    forge = _Forge(rule_pages=_NO_RULE_PAGES, rulesets={})
     rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert (rc, _modes(findings=findings)) == (4, ["merge_queue_absent"])
 
@@ -249,7 +279,7 @@ def test_an_absent_recovery_bypass_integration_id_fails(
 def test_a_classic_push_restriction_exception_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    forge = _Forge(restrictions=True)
+    forge = _Forge(restrictions=_PUSH_EXCEPTION)
     rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert (rc, _modes(findings=findings)) == (4, ["merge_queue_bypass_path"])
 
@@ -268,18 +298,90 @@ def test_classic_enforce_admins_off_is_a_bypass_path(
 def test_unreadable_ruleset_rules_fail_as_unreadable(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Fix 8: one rules read, shared with the effective-set half, so one finding."""
     forge = _Forge(rule_pages=[{"not": "a page"}])
     rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert rc == 4
-    assert set(_modes(findings=findings)) == {"ruleset_unreadable"}
+    assert (rc, _modes(findings=findings)) == (4, ["ruleset_unreadable"])
+    rules_path = "repos/test-org/livespec-dev-tooling/rules/branches/master?per_page=100"
+    assert forge.calls.count(rules_path) == 1
+
+
+def test_a_malformed_exit_zero_ruleset_body_fails_as_unreadable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fix 6: a ruleset body that is not JSON is unreadable, never a crash."""
+    forge = _Forge(rulesets={_RULESET_ID: _Raw(raw="<html>not json</html>")})
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (4, ["ruleset_unreadable"])
+
+
+def test_a_malformed_exit_zero_rules_body_fails_as_unreadable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fix 6: a rules body that is not JSON is unreadable, never a crash."""
+    forge = _Forge(rule_pages=_Raw(raw="not json"))
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (4, ["ruleset_unreadable"])
+
+
+def test_a_malformed_exit_zero_owner_body_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fix 6: an owner body that is not JSON takes the graceful skip, never a crash."""
+    forge = _Forge(repo="livespec-orchestrator-beads-fabro", rule_pages=_NO_RULE_PAGES, rulesets={})
+    owner_path = "repos/test-org/livespec-orchestrator-beads-fabro"
+    original = forge.read
+
+    def _read(*, args: list[str], **kwargs: object) -> GhRead:
+        if args[-1] == owner_path:
+            return GhRead(returncode=0, stdout="not json", stderr="")
+        return original(args=args, **kwargs)
+
+    monkeypatch.setattr(forge, "read", _read)
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (0, [])
+
+
+def test_a_failed_restrictions_read_fails_closed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fix 7: a 5xx on the restrictions read is unverified, not "no restrictions"."""
+    forge = _Forge(restrictions=_SERVER_ERROR)
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (4, ["merge_queue_bypass_path"])
+
+
+def test_a_restrictions_object_with_no_exception_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fix 7: only a push-restriction EXCEPTION is a bypass path, not the object itself."""
+    forge = _Forge(restrictions={"users": [], "teams": [], "apps": []})
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (0, [])
+
+
+def test_a_ruleset_read_that_fails_once_is_retried(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fix 8: a ruleset read retried to success is used exactly as a first success."""
+    forge = _Forge(ruleset_failures=1)
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (0, [])
 
 
 def test_an_unreadable_active_ruleset_fails_as_unreadable(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Fix 8: retried, then reported with its endpoint and first and last failure."""
     forge = _Forge(rulesets={})
     rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert (rc, _modes(findings=findings)) == (4, ["ruleset_unreadable"])
+    ruleset_path = f"repos/test-org/livespec-dev-tooling/rulesets/{_RULESET_ID}"
+    assert forge.calls.count(ruleset_path) == 4
+    detail = str(next(f for f in findings if f.get("level") == "error")["detail"])
+    assert ruleset_path in detail
+    assert "first attempt" in detail
+    assert "last attempt" in detail
 
 
 def test_fork_approval_below_strictest_fails_for_a_guarded_merge_group_repository(
@@ -332,9 +434,9 @@ def test_none_of_the_five_rules_fire_on_a_personal_account_repository(
     """DoD 11: a User-owned repository fires none of the five merge-queue rules."""
     forge = _Forge(
         owner_type="User",
-        rule_pages=[[]],
+        rule_pages=_NO_RULE_PAGES,
         rulesets={},
-        restrictions=True,
+        restrictions=_PUSH_EXCEPTION,
         fork_policy="first_time_contributors",
     )
     rc, findings = _run(
@@ -352,7 +454,7 @@ def test_none_of_the_five_rules_fire_on_a_personal_account_repository(
 def test_an_unreadable_owner_type_skips_the_merge_queue_rules(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    forge = _Forge(owner_type=None, rule_pages=[[]], rulesets={})
+    forge = _Forge(owner_type=None, rule_pages=_NO_RULE_PAGES, rulesets={})
     rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert (rc, _modes(findings=findings)) == (0, [])
     assert any("owner's type" in str(f.get("event")) for f in findings)
@@ -361,7 +463,7 @@ def test_an_unreadable_owner_type_skips_the_merge_queue_rules(
 def test_a_repository_neither_queue_required_nor_guarded_reads_no_owner(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    forge = _Forge(repo="other-repo", rule_pages=[[]], rulesets={})
+    forge = _Forge(repo="other-repo", rule_pages=_NO_RULE_PAGES, rulesets={})
     rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert (rc, _modes(findings=findings)) == (0, [])
     assert "repos/test-org/other-repo" not in forge.calls

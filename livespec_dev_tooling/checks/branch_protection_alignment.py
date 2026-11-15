@@ -356,8 +356,11 @@ def _effective_set_exit_code(
     classic: _RequiredContexts,
     matrix_targets: set[str],
     job_names: set[str],
-) -> int:
+) -> tuple[int, _RulesetRequirements | _RulesetsUnreadable]:
     """Read the ruleset contribution, then align the EFFECTIVE set against ci.yml.
+
+    The ruleset answer is returned beside the code so the merge-queue rules
+    grade the SAME rules read rather than issuing a second one.
 
     The effective set is classic protection's required checks UNION every
     active ruleset's (the `branch_protection_alignment` check contract in
@@ -368,14 +371,14 @@ def _effective_set_exit_code(
     rulesets = _fetch_ruleset_requirements(protection=classic)
     ruleset_code = _ruleset_exit_code(log=log, rulesets=rulesets)
     if isinstance(rulesets, _RulesetsUnreadable):
-        return ruleset_code
+        return ruleset_code, rulesets
     alignment_code = _run_alignment_gate(
         log=log,
         required=classic.contexts | rulesets.contexts,
         matrix_targets=matrix_targets,
         job_names=job_names,
     )
-    return max(alignment_code, ruleset_code)
+    return max(alignment_code, ruleset_code), rulesets
 
 
 def _unreadable_protection_exit_code(
@@ -476,13 +479,14 @@ def main() -> int:
             ),
         )
         return 4
-    effective_code = _effective_set_exit_code(
+    effective_code, rulesets = _effective_set_exit_code(
         log=log, classic=fetched, matrix_targets=matrix_targets, job_names=job_names
     )
     queue_code = merge_queue_exit_code(
         log=log,
         cwd=cwd,
         protection=fetched,
+        rulesets=rulesets,
         admins_enabled=admins is not None and admins.enabled,
         queue_required_names=QUEUE_REQUIRED_REPOSITORIES,
     )
