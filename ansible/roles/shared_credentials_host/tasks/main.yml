@@ -212,6 +212,22 @@
         path: /root/{{ shared_credentials_host_python_asset }}
         state: absent
 
+# The python-build-standalone tarball carries group-writable modes (bin/python3.13
+# unpacked 0775 on poweredge-xubuntu, 2026-11-15), which the assertion below refuses.
+# This runs outside the install block so it also repairs an interpreter an earlier
+# converge already unpacked, and reports changed only where a mode actually moves.
+- name: Strip group and world write from the pinned interpreter tree
+  ansible.builtin.file:
+    path: "{{ shared_credentials_host_python_prefix }}"
+    state: directory
+    recurse: true
+    owner: root
+    group: root
+    mode: go-w
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - not ansible_check_mode or shared_credentials_host_python_installed.stat.exists
+
 - name: Read back the pinned delivery interpreter's version
   ansible.builtin.command:
     argv:
