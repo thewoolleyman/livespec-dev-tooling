@@ -23,10 +23,17 @@ The differences from the Driver copy, all in this one file:
    to the repository's AGENTS.md or a referenced `.ai/<topic>.md` by pull
    request, and trackable work to the repository's ledger.
 3. `NotebookEdit` is judged as a file tool too, by its `notebook_path`.
+4. The file-tool matcher is NARROWED to the Claude Code layout
+   `<anything>/projects/<slug>/memory/*.md`, the same shape the Bash
+   classifier requires. The Driver's own matcher refuses ANY `**/memory/*.md`,
+   which is harmless behind its governed-project gate but would refuse tracked
+   repository files such as `<repo>/.ai/memory/*.md` once this copy acts in
+   every project.
 
-Everything else is the Driver's: a file tool is refused when the target's
-immediate parent directory is `memory` and the name ends in `.md` (the Claude
-Code layout `~/.claude/projects/<slug>/memory/*.md`), or when the target lies
+Everything else is the Driver's: a file tool is refused when the target is an
+`.md` file whose parent directory is `memory` and whose great-grandparent is
+`projects` (the Claude Code layout `~/.claude/projects/<slug>/memory/*.md`,
+difference 4), or when the target lies
 under the Codex store `~/.codex/memories/`; a `Bash` command is refused when
 `_memory_write.writes_memory` POSITIVELY identifies it as writing into either
 directory. Reads and `rm` pass.
@@ -81,9 +88,13 @@ def _as_object_dict(*, value: object) -> dict[str, object] | None:
 
 
 def _is_memory_file(*, file_path: str) -> bool:
-    """A Claude Code `**/memory/*.md` note, or any file under the Codex store."""
+    """A Claude Code `projects/<slug>/memory/*.md` note, or any file under the Codex store."""
     target = PurePosixPath(file_path)
-    if target.suffix == ".md" and target.parent.name == "memory":
+    if (
+        target.suffix == ".md"
+        and target.parent.name == "memory"
+        and target.parent.parent.parent.name == "projects"
+    ):
         return True
     parts = target.parent.parts
     width = len(_CODEX_MEMORY_STORE)
