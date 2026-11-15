@@ -4,9 +4,10 @@
 #
 # Stops and disables the scratch observer unit and its reference fetch timer,
 # removes their unit files, the scratch controller.json and the scratch
-# manifest, and reads production's unit, controller.json and manifest back
-# byte-identical. The scratch root (receipts and reference clone) is kept as
-# evidence unless `-e incident_observer_scratch_teardown_purge=true`.
+# manifest and scratch release install, and reads production's unit,
+# controller.json and manifest back byte-identical. The scratch root (receipts
+# and reference clone) is kept as evidence unless `-e
+# incident_observer_scratch_teardown_purge=true`.
 #
 #   /usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-scratch-teardown.yml
 #   /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch-teardown.yml

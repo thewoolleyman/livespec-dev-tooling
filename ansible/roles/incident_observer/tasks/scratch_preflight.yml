@@ -19,8 +19,9 @@
 #
 # 1. scratch mode is on; the name is ONE safe path segment; the branch starts
 #    with `incident-scratch/`; the port is not production's;
-# 2. every value the two instances share is exactly production's;
-# 3. every per-instance path and unit name is exactly the layout the name fixes;
+# 2. every protected shared value is exactly production's;
+# 3. every per-instance path, including the release install and venv, and unit
+#    name is exactly the layout the name fixes;
 # 4. after `realpath` normalization (a trailing slash, `..`), no scratch path
 #    is, sits inside, or contains a path production owns; production's home and
 #    configuration directory are parents the scratch paths may sit inside,
@@ -62,14 +63,11 @@
       stopped or removed.
     success_msg: the scratch instance is {{ incident_observer_scratch_name }} on {{ incident_observer_target_branch }}
 
-- name: Refuse a scratch run that would move anything the two instances share
+- name: Refuse a scratch run that would move any protected shared value
   ansible.builtin.assert:
     that:
       - incident_observer_home == '/var/lib/livespec-incident'
       - incident_observer_etc_dir == '/etc/livespec-incident'
-      - incident_observer_install_dir == '/opt/livespec-incident'
-      - incident_observer_venv == '/opt/livespec-incident/venv'
-      - incident_observer_bin_dir == '/opt/livespec-incident/bin'
       - incident_observer_reader_dir == '/opt/livespec-incident/reader'
       - incident_observer_user == 'livespec-incident'
       - incident_observer_group == 'livespec-incident'
@@ -81,21 +79,27 @@
       - incident_observer_reader_env_path == '/etc/livespec-incident/reader.env'
       - incident_observer_recovery_app_path == '/etc/livespec-incident/recovery-app.json'
       - incident_observer_repository == 'thewoolleyman/livespec-dev-tooling'
+      - incident_observer_serving_release == incident_observer_scratch_release
     fail_msg: >-
-      a scratch run shares production's directories, account and credential
-      files read-only and may not override any of them. Nothing has been
+      a scratch run shares production's protected directories, account and
+      credential files read-only and may not override any of them. Its release
+      must come from incident_observer_scratch_release. Nothing has been
       written, stopped or removed.
-    success_msg: the scratch instance shares production's installation unchanged
+    success_msg: the scratch instance preserves production's protected installation
 
 - name: Refuse a scratch layout other than the one its name fixes
   ansible.builtin.assert:
     that:
       - >-
-        [incident_observer_scratch_root, incident_observer_state_dir, incident_observer_reference_dir,
+        [incident_observer_scratch_root, incident_observer_install_dir, incident_observer_venv,
+         incident_observer_bin_dir, incident_observer_state_dir, incident_observer_reference_dir,
          incident_observer_config_path, incident_observer_manifest_path, incident_observer_unit_path,
          incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
         | map('realpath') | list
         == ['/var/lib/livespec-incident/scratch-' ~ incident_observer_scratch_name,
+            '/opt/livespec-incident-scratch-' ~ incident_observer_scratch_name,
+            '/opt/livespec-incident-scratch-' ~ incident_observer_scratch_name ~ '/venv',
+            '/opt/livespec-incident-scratch-' ~ incident_observer_scratch_name ~ '/bin',
             '/var/lib/livespec-incident/scratch-' ~ incident_observer_scratch_name ~ '/receipts',
             '/var/lib/livespec-incident/scratch-' ~ incident_observer_scratch_name ~ '/reference',
             '/etc/livespec-incident/controller-scratch-' ~ incident_observer_scratch_name ~ '.json',
@@ -107,7 +111,7 @@
       - incident_observer_unit_name == 'livespec-incident-observer-scratch'
       - incident_observer_fetch_unit_name == 'livespec-incident-reference-fetch-scratch'
     fail_msg: >-
-      every scratch path and unit name is fixed by incident_observer_scratch_name
+      every scratch path, including its release install and venv, and unit name is fixed by incident_observer_scratch_name
       (vars/scratch.yml); override the name, never a single path. Nothing has
       been written, stopped or removed.
     success_msg: the scratch layout is the one {{ incident_observer_scratch_name }} fixes
@@ -117,7 +121,8 @@
     that:
       # A scratch path that is, or sits inside, a path production owns.
       - >-
-        [incident_observer_scratch_root, incident_observer_state_dir, incident_observer_reference_dir,
+        [incident_observer_scratch_root, incident_observer_install_dir, incident_observer_venv,
+         incident_observer_bin_dir, incident_observer_state_dir, incident_observer_reference_dir,
          incident_observer_config_path, incident_observer_manifest_path, incident_observer_unit_path,
          incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
         | map('realpath')
@@ -160,7 +165,8 @@
          '/var/lib/livespec-incident',
          '/etc/livespec-incident']
         | select('match', '^(' ~ ([incident_observer_scratch_root, incident_observer_state_dir,
-                                   incident_observer_reference_dir, incident_observer_config_path,
+                                   incident_observer_install_dir, incident_observer_venv,
+                                   incident_observer_bin_dir, incident_observer_reference_dir, incident_observer_config_path,
                                    incident_observer_manifest_path, incident_observer_unit_path,
                                    incident_observer_fetch_service_path, incident_observer_fetch_timer_path]
                                   | map('realpath') | map('regex_escape') | join('|')) ~ ')(/|$)')
@@ -187,6 +193,9 @@
   check_mode: false
   loop:
     - "{{ incident_observer_scratch_root }}"
+    - "{{ incident_observer_install_dir }}"
+    - "{{ incident_observer_venv }}"
+    - "{{ incident_observer_bin_dir }}"
     - "{{ incident_observer_state_dir }}"
     - "{{ incident_observer_reference_dir }}"
     - "{{ incident_observer_config_path }}"
@@ -212,7 +221,7 @@
   become: true
   register: incident_observer_scratch_reference_git_links
   check_mode: false
-  when: incident_observer_scratch_path_stats.results[10].stat.exists
+  when: incident_observer_scratch_path_stats.results[13].stat.exists
 
 - name: Refuse a scratch path that is a symbolic link on the host
   # A link at the scratch root could point into production's receipts; the
@@ -220,7 +229,7 @@
   # exist yet is not a link.
   ansible.builtin.assert:
     that:
-      - incident_observer_scratch_path_stats.results | length == 13
+      - incident_observer_scratch_path_stats.results | length == 16
       - >-
         incident_observer_scratch_path_stats.results
         | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk')

@@ -6,13 +6,13 @@
 # variable set in roles/incident_observer/vars/scratch.yml: its own
 # controller.json (with `target_branch` set to the scratch branch), its own
 # manifest whose principal argv ends in THAT controller.json, its own state
-# directory, reference clone, loopback port and systemd units. It shares
-# production's venv, reader clone and secret files read-only, writes none of
-# them, publishes no funnel, and never restarts production's unit.
+# directory, reference clone, release install and venv, loopback port and
+# systemd units. It shares production's reader clone and secret files read-only,
+# publishes no funnel, and never restarts production's unit.
 #
-# Converge production first, at the same release: the scratch apply refuses a
-# venv that does not already serve `incident_observer_release`. Run through the
-# credential wrapper, drift first:
+# It defaults to production's release but can prove a different tag through
+# `-e incident_observer_scratch_release=<tag>`. Run through the credential
+# wrapper, drift first:
 #
 #   /usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/incident-observer-scratch.yml
 #   /usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/incident-observer-scratch.yml
