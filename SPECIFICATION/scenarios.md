@@ -3887,6 +3887,40 @@ And the new scale set's listener and ClusterQueue MUST exist on the live cluster
 
 And a second run of the same apply MUST report no change
 
+## Scenario: a new scale-set values file adds its scale set and leaves every existing scale set at its revision
+
+Given the live pool runs one scale set per committed values file under `ci-runner/k3s/phase2/arc/` and `ci-runner/k3s/phase2/arc/worker/`, each last converged with its current inputs
+
+And a merged change adds `ci-runner/k3s/phase2/arc/values-livespec-ai-livespec.yaml`, with `runnerScaleSetName: "livespec-ai-livespec-k3s"`, `githubConfigUrl: "https://github.com/livespec-ai/livespec"` and `githubConfigSecret: arc-github-app-installation-livespec-ai`, together with its ClusterQueue, and changes no other values file, no line of `converge-ci-stack.sh` and no file of the `ci_converge_unit` role
+
+When the operator runs `just ansible-apply ansible/ci-pool.yml` from the control node
+
+Then `converge-ci-stack.service` MUST run `converge-ci-stack.sh` on the CI server and the apply MUST wait for it
+
+And `helm list -n arc-runners` MUST list the release `livespec-ai-livespec-k3s`, and GitHub MUST list a runner scale set named `livespec-ai-livespec-k3s` registered at `https://github.com/livespec-ai/livespec`
+
+And every other release MUST show in `helm history` the same latest revision it showed before the apply, and its AutoscalingRunnerSet's `metadata.generation` and its listener pod's creation time MUST be unchanged
+
+And a second run of `just ansible-apply ansible/ci-pool.yml` MUST report no change
+
+## Scenario: removing a scale-set values file uninstalls that scale set and no other
+
+Given the release `livespec-ai-livespec-k3s` is installed from `ci-runner/k3s/phase2/arc/values-livespec-ai-livespec.yaml`
+
+And a merged change removes that values file and no other values file
+
+When the operator runs `just ansible-apply ansible/ci-pool.yml` from the control node
+
+Then the `ci_converge_unit` role MUST remove `values-livespec-ai-livespec.yaml` from `/usr/local/lib/ci-runner-k3s/arc/` and MUST report the converge input as changed
+
+And `converge-ci-stack.sh` MUST run `helm uninstall livespec-ai-livespec-k3s` in namespace `arc-runners` and log the release it uninstalled
+
+And `helm list -n arc-runners` MUST NOT list `livespec-ai-livespec-k3s`, and no AutoscalingRunnerSet or AutoscalingListener of that name MUST remain
+
+And every other release MUST show in `helm history` the same latest revision it showed before the apply
+
+And a second run of `just ansible-apply ansible/ci-pool.yml` MUST report no change
+
 ## Scenario: an incident invocation resolves mode before ordinary gate selection
 
 ```gherkin

@@ -2448,6 +2448,22 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new scale-set values file adds its scale set and leaves every existing scale set at its revision",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the CI stack converge proving that one new committed values file adds its scale set through the committed live-converge apply with no edit to converge-ci-stack.sh or the ci_converge_unit role, that every other release keeps its latest Helm revision, AutoscalingRunnerSet generation and listener pod, and that a second apply reports no change (proposal the-arc-converge-route-can, v233). livespec-dev-tooling-xyi5vu owns it.",
+    "work_item": "livespec-dev-tooling-xyi5vu"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: removing a scale-set values file uninstalls that scale set and no other",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: an integration test of the CI stack converge proving that removing one committed values file makes the ci_converge_unit role prune it and report a changed input, that the converge runs helm uninstall on that release only and logs it, that every other release keeps its latest Helm revision, and that a second apply reports no change (proposal the-arc-converge-route-can, v233). livespec-dev-tooling-xyi5vu owns it.",
+    "work_item": "livespec-dev-tooling-xyi5vu"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Expedited incident execution",
     "test": "TODO",
