@@ -328,15 +328,14 @@ def _script(*, path: Path, text: str) -> Path:
 
 
 def _wrap(
-    *, root: Path, config: str | None, args: list[str], cwd: Path | None = None
+    *, root: Path, config: str, args: list[str], cwd: Path | None = None
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     family = _script(path=root / "bin" / "with-livespec-env.sh", text=_FAKE_FAMILY)
     repo = root / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     _ = _script(path=repo / "with-tenant-env.sh", text=_FAKE_TENANT)
     _ = _script(path=root / "bin" / "command", text=_FAKE_COMMAND)
-    if config is not None:
-        _ = (repo / ".livespec.jsonc").write_text(config, encoding="utf-8")
+    _ = (repo / ".livespec.jsonc").write_text(config, encoding="utf-8")
     log = root / "log"
     log.touch()
     env = {"PATH": os.environ["PATH"], "TW_LOG": str(log), "TW_FAMILY_WRAPPER": str(family)}
