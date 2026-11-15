@@ -773,6 +773,14 @@ unblocked. Whenever the GitOps changes we need to do, we can backfill them. Just
 2026-11-15: the writer-key mint (hetzner-xubuntu-info#181) sat about an hour, blocked by merge-first ordering and by
 fleet_host_guard refusing the hetzner seat's ssh to the VPS.
 
+**central-credential-service finishes first, with ceremony deferred to its end (coordinator's reading).** For plan
+central-credential-service (overseer-iyfjbo), a check that is ceremony is deferred to the plan's end, and a gate on a
+real condition stays. GitOps changes are fast-tracked or backfilled and proven before the plan archives. The
+maintainer, 2026-11-15: "Get the central-credential-service plan DONE asap, override and defer any safety checks that
+are not necesary or just ceremony, gitops changes can be fast-tracked or backfilled andc proven at end of plan."
+Measured 2026-11-15: the writer-key mint kept its zero-key and seal gates, and its merge-before-apply ordering was
+dropped.
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
@@ -1606,6 +1614,9 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
   v163.
 - **Times are UTC.** The host clock is CET, so take timestamps with `date -u` and never label local time `Z`. On
   2026-11-01 two seats did, writing times an hour late into the ledger.
+  - **The coordinator's own comments too (coordinator's reading).** Every time label in a coordinator tick, handoff or
+    scope event comes from `date -u`, never from the host's CET clock. Measured 2026-11-15: this seat labelled 06:xxZ
+    events as 07:xxZ on epic `livespec-dev-tooling-6tgd2z` and posted a correction at 06:35Z.
 - **Secrets.** Never `env | cut` to list variable names: on 2026-10-31 it leaked a private key's lines. List names with
   `python3 -c 'import os; print(sorted(os.environ))'`, and probe a secret only with `printenv NAME | wc -c`.
 - **In zsh, brace a variable before a colon.** Write `"resolve-blocked:${i}:ready"`. A bare `$i:ready` applies zsh's
