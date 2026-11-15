@@ -117,7 +117,7 @@ _RELEASE_FIELDS = "--field status=completed --field conclusion=neutral"
 # no bare forge call, and a re-read of the state before a write whose outcome is
 # unknown (exit 75) is repeated.
 _FORGE_READ_USES = re.compile(
-    r"thewoolleyman/livespec-dev-tooling/\.github/actions/forge-read@v\d+\.\d+\.\d+"
+    r"livespec-ai/livespec-dev-tooling/\.github/actions/forge-read@v\d+\.\d+\.\d+"
 )
 _BARE_GH = re.compile(r"(?<![\w-])gh api\b")
 _HOLD_REF = '--field external_id="$hold_ref"'
@@ -341,7 +341,7 @@ _FIRST = "livespec-forge-read is not put on the path from a release tag first"
 _BYPASS = "a forge call bypasses livespec-forge-read"
 _HOLD_BLIND = "the hold create is repeated without re-reading the hold by its external_id"
 _RERUN_BLIND = "the re-run is repeated without re-reading the run's attempt"
-_USES = "uses: thewoolleyman/livespec-dev-tooling/.github/actions/forge-read@v1.203.0"
+_USES = "uses: livespec-ai/livespec-dev-tooling/.github/actions/forge-read@v1.203.0"
 
 
 @pytest.mark.parametrize(
@@ -455,7 +455,7 @@ _USES = "uses: thewoolleyman/livespec-dev-tooling/.github/actions/forge-read@v1.
         ),
         (
             _USES,
-            "uses: thewoolleyman/livespec-dev-tooling/.github/actions/forge-read@master",
+            "uses: livespec-ai/livespec-dev-tooling/.github/actions/forge-read@master",
             _FIRST,
         ),
         (_USES, "uses: ./.github/actions/forge-read", _FIRST),

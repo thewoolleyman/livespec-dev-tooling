@@ -31,9 +31,9 @@ from livespec_dev_tooling.fleet._rows_files import (
 )
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
-_OBSERVED = ("thewoolleyman", "livespec-dev-tooling")
+_OBSERVED = ("livespec-ai", "livespec-dev-tooling")
 _UNOBSERVED = ("acme", "widget")
-_PROOF = "https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/123456789"
+_PROOF = "https://github.com/livespec-ai/livespec-dev-tooling/actions/runs/123456789"
 _PIN_AND_BUMP = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
 
 
@@ -99,7 +99,7 @@ def test_a_malformed_proof_is_not_a_proof(monkeypatch):
     monkeypatch.setattr(
         master_health_observer,
         "HOSTED_REACHABILITY_PROOFS",
-        {"thewoolleyman/livespec-dev-tooling": "proven, trust me"},
+        {"livespec-ai/livespec-dev-tooling": "proven, trust me"},
     )
     calls: list[tuple[str, ...]] = []
     ctx, member = _context(
@@ -116,7 +116,7 @@ def test_a_recorded_hosted_run_admits_the_install(monkeypatch):
     monkeypatch.setattr(
         master_health_observer,
         "HOSTED_REACHABILITY_PROOFS",
-        {"thewoolleyman/livespec-dev-tooling": _PROOF},
+        {"livespec-ai/livespec-dev-tooling": _PROOF},
     )
     calls: list[tuple[str, ...]] = []
     ctx, member = _context(

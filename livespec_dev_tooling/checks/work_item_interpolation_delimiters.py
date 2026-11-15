@@ -107,7 +107,7 @@ _DELIMITERS = ((_BRACE_OPEN * 2, "open"), (_BRACE_CLOSE * 2, "close"))
 # citation dangles (livespec-dev-tooling-5ug6).
 _CONVENTION_DOC = (
     "docs/work-item-interpolation-delimiters.md in the livespec-dev-tooling repo that "
-    "ships this check (https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/"
+    "ships this check (https://github.com/livespec-ai/livespec-dev-tooling/blob/master/"
     "docs/work-item-interpolation-delimiters.md)"
 )
 _EDITABLE_REMEDIATION = (

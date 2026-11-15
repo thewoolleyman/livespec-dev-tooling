@@ -45,14 +45,14 @@ def _settings() -> str:
                 "livespec-orchestrator-beads-fabro": {
                     "source": {
                         "source": "github",
-                        "repo": "thewoolleyman/livespec-orchestrator-beads-fabro",
+                        "repo": "livespec-ai/livespec-orchestrator-beads-fabro",
                         "ref": "release",
                     }
                 },
                 "livespec": {
                     "source": {
                         "source": "github",
-                        "repo": "thewoolleyman/livespec",
+                        "repo": "livespec-ai/livespec",
                         "ref": "release",
                     }
                 },

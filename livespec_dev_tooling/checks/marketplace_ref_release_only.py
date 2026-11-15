@@ -4,7 +4,7 @@ The Claude plugin marketplace registry `~/.claude/plugins/known_marketplaces.jso
 is HOST-GLOBAL: it holds exactly one `source` — including exactly one `ref` — per
 marketplace NAME, shared by every checkout on the host. There is no per-checkout
 marketplace ref. So when one repo's committed `.claude/settings.json` pins a
-shared `thewoolleyman/livespec*` marketplace to a version tag, that repo's
+shared `livespec-ai/livespec*` marketplace to a version tag, that repo's
 SessionStart `ensure-plugins` rewrites the shared slot, and every OTHER repo
 still declaring `release` then fails `ensure-plugins` with "network source
 differs". The consequence is silent — the plugins stay enabled-but-not-installed
@@ -43,7 +43,7 @@ CHECK_PURITY = "tree-pure"
 _CHECK_ID = "marketplace_ref_release_only"
 _SETTINGS_RELPATH = (".claude", "settings.json")
 _MARKETPLACES_KEY = "extraKnownMarketplaces"
-_FAMILY_REPO_PREFIX = "thewoolleyman/livespec"
+_FAMILY_REPO_PREFIX = "livespec-ai/livespec"
 _REQUIRED_REF = "release"
 _FAIL_EXIT = 1
 _HINT = (

@@ -12,7 +12,7 @@ rules", the directory-scan formats are:
   root, the `*.jinja` template suffix alongside `*.yml` / `*.yaml`, and
   an exclusion that refuses to descend into a nested repository.
 - fabro-sandbox docker image tag — the
-  `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` line in
+  `docker = "ghcr.io/livespec-ai/livespec-fabro-sandbox:<tag>"` line in
   every Fabro `workflow.toml` under either `.claude-plugin/.fabro/workflows/`
   or the root `.fabro/workflows/`, AND the same image reference as the
   `image:` line under a job's `container:` block in every
@@ -148,7 +148,7 @@ _PIN_FORMAT_CODEX_ACP = "codex_acp_docker_arg"
 # rewrite this very pin. Two spellings of one image reference is the drift that
 # would make the readiness probe wait on an image nobody publishes while the
 # rewrite happily edits another.
-FABRO_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+FABRO_SANDBOX_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 FABRO_SANDBOX_SOURCE_REPO = "livespec-dev-tooling"
 # Fleet consumers carry the Fabro workflow config at one of two roots: the
 # orchestrator under `.claude-plugin/.fabro/workflows/`, the console under the

@@ -78,7 +78,7 @@
             {'name': 'query', 'path': '/etc/livespec-incident/query-secret', 'env': 'LIVESPEC_INCIDENT_QUERY_SECRET'}]
       - incident_observer_reader_env_path == '/etc/livespec-incident/reader.env'
       - incident_observer_recovery_app_path == '/etc/livespec-incident/recovery-app.json'
-      - incident_observer_repository == 'thewoolleyman/livespec-dev-tooling'
+      - incident_observer_repository == 'livespec-ai/livespec-dev-tooling'
       - incident_observer_serving_release == incident_observer_scratch_release
     fail_msg: >-
       a scratch run shares production's protected directories, account and

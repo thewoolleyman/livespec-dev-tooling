@@ -62,13 +62,13 @@ def test_fleet_marketplace_relative_sources_rejects_github_source(
 ) -> None:
     """A github-type catalog source fails because it bypasses ref pinning."""
     catalog = tmp_path / ".agents" / "plugins" / "marketplace.json"
-    _write_catalog(path=catalog, source="thewoolleyman/livespec")
+    _write_catalog(path=catalog, source="livespec-ai/livespec")
 
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0
     assert ".agents/plugins/marketplace.json" in result.stderr
-    assert "thewoolleyman/livespec" in result.stderr
+    assert "livespec-ai/livespec" in result.stderr
     assert "ref pin" in result.stderr
     assert result.stdout == ""
 
@@ -134,7 +134,7 @@ def test_fleet_marketplace_relative_sources_rejects_non_relative_object_shapes(
 ) -> None:
     """Object sources that are github-type, absolute, path-less, or non-path fail."""
     offenders = (
-        ("github-object", '{ "source": "github", "repo": "thewoolleyman/livespec" }'),
+        ("github-object", '{ "source": "github", "repo": "livespec-ai/livespec" }'),
         ("absolute-path", '{ "source": "local", "path": "/abs/.claude-plugin" }'),
         ("missing-path", '{ "source": "local" }'),
         ("numeric-source", "7"),

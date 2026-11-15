@@ -42,7 +42,7 @@ def test_the_three_sanctioned_paths_are_not_reported() -> None:
 
 def test_user_scope_updates_and_marketplace_registration_are_not_project_scope_adoption() -> None:
     user_scope = "    claude plugin update livespec@livespec\n"
-    registration = "    claude plugin marketplace add thewoolleyman/livespec@release\n"
+    registration = "    claude plugin marketplace add livespec-ai/livespec@release\n"
 
     assert source_adoption_findings(path="justfile", text=user_scope) == ()
     assert source_adoption_findings(path="justfile", text=registration) == ()

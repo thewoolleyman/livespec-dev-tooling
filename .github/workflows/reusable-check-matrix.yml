@@ -3,7 +3,7 @@
 # Authority: SPECIFICATION/contracts.md §"Reusable workflows wire contract".
 #
 # Consumers invoke this workflow from their own ci.yml via
-# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@vX.Y.Z`
+# `uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@vX.Y.Z`
 # (with `with: { checks: '["slug1", "slug2", ...]' }`).
 #
 # Strategy: matrix over the `checks` input array; each matrix entry
@@ -115,7 +115,7 @@ jobs:
       - name: Checkout livespec-dev-tooling Actions
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           ref: ${{ inputs.ref }}
           path: .livespec-dev-tooling-actions
 
@@ -131,7 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$(gh api repos/thewoolleyman/livespec-dev-tooling/releases/latest --jq .tag_name)"
+          tag="$(gh api repos/livespec-ai/livespec-dev-tooling/releases/latest --jq .tag_name)"
           if ! [[ "$tag" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
             echo "::error::could not resolve the latest livespec-dev-tooling release tag"
             exit 1
@@ -142,7 +142,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           ref: refs/tags/${{ steps.release.outputs.tag }}
           path: .livespec-dev-tooling-released
           persist-credentials: false

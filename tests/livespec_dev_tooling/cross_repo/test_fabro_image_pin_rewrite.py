@@ -1,7 +1,7 @@
 """Behavioral tests for `fabro_image_pin_rewrite` — prefix-preserving docker-pin rewrite.
 
 Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the fabro-sandbox
-image pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"`.
+image pin is `docker = "ghcr.io/livespec-ai/livespec-fabro-sandbox:<tag>"`.
 Since the layer split (livespec-3lev.4) that `<tag>` carries a `<layer>-` prefix
 (`python-v<X.Y.Z>` / `python-rust-v<X.Y.Z>`) over the bare release version, so a
 release fan-out MUST rewrite only the trailing `vX.Y.Z` and preserve the prefix
@@ -34,7 +34,7 @@ from livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite import (
 __all__: list[str] = []
 
 
-_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +298,7 @@ def test_rewrite_pin_in_text_leaves_unrelated_container_image_untouched() -> Non
         "jobs:\n"
         "  build:\n"
         "    container:\n"
-        "      image: ghcr.io/thewoolleyman/some-other-image:python-v0.43.2\n"
+        "      image: ghcr.io/livespec-ai/some-other-image:python-v0.43.2\n"
     )
     result = rewrite_pin_in_text(
         text=text,

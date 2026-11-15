@@ -45,7 +45,7 @@ _OTEL_CARGO_PHASE_REL = Path("livespec_dev_tooling/otel_cargo_phase.py")
 _OTEL_CARGO_PHASE = Path(__file__).resolve().parents[2] / _OTEL_CARGO_PHASE_REL
 
 _FACTS = {
-    "repo": "thewoolleyman/livespec-console-beads-fabro",
+    "repo": "livespec-ai/livespec-console-beads-fabro",
     "sha": "a" * 40,
     "toolchain": "1.92.0",
 }
@@ -148,12 +148,12 @@ def test_parse_env_malformed_returns_none(overrides: dict[str, str]) -> None:
     ("remote", "expected"),
     [
         (
-            "git@github.com:thewoolleyman/livespec-console-beads-fabro.git",
-            "thewoolleyman/livespec-console-beads-fabro",
+            "git@github.com:livespec-ai/livespec-console-beads-fabro.git",
+            "livespec-ai/livespec-console-beads-fabro",
         ),
         (
-            "https://github.com/thewoolleyman/livespec-console-beads-fabro",
-            "thewoolleyman/livespec-console-beads-fabro",
+            "https://github.com/livespec-ai/livespec-console-beads-fabro",
+            "livespec-ai/livespec-console-beads-fabro",
         ),
         ("https://gitlab.com/owner/repo.git", "unknown"),
         ("git@github.com:.git", "unknown"),
@@ -214,7 +214,7 @@ def test_gather_source_facts_assembles_from_seams(monkeypatch: pytest.MonkeyPatc
             "remote",
             "get-url",
             "origin",
-        ): "git@github.com:thewoolleyman/livespec-console-beads-fabro.git",
+        ): "git@github.com:livespec-ai/livespec-console-beads-fabro.git",
         ("git", "rev-parse", "HEAD"): "b" * 40,
     }
 
@@ -227,7 +227,7 @@ def test_gather_source_facts_assembles_from_seams(monkeypatch: pytest.MonkeyPatc
         lambda **_kwargs: 'channel = "1.92.0"\n',
     )
     assert gather_source_facts() == {
-        "repo": "thewoolleyman/livespec-console-beads-fabro",
+        "repo": "livespec-ai/livespec-console-beads-fabro",
         "sha": "b" * 40,
         "toolchain": "1.92.0",
     }

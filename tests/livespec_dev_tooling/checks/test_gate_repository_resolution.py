@@ -57,7 +57,7 @@ __all__: list[str] = []
 _DAEMON_ORIGIN = "git://git-gates.gates.svc.cluster.local/livespec-dev-tooling.git"
 # The repository that clone is a copy of — knowable only from the declaration,
 # never from the remote above.
-_GATED_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+_GATED_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 # The two addresses each check must reach once it has resolved the repository.
 _PROTECTION_PATH = f"repos/{_GATED_REPOSITORY}/branches/master/protection/required_status_checks"
 _CHECK_RUNS_PATH = f"repos/{_GATED_REPOSITORY}/commits/master/check-runs?check_name=ci-green"

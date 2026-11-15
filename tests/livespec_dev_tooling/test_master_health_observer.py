@@ -27,8 +27,8 @@ from livespec_dev_tooling._incident_observer_types import ObserverRegistration
 from livespec_dev_tooling.incident_observer_service import ControllerService
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
-_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
-_UNOBSERVED = "thewoolleyman/livespec"
+_REPOSITORY = "livespec-ai/livespec-dev-tooling"
+_UNOBSERVED = "livespec-ai/livespec"
 _TOKEN = "query-token-fixture"
 _GREEN = "1" * 40
 _INCIDENT = "a" * 40

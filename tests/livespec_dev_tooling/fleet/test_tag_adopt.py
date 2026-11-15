@@ -58,7 +58,7 @@ __all__: list[str] = []
 
 _ORCH = "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
 _MARKET = "livespec-orchestrator-beads-fabro"
-_REPO = "thewoolleyman/livespec-orchestrator-beads-fabro"
+_REPO = "livespec-ai/livespec-orchestrator-beads-fabro"
 _URL = f"https://github.com/{_REPO}.git"
 _TAG = "v0.311.0"
 _TAG_COMMIT = "e" * 40

@@ -55,7 +55,7 @@ def test_claude_settings_skips_malformed_or_non_github_marketplace_entries(
                     "not-github": {
                         "source": {
                             "source": "local",
-                            "repo": "thewoolleyman/livespec",
+                            "repo": "livespec-ai/livespec",
                             "ref": "v0.7.3",
                         }
                     },
@@ -63,13 +63,13 @@ def test_claude_settings_skips_malformed_or_non_github_marketplace_entries(
                     "missing-ref": {
                         "source": {
                             "source": "github",
-                            "repo": "thewoolleyman/livespec",
+                            "repo": "livespec-ai/livespec",
                         }
                     },
                     "non-tag-ref": {
                         "source": {
                             "source": "github",
-                            "repo": "thewoolleyman/livespec",
+                            "repo": "livespec-ai/livespec",
                             "ref": "main",
                         }
                     },

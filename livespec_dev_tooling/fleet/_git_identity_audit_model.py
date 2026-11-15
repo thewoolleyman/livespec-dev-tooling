@@ -19,7 +19,7 @@ from livespec_dev_tooling.fleet import _git_identity_audit_report as audit_repor
 from livespec_dev_tooling.fleet._git_identity_audit_report import (  # noqa: E402
     CANONICAL_EMAIL,
     CANONICAL_NAME,
-    OWNER,
+    OWNERS,
 )
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     InvocationNotPerformed,
@@ -92,7 +92,7 @@ def probe_args(*, host: str) -> tuple[str, ...]:
         "python3",
         "-",
         host,
-        OWNER,
+        ",".join(OWNERS),
         CANONICAL_NAME,
         CANONICAL_EMAIL,
         json.dumps(host_roots(host=host)),

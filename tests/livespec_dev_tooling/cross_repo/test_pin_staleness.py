@@ -33,7 +33,7 @@ def _record(*, source_repo: str, current_value: str, file_path: str) -> dict[str
     return {
         "pin_format": "fabro_sandbox_docker_image",
         "file_path": file_path,
-        "pin_key": "ghcr.io/thewoolleyman/livespec-fabro-sandbox",
+        "pin_key": "ghcr.io/livespec-ai/livespec-fabro-sandbox",
         "current_value": current_value,
         "source_repo": source_repo,
     }

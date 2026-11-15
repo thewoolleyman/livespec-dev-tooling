@@ -107,7 +107,7 @@ ENV PATH=/root/.cargo/bin:$PATH
 # fetch and an image build emits no build.env=factory span. CONSOLE_REF is the
 # console branch/ref whose lockfile is baked; the resolved commit is echoed into
 # the build log so each image tag records which lockfile it warmed.
-ARG CONSOLE_REPO=https://github.com/livespec-ai/livespec-console-beads-fabro.git
+ARG CONSOLE_REPO=https://github.com/thewoolleyman/livespec-console-beads-fabro.git
 ARG CONSOLE_REF=master
 ENV CARGO_NET_RETRY=5
 RUN set -eux; \

@@ -3,7 +3,7 @@
 WHAT WAS MEASURED, because the fix is only legible beside it. On
 2026-09-06 master CI of this repository went red THREE times in one
 afternoon on `check-fleet-conformance` alone, every time on the SAME
-single read — the fleet manifest, fetched from `thewoolleyman/livespec`
+single read — the fleet manifest, fetched from `livespec-ai/livespec`
 through the REST contents API — with `gh: API rate limit exceeded for
 installation ID 131208965` (HTTP 403). No code changed between a failing
 attempt and a passing one.

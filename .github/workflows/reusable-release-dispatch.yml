@@ -35,7 +35,7 @@
 #
 # Consumers invoke this workflow from their own `release-dispatch.yml`
 # shim via
-# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@vX.Y.Z`
+# `uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@vX.Y.Z`
 # (with `with: { source_repo: ..., tag: ..., release_url: ... }` and
 # `secrets: inherit`).
 #

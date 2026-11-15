@@ -19,7 +19,7 @@ __all__: list[str] = []
 _MODULE = "livespec_dev_tooling.ci_run_telemetry"
 _MODULE_PATH = Path(__file__).resolve().parents[2] / "livespec_dev_tooling" / "ci_run_telemetry.py"
 _RUN_ID = 42
-_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 _RUN = {
     "databaseId": _RUN_ID,
     "headSha": "a" * 40,
@@ -185,7 +185,7 @@ def test_the_budgeted_log_read_exports_the_consumer_reuse_outcome(
             returncode=0,
             stdout=(
                 "LIVESPEC_COVERAGE_REUSE_OUTCOME "
-                '{"repository":"thewoolleyman/livespec-dev-tooling","run_id":"42",'
+                '{"repository":"livespec-ai/livespec-dev-tooling","run_id":"42",'
                 '"job_id":"check-coverage","duration_ms":-1,"outcome":"reused"}\n'
             ),
             stderr="",

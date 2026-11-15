@@ -8,7 +8,7 @@
 # signature. Every other failure stays the run's verdict.
 #
 # Callers reference it as
-# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-ci-infra-rerun.yml@<ref>`
+# `uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-ci-infra-rerun.yml@<ref>`
 # with `secrets: inherit` and `actions: write`.
 #
 # The decision is `python -m livespec_dev_tooling.ci_infra_rerun`, which reads
@@ -68,7 +68,7 @@ jobs:
       - name: Checkout the livespec-dev-tooling decision module
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 

@@ -21,7 +21,7 @@
 
 [Unit]
 Description=Run livespec reconcile-runs 10 minutes after the previous pass ends
-Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+Documentation=https://github.com/livespec-ai/livespec-orchestrator-beads-fabro
 
 [Timer]
 OnBootSec=5min

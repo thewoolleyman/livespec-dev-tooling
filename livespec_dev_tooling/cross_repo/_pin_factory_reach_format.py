@@ -2,7 +2,7 @@
 
 The third surface of the `fabro_sandbox_docker_image` format, per
 `SPECIFICATION/contracts.md` section "Pin autodiscovery rules": the
-`FACTORY_REACH_SANDBOX_IMAGE=ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>`
+`FACTORY_REACH_SANDBOX_IMAGE=ghcr.io/livespec-ai/livespec-fabro-sandbox:<tag>`
 line of `ci-runner/k3s/phase2/factory/factory-reach-image.env`.
 
 That file is a SECOND copy of the fleet sandbox image pin the workflow

@@ -4,7 +4,7 @@ Extracted from the embedded Python heredoc in
 `.github/actions/bump-pin-rewrite/action.yml`'s "Rewrite matching pins to new
 tag" step (the `fabro_sandbox_docker_image` case). Per
 `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the fabro-sandbox image
-pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` in a
+pin is `docker = "ghcr.io/livespec-ai/livespec-fabro-sandbox:<tag>"` in a
 Fabro `workflow.toml`, and the SAME image reference under a GitHub Actions job's
 `container:` block (`image: ghcr.io/…:<tag>`) where a cut-over consumer runs its
 CI inside the baked sandbox image, and the `FACTORY_REACH_SANDBOX_IMAGE=<ref>` line

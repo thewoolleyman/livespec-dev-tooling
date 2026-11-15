@@ -216,7 +216,7 @@ def _run_ownership_step(*, tmp_path: Path, repository: str, url: str) -> tuple[i
 
 def test_the_ownership_step_lets_an_unobserved_repository_run_its_policy(tmp_path):
     status, log, written = _run_ownership_step(
-        tmp_path=tmp_path, repository="thewoolleyman/livespec", url=""
+        tmp_path=tmp_path, repository="livespec-ai/livespec", url=""
     )
 
     assert (status, written) == (0, "status=ordinary\n")
@@ -225,7 +225,7 @@ def test_the_ownership_step_lets_an_unobserved_repository_run_its_policy(tmp_pat
 
 def test_the_ownership_step_stops_an_observed_repository_with_no_answer(tmp_path):
     status, log, written = _run_ownership_step(
-        tmp_path=tmp_path, repository="thewoolleyman/livespec-dev-tooling", url=""
+        tmp_path=tmp_path, repository="livespec-ai/livespec-dev-tooling", url=""
     )
 
     assert (status, written) == (1, "")

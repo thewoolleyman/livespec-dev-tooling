@@ -171,7 +171,8 @@ def repositories(  # pragma: no cover - follow-up Red cycle
             continue
         origin = origin_answer.stdout.strip()
         identity = github_identity(origin=origin)
-        if identity is None or identity[0] != config.owner:
+        # `owner` carries every audited owner, comma-separated, as one probe argument.
+        if identity is None or identity[0] not in config.owner.split(","):
             excluded.append({"path": str(candidate), "origin": origin})
             continue
         common_dir = str(Path(common.stdout.strip()).resolve())

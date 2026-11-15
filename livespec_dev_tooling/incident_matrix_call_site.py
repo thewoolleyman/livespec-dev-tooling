@@ -6,7 +6,7 @@ never matched as text, so a quoted key, a space before the colon or a value on
 the next line reads exactly as GitHub reads it.
 
 At run time a call site is a job whose `uses:` is exactly the canonical
-`thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@<ref>`
+`livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@<ref>`
 (owner and repo compared case-insensitively, as GitHub resolves them). A local
 file merely NAMED `reusable-check-matrix.yml`, or that path under any other
 owner, is not the matrix: it is a reusable workflow like any other, so the
@@ -92,7 +92,7 @@ GUARDED_RESULT = "${{ needs.incident-ci.result }}"
 _WIRED = {"incident-omitted": GUARDED_OMITTED, "incident-ci-result": GUARDED_RESULT}
 
 _MATRIX_CALL = re.compile(
-    r"(?i:thewoolleyman/livespec-dev-tooling)/\.github/workflows/reusable-check-matrix\.yml@[^\s@]+"
+    r"(?i:livespec-ai/livespec-dev-tooling)/\.github/workflows/reusable-check-matrix\.yml@[^\s@]+"
 )
 _WORKFLOW_PATH = re.compile(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")

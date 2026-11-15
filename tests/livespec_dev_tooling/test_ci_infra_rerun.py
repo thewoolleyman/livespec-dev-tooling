@@ -100,7 +100,7 @@ def _run_plan(
             "--summary-out",
             str(summary_out),
             "--repository",
-            "thewoolleyman/livespec-dev-tooling",
+            "livespec-ai/livespec-dev-tooling",
             "--run-id",
             "41645065357",
         ]
@@ -175,7 +175,7 @@ def test_a_recorded_429_names_its_run_job_and_matched_line_in_one_rerun(
     reruns = cast("list[dict[str, object]]", payload["reruns"])
     assert [rerun["job_id"] for rerun in reruns] == [recorded_job_id]
     assert summary.splitlines()[:2] == [
-        "CI infrastructure re-run reconciler: thewoolleyman/livespec-dev-tooling run 41645065357",
+        "CI infrastructure re-run reconciler: livespec-ai/livespec-dev-tooling run 41645065357",
         (
             "- re-run job 'check-types (root)' (id 125948122947): attempt 1 of 3 after a 120s"
             " wait, cause set-up-job action download, signature action-download-429:"
@@ -455,7 +455,7 @@ def test_module_runs_under_the_reusable_workflow_bare_pythonpath(*, tmp_path: Pa
             "--summary-out",
             str(summary_path),
             "--repository",
-            "thewoolleyman/livespec-dev-tooling",
+            "livespec-ai/livespec-dev-tooling",
             "--run-id",
             "41645065357",
         ],

@@ -532,7 +532,7 @@ jobs:
       - name: Checkout livespec-dev-tooling support modules
         uses: actions/checkout@v5
         with:
-          repository: thewoolleyman/livespec-dev-tooling
+          repository: livespec-ai/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 

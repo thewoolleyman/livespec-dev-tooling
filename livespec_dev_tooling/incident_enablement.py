@@ -214,9 +214,7 @@ class ObserverEnablement:
 # The listener port of each production controller installation, equal by test to the
 # incident_observer role's default port. Only the installation serving a repository can
 # hold its record; a repository absent here has no installation and is refused by name.
-INSTALLATION_PORTS: Mapping[str, int] = MappingProxyType(
-    {"thewoolleyman/livespec-dev-tooling": 8765}
-)
+INSTALLATION_PORTS: Mapping[str, int] = MappingProxyType({"livespec-ai/livespec-dev-tooling": 8765})
 _CONTROL_SECRET_ENV = "LIVESPEC_INCIDENT_CONTROL_SECRET"  # noqa: S105 - a variable name
 _ACCEPTED = 202
 

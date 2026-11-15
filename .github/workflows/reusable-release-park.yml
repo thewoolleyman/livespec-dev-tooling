@@ -65,7 +65,9 @@ jobs:
             --jq '[ .[]
               | select(
                   (.author.login == "app/thewoolleyman-factory-bot"
-                   or .author.login == "thewoolleyman-factory-bot[bot]")
+                   or .author.login == "thewoolleyman-factory-bot[bot]"
+                   or .author.login == "app/livespec-ai-factory-bot"
+                   or .author.login == "livespec-ai-factory-bot[bot]")
                   and (.headRefName | startswith("release-please--"))
                 ) ]')
 

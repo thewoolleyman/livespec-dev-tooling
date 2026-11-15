@@ -350,20 +350,20 @@ def _run(*, ls_remote: str = f"{HEAD}\tHEAD\n", failed: bool = False):
 
 def test_core_is_read_by_ls_remote_head_and_by_the_manifest_digest_the_audit_computes() -> None:
     run, calls = _run()
-    assert core_head_reader(owner="thewoolleyman", run=run)() == HEAD
-    assert core_identity_reader(owner="thewoolleyman", run=run)() == (
+    assert core_head_reader(owner="livespec-ai", run=run)() == HEAD
+    assert core_identity_reader(owner="livespec-ai", run=run)() == (
         "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
     )
-    assert any("github.com/thewoolleyman/livespec.git" in part for a in calls for part in a)
+    assert any("github.com/livespec-ai/livespec.git" in part for a in calls for part in a)
     assert "credential.helper=" in calls[0]
 
 
 @pytest.mark.parametrize(("ls_remote", "failed"), [("", False), ("nonsense\n", False), ("", True)])
 def test_an_unusable_core_answer_reads_as_unavailable(*, ls_remote: str, failed: bool) -> None:
     run, _ = _run(ls_remote=ls_remote, failed=failed)
-    assert core_head_reader(owner="thewoolleyman", run=run)() is None
+    assert core_head_reader(owner="livespec-ai", run=run)() is None
     if failed:
-        assert core_identity_reader(owner="thewoolleyman", run=run)() is None
+        assert core_identity_reader(owner="livespec-ai", run=run)() is None
 
 
 def test_the_production_source_is_built_without_reading_anything() -> None:
@@ -382,9 +382,9 @@ def test_the_step_writes_only_to_the_installation_serving_the_repository() -> No
     write = controller_enablement_writer(
         environ={"LIVESPEC_INCIDENT_CONTROL_SECRET": "control"}, post=post
     )
-    assert write(repository="thewoolleyman/livespec-dev-tooling", manifest_sha256=CURRENT) == (
+    assert write(repository="livespec-ai/livespec-dev-tooling", manifest_sha256=CURRENT) == (
         0,
-        "enabled\tthewoolleyman/livespec-dev-tooling",
+        "enabled\tlivespec-ai/livespec-dev-tooling",
     )
     url, secret, body = posted[0]
     assert (url, secret) == ("http://127.0.0.1:8765/enablement", b"control")
@@ -429,7 +429,7 @@ def test_the_enablement_step_retries_the_retained_controller_record_over_real_ht
 
 
 def test_the_step_refuses_by_name_without_a_secret_a_reachable_controller_or_its_consent() -> None:
-    repo = "thewoolleyman/livespec-dev-tooling"
+    repo = "livespec-ai/livespec-dev-tooling"
 
     def unreachable(**_kwargs: object) -> tuple[int, dict[str, Any]]:
         raise OSError("connection refused")
@@ -482,7 +482,7 @@ def test_the_served_ports_are_the_incident_observer_roles_listener_ports() -> No
     )
     port = re.search(r"^incident_observer_port: (\d+)$", defaults, re.MULTILINE)
     assert port is not None
-    assert {"thewoolleyman/livespec-dev-tooling": int(port.group(1))} == INSTALLATION_PORTS
+    assert {"livespec-ai/livespec-dev-tooling": int(port.group(1))} == INSTALLATION_PORTS
 
 
 def test_the_controller_itself_refuses_another_repositorys_operation_retaining_nothing(

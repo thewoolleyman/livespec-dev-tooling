@@ -47,7 +47,7 @@ __all__: list[str] = [
     "session_hook_refusal",
 ]
 
-ORCHESTRATOR_REPO = "thewoolleyman/livespec-orchestrator-beads-fabro"
+ORCHESTRATOR_REPO = "livespec-ai/livespec-orchestrator-beads-fabro"
 ORCHESTRATOR_MARKETPLACE = marketplace_of(plugin=ORCHESTRATOR_PLUGIN)
 HOLD_PROBE_MODULE = "livespec_dev_tooling.fleet.orchestrator_hold_probe"
 

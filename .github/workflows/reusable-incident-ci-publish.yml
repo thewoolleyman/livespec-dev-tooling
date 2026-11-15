@@ -103,7 +103,7 @@ jobs:
           venv="${RUNNER_TEMP}/released-dev-tooling"
           uv venv --python 3.10 "$venv"
           uv pip install --python "${venv}/bin/python" \
-            "livespec-dev-tooling @ git+https://github.com/thewoolleyman/livespec-dev-tooling@${RELEASE}"
+            "livespec-dev-tooling @ git+https://github.com/livespec-ai/livespec-dev-tooling@${RELEASE}"
           resolved="$("${venv}/bin/python" -I -c 'import livespec_dev_tooling as m; print(m.__file__)')"
           case "$resolved" in
             "${venv}"/*) echo "released livespec-dev-tooling ${RELEASE} resolves from ${resolved}" ;;

@@ -1,13 +1,15 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/ci.yml adopts the GUARDED merge_group shape
-# (org merge-queue cutover, plan stale-base-merge-options, epic
-# livespec-dev-tooling-xowhol). It adds the merge_group trigger and a first,
-# hosted, read-only merge-group-guard job, and it MODIFIES existing lines:
-# every self-hosted-capable job's runs-on is wrapped in the guard output
-# (trusted == 'true' && <unchanged expression> || 'ubuntu-latest'), its needs
-# gains merge-group-guard, and its if gains !cancelled(). On pull_request and
-# push the guard outputs true with no API call, so every job, its runs-on and
-# its run condition are unchanged on those events. MAINTAINER tier.
-work_item=livespec-dev-tooling-5foyvs
-reason=Adopt the guarded merge_group trigger so the merge queue the org cutover requires (branch_protection_alignment merge_queue_absent) runs the full suite and reports ci-green without opening an unguarded self-hosted routing path.
+# The change (plan stale-base-merge-options, note 005 §3 Phase 1 step 7; the held
+# org-cutover PR): every .github/workflows/ reference to thewoolleyman/<fleet-repo>
+# and ghcr.io/thewoolleyman/ moves to livespec-ai (uses: refs, repository:
+# checkouts, container image names), and auto-enable-merge.yml and
+# reusable-release-park.yml also accept the organization fleet App's bot login
+# (livespec-ai-factory-bot) beside the personal-account one. No merge_group.
+# Logically additive: the same jobs run, not significantly slower. Authorized by
+# legacy-coordinator-agent under the coordinator-duties §12 additive delegation,
+# 2026-11-15 ~00:5xZ. The line-diff guard reads modified lines as the maintainer
+# tier, so the item carries approval:workflow-edit; the edit stays logically
+# additive (§12).
+work_item=livespec-dev-tooling-kqr3lz
+reason=Held org-cutover PR: rewrite workflow owner refs and GHCR names to livespec-ai and admit the org App bot login (note 005 Phase 1 step 7); logically additive, coordinator-authorized 2026-11-15.

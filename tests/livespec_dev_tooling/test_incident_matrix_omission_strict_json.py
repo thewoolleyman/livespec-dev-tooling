@@ -28,7 +28,7 @@ _REPOSITORY = "owner/repo"
 _CALLER_PATH = ".github/workflows/ci.yml"
 _CALLER = (
     "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
-    "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1\n"
+    "    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1\n"
     "    with:\n"
     f"      incident-omitted: {GUARDED_OMITTED}\n      incident-ci-result: {GUARDED_RESULT}\n"
 )

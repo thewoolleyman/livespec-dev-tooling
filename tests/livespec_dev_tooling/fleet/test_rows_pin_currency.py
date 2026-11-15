@@ -154,12 +154,12 @@ def test_fabro_sandbox_image_pin_currency_uses_version_component_comparison() ->
     ctx = _context(
         files={
             ".fabro/workflows/build/workflow.toml": (
-                'docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v3.0.0"\n'
+                'docker = "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v3.0.0"\n'
             ),
             ".github/workflows/ci.yml": (
                 "jobs:\n"
                 "  test:\n"
-                "    container: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v2.9.0\n"
+                "    container: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v2.9.0\n"
             ),
         },
         latest={_LATEST_DEV_TOOLING_ARGS: "v3.0.0"},
@@ -196,7 +196,7 @@ def test_pin_currency_rows_pass_when_records_are_current_or_latest_unreadable() 
                 "  use:\n"
                 "    uses: acme/livespec-driver-codex/.github/workflows/ci.yml@v2.1.0\n"
                 "  image:\n"
-                "    container: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v3.0.0\n"
+                "    container: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v3.0.0\n"
             ),
         },
         latest={

@@ -51,7 +51,7 @@ def test_discover_github_workflow_uses_emits_record(*, tmp_path: Path) -> None:
     (workflows_dir / "bump-pin.yml").write_text(
         "jobs:\n"
         "  bump:\n"
-        "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml@master\n",
+        "    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-bump.yml@master\n",
         encoding="utf-8",
     )
     result = _walk(root=tmp_path, source_repo=None)
@@ -60,8 +60,7 @@ def test_discover_github_workflow_uses_emits_record(*, tmp_path: Path) -> None:
     assert record["pin_format"] == "github_workflow_uses_ref"
     assert record["file_path"] == ".github/workflows/bump-pin.yml"
     assert (
-        record["pin_key"]
-        == "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml"
+        record["pin_key"] == "livespec-ai/livespec-dev-tooling/.github/workflows/reusable-bump.yml"
     )
     assert record["current_value"] == "master"
     assert record["source_repo"] == "livespec-dev-tooling"
@@ -150,7 +149,7 @@ def test_discover_github_workflow_uses_yaml_extension(*, tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-_FABRO_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_FABRO_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 
 
 def _write_fabro_workflow(
@@ -403,7 +402,7 @@ def test_discover_workflow_container_image_scoped_to_fabro_sandbox(*, tmp_path: 
         "jobs:\n"
         "  build:\n"
         "    container:\n"
-        "      image: ghcr.io/thewoolleyman/some-other-image:v1.0.0\n"
+        "      image: ghcr.io/livespec-ai/some-other-image:v1.0.0\n"
         "  publish:\n"
         "    container: ubuntu:24.04\n",
         encoding="utf-8",

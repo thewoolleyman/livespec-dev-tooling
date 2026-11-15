@@ -84,7 +84,7 @@ _CONSUMER_RECIPE = "check-nextest"
 
 # The image the fixture consumer's CI container pins. The TAG is what carries the
 # layer name, and the layer name is what this test joins the two ends on.
-_CONSUMER_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.126.1"
+_CONSUMER_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v1.126.1"
 
 # Which Dockerfile builds each layer of the python-rust chain. `python-rust-agent`
 # is the shared `agent` Dockerfile built with the python-rust digest as its

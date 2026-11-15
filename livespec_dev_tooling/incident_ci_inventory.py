@@ -37,7 +37,7 @@ __all__: list[str] = [
 ]
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-egy3ri
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-z5cjph
-SELF_REPOSITORY = "thewoolleyman/livespec-dev-tooling"
+SELF_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 _DIR = Path(__file__).parent / "data/incident-ci-inventory"
 _PATH = Path(__file__).parent / "data/incident-ci-inventory.json"
 _TEXT = re.compile(r"[a-z][a-z0-9-]*")

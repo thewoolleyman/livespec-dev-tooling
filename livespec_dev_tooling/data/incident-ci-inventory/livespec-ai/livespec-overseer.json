@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "source": {
-    "commit": "db2bd0a0feb92f402fc6bb9134e3ac8af5698547",
-    "repository": "thewoolleyman/livespec"
+    "commit": "d13d662b3d4fa6fd793afad995dd754d87a76db7",
+    "repository": "livespec-ai/livespec-overseer"
   },
   "targets": [
     {
@@ -79,22 +79,6 @@
       "batch": "check-python-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-comment-no-historical-refs",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-python-batch",
-      "classification": "unclassified",
-      "consumes": [],
-      "name": "check-complexity",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-python-batch",
-      "classification": "fast",
-      "consumes": [],
       "name": "check-file-lloc",
       "needs": [],
       "produces": []
@@ -104,14 +88,6 @@
       "classification": "fast",
       "consumes": [],
       "name": "check-global-writes",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-python-batch",
-      "classification": "fast",
-      "consumes": [],
-      "name": "check-imports-architecture",
       "needs": [],
       "produces": []
     },
@@ -149,7 +125,7 @@
     },
     {
       "batch": "check-python-batch",
-      "classification": "fast",
+      "classification": "slow",
       "consumes": [],
       "name": "check-no-except-outside-io",
       "needs": [],
@@ -231,14 +207,6 @@
       "batch": "check-python-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-schema-dataclass-pairing",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-python-batch",
-      "classification": "fast",
-      "consumes": [],
       "name": "check-self-hosted-uv-lane",
       "needs": [],
       "produces": []
@@ -279,15 +247,7 @@
       "batch": "check-metadata",
       "classification": "fast",
       "consumes": [],
-      "name": "check-copier-template-smoke",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-metadata",
-      "classification": "fast",
-      "consumes": [],
-      "name": "check-doctor-static",
+      "name": "check-check-coverage-incremental",
       "needs": [],
       "produces": []
     },
@@ -298,6 +258,14 @@
       "name": "check-red-green-replay",
       "needs": [],
       "precondition": "tdd-trailers-or-pull-request-event-admission",
+      "produces": []
+    },
+    {
+      "batch": "check-doctor-static",
+      "classification": "fast",
+      "consumes": [],
+      "name": "check-doctor-static",
+      "needs": [],
       "produces": []
     },
     {
@@ -320,31 +288,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-behavior-scenario-link",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-metadata-batch",
-      "classification": "fast",
-      "consumes": [],
       "name": "check-canonical-recipe-fidelity",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-metadata-batch",
-      "classification": "fast",
-      "consumes": [],
-      "name": "check-canonical-slugs-projection",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-metadata-batch",
-      "classification": "fast",
-      "consumes": [],
-      "name": "check-check-coverage-incremental",
       "needs": [],
       "produces": []
     },
@@ -384,7 +328,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-claude-md-coverage",
+      "name": "check-claude-idle-canary",
       "needs": [],
       "produces": []
     },
@@ -392,7 +336,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-cli-explicit-project-root",
+      "name": "check-claude-md-coverage",
       "needs": [],
       "produces": []
     },
@@ -408,7 +352,15 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-codex-no-repo-local-adapters",
+      "name": "check-codex-plugin-runnable-launcher",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "slow",
+      "consumes": [],
+      "name": "check-codex-skill-picker",
       "needs": [],
       "produces": []
     },
@@ -457,7 +409,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-gh-feature-surfaces",
+      "name": "check-full-autonomy-config-conformance",
       "needs": [],
       "produces": []
     },
@@ -497,6 +449,14 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
+      "name": "check-instruction-surface-budget",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "fast",
+      "consumes": [],
       "name": "check-local-memory-drift-audit",
       "needs": [],
       "produces": []
@@ -529,7 +489,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-no-renderer-vendoring",
+      "name": "check-no-factory-spec-edits",
       "needs": [],
       "produces": []
     },
@@ -561,6 +521,14 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
+      "name": "check-no-workflow-edits",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "fast",
+      "consumes": [],
       "name": "check-partition-completeness",
       "needs": [],
       "produces": []
@@ -570,6 +538,14 @@
       "classification": "fast",
       "consumes": [],
       "name": "check-plan-anchor-declared",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "fast",
+      "consumes": [],
+      "name": "check-plan-anchor-metadata",
       "needs": [],
       "produces": []
     },
@@ -593,6 +569,14 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
+      "name": "check-plugin-manifest-lockstep",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "fast",
+      "consumes": [],
       "name": "check-plugin-resolution",
       "needs": [],
       "produces": []
@@ -607,9 +591,17 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "slow",
+      "classification": "fast",
       "consumes": [],
-      "name": "check-prompts",
+      "name": "check-prose-release-hygiene",
+      "needs": [],
+      "produces": []
+    },
+    {
+      "batch": "check-metadata-batch",
+      "classification": "fast",
+      "consumes": [],
+      "name": "check-report-only-artifact-producers",
       "needs": [],
       "produces": []
     },
@@ -665,7 +657,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-spec-governance-manifest",
+      "name": "check-spec-governance-default-block",
       "needs": [],
       "produces": []
     },
@@ -673,7 +665,7 @@
       "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
-      "name": "check-spec-governance-template",
+      "name": "check-tmp-supervisor-discipline",
       "needs": [],
       "produces": []
     },
@@ -687,44 +679,9 @@
     },
     {
       "batch": "check-metadata-batch",
-      "classification": "unclassified",
-      "consumes": [],
-      "name": "check-tools",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "check-metadata-batch",
       "classification": "fast",
       "consumes": [],
       "name": "check-vendor-manifest",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "release-gate-pre-tag",
-      "classification": "unclassified",
-      "conditional": true,
-      "consumes": [],
-      "name": "check-mutation",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "release-gate-pre-tag",
-      "classification": "fast",
-      "conditional": true,
-      "consumes": [],
-      "name": "check-no-lloc-soft-warnings",
-      "needs": [],
-      "produces": []
-    },
-    {
-      "batch": "release-gate-pre-tag",
-      "classification": "fast",
-      "conditional": true,
-      "consumes": [],
-      "name": "check-no-todo-registry",
       "needs": [],
       "produces": []
     }

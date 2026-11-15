@@ -121,7 +121,7 @@ def test_another_repository_has_no_independent_controller_and_nothing_is_asked(
     host: _Host,
 ) -> None:
     assert (
-        read_controller_serving(probe=host.probe(), repository="thewoolleyman/livespec-runtime")
+        read_controller_serving(probe=host.probe(), repository="livespec-ai/livespec-runtime")
         is None
     )
     assert host.asked == []
@@ -258,7 +258,7 @@ def test_it_never_reads_the_auditors_own_package_or_a_release_name(
     assert own_version.call_count == 0
 
 
-_SECOND = "thewoolleyman/livespec"
+_SECOND = "livespec-ai/livespec"
 _SECOND_UNIT = "livespec-incident-observer-livespec.service"
 _SECOND_CONFIG = "/etc/livespec-incident/controller-livespec.json"
 
@@ -309,7 +309,7 @@ def test_a_process_started_with_the_scratch_configuration_is_never_read(host: _H
     [
         (OBSERVED_REPOSITORY, "thewoolleyman/Not_Safe"),
         (OBSERVED_REPOSITORY, "thewoolleyman/scratch"),
-        (OBSERVED_REPOSITORY, "thewoolleyman/livespec", "someone-else/livespec"),
+        (OBSERVED_REPOSITORY, "livespec-ai/livespec", "someone-else/livespec"),
     ],
 )
 def test_a_served_name_that_is_unsafe_scratch_or_shared_is_unverified_with_nothing_asked(
@@ -368,7 +368,7 @@ def test_no_other_role_or_inventory_key_declares_a_repository_inventory() -> Non
 def test_the_recovery_reading_for_a_served_repository_asks_that_repositorys_own_unit(
     host: _Host, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    second = "thewoolleyman/livespec"
+    second = "livespec-ai/livespec"
     monkeypatch.setattr(
         controller_reader,
         "SERVED_REPOSITORIES",

@@ -86,7 +86,7 @@ def test_main_uses_github_repository_as_consumer_fallback(
     *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("CONSUMER", raising=False)
-    monkeypatch.setenv("GITHUB_REPOSITORY", "thewoolleyman/livespec")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "livespec-ai/livespec")
     monkeypatch.setenv(
         "OPEN_PRS",
         json.dumps(

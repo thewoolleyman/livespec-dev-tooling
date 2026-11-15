@@ -60,7 +60,7 @@ _PACKAGE_TIMEOUT = (
 # `UV_HTTP_RETRIES`, which is exactly why no retry knob reaches it.
 _GIT_TLS = (
     "  x Failed to download and build `livespec-dev-tooling @ "
-    "git+https://github.com/thewoolleyman/livespec-dev-tooling.git@aeb6aa32`\n"
+    "git+https://github.com/livespec-ai/livespec-dev-tooling.git@aeb6aa32`\n"
     "  |-> Git operation failed\n"
     "  |-> failed to clone into: /github/home/.cache/uv/git-v0/db/65b9be868a1be312\n"
     "  `-> fatal: unable to access 'https://github.com/thewoolleyman/"

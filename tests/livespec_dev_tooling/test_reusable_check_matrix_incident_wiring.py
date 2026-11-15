@@ -9,8 +9,8 @@ evaluates the committed `if:` expressions and runs the real
 `incident_matrix_omission` decision:
 
 - **Pinned steps.** The consumer checkout, the Actions checkout
-  (`thewoolleyman/livespec-dev-tooling` at `inputs.ref`), the release
-  resolution, the released checkout (`thewoolleyman/livespec-dev-tooling` at
+  (`livespec-ai/livespec-dev-tooling` at `inputs.ref`), the release
+  resolution, the released checkout (`livespec-ai/livespec-dev-tooling` at
   the resolved tag), the decision (run from the released checkout), the report
   (with its step-summary write) and the job name are each pinned exactly, in
   order. A checkout moved to the PR head or to the consumer's repository fails
@@ -78,7 +78,7 @@ _DECISION_RUN = (
     'python3 -m livespec_dev_tooling.incident_matrix_venv "$RUNNER_TEMP/incident-decision"\n'
     '"$RUNNER_TEMP/incident-decision/bin/python" -m livespec_dev_tooling.incident_matrix_omission\n'
 )
-_DEV_TOOLING = "thewoolleyman/livespec-dev-tooling"
+_DEV_TOOLING = "livespec-ai/livespec-dev-tooling"
 
 _GATE = "${{ github.event_name == 'pull_request' && inputs.incident-omitted != '[]' }}"
 _OMIT = "github.event_name == 'pull_request' && steps.incident.outputs.omit == 'true'"
@@ -95,7 +95,7 @@ _GUARDS = {
     _RUN: _RUN_IF,
 }
 _RELEASE_RUN = (
-    'tag="$(gh api repos/thewoolleyman/livespec-dev-tooling/releases/latest --jq .tag_name)"\n'
+    'tag="$(gh api repos/livespec-ai/livespec-dev-tooling/releases/latest --jq .tag_name)"\n'
     'if ! [[ "$tag" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then\n'
     '  echo "::error::could not resolve the latest livespec-dev-tooling release tag"\n'
     "  exit 1\n"
@@ -187,7 +187,7 @@ _PAYLOAD = {
 }
 _CALLER = (
     "jobs:\n  incident-ci:\n    runs-on: ubuntu-latest\n  shared:\n    needs: [incident-ci]\n"
-    "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1\n"
+    "    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@v1\n"
     f"    with:\n      incident-omitted: {GUARDED_OMITTED}\n"
     f"      incident-ci-result: {GUARDED_RESULT}\n"
 )

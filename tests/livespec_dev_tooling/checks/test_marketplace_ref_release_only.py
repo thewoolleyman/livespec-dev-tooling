@@ -85,10 +85,10 @@ def test_marketplace_ref_release_only_accepts_release_pinned_family(
         root=tmp_path,
         body=_settings_with(
             entries=(
-                _github_marketplace(name="livespec", repo="thewoolleyman/livespec", ref="release"),
+                _github_marketplace(name="livespec", repo="livespec-ai/livespec", ref="release"),
                 _github_marketplace(
                     name="livespec-overseer",
-                    repo="thewoolleyman/livespec-overseer",
+                    repo="livespec-ai/livespec-overseer",
                     ref="release",
                 ),
             )
@@ -109,10 +109,10 @@ def test_marketplace_ref_release_only_rejects_family_pinned_to_a_tag(
         root=tmp_path,
         body=_settings_with(
             entries=(
-                _github_marketplace(name="livespec", repo="thewoolleyman/livespec", ref="release"),
+                _github_marketplace(name="livespec", repo="livespec-ai/livespec", ref="release"),
                 _github_marketplace(
                     name="livespec-orchestrator-beads-fabro",
-                    repo="thewoolleyman/livespec-orchestrator-beads-fabro",
+                    repo="livespec-ai/livespec-orchestrator-beads-fabro",
                     ref="v1.72.0",
                 ),
             )
@@ -173,7 +173,7 @@ def test_marketplace_ref_release_only_tolerates_entries_without_a_family_github_
         root=tmp_path,
         body=_settings_with(
             entries=(
-                '    "entry-not-an-object": "thewoolleyman/livespec"',
+                '    "entry-not-an-object": "livespec-ai/livespec"',
                 '    "source-not-an-object": { "source": "./.claude-plugin" }',
                 '    "repo-not-a-string": { "source": { "source": "github", "ref": "v1.0.0" } }',
             )

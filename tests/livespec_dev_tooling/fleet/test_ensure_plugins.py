@@ -94,14 +94,14 @@ def _settings_text() -> str:
                 "livespec": {
                     "source": {
                         "source": "github",
-                        "repo": "thewoolleyman/livespec",
+                        "repo": "livespec-ai/livespec",
                         "ref": "release",
                     }
                 },
                 "driver": {
                     "source": {
                         "source": "github",
-                        "repo": "thewoolleyman/livespec-driver-claude",
+                        "repo": "livespec-ai/livespec-driver-claude",
                         "ref": "v1.2.3",
                     }
                 },
@@ -118,14 +118,14 @@ def test_planned_commands_are_derived_from_settings_json() -> None:
             "plugin",
             "marketplace",
             "add",
-            "thewoolleyman/livespec@release",
+            "livespec-ai/livespec@release",
         ),
         (
             "claude",
             "plugin",
             "marketplace",
             "add",
-            "thewoolleyman/livespec-driver-claude@v1.2.3",
+            "livespec-ai/livespec-driver-claude@v1.2.3",
         ),
         ("claude", "plugin", "install", "livespec@livespec", "-s", "project"),
         ("claude", "plugin", "update", "livespec@livespec", "-s", "project"),
