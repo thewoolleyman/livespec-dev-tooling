@@ -65,6 +65,7 @@ A resume of this plan starts the coordinator `/loop` with no interval IN THE SAM
    - A newly joined node is not "enrolled" until it appears in the capacity reads.
 2. **Seats.** `herdr agent list` on hetzner-xubuntu, workspace throughput-improvements; read each seat's pane; a seat reading `blocked`, or idle with an executable next action, is unblocked or prompted this tick. Seats are reached ONLY with the SendMessage tool (ListAgents, then the session name), NEVER by typing into a pane: no `herdr agent prompt`, `herdr pane send-text`, `herdr pane run` or `tmux send-keys`, per `.ai/distributed-sendmessage-protocol.md`. A seat on another machine with no Remote Control row gets a ledger comment on its plan epic instead.
 3. **Levers.** For each row of the track table: owner, carrier state, next action, what changed since the last tick, and its measured effect on the metric where one exists.
+3b. **Shortcut watch.** Read every open row of the shortcut register (`research/003-shortcut-register-2026-11-15.md`): report each row's bite signal and measured saving, route any bite this tick, and add a row for any new shortcut the tick it is taken. Never carry a seat's claim that "the maintainer set this rule" without his words on the ledger.
 4. **In flight.** Open PRs of the track's plans, named as `repository#N`, and anything waiting on a spec ratification or the dispatcher.
 5. **FOR THE MAINTAINER (non-blocking).** Every ask from any track seat that is genuinely his, each with plan slug (epic id) and tab, re-verified as still open this tick.
 
