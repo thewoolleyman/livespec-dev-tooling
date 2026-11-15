@@ -49,9 +49,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -85,6 +87,15 @@ _RENDERED_BODY_FILENAME = "no_shadow_ledger_body.py"
 
 _PYRIGHT_REPO_LAYOUT_KEYS = frozenset({"include", "exclude", "extraPaths"})
 
+# The node.js release pyright's PyPI wrapper installs when it finds neither the
+# `nodejs_wheel` package nor a `node` on PATH. Unpinned, its nodeenv fallback
+# installs the head of nodejs.org/dist/index.json, which on 2026-11-15 was the
+# prebuilt-less 27.0.0-alpha, and the check crashed in every consumer whose CI
+# job has no node on PATH. Kept in lockstep with this repository's own
+# `nodejs-wheel-binaries` dev pin; the wrapper ignores it when either the wheel
+# or a global node resolves first.
+_PYRIGHT_NODE_VERSION = "24.19.0"
+
 _REMEDY = (
     "fix the flagged annotations/bindings in "
     "`livespec_dev_tooling.install_no_shadow_ledger."
@@ -117,6 +128,11 @@ def _pyright_strict_config(*, repo_root: Path) -> dict[str, object]:
     return {key: value for key, value in pyright.items() if key not in _PYRIGHT_REPO_LAYOUT_KEYS}
 
 
+def _pyright_environment(*, environ: Mapping[str, str]) -> dict[str, str]:
+    """`environ` with pyright's nodeenv fallback pinned to `_PYRIGHT_NODE_VERSION`."""
+    return {**environ, "PYRIGHT_PYTHON_NODE_VERSION": _PYRIGHT_NODE_VERSION}
+
+
 def _run_pyright_strict(*, body: str) -> tuple[int, str, str, Path]:
     """Render `body` + the strict config to a throwaway dir, run pyright, return the run.
 
@@ -144,6 +160,7 @@ def _run_pyright_strict(*, body: str) -> tuple[int, str, str, Path]:
             capture_output=True,
             text=True,
             check=False,
+            env=_pyright_environment(environ=os.environ),
         )
     return completed.returncode, completed.stdout, completed.stderr, config_path
 
