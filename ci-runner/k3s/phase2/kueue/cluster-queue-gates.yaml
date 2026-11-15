@@ -333,10 +333,21 @@ spec:
             # avg60 38.7, and a livespec-dev-tooling master coverage job ran
             # 102.5 min there against 27.0 normally. Derivation: DERIVATION.md
             # "The PowerEdge gate lane back to four gates (2026-11-14)".
+            #
+            # Six gate units, 30 cpu / 48 Gi, from 2026-11-15 (plan
+            # gate-job-resources item (i), research note 004). The 2026-11-14 cut
+            # came from orchestrator gates requesting 5 cpu while drawing about 16
+            # (P90 48.4 cores here). They now request 10 cpu at 10 workers, so
+            # this lane admits three of them, about 30-40 real cores of 72, or six
+            # 5-cpu gates (livespec-dev-tooling P90 about 5 each). At 07:12Z all
+            # gate flavors were full with 6 gates pending while this node read 61%
+            # idle. Apply ONLY after the orchestrator's gate_cpu = 10 is on its
+            # master. REVERT to 20 / 32Gi if poweredge reads under 5% idle with
+            # BestEffort full avg60 over 30 across two 10-minute windows.
             - name: "cpu"
-              nominalQuota: 20
+              nominalQuota: 30
             - name: "memory"
-              nominalQuota: 32Gi
+              nominalQuota: 48Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: WorkloadPriorityClass
