@@ -87,8 +87,10 @@ def test_a_current_entry_reports_no_difference_and_a_wrong_repository_refuses(
         ),
         encoding="utf-8",
     )
+    # A later, unrelated default-branch commit must not make an unchanged
+    # rendered member set appear stale.
     snapshot = freshness.RepositorySnapshot(
-        repository="owner/repo", head="c" * 40, workflow=workflow, inventory=targets
+        repository="owner/repo", head="d" * 40, workflow=workflow, inventory=targets
     )
 
     assert freshness.compare_entry(path=entry, snapshot=snapshot) is None
