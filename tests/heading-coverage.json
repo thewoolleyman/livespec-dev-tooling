@@ -2466,8 +2466,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test whose closure names a changed file through the working directory is touched",
-    "test": "TODO",
-    "reason": "Spec-first (v228): a real test at the integration tier or above is owed for this scenario, driving a pytest session that loads the flake-retry plugin against a fixture repository whose change set contains tests/fixtures/data.json and whose failing test names that file only through Path.cwd(), and in a second case only through request.config.rootpath, asserting that the test fails at once with no re-run. livespec-dev-tooling-wc23r2 owns it.",
+    "test": "tests.livespec_dev_tooling.test_flake_retry_session.test_a_failing_test_naming_a_changed_file_from_a_repository_rooted_base_has_no_retry",
+    "reason": "Integration-tier (`pytest.mark.integration`): a real pytest session loads the flake-retry plugin against a fixture repository whose changed tests/fixtures/data.json is named by an always-failing test only through Path.cwd(), then only through request.config.rootpath; each run must fail at once, emit its per-test withholding evidence, and contain neither a rerun nor a FLAKE-RETRIED summary (livespec-dev-tooling-wc23r2).",
     "work_item": "livespec-dev-tooling-wc23r2"
   },
   {

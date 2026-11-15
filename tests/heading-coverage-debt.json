@@ -478,13 +478,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a failing test whose closure names a changed file through the working directory is touched",
-    "work_item": "livespec-dev-tooling-wc23r2",
-    "first_seen": "2026-11-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failing test whose closure reaches a changed path through getattr, an alias of request or another path form fails at once",
     "work_item": "livespec-dev-tooling-k3lpwj",
     "first_seen": "2026-11-15"
