@@ -165,8 +165,21 @@ class Manifest:
         return f"{self.adopter_owner_for(adopter=adopter)}/{adopter.repo}"
 
     def member_names(self) -> frozenset[str]:
-        """The set of member repo names (for the discovery sweep)."""
+        """The set of `fleet`-array member repo names (the member-ci scoping set).
+
+        Members only, deliberately: an adopter is not a fleet member, so an
+        adopter running `--member-ci` is still unregistered here (exit 1).
+        """
         return frozenset(member.repo for member in self.members)
+
+    def declared_names(self) -> frozenset[str]:
+        """Every repo name the manifest declares — members AND adopters.
+
+        The discovery safety net's `known` set: it flags a fleet-shaped owner
+        repo that is NOT declared in the manifest (contracts.md section
+        "Sibling discovery"), and an `adopters` entry is such a declaration.
+        """
+        return self.member_names() | frozenset(adopter.repo for adopter in self.adopters)
 
 
 def _parse_member(*, entry: object) -> FleetMember | None:

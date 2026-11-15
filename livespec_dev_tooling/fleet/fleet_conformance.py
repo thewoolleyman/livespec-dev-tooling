@@ -350,7 +350,7 @@ def run_discovery_sweep(
             owner=ctx.owner,
         )
         return 0
-    known = manifest.member_names()
+    known = manifest.declared_names()
     errors = 0
     for entry in payload:
         if not isinstance(entry, dict):
