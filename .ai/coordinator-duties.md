@@ -672,6 +672,20 @@ done by the owning seat through its credential wrapper, and any binding lands by
 recorded on overseer-iyfjbo at 19:24:10Z and on `livespec-dev-tooling-6tgd2z` at 19:24:52Z: "DO NOT MAKE ME MANUALLY DO
 THINGS ON AWS THAT ARE POSSIBLE VIA THE API."
 
+**Rule NO-STALL-CREDENTIALS: a credential never stalls a plan.** When a plan stalls on a credential (an exhausted,
+expired or missing account, token or key), the coordinator first asks why this tenant does not get the credential every
+other tenant already gets (the forest check, rule P5), and takes any config flip that answers it. Failing that, it
+copies or rotates a working credential in itself, through the owner's write path, with the value on stdin only and a
+value-free hash read-back, records the copy in the owner's credential exception register, and names what replaces the
+copy. It never accepts "wait for the reset" as the cost while a copy, a rotation or a config change would unblock the
+plan, and it never asks the maintainer first: the authorization is standing. The maintainer, 2026-11-15 ~05:3xZ,
+recorded on epic `livespec-dev-tooling-6tgd2z`: "WHY NOT JUST PUT A WORKING CREDENTIAL IN THEM??????", "WHY DID YOU JUST
+LET THINGS STALL???????" and "Yes, I authorize whatever you fucking need to do to keep the plans moving, as I already
+had. You don't need to keep asking me." Measured 2026-11-15: the homelab and hetzner-xubuntu-info factory routes share
+the tenant parameter `/homelab/v1/providers/anthropic/claude-code/oauth-token`, which hit its weekly limit at ~04:49Z.
+The coordinator ruled a 3.5-day wait for the Nov 19 reset and rejected the copy of the anthropic-4 factory-slot value on
+a scope technicality, although that shared slot was itself an interim copy (homelab 093eb7b).
+
 ## 6. Never block: no pickers, ever
 
 The maintainer, 2026-11-01: "You should be forbidden from presenting blocking pickers. You are only ever supposed to
