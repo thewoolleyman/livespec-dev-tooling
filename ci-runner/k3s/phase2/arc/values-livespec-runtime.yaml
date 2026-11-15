@@ -22,7 +22,7 @@
 # reference implementation -- see that file and ../apparmor/ci-runner-workflow
 # for the root cause.
 githubConfigUrl: "https://github.com/livespec-ai/livespec-runtime"
-githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 runnerScaleSetName: "livespec-runtime-k3s"
 

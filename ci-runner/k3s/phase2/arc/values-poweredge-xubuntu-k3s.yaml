@@ -28,7 +28,7 @@
 # livespec-s43svm.25 fixed is not specific to the Kueue-gated sets. See
 # values-livespec-overseer.yaml and ../apparmor/ci-runner-workflow.
 githubConfigUrl: "https://github.com/livespec-ai/livespec-dev-tooling"
-githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 runnerScaleSetName: "poweredge-xubuntu-k3s"
 

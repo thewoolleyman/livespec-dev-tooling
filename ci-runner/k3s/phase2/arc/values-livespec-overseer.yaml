@@ -14,7 +14,7 @@
 # rather than unaffected. This file remains the reference implementation and
 # carries the full root-cause comment; the sibling files point back here.
 githubConfigUrl: "https://github.com/livespec-ai/livespec-overseer"
-githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 runnerScaleSetName: "livespec-overseer-k3s"
 
