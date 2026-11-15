@@ -179,6 +179,11 @@ jobs:
       pull-requests: read
     outputs:
       trusted: ${{ steps.guard.outputs.trusted }}
+      # The pull request number of THIS merge group's own queue entry (the entry
+      # whose head commit is the group's head), for the heavy jobs' merge-queue
+      # supersession concurrency below (livespec-dev-tooling-uo2cy4). Empty on
+      # every other event, and whenever the entry cannot be resolved.
+      queue_pr: ${{ steps.guard.outputs.queue_pr }}
     steps:
       - name: Resolve the merge group's pull requests against the allowlist
         id: guard
@@ -237,6 +242,10 @@ jobs:
           cut = [i for i, e in enumerate(entries) if (e.get("headCommit") or {}).get("oid") == head]
           if len(cut) != 1:
               sys.exit(f"merge group head {head} is not exactly one queue entry's head commit")
+          own_number = (entries[cut[0]].get("pullRequest") or {}).get("number")
+          if isinstance(own_number, int) and own_number > 0:
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write(f"queue_pr={own_number}\n")
           group = entries[: cut[0] + 1]
           for entry in group:
               pr = entry["pullRequest"]
@@ -314,6 +323,21 @@ jobs:
           # their own legs.
           - check-lint
           - check-format
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4). A queue rebuild
+    # starts a fresh merge_group run for each rebuilt entry and deletes the old
+    # gh-readonly-queue ref, so the superseded run's verdict gates nothing.
+    # Every heavy job therefore joins a job-level group keyed on the PR number of
+    # its run's OWN queue entry (merge-group-guard's queue_pr) with
+    # cancel-in-progress, so the newer run for the same PR cancels the old one.
+    # A run for a different PR, a pull_request run and a push run never share
+    # the key. The key carries the workflow name (groups are repository-wide),
+    # the job id and the matrix index (at most one job runs per group, so legs
+    # sharing a key would cancel each other). Every other event, and a
+    # merge_group run whose guard could not resolve its entry, gets a group of
+    # its own and is never cancelled; the workflow-level group is unchanged.
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -371,6 +395,10 @@ jobs:
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -492,6 +520,10 @@ jobs:
       matrix:
         target:
           - check-coverage
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -572,6 +604,10 @@ jobs:
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -644,6 +680,10 @@ jobs:
     name: check-fleet-conformance
     needs: [merge-group-guard]
     runs-on: ubuntu-latest
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -743,6 +783,10 @@ jobs:
           # the single check-metadata-batch job below (one setup, not ~30).
           - check-red-green-replay
           - check-check-coverage-incremental
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -844,6 +888,10 @@ jobs:
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -1013,6 +1061,10 @@ jobs:
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
+    # Merge-queue supersession (livespec-dev-tooling-uo2cy4; see check-python).
+    concurrency:
+      group: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' && format('{0}-mq-pr{1}-{2}-{3}', github.workflow, needs.merge-group-guard.outputs.queue_pr, github.job, strategy.job-index) || format('{0}-run{1}-{2}-{3}', github.workflow, github.run_id, github.job, strategy.job-index) }}
+      cancel-in-progress: ${{ github.event_name == 'merge_group' && needs.merge-group-guard.outputs.queue_pr != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5

@@ -1,15 +1,2 @@
-# Workflow-edit exemption — one exemption binds to one reviewed change.
-#
-# The change (plan stale-base-merge-options, note 005 §3 Phase 1 step 7; the held
-# org-cutover PR): every .github/workflows/ reference to thewoolleyman/<fleet-repo>
-# and ghcr.io/thewoolleyman/ moves to livespec-ai (uses: refs, repository:
-# checkouts, container image names), and auto-enable-merge.yml and
-# reusable-release-park.yml also accept the organization fleet App's bot login
-# (livespec-ai-factory-bot) beside the personal-account one. No merge_group.
-# Logically additive: the same jobs run, not significantly slower. Authorized by
-# legacy-coordinator-agent under the coordinator-duties §12 additive delegation,
-# 2026-11-15 ~00:5xZ. The line-diff guard reads modified lines as the maintainer
-# tier, so the item carries approval:workflow-edit; the edit stays logically
-# additive (§12).
-work_item=livespec-dev-tooling-kqr3lz
-reason=Held org-cutover PR: rewrite workflow owner refs and GHCR names to livespec-ai and admit the org App bot login (note 005 Phase 1 step 7); logically additive, coordinator-authorized 2026-11-15.
+work_item=livespec-dev-tooling-uo2cy4
+reason=ci.yml merge-queue supersession: merge-group-guard outputs queue_pr and each heavy job gets a job-level concurrency keyed on it, with cancel-in-progress only on merge_group, so a queue rebuild cancels the superseded run for the same PR (FIX 1, decided by throughput-plans-coordinator 2026-11-15)
