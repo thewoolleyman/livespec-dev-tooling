@@ -141,6 +141,12 @@ The files:
   queries — `HONEYCOMB_CONFIG_KEY_LIVESPEC` reports `queries: false`, but
   `HONEYCOMB_MCP_API_KEY_LIVESPEC` runs them through `mcp.honeycomb.io/mcp`
   (a 2026-10-18 plan parked on a maintainer question it never needed).
+- Read `.ai/honeycomb-board-charts.md` before adding or changing any Honeycomb
+  board chart. A chart must read at a glance: never put an outlier series (a
+  held, slowed or incident population, or a confound breakdown) beside the
+  trend line, because it flattens the line that matters. Chart only the
+  comparable series and put the excluded population in a table (maintainer,
+  2026-11-15, livespec throughput board).
 - Read `.ai/bulk-data-copies.md` before copying, migrating, or moving a data
   tree between disks or hosts on any fleet machine — a container store, a
   volume, a cache tier, a disk-to-disk move — and before reaching for `rsync`,
