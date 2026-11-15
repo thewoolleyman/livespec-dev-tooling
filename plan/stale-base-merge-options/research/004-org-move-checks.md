@@ -40,7 +40,7 @@ Script: this seat's scratchpad `classify.py`, not committed.
 1. **The fleet GitHub App.** `thewoolleyman-factory-bot` is private: `GET /apps/thewoolleyman-factory-bot` answers 404.
    GitHub installs a private App only on the account that owns it. The organization therefore needs its own org-owned
    App, the same pattern as `mi-homelab-factory-bot`. That means a new App id and key, re-projected secrets in every
-   repository through the 1Password environment, and `dolt-server`'s `EXPECTED_APP_OWNER` updated.
+   repository from Parameter Store canonical storage via the target dedicated stdin writer, explicitly pending writer activation, and `dolt-server`'s `EXPECTED_APP_OWNER` updated. Remaining Environment copies are downstream; a required refresh without an API is a blocker with actor unruled.
 2. **Container images.** CI jobs and the factory's `workflow.toml` pull `ghcr.io/thewoolleyman/livespec-fabro-sandbox:*`,
    and so does `sandbox-driver-kubernetes`. Those packages belong to the user account. A repository in the organization
    cannot publish there with its own `GITHUB_TOKEN`. The image namespace moves to `ghcr.io/<org>/...`, or the old images

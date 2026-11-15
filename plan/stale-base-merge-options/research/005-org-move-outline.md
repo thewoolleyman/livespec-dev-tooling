@@ -166,7 +166,7 @@ wants expedited incident response available.
    account cannot be installed on an organization, so that answer makes the §3 twin REQUIRED.
 3. Create a private, org-owned fleet App, installable only on the organization, as the homelab constraint requires for
    `mi-homelab-factory-bot`. Create the recovery App's org twin as well, unless step 2 recorded that 5656677 can be
-   installed on the organization. Keys go into the 1Password environment.
+   installed on the organization. Keys go into Parameter Store canonical storage via the target dedicated stdin writer, explicitly pending writer activation. Remaining Environment copies are downstream; a required refresh without an API is a blocker with actor unruled.
 4. **Publish the images under the organization.** The organization exists from step 1, so publish (or mirror)
    `livespec-fabro-sandbox` and every other fleet image at `ghcr.io/livespec-ai/<name>`, at each tag the held PRs pin. Make
    each package readable by the repositories that pull it. The quiet check (§2) reads "image present at

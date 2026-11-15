@@ -68,49 +68,13 @@ For GitHub App work, the projected source env vars are `GITHUB_APP_ID` and
 `APP_PRIVATE_KEY` through stdin. The private key is stored as a single-line PEM
 in the environment and must be rewrapped before use by JWT tooling.
 
-## Seeding A New Secret: The Agent Writes A File, The Maintainer Imports It
+## Current seeding route — until the writer is active and this host converts
 
-No agent can write to a 1Password Environment. The wrapper runs only
-`op run --environment`, and `op environment secret` (op 2.42) has a `list`
-subcommand and nothing else. So adding or rotating a variable takes four steps,
-and the maintainer does the import:
+BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. Writer activation is blocked on the OPEN maintainer mint/apply ruling; no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values.
 
-1. The agent mints the credential, for example a GitHub App private key.
-2. The agent writes ONLY the new variables to a mode-`0600` file outside any
-   repository, at a plain path such as `/tmp/<topic>.env`. Do not use a
-   dot-directory such as `/tmp/.1pass/`. The import dialog's file picker hides
-   dot-paths, so the maintainer cannot find the file.
-3. The maintainer imports the file into the livespec Environment
-   (`fufpvkvatwkmqjzvilvfnemsue`) from the 1Password app.
-4. The agent reads each variable back through the wrapper. It checks presence
-   and length, and line count for a key, never the value. It proves each key
-   works, then deletes every copy with `shred -u`.
+## Target seeding route — after writer activation and this host conversion
 
-This handshake was written down in homelab's
-`.ai/secrets-and-credentials.md`, which that repository deleted in `bd09eed`.
-Nothing in this repository carried it until now.
-
-**The value format is load-bearing for a PEM.** Fleet JWT tooling, such as
-`ci-runner/k3s/phase2/gates/mint-private-sibling-token.sh`, rewraps a
-SINGLE-LINE key. It splits only at the `BEGIN`/`END` guards. A multi-line key
-therefore comes out with a blank line, and `openssl` refuses it with
-`Could not find private key`. Measured 2026-11-14 on the two livespec-ai org
-App keys:
-
-- An unquoted single-line `KEY=-----BEGIN RSA PRIVATE KEY-----…` line made the
-  importer report "unable to parse file".
-- A double-quoted multi-line PEM imported, but stored 27 lines and failed the
-  rewrap.
-- The values that work are single-line, as the existing `GITHUB_PRIVATE_KEY`
-  and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` are (one line each). The last offer
-  was a file carrying each key double-quoted with its newlines removed. The
-  maintainer corrected the entries afterwards, and the record does not say
-  whether that import or a hand edit did it. Write the file that way. If it
-  will not parse, edit the values by hand in the app.
-
-Verify a seeded App key end to end. Rewrap it the fleet way, sign a short JWT
-with it, and call `GET /app`. The slug that comes back names the App the key
-belongs to.
+After writer activation and this host conversion, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Preserve canonical bytes. Existing fleet JWT tooling expects a single-line PEM and rewraps it before signing; validate presence, length and line count without printing the value. Verify a seeded App key end to end with the fleet rewrap, a short JWT and `GET /app`; the returned slug identifies the App. These format and verification requirements do not authorize minting or seeding while blocked.
 
 ## The Credential Wrapper Scrubs The Session Environment
 
