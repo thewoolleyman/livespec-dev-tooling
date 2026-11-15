@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import subprocess
 from types import SimpleNamespace
 
@@ -131,6 +132,89 @@ def test_hosted_current_query_uses_fresh_reader_and_exact_echo(provisioned):
         "query": query,
     }
     assert len(calls) == 1
+
+
+def _commit(*, root, message: str, timestamp: int) -> str:
+    environment = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "test",
+        "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "test",
+        "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        "GIT_AUTHOR_DATE": f"{timestamp} +0000",
+        "GIT_COMMITTER_DATE": f"{timestamp} +0000",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    _ = subprocess.run(
+        ["git", "-C", str(root), "commit", "--quiet", "--allow-empty", "-m", message],
+        check=True,
+        env=environment,
+    )
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    ).stdout.strip()
+
+
+def test_admitted_accepts_a_recent_genesis_base_behind_the_event_base(tmp_path):
+    root = tmp_path / "reference"
+    _ = subprocess.run(["git", "init", "--quiet", "--initial-branch=master", str(root)], check=True)
+    genesis = _commit(root=root, message="genesis", timestamp=1_700_000_000)
+    event_base = _commit(root=root, message="advance", timestamp=1_700_000_060)
+    arm = ObserverArm(
+        repository="owner/repo",
+        incident_item_id="incident-1",
+        attempt_id="repair-1",
+        operation_id="operation-1",
+        generation=1,
+        owner="owner",
+        phase="repair",
+        pr_number=55,
+        base_sha=genesis,
+        head_sha="c" * 40,
+        required_jobs=("coverage",),
+        controller_release="v1.169.0",
+        controller_revision="b" * 40,
+        authority_receipt=b"receipt",
+    )
+    settings = SimpleNamespace(
+        repository=arm.repository,
+        repo=root,
+        state=tmp_path / "protected",
+        reader=("/installed/reader",),
+        reader_release="v0.282.0",
+        control_secret=b"control" * 8,
+        query_secret=b"query" * 8,
+        webhook_secret=b"webhook" * 8,
+        expedited_base_max_commits=2,
+        expedited_base_max_minutes=2,
+    )
+    armed = arm_before_merge(
+        directory=settings.state,
+        arm=arm,
+        expected_arm_id=None,
+        authorize_current=lambda _: True,
+        released_controller=lambda *_: True,
+    )
+    application = ControllerService(installation=settings, recover=lambda _: None)
+    query = {
+        "repository": arm.repository,
+        "arm_id": armed.receipt,
+        "pr_number": arm.pr_number,
+        "base_sha": arm.base_sha,
+        "event_base_sha": event_base,
+        "head_sha": arm.head_sha,
+        "receipt_digest": hashlib.sha256(arm.authority_receipt).hexdigest(),
+    }
+    assert _request(application=application, path="/admitted", payload=query)[1] == {
+        "schema": 1,
+        "status": "admitted",
+        "query": query,
+    }
 
 
 @pytest.mark.parametrize("path", ["/arm", "/bind"])
