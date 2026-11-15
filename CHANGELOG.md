@@ -58,6 +58,26 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.212.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.211.0...v1.212.0) (2026-11-15)
+
+
+### Features
+
+* **incident:** provision CI identity policy records (livespec-dev-tooling-bqnzcm.4) ([de94652](https://github.com/thewoolleyman/livespec-dev-tooling/commit/de94652380b2ffc53a859a144c5b621a84843657))
+* **incident:** provision production CI publisher identity ([0992212](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0992212a444a0cbc1416dcea500f99dfd36b0c27))
+* prove enablement retry is retained ([36656b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/36656b2296b1dfc5e6adb77488969efed5cf12e2))
+
+
+### Bug Fixes
+
+* **ansible:** keep an allow-all stub at the retired pane-input guard path ([7674378](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7674378ed7edffc4b2a0be137be0d15289018e93))
+* bound ruleset read retries ([0c84a96](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0c84a96d15a060d87b439383f18c5b831886b88a))
+* checkpoint smaller mutation selections before heavy batches ([c49dd1d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c49dd1d4520fba292382d585d9d481a047375a23))
+* **flake-retry:** the incident claims path reads as determinate, so dev-tooling tests keep their retry (livespec-dev-tooling-bjimt7) ([65cc54a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/65cc54a8458e2d96993dbb9cd936599583bdbd13))
+* **mutation:** preserve every collected pytest node identity (livespec-dev-tooling-dkgwsm) ([af35997](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af35997462be53180ed114e05d90cf8d3003c11d))
+* retry incomplete ruleset bypass reads ([83cc485](https://github.com/thewoolleyman/livespec-dev-tooling/commit/83cc485769630baa7a77e4489987a7f236547513))
+* **vnc_desktop:** keep the VNC Chrome's secrets out of the locked GNOME keyring ([af2280b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af2280bb8e93298c7f091d8faa733ace8176d9d4))
+
 ## [1.211.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.210.0...v1.211.0) (2026-11-14)
 
 
