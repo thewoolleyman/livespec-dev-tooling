@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from typing import cast
 
-from livespec_dev_tooling.budgeted_gh import gh_read
+from livespec_dev_tooling.budgeted_gh import GhRead, gh_read
 from livespec_dev_tooling.checks._branch_protection_api import _RequiredContexts
 
 __all__: list[str] = [
@@ -156,6 +156,11 @@ def _read_ruleset_bypass(*, path: str) -> tuple[bool | None, str | None]:
     return None, f"{path}; first failed attempt: {failures[0]}; last failed attempt: {failures[-1]}"
 
 
+def _read_rules(*, path: str) -> GhRead:
+    """Read all active rules applying to a branch through the budgeted client."""
+    return gh_read(args=["api", "--paginate", "--slurp", path])
+
+
 def _fetch_ruleset_requirements(
     *, protection: _RequiredContexts
 ) -> _RulesetRequirements | _RulesetsUnreadable:
@@ -169,7 +174,12 @@ def _fetch_ruleset_requirements(
     """
     base = f"repos/{protection.owner_repo}"
     rules_path = f"{base}/rules/branches/{protection.branch}?per_page=100"
-    completed = gh_read(args=["api", "--paginate", "--slurp", rules_path])
+    completed = _read_rules(path=rules_path)
+    for delay_seconds in (_RULESET_READ_RETRY_DELAYS_SECONDS[0],):
+        if completed.returncode == 0:
+            break
+        time.sleep(delay_seconds)
+        completed = _read_rules(path=rules_path)
     if completed.returncode != 0:
         return _RulesetsUnreadable(detail=f"rules read failed: {completed.stderr.strip()[:200]}")
     pages = _parse_pages(stdout=completed.stdout)

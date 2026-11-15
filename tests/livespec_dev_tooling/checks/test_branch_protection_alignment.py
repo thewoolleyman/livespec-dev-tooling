@@ -228,6 +228,38 @@ def _checks_payload(*, contexts: list[object], strict: bool = False) -> str:
     return json.dumps({"strict": strict, "contexts": contexts})
 
 
+def _rules_api_replies_block(*, bin_dir: Path, replies: list[tuple[str, str, int]] | None) -> str:
+    """Build the fake paginated rules endpoint's ordered response dispatch."""
+    if replies is None:
+        return ""
+    response_cases = ""
+    for index, (reply_stdout, reply_stderr, reply_returncode) in enumerate(replies, start=1):
+        stderr_block = (
+            ""
+            if not reply_stderr
+            else f"cat >&2 <<'RULES_REPLY_ERR_{index}_EOF'\n{reply_stderr}\nRULES_REPLY_ERR_{index}_EOF\n"
+        )
+        response_cases += (
+            f"{index})\n"
+            f"cat <<'RULES_REPLY_{index}_EOF'\n{reply_stdout}\nRULES_REPLY_{index}_EOF\n"
+            f"{stderr_block}"
+            f"exit {reply_returncode}\n"
+            ";;\n"
+        )
+    return (
+        'if [ "$1" = "api" ] && [ "$2" = "--paginate" ]; then\n'
+        f"  count_file='{bin_dir}/gh.rules-count'\n"
+        '  count=$(cat "$count_file" 2>/dev/null || echo 0)\n'
+        "  count=$((count + 1))\n"
+        '  printf \'%s\\n\' "$count" > "$count_file"\n'
+        '  case "$count" in\n'
+        f"{response_cases}"
+        "  *) exit 98 ;;\n"
+        "  esac\n"
+        "fi\n"
+    )
+
+
 def _install_fake_gh(
     *,
     tmp_path: Path,
@@ -243,6 +275,7 @@ def _install_fake_gh(
     api_replies: list[tuple[str, str, int]] | None = None,
     rules_payload: str = "[[]]",
     rules_returncode: int = 0,
+    rules_api_replies: list[tuple[str, str, int]] | None = None,
     ruleset_payload: str = '{"bypass_actors": []}',
     ruleset_returncode: int = 0,
     ruleset_api_replies: list[tuple[str, str, int]] | None = None,
@@ -342,7 +375,9 @@ def _install_fake_gh(
             "  esac\n"
             "fi\n"
         )
+    rules_replies_block = _rules_api_replies_block(bin_dir=bin_dir, replies=rules_api_replies)
     rulesets_block = (
+        f"{rules_replies_block}"
         'if [ "$1" = "api" ] && [ "$2" = "--paginate" ]; then\n'
         f"cat <<'RULES_EOF'\n{rules_payload}\nRULES_EOF\n"
         f"exit {rules_returncode}\n"
@@ -1341,6 +1376,23 @@ def test_a_gate_held_only_by_a_ruleset_with_an_app_bypass_is_aligned(
         in argv_log
     )
     assert "repos/test-owner/test-repo/rulesets/26758787" in argv_log
+
+
+def test_ruleset_read_retries_once_before_accepting_an_app_only_bypass(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A transient rules read does not reject the later aligned contribution."""
+    result = _ruleset_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        rules_api_replies=[
+            ("", "initial rules failure", 1),
+            (_GATE_IN_RULESET, "", 0),
+        ],
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert (tmp_path / "bin" / "gh.rules-count").read_text(encoding="utf-8").strip() == "2"
 
 
 def test_ruleset_bypass_read_retries_a_missing_list_before_using_an_app_only_answer(
