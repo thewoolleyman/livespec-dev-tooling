@@ -24,9 +24,10 @@ owns the halt procedure and the phase outline; this note fixes the ORDER and the
    (yqpwy3). At the halt, run `python3 -I plan/stale-base-merge-options/research/data/org-move/image_pins.py.txt
    --out /tmp/image-pins-need.txt` from the livespec-dev-tooling checkout. If it reports any NEED, dispatch
    `gh workflow run mirror.yml -R livespec-ai/fleet-image-mirror -f images="$(cat /tmp/image-pins-need.txt)"`, then
-   re-run the script until it reports `need=0`. Read every UNREADABLE and FIXTURE/absent line against the known
-   fixture list in the script's docstring. The baseline on 2026-11-15 was 43 of 43 real pins present, after mirror
-   runs 43659542203 and 43660558376.
+   re-run the script until it exits 0. Its exit status is the signal: it is 1 on any NEED, NEW-ABSENT or
+   NEW-UNREADABLE line. Read any NEW-* line before calling GO. The 13 test-fixture strings known on 2026-11-15
+   print as KNOWN-FIXTURE and do not fail it. The baseline on 2026-11-15 ~01:3xZ was exit 0, with 43 of 43 real pins
+   present, after mirror runs 43659542203 and 43660558376.
 6. The org App secrets are verified through `GET /app` for livespec-ai-factory-bot (5761962) and
    livespec-ai-incident-recovery (5761967). DONE 2026-11-14.
 7. Hosted minutes fit. GO on cost, accepted 2026-11-15 ~00:0xZ (§5).

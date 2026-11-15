@@ -8,20 +8,20 @@ fleet repository's origin/master tree, so every clone listed in FLEET must exist
 and the script fetches origin master for each one first. It mutates nothing on the forge.
 
 For each `ghcr.io/<old-owner>/<name>:<tag>` it finds, it resolves the tag anonymously on both
-registries. It prints one line per tag: `present`, `NEED`, `FIXTURE/absent` (the old name does not
-serve the tag: a test fixture, or a pin to an unpublished tag) or `UNREADABLE`. Then it writes the
+registries. It prints one line per tag: `present`, `NEED`, `KNOWN-FIXTURE` (a test-fixture string
+listed in KNOWN_FIXTURES, never a failure), `NEW-ABSENT` (the old name does not serve the tag and it
+is not a known fixture) or `NEW-UNREADABLE`. Then it writes the
 NEED set in the input format of livespec-ai/fleet-image-mirror's `mirror.yml`
 ("name tag sha256:digest" per line) to --out. Dispatch it with:
 
     gh workflow run mirror.yml -R livespec-ai/fleet-image-mirror -f images="$(cat <out>)"
 
-Exit status: 0 when no tag is NEED or UNREADABLE, 1 otherwise. Read every UNREADABLE and
-FIXTURE/absent line before calling go/no-go 5 GO. The run of 2026-11-15 ~01:2xZ reported
-43 present, 0 NEED, 9 FIXTURE/absent and 4 UNREADABLE (403). All 13 non-present names were
-test-fixture strings, not live pins: livespec-python:v1.64.2 (in
-ci-runner/k3s/phase2/gates/render-gate-job-exit-tests.sh), some-other-image:python-v0.43.2,
-some-other-image:v1.0.0 and something-else:v1.1.0. A NEW UNREADABLE or FIXTURE/absent name at the
-halt is read before GO.
+Exit status is the go/no-go 5 signal: 0 when there is no NEED, no NEW-ABSENT and no
+NEW-UNREADABLE, and 1 otherwise. The run of 2026-11-15 ~01:2xZ found 43 present and 13 test-fixture
+strings (9 tags the old name never served, plus 4 names it refused with 403, such as
+livespec-python:v1.64.2 in ci-runner/k3s/phase2/gates/render-gate-job-exit-tests.sh). Those 13 are
+KNOWN_FIXTURES. Read any NEW-* line before calling GO; if it is a fixture, add it to KNOWN_FIXTURES
+in a reviewed commit.
 """
 
 from __future__ import annotations
@@ -48,6 +48,26 @@ FLEET = (
     "livespec-runtime",
 )
 EXCLUDE = (":!SPECIFICATION/history", ":!CHANGELOG.md", ":!plan", ":!archive")
+# Test-fixture strings found in fleet trees that are NOT live pins (read 2026-11-15 ~01:2xZ).
+# They print as KNOWN-FIXTURE and never fail the exit status. A name absent or unreadable on the
+# old registry that is NOT listed here is NEW and fails the run.
+KNOWN_FIXTURES = frozenset(
+    {
+        ("livespec-fabro-sandbox", "decoy-never-published"),
+        ("livespec-fabro-sandbox", "python-agent-sha-abc1234-arm64"),
+        ("livespec-fabro-sandbox", "python-agent-v2.0.0"),
+        ("livespec-fabro-sandbox", "python-rust-agent-v9.9.9"),
+        ("livespec-fabro-sandbox", "python-rust-v0.19.0"),
+        ("livespec-fabro-sandbox", "python-v0.20.0"),
+        ("livespec-fabro-sandbox", "python-v2.9.0"),
+        ("livespec-fabro-sandbox", "python-v3.0.0"),
+        ("livespec-fabro-sandbox", "sandbox-v9.9.9"),
+        ("livespec-python", "v1.64.2"),
+        ("some-other-image", "python-v0.43.2"),
+        ("some-other-image", "v1.0.0"),
+        ("something-else", "v1.1.0"),
+    }
+)
 ACCEPT = ",".join(
     (
         "application/vnd.oci.image.index.v1+json",
@@ -107,14 +127,18 @@ def main() -> int:
     need: list[str] = []
     unreadable = 0
     for name, tag in pins(workspace=args.workspace, old_owner=args.old_owner):
+        if (name, tag) in KNOWN_FIXTURES:
+            print(f"KNOWN-FIXTURE {name} {tag}")
+            continue
         try:
             source = digest(owner=args.old_owner, name=name, tag=tag)
         except (urllib.error.URLError, OSError) as error:
-            print(f"UNREADABLE {name} {tag} {error}")
+            print(f"NEW-UNREADABLE {name} {tag} {error}")
             unreadable += 1
             continue
         if source is None:
-            print(f"FIXTURE/absent {name} {tag}")
+            print(f"NEW-ABSENT {name} {tag}")
+            unreadable += 1
             continue
         try:
             target = digest(owner=args.new_owner, name=name, tag=tag)
@@ -126,7 +150,7 @@ def main() -> int:
             print(f"NEED {name} {tag} {source}")
             need.append(f"{name} {tag} {source}")
     args.out.write_text("".join(f"{line}\n" for line in need))
-    print(f"need={len(need)} unreadable={unreadable} out={args.out}")
+    print(f"need={len(need)} new_unreadable_or_absent={unreadable} out={args.out}")
     return 1 if need or unreadable else 0
 
 
