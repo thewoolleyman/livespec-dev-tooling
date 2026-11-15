@@ -151,6 +151,10 @@ class Manifest:
     adopters: tuple[Adopter, ...]
     adopter_owner: str | None = None
 
+    def adopter_owner_for(self, *, adopter: Adopter) -> str:
+        """The GitHub account that owns one adopter repository."""
+        return adopter.owner or self.adopter_owner or self.owner
+
     def adopter_repository(self, *, adopter: Adopter) -> str:
         """The fully-qualified repository for one adopter.
 
@@ -158,8 +162,7 @@ class Manifest:
         entry-specific owner first, then the manifest's adopter default, and
         finally the fleet owner for manifests that predate the owner keys.
         """
-        owner = adopter.owner or self.adopter_owner or self.owner
-        return f"{owner}/{adopter.repo}"
+        return f"{self.adopter_owner_for(adopter=adopter)}/{adopter.repo}"
 
     def member_names(self) -> frozenset[str]:
         """The set of member repo names (for the discovery sweep)."""

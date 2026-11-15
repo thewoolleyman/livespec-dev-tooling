@@ -248,3 +248,21 @@ def test_manifest_without_adopters_is_inert_in_both_lanes() -> None:
         assert result.evaluated == 0
         assert result.posture_excluded == ()
         assert log.events == []
+
+
+def test_currency_lane_reads_a_released_adopter_under_its_resolved_owner() -> None:
+    source = (
+        '{"owner": "fleet-owner", "adopter_owner": "adopter-owner", '
+        '"members": [], "adopters": ['
+        '{"repo": "default", "profile": ["baseline"], "posture": "released"}, '
+        '{"repo": "override", "owner": "entry-owner", "profile": ["baseline"], "posture": "released"}]}'
+    )
+    calls: list[tuple[str, ...]] = []
+    ctx = _recording_context(table={}, calls=calls)
+
+    run_adopter_rows(
+        ctx=ctx, manifest=_manifest(source=source), log=RecordingLog(), vantage="admin"
+    )
+
+    assert ("api", "repos/adopter-owner/default") in calls
+    assert ("api", "repos/entry-owner/override") in calls
