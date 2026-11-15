@@ -200,6 +200,10 @@ def test_reads_rm_and_writes_elsewhere_pass(
     [
         _file_tool(tool_name="Write", file_path="/home/ubuntu/workspace/x/AGENTS.md"),
         _file_tool(tool_name="Edit", file_path="/home/ubuntu/workspace/x/.ai/topic.md"),
+        # A tracked repository directory that happens to be named `memory` is
+        # not the Claude Code store (openclaw-info keeps `.ai/memory/*.md`).
+        _file_tool(tool_name="Write", file_path="/home/ubuntu/workspace/x/.ai/memory/x.md"),
+        _file_tool(tool_name="Edit", file_path="/home/ubuntu/workspace/x/docs/memory/notes.md"),
         _file_tool(tool_name="Read", file_path=_MEMORY_FILE),
     ],
 )
