@@ -249,9 +249,14 @@ knows what to redo.
 
 ### Current seeding route — until the writer is active and this host converts
 
-BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. Writer activation is blocked on the OPEN maintainer mint/apply ruling; no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values.
+BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. The maintainer resolved the mint/apply question on 2026-11-15, but the dedicated writer's key is not yet minted and delivered, so writer activation is still pending and no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values.
 
 The required environment variables remain `LIVESPEC_INCIDENT_WEBHOOK_SECRET`, `LIVESPEC_INCIDENT_CONTROL_SECRET` and `LIVESPEC_INCIDENT_QUERY_SECRET`, each at least 32 bytes and all three distinct, plus the existing `BEADS_DOLT_PASSWORD`. Existing installed wrappers project their configured source (until this host converts, the livespec 1Password Environment `fufpvkvatwkmqjzvilvfnemsue`, which is a temporary downstream copy of Parameter Store); that read behavior does not authorize new-secret seeding. Missing required values must continue to refuse the apply.
+
+### Recorded and outstanding maintainer steps
+
+Step 1 is the seeding route above; steps 2–4 keep their numbers so existing
+references to them stay valid.
 
 2. **Done 2026-11-05 — the GitHub `workflow_job` webhook on
    `thewoolleyman/livespec-dev-tooling`**, delivering to
@@ -277,8 +282,9 @@ The required environment variables remain `LIVESPEC_INCIDENT_WEBHOOK_SECRET`, `L
    `thewoolleyman/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED under the current seeding route above; retain the variable names `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` for the target route. Add a
    master ruleset whose bypass list names only that App, then run the apply
    again. Reason it is maintainer-held: it grants a principal unchecked writes
-   to master, and App, secret and ruleset settings are GitHub and 1Password
-   state that this repository never writes. Rollback: delete the ruleset or its
+   to master, and App and ruleset settings are GitHub state and the App's
+   secrets are canonical Parameter Store state (1Password holds only a
+   temporary downstream copy), none of which this repository writes. Rollback: delete the ruleset or its
    bypass entry, or suspend the installation. Classic protection is untouched
    throughout.
 
@@ -286,7 +292,7 @@ No separate seeding step remains for the existing canonical reader credential: t
 
 ### Target seeding route — after writer activation and this host conversion
 
-After writer activation and this host conversion, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Use the declared incident/* and github/recovery-* bindings, preserving the variable names, distinctness and length requirements. Apply using the converted wrapper on the apply/control host. Provider grants and recovery custody retain their existing authority.
+After writer activation and this host conversion, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Use the planned incident/* and github/recovery-* bindings (central-credential-service research/007; not yet declared), preserving the variable names, distinctness and length requirements. Apply using the converted wrapper on the apply/control host. Provider grants and recovery custody retain their existing authority.
 
 ## What the role asserts and never provisions
 
