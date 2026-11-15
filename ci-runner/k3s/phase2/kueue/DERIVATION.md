@@ -307,7 +307,7 @@ apportionment number inherited as a proxy — see "Observation: ARC
 `../arc/values-livespec-driver-codex.yaml`, which states plainly that
 "nobody has measured its actual matrix width". `livespec-driver-pi`'s 13
 was counted from run `32420185191` on
-`thewoolleyman/livespec-driver-pi#64`, which dispatched exactly 13 jobs.
+`livespec-ai/livespec-driver-pi#64`, which dispatched exactly 13 jobs.
 It sits far below the siblings' 63–67 band because that repo's `ci.yml`
 deliberately collapses its ~69 check targets into batch jobs
 (`check-python-batch`, `check-metadata-batch`) instead of running one
@@ -504,7 +504,7 @@ second recomputation driven by a change in the REPOSITORY SET.
 
 **Its demand weight is `21`, and it is the second weight in this table
 that is a real measurement.** Counted from master CI run `33893048859`
-on `thewoolleyman/livespec-orchestrator-beads-fabro` (2026-09-04), which
+on `livespec-ai/livespec-orchestrator-beads-fabro` (2026-09-04), which
 dispatched exactly 21 jobs: 17 check jobs plus `setup`,
 `detect-py-changes`, `export-telemetry` and `ci-green`, which stay hosted
 (the same convention as every other member's `ci.yml`). Like
@@ -2421,7 +2421,7 @@ cannot distinguish the events; a separate `runs-on` label is the required seam.
 
 | object | value |
 |---|---|
-| scale set | `livespec-orchestrator-master-k3s`, for `thewoolleyman/livespec-orchestrator-beads-fabro`, queued through `livespec-orchestrator-master-lq` |
+| scale set | `livespec-orchestrator-master-k3s`, for `livespec-ai/livespec-orchestrator-beads-fabro`, queued through `livespec-orchestrator-master-lq` |
 | `maxRunners` | **4**, exactly the coverage-shard count |
 | ClusterQueue / LocalQueue | `livespec-orchestrator-master-cq` / `livespec-orchestrator-master-lq` |
 | nominal quota | **1** churn slot, moved from the ordinary orchestrator queue (9 -> 8) |

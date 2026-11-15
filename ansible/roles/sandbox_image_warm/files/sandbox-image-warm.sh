@@ -4,7 +4,7 @@
 #
 # WHAT BROKE. On 2026-10-20 at 08:09:51-52Z two runs started within one second
 # on a docker factory host and both needed
-# ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.118.5, a tag the
+# ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.118.5, a tag the
 # host did not hold. Each run's pull tore down the other's containerd leases and
 # both died in sandbox init with "Failed to pull Docker image ... causes=[Docker
 # stream error]" in 0.8 s and 3.3 s. The tag was in the registry the whole time;
@@ -96,9 +96,9 @@
 # this script by hand on a factory host does the same thing the timer does.
 set -uo pipefail
 
-IMAGE=${LIVESPEC_SANDBOX_IMAGE_WARM_IMAGE:-ghcr.io/thewoolleyman/livespec-fabro-sandbox}
+IMAGE=${LIVESPEC_SANDBOX_IMAGE_WARM_IMAGE:-ghcr.io/livespec-ai/livespec-fabro-sandbox}
 TAG_PREFIXES=${LIVESPEC_SANDBOX_IMAGE_WARM_TAG_PREFIXES:-python-agent}
-PIN_URL=${LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL:-https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/.release-please-manifest.json}
+PIN_URL=${LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL:-https://raw.githubusercontent.com/livespec-ai/livespec-dev-tooling/master/.release-please-manifest.json}
 LOCK_DIR=${LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_DIR:-/run/livespec-sandbox-image-warm}
 LOCK_TIMEOUT_SECONDS=${LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS:-1800}
 STORE=${LIVESPEC_SANDBOX_IMAGE_WARM_STORE:-docker}

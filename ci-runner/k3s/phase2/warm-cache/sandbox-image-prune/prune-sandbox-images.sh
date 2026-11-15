@@ -4,7 +4,7 @@
 # and removing older ones that nothing needs. Item `livespec-h96p`.
 #
 # WHY. Nothing ever removed these. Measured on poweredge-xubuntu 2026-09-07:
-# 454 refs of ghcr.io/thewoolleyman/livespec-fabro-sandbox — 227 tag refs and
+# 454 refs of ghcr.io/livespec-ai/livespec-fabro-sandbox — 227 tag refs and
 # their 227 paired digest refs — spanning v1.46.0 to v1.58.6 across three
 # families (python 100, python-rust 78, python-rust-fuzz 49), inside 729 total
 # image refs and 24 GB under /var/lib/rancher/k3s/agent/containerd. The item
@@ -207,7 +207,7 @@
 set -euo pipefail
 
 # The scope. A constant on purpose — see gate 1.
-REPOSITORY="ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+REPOSITORY="ghcr.io/livespec-ai/livespec-fabro-sandbox"
 
 KEEP_PER_FAMILY="${KEEP_PER_FAMILY:-10}"
 KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"

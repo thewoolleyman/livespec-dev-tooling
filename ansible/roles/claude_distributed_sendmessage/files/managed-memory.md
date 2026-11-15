@@ -16,4 +16,4 @@ idle first, and keep it short.
 
 A successful send means delivered, not read or acted on; never treat silence
 as agreement. Full protocol:
-https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/.ai/distributed-sendmessage-protocol.md
+https://github.com/livespec-ai/livespec-dev-tooling/blob/master/.ai/distributed-sendmessage-protocol.md

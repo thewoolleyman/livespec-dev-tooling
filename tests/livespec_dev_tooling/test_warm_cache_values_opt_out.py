@@ -38,4 +38,4 @@ def test_a_values_file_marked_warm_cache_exclude_is_not_a_populator_target(tmp_p
 def test_the_committed_fabro_values_file_is_excluded_from_the_populator() -> None:
     repositories = _dry_run_repositories(values_dir=_VALUES)
     assert "https://github.com/thewoolleyman/fabro" not in repositories
-    assert "https://github.com/thewoolleyman/livespec-dev-tooling" in repositories
+    assert "https://github.com/livespec-ai/livespec-dev-tooling" in repositories

@@ -152,7 +152,7 @@ gha_runner_work: /home/ubuntu/gha-runner/_work
 # What this runner serves: the labels livespec-orchestrator-beads-fabro's
 # acceptance-live-golden-master.yml selects on. `self-hosted` is applied by
 # the runner itself and listed so this states the whole selector.
-gha_runner_repo: thewoolleyman/livespec-orchestrator-beads-fabro
+gha_runner_repo: livespec-ai/livespec-orchestrator-beads-fabro
 gha_runner_name: vps-livespec-orchestrator
 gha_runner_labels: self-hosted,livespec-orchestrator
 # PATH for the runner process and every job step: the job wrapper scrubs the

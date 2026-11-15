@@ -35,7 +35,7 @@ sandbox_image_warm_timer: "{{ sandbox_image_warm_name | trim }}.timer"
 # `python-agent` is the layer the orchestrator's implement workflow dispatches
 # into; a host that serves a differently-pinned workflow adds that layer here
 # rather than taking a second role.
-sandbox_image_warm_image: ghcr.io/thewoolleyman/livespec-fabro-sandbox
+sandbox_image_warm_image: ghcr.io/livespec-ai/livespec-fabro-sandbox
 sandbox_image_warm_tag_prefixes:
   - python-agent
 
@@ -46,7 +46,7 @@ sandbox_image_warm_tag_prefixes:
 # written into host_vars would only ever name the tag whose bump an operator
 # last applied by hand.
 sandbox_image_warm_pin_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/.release-please-manifest.json
+  https://raw.githubusercontent.com/livespec-ai/livespec-dev-tooling/master/.release-please-manifest.json
 
 # One lock file per warmed reference, on tmpfs: the lock has no meaning across a
 # reboot, and a stale lock file under /var would outlive the pull it guarded.
@@ -107,7 +107,7 @@ sandbox_image_warm_crictl: >-
 # 2.21.4 a `\\1` replacement renders literally (measured 2026-11-02, every URL
 # read host_vars/\1.yml).
 sandbox_image_warm_host_vars_base_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/ansible/inventory/host_vars
+  https://raw.githubusercontent.com/livespec-ai/livespec-dev-tooling/master/ansible/inventory/host_vars
 sandbox_image_warm_process_spec_urls: >-
   {{ (groups['sandbox_hosts'] | default([]) | sort
       | map('regex_replace', '^', (sandbox_image_warm_host_vars_base_url | trim) ~ '/')
@@ -134,7 +134,7 @@ sandbox_image_warm_workflow_urls: []
 # tests/livespec_dev_tooling/test_sandbox_image_warm_ci_workflow_pins.py fails
 # when a scale set is added without its repository here, because an unlisted
 # repository's jobs would pull cold without anything saying so.
-sandbox_image_warm_ci_workflow_base_url: https://raw.githubusercontent.com/thewoolleyman
+sandbox_image_warm_ci_workflow_base_url: https://raw.githubusercontent.com/livespec-ai
 sandbox_image_warm_ci_workflow_path: master/.github/workflows/ci.yml
 sandbox_image_warm_ci_workflow_repos:
   - livespec

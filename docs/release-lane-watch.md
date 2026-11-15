@@ -44,7 +44,7 @@ The detector here answers the history question, on a cadence, per lane.
   banned in this tree (T20) and direct writes by `check-no-write-direct`, so the
   module's own diagnostics go to stderr through structlog.
 
-Replay tests drive the detector over RECORDED `thewoolleyman/livespec`
+Replay tests drive the detector over RECORDED `livespec-ai/livespec`
 `release-tag.yml` history from 2026-08-09 through 2026-08-21 — a known-red
 interval with a known-green boundary on each side, asserted in both directions.
 
@@ -68,7 +68,7 @@ on:
 
 jobs:
   watch:
-    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-lane-watch.yml@vX.Y.Z
+    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-release-lane-watch.yml@vX.Y.Z
     with:
       watched_workflows: '["release-tag.yml", "release-readiness.yml"]'
 ```

@@ -51,7 +51,7 @@
 # serves pulls and refuses pushes, and no credentials are configured, so it can
 # only ever hold what an anonymous client could have fetched from ghcr itself.
 # Verified 2026-09-08 by an anonymous token exchange against
-# ghcr.io/thewoolleyman/livespec-fabro-sandbox: the tag listing answers 200 with
+# ghcr.io/livespec-ai/livespec-fabro-sandbox: the tag listing answers 200 with
 # no credential, i.e. the sandbox package is public, which is why this instance
 # needs no `proxy.username`/`proxy.password` and why adding them would be a
 # mistake — distribution's own recipe warns that a credentialled proxy

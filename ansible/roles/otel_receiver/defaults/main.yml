@@ -22,7 +22,7 @@ otel_receiver_env_from_controller: ""
 # imports its OtelReceiver, exporter and attribute allowlist from this tree, so
 # this pin is what decides which span attributes reach Honeycomb. v0.210.0 is the
 # floor: older builds strip the Petri-era run_turn.* attributes.
-otel_receiver_orchestrator_remote: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+otel_receiver_orchestrator_remote: https://github.com/livespec-ai/livespec-orchestrator-beads-fabro.git
 otel_receiver_orchestrator_version: v0.211.0
 otel_receiver_orchestrator_floor: "0.210.0"
 

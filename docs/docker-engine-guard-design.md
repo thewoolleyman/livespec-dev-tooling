@@ -2,7 +2,7 @@
 
 Provenance. This file is a VERBATIM copy of
 `plan/petri-factory-on-gmktec/research/002-docker-engine-dead-man-design-2026-10-15.md`
-in `thewoolleyman/livespec-orchestrator-beads-fabro`, as merged at
+in `livespec-ai/livespec-orchestrator-beads-fabro`, as merged at
 `42c75216` (PR #3033). It is copied here because a factory run clones only
 this repository. The original stays authoritative; if the two ever differ,
 the original wins. The implementation rider that the round-8 reviews added

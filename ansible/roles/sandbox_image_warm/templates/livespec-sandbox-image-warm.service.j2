@@ -16,12 +16,12 @@
 [Unit]
 {% if sandbox_image_warm_store == 'containerd' %}
 Description=Warm this k3s factory node's containerd sandbox image store
-Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
+Documentation=https://github.com/livespec-ai/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
 After=network-online.target k3s.service k3s-agent.service
 Wants=network-online.target
 {% else %}
 Description=Warm this Fabro factory host's sandbox image store
-Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
+Documentation=https://github.com/livespec-ai/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
 After=network-online.target docker.service
 Wants=network-online.target docker.service
 {% endif %}

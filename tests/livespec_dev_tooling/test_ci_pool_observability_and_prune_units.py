@@ -338,7 +338,7 @@ done
                 for attribute in point["attributes"]
             }
             assert attrs["ci.queue"] == "livespec-dev-tooling-cq"
-            assert attrs["ci.repository"] == "thewoolleyman/livespec-dev-tooling"
+            assert attrs["ci.repository"] == "livespec-ai/livespec-dev-tooling"
             observed.add((attrs["kueue.flavor"], attrs["k8s.resource"]))
         assert observed == expected
 

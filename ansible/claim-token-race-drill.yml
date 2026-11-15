@@ -78,7 +78,7 @@
   gather_facts: false
   become: false
   vars:
-    claim_token_race_drill_plugin_repository: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+    claim_token_race_drill_plugin_repository: https://github.com/livespec-ai/livespec-orchestrator-beads-fabro.git
     # The released orchestrator build the writers run. v0.295.1 is the first
     # release carrying the claim-token writers; a later tag may be passed.
     claim_token_race_drill_plugin_ref: v0.295.1

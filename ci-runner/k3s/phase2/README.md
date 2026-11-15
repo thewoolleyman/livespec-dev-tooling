@@ -5,7 +5,7 @@ fair-share formula onto Kueue and ARC primitives, now partially
 validated against the real live cluster. Phase 2 of 6 in the migration
 (`../README.md` "Files" table has the full six-phase list); depends on
 phase 1 (`livespec-s43svm.14`, PR
-[#1419](https://github.com/thewoolleyman/livespec-dev-tooling/pull/1419),
+[#1419](https://github.com/livespec-ai/livespec-dev-tooling/pull/1419),
 closed 2026-08-16) for the k3s + ARC + Kueue install this phase's
 manifests target.
 
@@ -1133,10 +1133,10 @@ is its own measured matrix width doubled, sized independently per repo
 2026-08-16) shows the real apportionment is different:
 
 ```
---repos "thewoolleyman/livespec:75 thewoolleyman/livespec-dev-tooling:63 \
-  thewoolleyman/livespec-driver-codex:67 thewoolleyman/livespec-driver-claude:66 \
-  thewoolleyman/livespec-orchestrator-git-jsonl:66 thewoolleyman/livespec-overseer:65 \
-  thewoolleyman/livespec-runtime:64 thewoolleyman/livespec-console-beads-fabro:16"
+--repos "livespec-ai/livespec:75 livespec-ai/livespec-dev-tooling:63 \
+  livespec-ai/livespec-driver-codex:67 livespec-ai/livespec-driver-claude:66 \
+  livespec-ai/livespec-orchestrator-git-jsonl:66 livespec-ai/livespec-overseer:65 \
+  livespec-ai/livespec-runtime:64 livespec-ai/livespec-console-beads-fabro:16"
 ```
 
 Those eight values SUM TO EXACTLY 482 — the physical host-wide cap. The
@@ -1184,7 +1184,7 @@ Two facts combine, and neither is obvious on its own.
 
 **ARC runners register with an EMPTY label array** and are selected by
 SCALE SET NAME, not by label. Measured 2026-08-21 on
-`thewoolleyman/livespec`, mid-job:
+`livespec-ai/livespec`, mid-job:
 
 ```
 {"total_count":1,"runners":[{"id":31096,
@@ -1986,7 +1986,7 @@ they read before, and the sweep is not edited at all.
 **`ci.repository`, derived — and the one queue that is not a repository.**
 This pool's ClusterQueues are named `<repository>-cq`, so `ci.repository` is
 `thewoolleyman/` plus the name with that suffix removed
-(`livespec-dev-tooling-cq` → `thewoolleyman/livespec-dev-tooling`). The one
+(`livespec-dev-tooling-cq` → `livespec-ai/livespec-dev-tooling`). The one
 live exception is `phase1-proof-cq`, the Kueue proof queue, which is not a
 repository at all: it is denominated in `cpu`/`memory`, so the churn-slot
 filter already drops it (that filter is why the eleven queues' quotas sum to
@@ -2024,7 +2024,7 @@ repository changed.
 | Attribute | Value | Read from |
 |---|---|---|
 | `ci.repository` | the repository the running job belongs to, already `owner/repo` | `EphemeralRunner.status.jobRepositoryName` |
-| `ci.workflow_ref` | the full workflow ref, e.g. `thewoolleyman/livespec-dev-tooling/.github/workflows/ci.yml@refs/heads/master`, emitted verbatim rather than split | `status.jobWorkflowRef` |
+| `ci.workflow_ref` | the full workflow ref, e.g. `livespec-ai/livespec-dev-tooling/.github/workflows/ci.yml@refs/heads/master`, emitted verbatim rather than split | `status.jobWorkflowRef` |
 | `ci.run_id` | the workflow run id, e.g. `34120033338` — a STRING although it is numeric, because it is an identifier to group and filter by, never a quantity to sum | `status.workflowRunId` |
 | `ci.job_name` | the CI job label, e.g. `check-metadata-batch` | `status.jobDisplayName` |
 | `ci.runner_phase` | the runner's phase; the rows are NOT filtered to `Running`, so a job wedged in `Pending` or gone to `Failed` is visible and the board filters on it | `status.phase` |

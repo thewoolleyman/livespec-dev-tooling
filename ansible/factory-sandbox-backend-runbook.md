@@ -27,7 +27,7 @@ where the sandbox runs. It is declared in
 | `provider` | Where the sandbox runs | What it carries |
 | --- | --- | --- |
 | `kubernetes` | Pod `petri-<run-id lower-case>-l<lease>` in namespace `factory`, launched by `/usr/local/bin/sandbox-driver-kubernetes` with `/etc/ci-runner/factory.kubeconfig` | No `image`. The image comes from `sandbox_providers.kubernetes.process_spec`. |
-| `docker` | Container `petri-<RUN-ID>-l<lease>` on gmktec's own Docker engine | `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-<tag>` |
+| `docker` | Container `petri-<RUN-ID>-l<lease>` on gmktec's own Docker engine | `image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-<tag>` |
 
 SPECIFICATION "Factory sandbox environment naming" says placement is never in
 the id. So switching backends edits `provider` (and `image`) on the same id. No
@@ -102,7 +102,7 @@ nodes is work-item `bd-ib-kogktm`.
 
    ```yaml
    - id: factory-python
-     image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
+     image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.136.2
      cpu: 4
      memory: 8GB
      provider: docker

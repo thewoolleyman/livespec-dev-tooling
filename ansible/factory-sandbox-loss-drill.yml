@@ -11,7 +11,7 @@
     factory_sandbox_loss_drill_namespace: factory
     factory_sandbox_loss_drill_namespaces: [factory, factory-mi-homelab]
     factory_sandbox_loss_drill_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
-    factory_sandbox_loss_drill_run_repository: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+    factory_sandbox_loss_drill_run_repository: https://github.com/livespec-ai/livespec-orchestrator-beads-fabro.git
     factory_sandbox_loss_drill_default_branch: master
     factory_sandbox_loss_drill_checkout_root: /tmp
     factory_sandbox_loss_drill_wait_interval: 2

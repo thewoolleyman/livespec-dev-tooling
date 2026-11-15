@@ -40,7 +40,7 @@ gha_runner_work: /home/ubuntu/gha-runner/_work
 # (`runs-on: [self-hosted, livespec-orchestrator]`); `self-hosted` is applied
 # automatically by the runner and is listed so the file states the whole
 # selector a reader has to match against the workflow.
-gha_runner_repo: thewoolleyman/livespec-orchestrator-beads-fabro
+gha_runner_repo: livespec-ai/livespec-orchestrator-beads-fabro
 gha_runner_name: vps-livespec-orchestrator
 gha_runner_labels: self-hosted,livespec-orchestrator
 # PATH for the runner process and therefore every job step. The job wrapper

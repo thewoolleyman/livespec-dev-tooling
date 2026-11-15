@@ -177,7 +177,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: populate
-              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
+              image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
               imagePullPolicy: IfNotPresent
               command: ["bash", "/scripts/warm-cache-populate.sh"]
               env:
@@ -386,7 +386,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: populate
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
           imagePullPolicy: IfNotPresent
           command:
             - bash
@@ -497,7 +497,7 @@ spec:
                     values: ["hp-xubuntu"]
       containers:
         - name: populate
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
           imagePullPolicy: IfNotPresent
           command:
             - bash

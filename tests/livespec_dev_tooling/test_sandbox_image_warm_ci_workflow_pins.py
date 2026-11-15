@@ -34,7 +34,7 @@ _CI_POOL = _REPO_ROOT / "ansible" / "ci-pool.yml"
 _JUSTFILE = _REPO_ROOT / "justfile"
 _ARC = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "arc"
 
-_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_IMAGE = "ghcr.io/livespec-ai/livespec-fabro-sandbox"
 _TIMEOUT_SECONDS = 120
 _PLAYBOOK_TIMEOUT_SECONDS = 600
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
@@ -220,7 +220,7 @@ def _scale_set_repositories() -> set[str]:
         if "EXAMPLE" in values.name:
             continue
         for match in re.finditer(
-            r'^githubConfigUrl: "https://github\.com/thewoolleyman/([\w.-]+)"$',
+            r'^githubConfigUrl: "https://github\.com/livespec-ai/([\w.-]+)"$',
             values.read_text(encoding="utf-8"),
             re.MULTILINE,
         ):
@@ -319,7 +319,7 @@ def _render(*, tmp_path: Path, expression: str, extra_vars: tuple[str, ...] = ()
 def test_the_ci_workflow_urls_render_one_raw_ci_yml_per_repository(*, tmp_path: Path) -> None:
     urls = _render(tmp_path=tmp_path, expression="sandbox_image_warm_ci_workflow_urls")
     assert urls == [
-        f"https://raw.githubusercontent.com/thewoolleyman/{repo}/master/.github/workflows/ci.yml"
+        f"https://raw.githubusercontent.com/livespec-ai/{repo}/master/.github/workflows/ci.yml"
         for repo in _declared_repositories()
     ], f"rendered={urls!r}"
 

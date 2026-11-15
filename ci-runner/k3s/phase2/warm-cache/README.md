@@ -754,7 +754,7 @@ The item was filed believing that each release cut a fresh sandbox tag
 which every node then pulled cold, and that pre-warming would remove the
 minutes-long "Pulling image" phases. That premise was measured and
 DISPROVEN on the item the same day.
-`ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.40.0` and
+`ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.40.0` and
 `:python-v1.40.1` are **byte-identical** — 10 layers each, 255 MB, 10 of
 10 layers shared, 0 new, because the GHA build cache was warm and buildx
 reproduced identical digests. The node already held 100% of the bytes;
@@ -830,7 +830,7 @@ Three properties make it safe to add:
   image comes from docker.io.
 - **It holds only public bytes.** The sandbox package is public:
   verified 2026-09-08 by an anonymous token exchange against
-  `ghcr.io/thewoolleyman/livespec-fabro-sandbox`, whose tag listing
+  `ghcr.io/livespec-ai/livespec-fabro-sandbox`, whose tag listing
   answers 200 with no credential. So no `proxy.username`/`proxy.password`
   is configured, and adding one would be a mistake — distribution's own
   recipe warns that a credentialled proxy republishes everything that
@@ -862,7 +862,7 @@ of which alone saves an image, and none of which is allowed to answer
 "don't know":
 
 1. **Scope.** Only records inside
-   `ghcr.io/thewoolleyman/livespec-fabro-sandbox` are ever considered,
+   `ghcr.io/livespec-ai/livespec-fabro-sandbox` are ever considered,
    and the repository is a constant in the script rather than a flag,
    because the scope IS the safety property. The pinned ARC runner image
    `ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc70…`, from which

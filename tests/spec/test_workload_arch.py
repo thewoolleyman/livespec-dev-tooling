@@ -105,7 +105,7 @@ def test_orchestrator_master_push_has_a_dedicated_converged_lane() -> None:
 
     values_text = values.read_text(encoding="utf-8")
     assert (
-        'githubConfigUrl: "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro"'
+        'githubConfigUrl: "https://github.com/livespec-ai/livespec-orchestrator-beads-fabro"'
         in values_text
     )
     assert 'runnerScaleSetName: "livespec-orchestrator-master-k3s"' in values_text
@@ -139,7 +139,7 @@ def test_the_converge_passes_each_release_its_arch_overlay() -> None:
 # an amd64-only manifest (GHCR read 2026-11-08, livespec-dev-tooling-ko26ez.7).
 _FIRST_MULTI_ARCH_PYTHON_TAG = (1, 183, 1)
 _SANDBOX_PYTHON_PIN = re.compile(
-    r"ghcr\.io/thewoolleyman/livespec-fabro-sandbox:python-v(\d+)\.(\d+)\.(\d+)\s*$"
+    r"ghcr\.io/(?:thewoolleyman|livespec-ai)/livespec-fabro-sandbox:python-v(\d+)\.(\d+)\.(\d+)\s*$"
 )
 
 
@@ -149,11 +149,11 @@ def _publishes_arm64(*, image: str) -> bool:
 
 
 def test_the_multi_arch_rule_reads_the_tag_not_the_image_name() -> None:
-    base = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v"
+    base = "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v"
     assert _publishes_arm64(image=f"{base}1.183.1")
     assert _publishes_arm64(image=f"{base}1.200.0")
     assert not _publishes_arm64(image=f"{base}1.183.0")
-    assert not _publishes_arm64(image="ghcr.io/thewoolleyman/livespec-fabro-sandbox:sandbox-v9.9.9")
+    assert not _publishes_arm64(image="ghcr.io/livespec-ai/livespec-fabro-sandbox:sandbox-v9.9.9")
 
 
 def test_this_repositorys_arm64_gate_line_holds_only_while_its_ci_pin_publishes_arm64() -> None:

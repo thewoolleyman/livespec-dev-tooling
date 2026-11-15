@@ -17,7 +17,7 @@
 #
 #   - name: Publish the flake-retry records for the host-side reader
 #     if: ${{ !cancelled() }}
-#     uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@vX.Y.Z
+#     uses: livespec-ai/livespec-dev-tooling/.github/actions/publish-flake-retries@vX.Y.Z
 #
 # A composite step cannot read the caller's `needs` context, and the
 # caller's own status check decides whether this Action runs at all, so

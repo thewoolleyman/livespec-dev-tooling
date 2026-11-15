@@ -44,7 +44,7 @@
 # GitHub App installation's repository selection, or the ARC controller gets
 # `403 "Resource not accessible by integration"` on the registration-token
 # call and the listener never starts. Check this FIRST.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-orchestrator-beads-fabro"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
 
 runnerScaleSetName: "livespec-orchestrator-k3s"
@@ -227,7 +227,7 @@ template:
 #
 # 42 = 2 x 21, the DOUBLED measured matrix width (README.md "Deriving a new
 # repository's ClusterQueue", step 4): master CI run 33893048859 on
-# thewoolleyman/livespec-orchestrator-beads-fabro (2026-09-04) dispatched
+# livespec-ai/livespec-orchestrator-beads-fabro (2026-09-04) dispatched
 # exactly 21 jobs -- 17 check jobs (check-python x4 uid/target legs, two-leg
 # check-per-file-coverage / check-python-batch / check-coverage matrices,
 # check-doctor-static, check-metadata-batch, e2e-cli, acceptance, and the

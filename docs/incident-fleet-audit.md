@@ -28,7 +28,7 @@ of the ready list and the findings name the consumer and the capability.
 | `templates` | the one commit that every pin of this library's reusable workflows (`.github/workflows/...@ref`) and composite actions (`.github/actions/...@ref`) names, across ALL of the consumer's default-branch `.github/workflows/*.yml` files, read from one blobless clone (a tag is resolved to its commit); a consumer that runs its own local workflows (this library always, any other consumer with no such pin) is release-keyed against its default-branch commit, below | an unreadable workflow directory or file, pins that disagree, a ref that names no tag or commit, no template use at all (for example `dolt-server`) |
 | `driver-hooks` | `plugin=<commit>` for every plugin the consumer's `.claude/settings.json` enables, from the install record whose project path is the consumer's clone, with its plugin cache present | an enabled plugin that is not installed for this project, no cache, an unreadable registry |
 | `recovery-authorization` | the controller's serving version plus the single always-bypass GitHub App on the consumer's default-branch ruleset | no verified controller, no or several bypass actors, not an always-bypass Integration |
-| `independent-controller` | `v<version>@<commit>` of the venv the RUNNING `livespec-incident-observer.service` main process was started from, and only if the process started after that install | the unit is not `active`/`running`, the process is not the packaged observer command, no single recorded install, the process predates its install, or the repository is not the one the observer serves (`thewoolleyman/livespec-dev-tooling`) |
+| `independent-controller` | `v<version>@<commit>` of the venv the RUNNING `livespec-incident-observer.service` main process was started from, and only if the process started after that install | the unit is not `active`/`running`, the process is not the packaged observer command, no single recorded install, the process predates its install, or the repository is not the one the observer serves (`livespec-ai/livespec-dev-tooling`) |
 
 The controller reader never opens the protected `controller.json` (the operator cannot read it, and
 a release name written there is a claim) and never consults the auditor's own package.
@@ -64,7 +64,7 @@ commit that contains it, so those reads are keyed to a RELEASE
 - The `serving` line prints the newest release, `release vX.Y.Z at HEAD <commit>`; each row that
   classifies through a release claim prints the release its claim named, at that HEAD.
 
-On the dev host (2026-11-10) only `thewoolleyman/livespec-dev-tooling` is read this way, for both
+On the dev host (2026-11-10) only `livespec-ai/livespec-dev-tooling` is read this way, for both
 capabilities.
 
 ## The ready list and enablement

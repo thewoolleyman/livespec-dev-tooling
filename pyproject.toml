@@ -203,6 +203,14 @@ source_trees = ["livespec_dev_tooling"]
 # on 2026-11-14. 8Gi is one gate unit (5 cpu / 8Gi), so every gate lane still
 # admits it (livespec-dev-tooling-ukoeah).
 gate_memory = "8Gi"
+# The authors whose pull requests a merge_group run may carry onto self-hosted
+# capacity (SPECIFICATION/contracts.md §"`self_hosted_routing` check", the
+# guarded `merge_group` exception, condition (d)). ci.yml's merge-group-guard
+# reads this list from the group's base commit; a group holding any other
+# author's pull request, or any cross-repository one, runs on hosted capacity.
+# The maintainer, and the organization's fleet App in both login spellings
+# (GraphQL reports a bot without the `[bot]` suffix).
+merge_queue_author_allowlist = ["thewoolleyman", "livespec-ai-factory-bot", "livespec-ai-factory-bot[bot]"]
 # Directories whose direct-child `.py` modules are consumer-facing INVOCATION
 # surface (`python -m livespec_dev_tooling.<subpackage>.<slug>`), read by
 # `release_bump_classification`. Declared because this library's public surface

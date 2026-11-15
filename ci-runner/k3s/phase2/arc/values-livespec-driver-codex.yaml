@@ -21,7 +21,7 @@
 # livespec-s43svm.25 rolled out fleet-wide from values-livespec-overseer.yaml's
 # reference implementation -- see that file and ../apparmor/ci-runner-workflow
 # for the root cause.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-driver-codex"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-driver-codex"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
 
 runnerScaleSetName: "livespec-driver-codex-k3s"

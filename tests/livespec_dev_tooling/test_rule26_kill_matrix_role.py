@@ -155,7 +155,7 @@ def test_the_rendered_job_trusts_the_mise_config_of_both_clones() -> None:
     trusted = env.split("- name: MISE_TRUSTED_CONFIG_PATHS\n", 1)[1].splitlines()[0]
     assert trusted.strip() == "value: /data/orchestrator:/data/dev-tooling"
     assert (
-        "git clone --quiet https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro /data/orchestrator"
+        "git clone --quiet https://github.com/livespec-ai/livespec-orchestrator-beads-fabro /data/orchestrator"
         in job
     )
     assert "/data/dev-tooling" in job

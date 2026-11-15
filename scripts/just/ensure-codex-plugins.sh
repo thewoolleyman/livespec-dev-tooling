@@ -6,9 +6,9 @@ if ! command -v codex >/dev/null 2>&1; then
     exit 0
 fi
 
-codex plugin marketplace add thewoolleyman/livespec --ref release
-codex plugin marketplace add thewoolleyman/livespec-driver-codex --ref release
-codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro --ref release
+codex plugin marketplace add livespec-ai/livespec --ref release
+codex plugin marketplace add livespec-ai/livespec-driver-codex --ref release
+codex plugin marketplace add livespec-ai/livespec-orchestrator-beads-fabro --ref release
 codex plugin marketplace upgrade livespec
 codex plugin marketplace upgrade livespec-driver-codex
 codex plugin marketplace upgrade livespec-orchestrator-beads-fabro

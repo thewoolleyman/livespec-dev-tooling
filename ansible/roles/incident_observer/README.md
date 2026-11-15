@@ -261,7 +261,7 @@ Step 1 is the seeding route above; steps 2–4 keep their numbers so existing
 references to them stay valid.
 
 2. **Done 2026-11-05 — the GitHub `workflow_job` webhook on
-   `thewoolleyman/livespec-dev-tooling`**, delivering to
+   `livespec-ai/livespec-dev-tooling`**, delivering to
    `https://vps.perch-rudd.ts.net:10000/callback` with the webhook secret and
    JSON content type. Reason it is maintainer-held: a webhook subscription is a
    repository GitHub setting an agent never writes. The public ingress itself
@@ -281,7 +281,7 @@ references to them stay valid.
 4. **Not done — provision the recovery GitHub App (plan note 006, GO-1).**
    Create a GitHub App used only for incident recovery, never the
    factory/publishing bot. Give it `contents: write` on
-   `thewoolleyman/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED until this host converts (current seeding route above); retain the variable names `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` for the target route. Add a
+   `livespec-ai/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED until this host converts (current seeding route above); retain the variable names `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` for the target route. Add a
    master ruleset whose bypass list names only that App, then run the apply
    again. Reason it is maintainer-held: it grants a principal unchecked writes
    to master, and App and ruleset settings are GitHub state and the App's

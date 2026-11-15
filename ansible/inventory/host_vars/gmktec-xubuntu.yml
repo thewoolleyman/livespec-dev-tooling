@@ -176,7 +176,7 @@ fabro_server_host_group: cwoolley
 fabro_server_host_home: /home/cwoolley
 fabro_server_host_checkout: /home/cwoolley/repos/livespec-orchestrator-beads-fabro
 # The host has no checkout (measured 2026-10-18), so the role clones it. Public.
-fabro_server_host_checkout_remote: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+fabro_server_host_checkout_remote: https://github.com/livespec-ai/livespec-orchestrator-beads-fabro.git
 # A fresh instance has no settings.toml to preserve, so the role writes it.
 fabro_server_manage_settings: true
 # The CPU share the Fabro server instances and the k3s agent run with
@@ -406,8 +406,8 @@ fabro_server_instances:
           # Its one-run gate passed on the candidate (run 01M6XWZJ2NF2: in-pod parity
           # PASS, dod_gate@1 on claude-acp). New pods take it after the server's live
           # `Server config reloaded`; a pod already running keeps its image.
-          # ROLLBACK: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.188.1
+          # ROLLBACK: image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.136.2
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.188.1
           # REVERT: cpu_cores: 4
           cpu_cores: 6
           memory_mb: 7629
@@ -443,7 +443,7 @@ fabro_server_instances:
           # REVERT: drop this line.
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-agent-v1.136.2
           # REVERT: cpu_cores: 4
           cpu_cores: 6
           memory_mb: 7629
@@ -655,7 +655,7 @@ fabro_server_instances:
         memory: 8GB
         provider: kubernetes
       - id: livespec-ci-rust
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+        image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-agent-v1.136.2
         cpu: 4
         memory: 8GB
       - id: livespec-ci-k8s
@@ -741,7 +741,7 @@ fabro_server_instances:
           # (run 01M6MQBBRZ7A); its parity proof against v1.136.2 was taken here
           # (run 01M6XWZJ2NF2).
           # ROLLBACK: python-agent-v1.204.0.
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.207.0
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.207.0
           cpu_cores: 6
           memory_mb: 7629
       kubernetes-rust:
@@ -759,8 +759,8 @@ fabro_server_instances:
           # (ugrep) grows past 3 GiB on a wide bounded-repetition regex and OOM-kills the
           # pod; 2.1.300 errors out at 323 MB (measured on bd-ib-546m3d). Proven here on the
           # candidate first; the fleet kubernetes-rust line moves only after a real turn.
-          # ROLLBACK: image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.188.1
+          # ROLLBACK: image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-agent-v1.188.1
           cpu_cores: 4
           memory_mb: 7629
     # The fleet instance's vault entries, by the same names and sources; this
@@ -849,7 +849,7 @@ fabro_server_instances:
           # (homelab-worker/prove-agent-image.sh, 2026-11-09T17:06Z, livespec-dev-tooling-a3brdf):
           # the 1.189.0 release's -arm64 tag. The fleet instance (:32276) pins its own
           # amd64 python-agent version; roll this pin with it so the two do not diverge.
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.189.0-arm64
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.189.0-arm64
           cpu_cores: 6
           memory_mb: 7629
     vault_secrets:
@@ -983,7 +983,7 @@ fabro_server_instances:
           FACTORY_REFRESH_ENV: /etc/ci-runner/factory-mi-homelab-refresh.env
           FACTORY_KUBECONFIG: /etc/ci-runner/factory-mi-homelab.kubeconfig
         process_spec:
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0
+          image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.126.0
           cpu_cores: 4
           memory_mb: 7629
     # The org App key comes from its OWN controller variable, never from

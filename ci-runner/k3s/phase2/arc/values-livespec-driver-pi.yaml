@@ -31,7 +31,7 @@
 # as a wrong permission but is a missing repository selection; the installation
 # already carried `administration: write`. Check this FIRST when a new scale
 # set's listener never starts.
-githubConfigUrl: "https://github.com/thewoolleyman/livespec-driver-pi"
+githubConfigUrl: "https://github.com/livespec-ai/livespec-driver-pi"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
 
 runnerScaleSetName: "livespec-driver-pi-k3s"
@@ -216,7 +216,7 @@ template:
 # carry 63-67, inherited from the podman-era demand weights as a proxy --
 # values-livespec-driver-codex.yaml says so in as many words ("nobody has
 # measured its actual matrix width"). 13 is this repo's ACTUAL matrix width,
-# counted from run 32420185191 on thewoolleyman/livespec-driver-pi#64, which
+# counted from run 32420185191 on livespec-ai/livespec-driver-pi#64, which
 # dispatched exactly 13 jobs (11 gating check jobs on the pool, plus ci-green
 # and export-telemetry, which are hardcoded `runs-on: ubuntu-latest` in that
 # repo's ci.yml so the gate reporter never depends on the self-hosted pool).

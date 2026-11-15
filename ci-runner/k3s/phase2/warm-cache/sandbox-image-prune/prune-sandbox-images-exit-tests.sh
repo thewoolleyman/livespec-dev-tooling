@@ -74,7 +74,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_SCRIPT="${HERE}/prune-sandbox-images.sh"
-REPO="ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+REPO="ghcr.io/livespec-ai/livespec-fabro-sandbox"
 
 pass=0; fail=0
 ok() { printf '  PASS  %s\n' "$1"; pass=$((pass + 1)); }
@@ -204,7 +204,7 @@ cat > "$IMAGES_JSON" <<JSON
  {"id":"sha256:mmm1","size":"268435456","pinned":false,
   "repoTags":["${REPO}:python-sha-abc1234"],"repoDigests":["${REPO}@sha256:mmm1"]},
  {"id":"sha256:nnn1","size":"268435456","pinned":false,
-  "repoTags":["${REPO}:python-v1.1.0","ghcr.io/thewoolleyman/something-else:v1.1.0"],
+  "repoTags":["${REPO}:python-v1.1.0","ghcr.io/livespec-ai/something-else:v1.1.0"],
   "repoDigests":["${REPO}@sha256:nnn1"]},
  {"id":"sha256:run1","size":"1073741824","pinned":true,
   "repoTags":["ghcr.io/actions/actions-runner:2.336.0"],

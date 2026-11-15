@@ -106,7 +106,7 @@ GraphQL `revertPullRequest`) — verify the produced commit satisfies
 
 **Verified on 2026-10-14, and it does NOT.** Read-only evidence:
 
-- `thewoolleyman/livespec-orchestrator-beads-fabro` PR **#2918** — the manual
+- `livespec-ai/livespec-orchestrator-beads-fabro` PR **#2918** — the manual
   server-side revert from the incident that opened this plan, on GitHub's own
   auto-generated branch `revert-2917-plan/factory-run-wall-budget`. Both of its
   revert commits (`7a1a7263`, `a36f6634`) carry committer
