@@ -256,6 +256,12 @@ _MALFORMED: list[tuple[str, ManifestParseReason]] = [
         '"adopters": [{"repo": "x", "profile": ["baseline"], "posture": "bogus"}]}',
         "malformed-adopter",
     ),
+    # Per-adopter owner keys are optional, but when declared they name an account.
+    (
+        '{"owner": "acme", "members": [], '
+        '"adopters": [{"repo": "x", "profile": ["baseline"], "posture": "none", "owner": 7}]}',
+        "malformed-adopter",
+    ),
 ]
 
 

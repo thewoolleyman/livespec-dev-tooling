@@ -114,6 +114,7 @@ class Adopter:
     repo: str
     profile: tuple[str, ...]
     posture: str
+    owner: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

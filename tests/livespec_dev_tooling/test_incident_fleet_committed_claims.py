@@ -135,6 +135,24 @@ def test_the_wellformed_fixture_passes_every_check() -> None:
     assert _failures(claims=_load(path=_WELLFORMED)) == []
 
 
+def test_adopter_owner_supplies_incident_command_consumers() -> None:
+    source = """\
+{
+  "owner": "fleet-owner",
+  "adopter_owner": "adopter-owner",
+  "fleet": [{"repo": "member", "class": "library"}],
+  "adopters": [{"repo": "adopter", "profile": ["baseline"], "posture": "released"}]
+}
+"""
+    parsed = parse_manifest(source=source)
+    assert isinstance(parsed, Success), parsed
+
+    assert _applicable_consumers(manifest=parsed.unwrap()) == (
+        "fleet-owner/member",
+        "adopter-owner/adopter",
+    )
+
+
 _BROKEN: list[tuple[int, dict[str, str], str]] = [
     (1, {"surface": "No such surface"}, "unknown-surface"),
     (1, {"disposition": "maybe"}, "unknown-disposition"),
