@@ -169,6 +169,8 @@ _POWEREDGE_ROLES = (
     "runner_pod_lifecycle",
     "arc_log_archive",
     "secret_reinjection",
+    # The shared-credentials adopter composition (livespec-dev-tooling-xyi5vu). Server-only.
+    "shared_credentials_host",
     "sccache_binary",
     "cache_telemetry",
     "container_hook",

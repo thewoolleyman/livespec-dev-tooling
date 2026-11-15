@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "host": "poweredge-xubuntu",
+  "account": "672283019497",
+  "bootstrap_user_arn": "arn:aws:iam::672283019497:user/poweredge-xubuntu-bootstrap",
+  "sealer": {
+    "artifact": "/usr/local/libexec/shared-credentials/shared-credentials-0.3.0.pyz",
+    "artifact_sha256": "a27b1f790cd31672e09ff7cd2bd880a60c91df563b44968eb855884093225918",
+    "manifest": "/etc/livespec-ci-credentials/poweredge-xubuntu.json",
+    "manifest_sha256": "acf8fdd6d561b8ca1d5671a3764688e755d6cfd6dde2b264ebdd24abc0334f99"
+  }
+}

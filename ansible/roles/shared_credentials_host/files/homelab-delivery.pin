@@ -1,0 +1,10 @@
+# homelab's committed initial-delivery path (infra/shared-credentials/deliver-initial-key.sh
+# and everything it imports or reads), consumed at this exact commit by
+# roles/shared_credentials_host/tasks/mint.yml. The mint stages it on the controller,
+# archives exactly this commit, and runs it root-only on the target.
+# 846ea917 is homelab main after mi-homelab/homelab#1215 merged, so its
+# docs/credential-exception-register.md carries the poweredge-xubuntu-bootstrap row
+# (review date 2027-02-13) that the tool requires before it issues a key.
+# Re-pin only by reviewed change.
+repository=https://github.com/mi-homelab/homelab.git
+commit=846ea91789b543171eea8a7fdce1a1c545483c48
