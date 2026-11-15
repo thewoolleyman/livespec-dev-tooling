@@ -117,6 +117,21 @@ def test_a_recorded_landed_pair_stays_admitted_with_no_arm_on_the_host(
     assert _execute(settings=settings, payload=query)["status"] == "provenance"
 
 
+def test_a_drill_closed_history_is_a_terminal_drill_with_no_repayment_or_completion(
+    settings: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    query = _query(phase="drill-closed")
+    _reader(monkeypatch=monkeypatch, stdout=_history(query=query))
+
+    assert _execute(settings=settings, payload=query) == {
+        "schema": 1,
+        "status": "drill-closure",
+        "query": query,
+        "repayment_outstanding": False,
+        "incident_complete": False,
+    }
+
+
 def test_a_commit_the_chain_does_not_record_is_refused_by_name(
     settings: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

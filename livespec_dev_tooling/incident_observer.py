@@ -255,6 +255,8 @@ def _admission_refusal(
     authorize_current: Callable[[ObserverRegistration], bool],
     released_controller: Callable[[str, str], bool],
 ) -> str | None:
+    if registration.phase == "drill-closed":
+        return "drill-closed incident cannot supply a durable observer receipt"
     if not authorize_current(registration):
         return "canonical current authority unavailable or mismatched"
     if not registration.authority_receipt or not registration.required_jobs:

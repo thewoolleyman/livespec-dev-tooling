@@ -146,3 +146,20 @@ def test_an_unclassified_row_names_its_specific_missing_evidence(case: str) -> N
     assert any(line.startswith(f"row\t{repository}\t{surface}\tunclassified\t") for line in lines)
     assert f"finding\t{row}: {cause}" in lines
     assert exit_code(report=report) != 0
+
+
+def test_a_drill_closed_incident_item_is_not_recovery_capability_for_master() -> None:
+    reads = iter((_MANIFEST, _MANIFEST))
+    report = run_fleet_audit(
+        read_manifest=lambda: next(reads, None),
+        claims=(_CLAIM,),
+        read_serving=_steady,
+        read_incident_phase=lambda item: "drill-closed" if item == "incident-1" else "",
+    )
+    lines = render_report(report=report)
+    assert any(line.startswith("row\texample/tooling\tPre-push\tunclassified\t") for line in lines)
+    assert (
+        "finding\texample/tooling: Pre-push: incident item incident-1 is drill-closed, "
+        "which is not recovery capability for master"
+    ) in lines
+    assert "ready\texample/tooling" not in lines
