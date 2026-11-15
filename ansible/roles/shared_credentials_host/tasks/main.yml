@@ -250,11 +250,28 @@
     - shared_credentials_host_python_on_path.rc != 0
     - shared_credentials_host_python_installed.stat.exists or not ansible_check_mode
 
+# The install block sets the interpreter root's ownership and mode only when it installs. Re-assert
+# them on every converge, so a repair converge fixes a root that drifted after the install. The
+# read-back below then only confirms the result.
+- name: Re-assert the interpreter root's ownership and mode
+  ansible.builtin.file:
+    path: "{{ shared_credentials_host_python_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - shared_credentials_host_python_installed.stat.exists or not ansible_check_mode
+
 - name: Strip group and world write from the pinned interpreter tree
   ansible.builtin.file:
     path: "{{ shared_credentials_host_python_prefix }}"
     state: directory
     recurse: true
+    # Never follow a symlink out of the prefix: a re-pinned build carrying an escaping link must not
+    # have its chmod/chown applied to the link's target.
+    follow: false
     owner: root
     group: root
     mode: go-w
