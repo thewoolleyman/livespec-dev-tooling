@@ -143,7 +143,7 @@ def test_a_gate_annotated_fast_in_check_targets_is_classified_fast_in_ci():
 
 def test_an_adopters_declared_incident_precondition_is_recorded_when_the_member_is_deferred():
     targets = module.load_repository_inventory(
-        repository="thewoolleyman/livespec-orchestrator-beads-fabro"
+        repository="livespec-ai/livespec-orchestrator-beads-fabro"
     )
     picker = next(target for target in targets if target.name == "check-codex-skill-picker")
     selected, deferred = select_incident_targets(
