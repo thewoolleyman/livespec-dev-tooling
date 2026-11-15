@@ -34,6 +34,10 @@ from livespec_dev_tooling.fleet._rows_files import (
 _OBSERVED = ("thewoolleyman", "livespec-dev-tooling")
 _UNOBSERVED = ("acme", "widget")
 _PROOF = "https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/123456789"
+# The GitHub-hosted proving run that reached the observer's public POST
+# /ordinary-action and got its 202 ownership answer (livespec-dev-tooling-jpfdcx,
+# 2026-11-10; runner "GitHub Actions 1001084164", runner_environment github-hosted).
+_RECORDED_PROOF = "https://github.com/thewoolleyman/livespec-dev-tooling/actions/runs/42922861122"
 _PIN_AND_BUMP = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
 
 
@@ -78,7 +82,8 @@ def _written(*, calls: list[tuple[str, ...]]) -> list[str]:
     ]
 
 
-def test_an_observed_member_without_a_reachability_proof_is_refused_by_name():
+def test_an_observed_member_without_a_reachability_proof_is_refused_by_name(monkeypatch):
+    monkeypatch.setattr(master_health_observer, "HOSTED_REACHABILITY_PROOFS", {})
     calls: list[tuple[str, ...]] = []
     ctx, member = _context(
         owner=_OBSERVED[0], repo=_OBSERVED[1], present=_PIN_AND_BUMP, calls=calls
@@ -139,8 +144,9 @@ def test_a_member_with_no_observer_is_installed_as_before():
     assert _written(calls=calls) == ["refs", MASTER_HEALTH_WORKFLOW, "pulls"]
 
 
-def test_the_shared_shim_install_leaves_out_only_the_unarmed_reconciler():
+def test_the_shared_shim_install_leaves_out_only_the_unarmed_reconciler(monkeypatch):
     """The pin-and-bump rows' install path must not arm the reconciler either."""
+    monkeypatch.setattr(master_health_observer, "HOSTED_REACHABILITY_PROOFS", {})
     calls: list[tuple[str, ...]] = []
     ctx, member = _context(owner=_OBSERVED[0], repo=_OBSERVED[1], present=(), calls=calls)
 
@@ -149,7 +155,8 @@ def test_the_shared_shim_install_leaves_out_only_the_unarmed_reconciler():
     assert _written(calls=calls) == ["refs", *_PIN_AND_BUMP, "pulls"]
 
 
-def test_an_observed_member_missing_only_the_reconciler_gets_no_pull_request():
+def test_an_observed_member_missing_only_the_reconciler_gets_no_pull_request(monkeypatch):
+    monkeypatch.setattr(master_health_observer, "HOSTED_REACHABILITY_PROOFS", {})
     calls: list[tuple[str, ...]] = []
     ctx, member = _context(
         owner=_OBSERVED[0], repo=_OBSERVED[1], present=_PIN_AND_BUMP, calls=calls
@@ -159,3 +166,25 @@ def test_an_observed_member_missing_only_the_reconciler_gets_no_pull_request():
 
     assert _written(calls=calls) == []
     assert not isinstance(outcome, RowFinding)
+
+
+def test_livespec_dev_tooling_records_its_hosted_reachability_proof():
+    """livespec-dev-tooling-jpfdcx: the committed opt-in names the proving run.
+
+    A GitHub-hosted runner reached the observer's public POST /ordinary-action
+    through its Funnel and received the exact 202 ownership answer, so the
+    observed repository's entry is that run's URL, and wire-fleet-member's
+    arming gate admits the shim from the committed map alone.
+    """
+    calls: list[tuple[str, ...]] = []
+    ctx, member = _context(
+        owner=_OBSERVED[0], repo=_OBSERVED[1], present=_PIN_AND_BUMP, calls=calls
+    )
+
+    outcome = reconcile_master_health_shim(ctx=ctx, member=member)
+
+    assert master_health_observer.HOSTED_REACHABILITY_PROOFS == {
+        "thewoolleyman/livespec-dev-tooling": _RECORDED_PROOF
+    }
+    assert not isinstance(outcome, RowFinding)
+    assert _written(calls=calls) == ["refs", MASTER_HEALTH_WORKFLOW, "pulls"]
