@@ -194,8 +194,12 @@ recovery_bypass_integration_id = 5761967
 # admits to self-hosted capacity (the guarded merge_group shape of
 # self_hosted_routing). The guard reads this list from the merge group's BASE
 # commit, so an enqueued change to it takes effect only once it is on master.
-# Bot logins are written without the "[bot]" / "app/" decoration.
-merge_queue_author_allowlist = ["thewoolleyman", "thewoolleyman-factory-bot"]
+# Bot logins are written without the "[bot]" / "app/" decoration; the org
+# fleet App also appears in its `[bot]` spelling (GraphQL reports a bot without
+# the suffix). The personal-account factory bot stays until every dispatch host
+# mints as the org App. One key: the (iii) carrier and the org-cutover PR each
+# added this list, merged here on rebase.
+merge_queue_author_allowlist = ["thewoolleyman", "thewoolleyman-factory-bot", "livespec-ai-factory-bot", "livespec-ai-factory-bot[bot]"]
 source_trees = ["livespec_dev_tooling"]
 # The delegated gate Job's memory request and limit (contracts.md, "Declared
 # gate resources"). The default is 6Gi. The full-suite green-verified leg at
@@ -203,14 +207,6 @@ source_trees = ["livespec_dev_tooling"]
 # on 2026-11-14. 8Gi is one gate unit (5 cpu / 8Gi), so every gate lane still
 # admits it (livespec-dev-tooling-ukoeah).
 gate_memory = "8Gi"
-# The authors whose pull requests a merge_group run may carry onto self-hosted
-# capacity (SPECIFICATION/contracts.md §"`self_hosted_routing` check", the
-# guarded `merge_group` exception, condition (d)). ci.yml's merge-group-guard
-# reads this list from the group's base commit; a group holding any other
-# author's pull request, or any cross-repository one, runs on hosted capacity.
-# The maintainer, and the organization's fleet App in both login spellings
-# (GraphQL reports a bot without the `[bot]` suffix).
-merge_queue_author_allowlist = ["thewoolleyman", "livespec-ai-factory-bot", "livespec-ai-factory-bot[bot]"]
 # Directories whose direct-child `.py` modules are consumer-facing INVOCATION
 # surface (`python -m livespec_dev_tooling.<subpackage>.<slug>`), read by
 # `release_bump_classification`. Declared because this library's public surface
