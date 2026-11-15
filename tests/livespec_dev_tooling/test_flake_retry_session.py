@@ -117,6 +117,33 @@ def _touched_flaky_repository(*, root: Path, kind: str) -> Path:
     return repo
 
 
+def _repository_rooted_base_flaky_repository(*, root: Path, base: str, parameter: str) -> Path:
+    """Create a failing test whose only changed-path reference starts at ``base``."""
+    repo = root / "repo"
+    repo.mkdir()
+    _git(repo=repo, args=["init", "-q", "-b", "master", "."])
+    fixture_data = repo / "tests" / "fixtures"
+    fixture_data.mkdir(parents=True)
+    _ = (fixture_data / "data.json").write_text("base\n", encoding="utf-8")
+    _ = (repo / "test_flaky.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        f"def test_flaky({parameter}):\n"
+        f"    _ = {base} / 'tests' / 'fixtures' / 'data.json'\n"
+        "    raise AssertionError('first attempt fails')\n",
+        encoding="utf-8",
+    )
+    _ = (repo / "conftest.py").write_text(_NO_DELAY_CONFTEST, encoding="utf-8")
+    _ = (repo / ".gitignore").write_text("tmp/\n", encoding="utf-8")
+    _git(repo=repo, args=["add", "-A"])
+    _git(repo=repo, args=["commit", "-qm", "failing test base"])
+    _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    _ = (fixture_data / "data.json").write_text("changed\n", encoding="utf-8")
+    _commit_touched_path(repo=repo, path="tests/fixtures/data.json")
+    return repo
+
+
 def _write_touched_flaky_base(*, repo: Path, kind: str) -> None:
     """Write a clean base whose later change is the touched closure evidence."""
     test_source = _FLAKY_TEST
@@ -381,6 +408,33 @@ def test_a_failing_touched_test_names_the_evidence_that_withheld_its_retry(
     assert "test_flaky.py::test_flaky" in output
     assert expected_evidence in output
     assert "rerun" not in output
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("base", "parameter"),
+    [
+        ("Path.cwd()", ""),
+        ("request.config.rootpath", "request"),
+    ],
+    ids=("working-directory", "pytest-rootpath"),
+)
+def test_a_failing_test_naming_a_changed_file_from_a_repository_rooted_base_has_no_retry(
+    *, tmp_path: Path, base: str, parameter: str
+) -> None:
+    """A working-directory or pytest-rootpath base makes the changed file touch the test."""
+    repo = _repository_rooted_base_flaky_repository(root=tmp_path, base=base, parameter=parameter)
+
+    completed = _run_session(repo=repo)
+    output = completed.stdout + completed.stderr
+
+    assert completed.returncode == 1, output
+    assert "1 failed" in output
+    assert "FLAKE-RETRY-WITHHELD" in output
+    assert "test_flaky.py::test_flaky" in output
+    assert "closure string literal 'data.json'" in output
+    assert "rerun" not in output
+    assert "FLAKE-RETRIED" not in output
 
 
 @pytest.mark.integration
