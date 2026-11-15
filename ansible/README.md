@@ -313,6 +313,13 @@ the role in `roles/factory_workspace_root/CAPACITY.md`, and
 `tests/livespec_dev_tooling/test_factory_workspace_root_provisioning.py` resolves
 the host set from the same two inputs.
 
+`shared_credentials_host` (server-only) installs homelab's shared-credentials
+tool for the livespec-ai ARC credentials: the pinned AWS CLI, the pinned sealer
+release staged on the controller, and the server's committed runtime manifest and
+delivery profile, each read back against its pin (livespec-dev-tooling-xyi5vu).
+Its one-time initial bootstrap-key delivery is a separate `never`-tagged route;
+`roles/shared_credentials_host/README.md` has the command and the run order.
+
 `ci_converge_unit` only ENABLES `converge-ci-stack.service` for the next boot; to
 apply a committed change to the cluster stack now, pass `-e
 ci_converge_unit_run_now=true` on one `just ansible-apply ansible/ci-pool.yml`

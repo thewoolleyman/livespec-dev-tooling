@@ -1,0 +1,382 @@
+---
+# The host's single initial bootstrap-key delivery: homelab's bootstrap-exception
+# envelope member 4, through homelab's own committed path
+# (infra/shared-credentials/deliver-initial-key.sh) at the commit
+# files/homelab-delivery.pin names. Imported by main.yml behind
+# shared_credentials_host_mint_bootstrap_key and the `never` tag, so a normal
+# converge never runs it. Run ONCE, from the vps control node; README.md has
+# the command and the run order.
+#
+# The issuer session (the homelab-mgmt credentials with-homelab-aws.sh exports
+# on the controller) reaches the target root process ONLY as the delivery
+# command's stdin. With ssh pipelining on, module arguments travel on the ssh
+# stdin pipe, never in a target file, argv or a log (no_log). The key is issued
+# and sealed by homelab's code onto the pinned sealer's stdin and never leaves
+# the target. `--check` runs every gate and issues nothing.
+
+- name: Read the homelab pin and this host's committed manifest for the mint
+  ansible.builtin.set_fact:
+    shared_credentials_host_homelab_commit: >-
+      {{ lookup('ansible.builtin.file', shared_credentials_host_homelab_pin)
+         | regex_search('(?m)^commit=(.*)$', '\1') | first | default('') | trim }}
+    shared_credentials_host_homelab_repository: >-
+      {{ lookup('ansible.builtin.file', shared_credentials_host_homelab_pin)
+         | regex_search('(?m)^repository=(.*)$', '\1') | first | default('') | trim }}
+    shared_credentials_host_mint_manifest: >-
+      {{ lookup('ansible.builtin.file', shared_credentials_host_files_dir ~ '/' ~ shared_credentials_host_manifest_src)
+         | from_json }}
+
+- name: Name the bootstrap user and seal the committed manifest declares
+  ansible.builtin.set_fact:
+    shared_credentials_host_mint_user_arn: "{{ shared_credentials_host_mint_manifest.bootstrap_identity.user_arn }}"
+    shared_credentials_host_mint_user: "{{ shared_credentials_host_mint_manifest.bootstrap_identity.user_arn | regex_replace('^.*:user/', '') }}"
+    shared_credentials_host_mint_seal: >-
+      {{ shared_credentials_host_mint_manifest.seal.directory }}/{{ shared_credentials_host_mint_manifest.seal.name }}.cred
+
+- name: Refuse a mint without an exact homelab pin, or for a manifest naming another host
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_homelab_commit is match('^[0-9a-f]{40}$')
+      - shared_credentials_host_homelab_repository != ''
+      - shared_credentials_host_mint_manifest.host == inventory_hostname
+      - shared_credentials_host_mint_manifest.bootstrap_identity.account == shared_credentials_host_mint_account
+    fail_msg: >-
+      files/homelab-delivery.pin must name a repository and an exact 40-hex commit, and the committed
+      manifest must name this host and account; nothing was issued
+    quiet: true
+
+- name: Refuse a mint or its --check without the issuer session in the controller environment
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') != ''
+      - lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') != ''
+      - lookup('ansible.builtin.env', 'AWS_SESSION_TOKEN') != ''
+    fail_msg: run the mint (and its --check) under `/usr/local/bin/with-homelab-aws.sh --role homelab-mgmt` on the vps control node; nothing was issued
+    quiet: true
+  no_log: true
+
+- name: Refuse a mint unless module arguments travel on ssh stdin and no remote copy is kept
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.config', 'ANSIBLE_PIPELINING') | bool
+      - not (lookup('ansible.builtin.config', 'DEFAULT_KEEP_REMOTE_FILES') | bool)
+    fail_msg: >-
+      ssh pipelining must be on and keep_remote_files off, so the issuer session reaches the target only on
+      stdin. `just ansible-apply` runs from the repository root and does NOT read ansible/ansible.cfg, so
+      prefix the command with ANSIBLE_CONFIG=ansible/ansible.cfg; nothing was issued
+    quiet: true
+
+- name: Clone homelab into the controller stage when absent
+  ansible.builtin.command:
+    argv:
+      - git
+      - clone
+      - --quiet
+      - --no-checkout
+      - "{{ shared_credentials_host_homelab_repository }}"
+      - "{{ shared_credentials_host_homelab_stage }}"
+    creates: "{{ shared_credentials_host_homelab_stage }}/.git"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+
+- name: Fetch the pinned homelab commit into the controller stage
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ shared_credentials_host_homelab_stage }}"
+      - fetch
+      - --quiet
+      - origin
+      - "{{ shared_credentials_host_homelab_commit }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+
+- name: Read the pinned commit's register and declared interpreter on the controller
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ shared_credentials_host_homelab_stage }}"
+      - show
+      - "{{ shared_credentials_host_homelab_commit }}:{{ item }}"
+  loop:
+    - docs/credential-exception-register.md
+    - .python-version
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  register: shared_credentials_host_homelab_reads
+
+- name: Refuse unless the pinned commit registers this host's bootstrap user exactly once
+  ansible.builtin.assert:
+    that:
+      - >-
+        shared_credentials_host_homelab_reads.results[0].stdout_lines | map('trim')
+        | select('match', '^\|') | select('search', shared_credentials_host_mint_user_arn ~ '`') | list | length == 1
+    fail_msg: >-
+      homelab's docs/credential-exception-register.md at {{ shared_credentials_host_homelab_commit }} has no single
+      row for {{ shared_credentials_host_mint_user_arn }}; re-pin files/homelab-delivery.pin to a commit that carries
+      it. Nothing was issued
+    quiet: true
+
+- name: Look for homelab's declared interpreter on the target, as root
+  # deliver-initial-key.sh execs python<.python-version> from PATH and exits 127
+  # without it. Measured 2026-11-15: the pinned commit declares 3.13 and the
+  # server carries only /usr/bin/python3 -> python3.14.
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -c
+      - command -v "$1"
+      - interpreter
+      - "python{{ shared_credentials_host_homelab_reads.results[1].stdout | trim }}"
+  register: shared_credentials_host_mint_interpreter
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse a mint the delivery script cannot start
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_mint_interpreter.rc == 0
+    fail_msg: >-
+      python{{ shared_credentials_host_homelab_reads.results[1].stdout | trim }} (homelab .python-version at the pinned
+      commit) is not on root's PATH on this host, so deliver-initial-key.sh would exit 127; nothing was issued
+    quiet: true
+
+- name: Read the seal on the target, existence only
+  ansible.builtin.stat:
+    path: "{{ shared_credentials_host_mint_seal }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: shared_credentials_host_mint_seal_state
+
+- name: Refuse a mint while the seal exists
+  ansible.builtin.assert:
+    that:
+      - not shared_credentials_host_mint_seal_state.stat.exists
+    fail_msg: "{{ shared_credentials_host_mint_seal }} already exists; a key was already delivered, so nothing was issued"
+    quiet: true
+
+- name: Read back the installed delivery profile and manifest
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    # Deliberate: PUBLIC committed inputs pinned by sha256, never a secret.
+    get_checksum: true
+    checksum_algorithm: sha256
+  loop:
+    - "{{ shared_credentials_host_profile_dest }}"
+    - "{{ shared_credentials_host_manifest_dest }}"
+  register: shared_credentials_host_mint_inputs
+
+- name: Refuse a mint unless the profile and manifest are installed as their pinned bytes
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_mint_inputs.results | map(attribute='stat.checksum', default='') | list
+        == [shared_credentials_host_profile_sha256, shared_credentials_host_manifest_sha256]
+    fail_msg: run the normal converge first so the profile and manifest are installed as their pinned bytes; nothing was issued
+    quiet: true
+
+- name: Read the bootstrap user's access keys before issuing, metadata only
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -c
+      - >-
+        set -euo pipefail;
+        session=$(aws sts assume-role --role-arn {{ shared_credentials_host_mint_issuer_role_arn }}
+        --role-session-name shared-credentials-host-mint-readback --duration-seconds 900 --output json
+        --query Credentials);
+        eval "$(python3 -I -c 'import json,sys; c=json.load(sys.stdin);
+        print("export AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s"
+        % (c["AccessKeyId"], c["SecretAccessKey"], c["SessionToken"]))' <<<"$session")";
+        aws iam list-access-keys --user-name {{ shared_credentials_host_mint_user }} --output json
+        | python3 -I -c 'import json,sys; ks=json.load(sys.stdin)["AccessKeyMetadata"];
+        print(json.dumps([{"key": "****" + k["AccessKeyId"][-4:], "status": k["Status"],
+        "created": k["CreateDate"]} for k in ks]))'
+  delegate_to: localhost
+  become: false
+  register: shared_credentials_host_mint_keys_before
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Refuse a mint while the bootstrap user holds any access key
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_mint_keys_before.rc == 0
+      - (shared_credentials_host_mint_keys_before.stdout | from_json | length) == 0
+    fail_msg: >-
+      the bootstrap user's key readback failed or shows keys
+      {{ shared_credentials_host_mint_keys_before.stdout | default('(unreadable)') }} (masked); an earlier issue may
+      have left an unsealed key. Nothing was issued and nothing was deleted: stop and report
+    quiet: true
+
+- name: Show the pre-issue key readback (masked)
+  ansible.builtin.debug:
+    msg: "bootstrap user keys before issuing: {{ shared_credentials_host_mint_keys_before.stdout | from_json }}"
+
+- name: Build the pinned homelab archive on the controller
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ shared_credentials_host_homelab_stage }}"
+      - archive
+      - --format=tar.gz
+      - -o
+      - "{{ shared_credentials_host_homelab_stage }}.mint.tar.gz"
+      - "{{ shared_credentials_host_homelab_commit }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+
+- name: Create the root-only mint directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - "{{ shared_credentials_host_mint_dir }}"
+    - "{{ shared_credentials_host_mint_dir }}/{{ shared_credentials_host_homelab_commit }}"
+
+- name: Unpack the pinned homelab archive root-only
+  ansible.builtin.unarchive:
+    src: "{{ shared_credentials_host_homelab_stage }}.mint.tar.gz"
+    dest: "{{ shared_credentials_host_mint_dir }}/{{ shared_credentials_host_homelab_commit }}"
+    owner: root
+    group: root
+  when: not ansible_check_mode
+
+- name: Issue and seal the bootstrap key through homelab's committed delivery path
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -c
+      - >-
+        while IFS= read -r kv; do [ -n "$kv" ] && export "$kv"; done;
+        export SHARED_CREDENTIALS_AWS={{ shared_credentials_host_awscli_binary }};
+        exec /bin/bash infra/shared-credentials/deliver-initial-key.sh
+        --manifest infra/shared-credentials/consumer-manifest.json
+        --profile {{ shared_credentials_host_profile_dest }}
+        --host {{ inventory_hostname }}
+        --account {{ shared_credentials_host_mint_account }}
+        --region {{ shared_credentials_host_mint_region }}
+        --issuer-role-arn {{ shared_credentials_host_mint_issuer_role_arn }}
+    chdir: "{{ shared_credentials_host_mint_dir }}/{{ shared_credentials_host_homelab_commit }}"
+    stdin: |-
+      AWS_ACCESS_KEY_ID={{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}
+      AWS_SECRET_ACCESS_KEY={{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}
+      AWS_SESSION_TOKEN={{ lookup('ansible.builtin.env', 'AWS_SESSION_TOKEN') }}
+  register: shared_credentials_host_mint_run
+  changed_when: shared_credentials_host_mint_run.rc == 0
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Keep the delivery receipt and diagnostics root-only on the target
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ shared_credentials_host_mint_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - {name: receipt.json, content: "{{ shared_credentials_host_mint_run.stdout | default('') }}"}
+    - {name: stderr.log, content: "{{ shared_credentials_host_mint_run.stderr | default('') }}"}
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Refuse unless homelab's delivery path succeeded
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_mint_run.rc == 0
+    fail_msg: >-
+      deliver-initial-key.sh exited {{ shared_credentials_host_mint_run.rc }}; its refusal is root-only in
+      {{ shared_credentials_host_mint_dir }}/stderr.log (value-free by contract); stop and report
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Parse the value-free delivery receipt
+  ansible.builtin.set_fact:
+    shared_credentials_host_mint_receipt: "{{ shared_credentials_host_mint_run.stdout | from_json }}"
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Refuse a receipt that does not attest value_in_output false
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_mint_receipt.value_in_output is defined
+      - not (shared_credentials_host_mint_receipt.value_in_output | bool)
+    fail_msg: the delivery receipt does not attest value_in_output false; stop and report
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Show the receipt's value-free fields, key id masked
+  ansible.builtin.debug:
+    msg:
+      host: "{{ shared_credentials_host_mint_receipt.host | default('') }}"
+      principal: "{{ shared_credentials_host_mint_receipt.principal | default('') }}"
+      access_key: "****{{ (shared_credentials_host_mint_receipt.access_key_id | default(''))[-4:] }}"
+      seal: "{{ shared_credentials_host_mint_receipt.seal | default('') }}"
+      ciphertext_sha256: "{{ shared_credentials_host_mint_receipt.ciphertext_sha256 | default('') }}"
+      sealer: "{{ shared_credentials_host_mint_receipt.sealer | default({}) }}"
+      register_entry: "{{ shared_credentials_host_mint_receipt.register_entry | default({}) }}"
+      value_in_output: "{{ shared_credentials_host_mint_receipt.value_in_output }}"
+  when: not ansible_check_mode
+
+- name: Read back the bootstrap user's access keys, metadata only, from the controller
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -c
+      - >-
+        set -euo pipefail;
+        session=$(aws sts assume-role --role-arn {{ shared_credentials_host_mint_issuer_role_arn }}
+        --role-session-name shared-credentials-host-mint-readback --duration-seconds 900 --output json
+        --query Credentials);
+        eval "$(python3 -I -c 'import json,sys; c=json.load(sys.stdin);
+        print("export AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s"
+        % (c["AccessKeyId"], c["SecretAccessKey"], c["SessionToken"]))' <<<"$session")";
+        aws iam list-access-keys --user-name {{ shared_credentials_host_mint_user }} --output json
+        | python3 -I -c 'import json,sys; ks=json.load(sys.stdin)["AccessKeyMetadata"];
+        print(json.dumps([{"key": "****" + k["AccessKeyId"][-4:], "status": k["Status"],
+        "created": k["CreateDate"]} for k in ks]))'
+  delegate_to: localhost
+  become: false
+  register: shared_credentials_host_mint_keys_after
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Refuse unless exactly one Active key exists
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_mint_keys_after.rc == 0
+      - (shared_credentials_host_mint_keys_after.stdout | from_json | length) == 1
+      - (shared_credentials_host_mint_keys_after.stdout | from_json)[0].status == 'Active'
+    fail_msg: the metadata readback does not show exactly one Active key on the bootstrap user; stop and report
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Show the metadata-only key readback (masked)
+  ansible.builtin.debug:
+    msg: "{{ shared_credentials_host_mint_keys_after.stdout | from_json }}"
+  when: not ansible_check_mode

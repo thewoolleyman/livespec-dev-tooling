@@ -1,0 +1,51 @@
+{
+ "schema_version": 1,
+ "host": "poweredge-xubuntu",
+ "region": "us-west-2",
+ "tools": {
+  "aws": "/usr/local/aws-cli/v2/2.34.63/dist/aws",
+  "systemd_creds": "/usr/bin/systemd-creds"
+ },
+ "bootstrap_identity": {
+  "account": "672283019497",
+  "user_arn": "arn:aws:iam::672283019497:user/poweredge-xubuntu-bootstrap",
+  "permitted_reader_roles": [
+   "arn:aws:iam::672283019497:role/poweredge-xubuntu-reader"
+  ]
+ },
+ "seal": {
+  "directory": "/etc/credstore.encrypted",
+  "name": "poweredge-xubuntu-aws-bootstrap",
+  "key": "host"
+ },
+ "consumers": {
+  "livespec-ai-arc": {
+   "bindings": [
+    {
+     "env": "LIVESPEC_AI_ARC_APP_ID",
+     "parameter": "arn:aws:ssm:us-west-2:672283019497:parameter/gitops/v1/shared/providers/github/livespec-ai-arc/app-id",
+     "source_account": "672283019497",
+     "region": "us-west-2",
+     "reader_role_arn": "arn:aws:iam::672283019497:role/poweredge-xubuntu-reader",
+     "kms_key_arn": "arn:aws:kms:us-west-2:672283019497:key/de723c63-efb3-4918-9986-7734c8c6cce8"
+    },
+    {
+     "env": "LIVESPEC_AI_ARC_INSTALLATION_ID",
+     "parameter": "arn:aws:ssm:us-west-2:672283019497:parameter/gitops/v1/shared/providers/github/livespec-ai-arc/installation-id",
+     "source_account": "672283019497",
+     "region": "us-west-2",
+     "reader_role_arn": "arn:aws:iam::672283019497:role/poweredge-xubuntu-reader",
+     "kms_key_arn": "arn:aws:kms:us-west-2:672283019497:key/de723c63-efb3-4918-9986-7734c8c6cce8"
+    },
+    {
+     "env": "LIVESPEC_AI_ARC_PRIVATE_KEY",
+     "parameter": "arn:aws:ssm:us-west-2:672283019497:parameter/gitops/v1/shared/providers/github/livespec-ai-arc/private-key",
+     "source_account": "672283019497",
+     "region": "us-west-2",
+     "reader_role_arn": "arn:aws:iam::672283019497:role/poweredge-xubuntu-reader",
+     "kms_key_arn": "arn:aws:kms:us-west-2:672283019497:key/de723c63-efb3-4918-9986-7734c8c6cce8"
+    }
+   ]
+  }
+ }
+}

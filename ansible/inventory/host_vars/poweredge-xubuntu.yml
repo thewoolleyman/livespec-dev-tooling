@@ -103,3 +103,11 @@ factory_pod_budget: 9
 # key the control node already trusted (a hand entry) equals the key the host
 # presented live; its info repository records no fingerprint.
 controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEfDCrV8q/TFCEDdGsvS8Rr0vH19hEEERqTik5eLpQ0/"
+
+# --- shared_credentials_host ---
+# The exact bytes of this server's committed shared-credentials inputs,
+# roles/shared_credentials_host/files/poweredge-xubuntu.json (runtime manifest)
+# and poweredge-xubuntu.delivery.json (initial-delivery profile, which pins the
+# manifest's sha256 itself). A change to either file needs a reviewed re-pin here.
+shared_credentials_host_manifest_sha256: acf8fdd6d561b8ca1d5671a3764688e755d6cfd6dde2b264ebdd24abc0334f99
+shared_credentials_host_profile_sha256: 56096ba3f9980f215140ad5ff95d9e3492eeb469d136faa0f7b8ef7982d860d1

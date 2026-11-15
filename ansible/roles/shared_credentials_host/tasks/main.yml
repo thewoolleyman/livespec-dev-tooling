@@ -1,0 +1,248 @@
+---
+# Install the adopter composition of homelab's shared-credentials tool:
+# the pinned AWS CLI, the pinned sealer release, and this host's committed
+# runtime manifest and delivery profile, each read back against its pin.
+# No sudoers rule, user, unit or injector (livespec-dev-tooling-h5r75q owns
+# those), and no credential is created, read or copied.
+
+- name: Refuse a host without committed shared-credential pins
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_manifest_sha256 is match('^[0-9a-f]{64}$')
+      - shared_credentials_host_profile_sha256 is match('^[0-9a-f]{64}$')
+    fail_msg: >-
+      shared_credentials_host_manifest_sha256 and shared_credentials_host_profile_sha256 must be set
+      in this host's host_vars (roles/shared_credentials_host/HOST_VARS.md); nothing was changed
+    quiet: true
+
+- name: Create the controller staging directory for the sealer release
+  ansible.builtin.file:
+    path: "{{ shared_credentials_host_stage_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Stage the pinned sealer release on the controller
+  # A PUBLIC release asset, pinned by sha256 below. Skipped once staged, so a
+  # converged controller makes no network read.
+  ansible.builtin.command:
+    argv:
+      - gh
+      - release
+      - download
+      - "{{ shared_credentials_host_artifact_release }}"
+      - --repo
+      - "{{ shared_credentials_host_artifact_repository }}"
+      - --pattern
+      - "{{ shared_credentials_host_artifact_name }}"
+      - --dir
+      - "{{ shared_credentials_host_stage_dir }}"
+    creates: "{{ shared_credentials_host_artifact_src }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Verify the staged sealer release on the controller
+  ansible.builtin.stat:
+    path: "{{ shared_credentials_host_artifact_src }}"
+    # Deliberate: a PUBLIC artifact pinned by sha256, never a secret.
+    get_checksum: true
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: shared_credentials_host_artifact_local
+
+- name: Verify the committed manifest and delivery profile on the controller
+  ansible.builtin.stat:
+    path: "{{ shared_credentials_host_files_dir }}/{{ item }}"
+    # Deliberate: PUBLIC committed inputs pinned by sha256, never a secret.
+    get_checksum: true
+    checksum_algorithm: sha256
+  loop:
+    - "{{ shared_credentials_host_manifest_src }}"
+    - "{{ shared_credentials_host_profile_src }}"
+  delegate_to: localhost
+  become: false
+  register: shared_credentials_host_inputs_local
+
+- name: Refuse any controller input that is not its pinned bytes
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_artifact_local.stat.exists
+      - shared_credentials_host_artifact_local.stat.checksum == shared_credentials_host_artifact_sha256
+      - shared_credentials_host_inputs_local.results | map(attribute='stat.checksum') | list
+        == [shared_credentials_host_manifest_sha256, shared_credentials_host_profile_sha256]
+    fail_msg: >-
+      the staged sealer release or a committed shared-credential input differs from its pin
+      (delete a bad download under {{ shared_credentials_host_stage_dir }} and re-run); nothing was changed
+    quiet: true
+
+- name: Read the seal directory, ownership and mode only
+  ansible.builtin.stat:
+    path: "{{ shared_credentials_host_credstore_dir }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: shared_credentials_host_credstore
+
+- name: Refuse a seal directory that is missing, not root-owned or open to group or other
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_credstore.stat.exists
+      - shared_credentials_host_credstore.stat.isdir
+      - shared_credentials_host_credstore.stat.uid == 0
+      - shared_credentials_host_credstore.stat.mode | int(base=8) % 64 == 0
+    fail_msg: >-
+      {{ shared_credentials_host_credstore_dir }} must already exist as a root-owned directory with no
+      group or other permission bits; this role never creates or changes it, so nothing was changed
+    quiet: true
+
+- name: Install unzip for the AWS CLI installer
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+
+- name: Read the installed AWS CLI
+  ansible.builtin.stat:
+    path: "{{ shared_credentials_host_awscli_binary }}"
+    get_checksum: false
+  register: shared_credentials_host_awscli_installed
+
+- name: Install the pinned AWS CLI
+  when: not shared_credentials_host_awscli_installed.stat.exists
+  block:
+    - name: Download the pinned AWS CLI build
+      ansible.builtin.get_url:
+        url: "{{ shared_credentials_host_awscli_url }}"
+        dest: /root/awscli-{{ shared_credentials_host_awscli_version }}.zip
+        checksum: "sha256:{{ shared_credentials_host_awscli_zip_sha256 }}"
+        mode: "0600"
+
+    - name: Create the AWS CLI unpack directory
+      ansible.builtin.file:
+        path: /root/awscli-{{ shared_credentials_host_awscli_version }}
+        state: directory
+        mode: "0700"
+
+    - name: Unpack the AWS CLI installer
+      ansible.builtin.unarchive:
+        src: /root/awscli-{{ shared_credentials_host_awscli_version }}.zip
+        dest: /root/awscli-{{ shared_credentials_host_awscli_version }}
+        remote_src: true
+      # In check mode the download above did not happen, so there is nothing to unpack.
+      when: not ansible_check_mode
+
+    - name: Run the AWS CLI installer
+      ansible.builtin.command:
+        cmd: >-
+          /root/awscli-{{ shared_credentials_host_awscli_version }}/aws/install
+          -i /usr/local/aws-cli -b /usr/local/bin
+        creates: "{{ shared_credentials_host_awscli_binary }}"
+
+    - name: Remove the AWS CLI download and unpack directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /root/awscli-{{ shared_credentials_host_awscli_version }}.zip
+        - /root/awscli-{{ shared_credentials_host_awscli_version }}
+
+- name: Create the root-owned shared-credential directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ shared_credentials_host_libexec_dir }}"
+    - "{{ shared_credentials_host_config_dir }}"
+
+- name: Install the pinned sealer release
+  ansible.builtin.copy:
+    src: "{{ shared_credentials_host_artifact_src }}"
+    dest: "{{ shared_credentials_host_artifact_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the pinned runtime manifest and delivery profile
+  ansible.builtin.copy:
+    src: "{{ shared_credentials_host_files_dir }}/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - {src: "{{ shared_credentials_host_manifest_src }}", dest: "{{ shared_credentials_host_manifest_dest }}"}
+    - {src: "{{ shared_credentials_host_profile_src }}", dest: "{{ shared_credentials_host_profile_dest }}"}
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Read back the installed files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    # Deliberate: PUBLIC pinned bytes, never a secret.
+    get_checksum: true
+    checksum_algorithm: sha256
+  loop:
+    - "{{ shared_credentials_host_artifact_dest }}"
+    - "{{ shared_credentials_host_manifest_dest }}"
+    - "{{ shared_credentials_host_profile_dest }}"
+  register: shared_credentials_host_installed
+  when: not ansible_check_mode
+
+- name: Read back every directory the tool's path-trust walk crosses, and the tool binaries
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    # Ownership and mode only, no content read.
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop: "{{ shared_credentials_host_trusted_dirs + [shared_credentials_host_awscli_binary, '/usr/bin/systemd-creds'] }}"
+  register: shared_credentials_host_paths
+  when: not ansible_check_mode
+
+- name: Refuse an installed file that is not its pin, or a trusted path a non-root user can write
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_installed.results | map(attribute='stat.checksum') | list
+        == [shared_credentials_host_artifact_sha256, shared_credentials_host_manifest_sha256,
+            shared_credentials_host_profile_sha256]
+      - (shared_credentials_host_installed.results + shared_credentials_host_paths.results)
+        | map(attribute='stat.exists') | reject | list | length == 0
+      - (shared_credentials_host_installed.results + shared_credentials_host_paths.results)
+        | map(attribute='stat.islnk', default=false) | select | list | length == 0
+      - (shared_credentials_host_installed.results + shared_credentials_host_paths.results)
+        | map(attribute='stat.uid', default=-1) | unique | list == [0]
+      - (shared_credentials_host_installed.results + shared_credentials_host_paths.results)
+        | map(attribute='stat.wgrp', default=true) | select | list | length == 0
+      - (shared_credentials_host_installed.results + shared_credentials_host_paths.results)
+        | map(attribute='stat.woth', default=true) | select | list | length == 0
+    fail_msg: >-
+      an installed shared-credential file differs from its pin, or a path the tool's trust walk
+      crosses is missing, a symlink, not root-owned, or group- or world-writable
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Validate the installed manifest with the pinned sealer's own validator
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -c
+      - "import sys; sys.path.insert(0, sys.argv[1]); from shared_credentials.manifest import load_manifest; load_manifest(path=sys.argv[2])"
+      - "{{ shared_credentials_host_artifact_dest }}"
+      - "{{ shared_credentials_host_manifest_dest }}"
+  changed_when: false
+  when: not ansible_check_mode
+
+# ---- The single initial bootstrap-key delivery; never on a normal converge.
+- name: Deliver the host's initial bootstrap key
+  ansible.builtin.import_tasks: mint.yml
+  when: shared_credentials_host_mint_bootstrap_key | bool
+  tags: [never, poweredge_bootstrap_mint]

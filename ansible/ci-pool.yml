@@ -23,8 +23,8 @@
 #   * Roles with NO cluster_role handling are gated here, matching
 #     install-node.sh's STEP_SKIP (server-only: host_thermal, secret_reinjection,
 #     ci_converge_unit, datastore_tmpfs) and STEP_SERVER_SKIP (agent-only:
-#     agent_rejoin). agent_node_password (server-only) has no install-node.sh
-#     step and is gated here the same way.
+#     agent_rejoin). agent_node_password and shared_credentials_host (both
+#     server-only) have no install-node.sh step and are gated here the same way.
 # Roles that legitimately run on BOTH roles unchanged (node_sysctl, storage_layout,
 # host_tools_ci, apparmor_profile, sccache_binary, cache_telemetry, container_hook)
 # carry neither a self-gate nor a `when`. registry_mirror_node has no
@@ -354,6 +354,16 @@
     # only, never started).
     - role: secret_reinjection
       tags: [secret_reinjection]
+      when: cluster_role == 'server'
+    # 7a/10 — the adopter composition of homelab's shared-credentials tool
+    # (livespec-dev-tooling-xyi5vu): the pinned AWS CLI, the pinned sealer
+    # release and this server's committed runtime manifest and delivery profile.
+    # Server-only: the livespec-ai ARC credentials it will carry are injected on
+    # the server. It installs NO sudoers rule, unit or injector (those are
+    # livespec-dev-tooling-h5r75q's). Its one-time initial key delivery is a
+    # separate, `never`-tagged route; see roles/shared_credentials_host/README.md.
+    - role: shared_credentials_host
+      tags: [shared_credentials_host]
       when: cluster_role == 'server'
     # 7b/10 — pool-provided sccache binary + its cache telemetry. Gated: both
     # install into the directory arc/hook-pod-template.yaml mounts READ-ONLY into

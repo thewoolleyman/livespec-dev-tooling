@@ -1,0 +1,91 @@
+---
+# The adopter composition of homelab's shared-credentials tool on the k3s CI
+# server (livespec-dev-tooling-xyi5vu). Pinned, non-secret inputs only: nothing
+# here issues, seals, reads or injects a credential. The sudoers grant, the
+# systemd unit and the injector that LAUNCH the sealer belong to a peer item
+# (livespec-dev-tooling-h5r75q) and are deliberately absent from this role.
+#
+# The host's own inputs are committed beside this role as
+# files/<inventory_hostname>.json (the sealer's runtime manifest) and
+# files/<inventory_hostname>.delivery.json (homelab's initial-delivery profile).
+# Their sha256 pins are PER HOST, so they live in host_vars (HOST_VARS.md), not
+# here: no role value may name a machine (check-ansible-hostname-free).
+
+# AWS CLI v2, the same exact build the hetzner-xubuntu credential host pins
+# (hetzner-xubuntu-info hxi_credential_host). The zip's sha256 was taken there
+# after its detached PGP signature verified against the AWS CLI Team key
+# FB5D B77F D5C1 18B8 0511 ADA8 A631 0ACC 4672 475C. No role in this tree
+# installed an AWS CLI on a ci_pool node (measured 2026-11-15: poweredge-xubuntu
+# had no `aws` and no /usr/local/aws-cli), so this role installs it.
+shared_credentials_host_awscli_version: 2.34.63
+shared_credentials_host_awscli_url: >-
+  https://awscli.amazonaws.com/awscli-exe-linux-x86_64-{{ shared_credentials_host_awscli_version }}.zip
+shared_credentials_host_awscli_zip_sha256: bc15b053ef5710be63c9d8c54089ec6847737457a936a10b120a0a4d08c7c771
+# The canonical, symlink-free path the runtime manifest's tools.aws names. The
+# installer also links /usr/local/bin/aws to it.
+shared_credentials_host_awscli_binary: >-
+  /usr/local/aws-cli/v2/{{ shared_credentials_host_awscli_version }}/dist/aws
+
+# The shared sealer release: homelab release shared-credentials-v0.3.0
+# (repository mi-homelab/homelab). Staged on the CONTROLLER into the gitignored
+# repo-root tmp/ by `gh release download` (see README.md) and verified against
+# this sha256 there before it is copied anywhere.
+shared_credentials_host_artifact_repository: mi-homelab/homelab
+shared_credentials_host_artifact_release: shared-credentials-v0.3.0
+shared_credentials_host_artifact_name: shared-credentials-0.3.0.pyz
+shared_credentials_host_artifact_sha256: a27b1f790cd31672e09ff7cd2bd880a60c91df563b44968eb855884093225918
+shared_credentials_host_stage_dir: "{{ playbook_dir }}/../tmp/shared-credentials-host"
+shared_credentials_host_artifact_src: >-
+  {{ shared_credentials_host_stage_dir }}/{{ shared_credentials_host_artifact_name }}
+shared_credentials_host_libexec_dir: /usr/local/libexec/shared-credentials
+shared_credentials_host_artifact_dest: >-
+  {{ shared_credentials_host_libexec_dir }}/{{ shared_credentials_host_artifact_name }}
+
+# The committed inputs and where they are installed.
+shared_credentials_host_files_dir: "{{ role_path }}/files"
+shared_credentials_host_config_dir: /etc/livespec-ci-credentials
+shared_credentials_host_manifest_src: "{{ inventory_hostname }}.json"
+shared_credentials_host_profile_src: "{{ inventory_hostname }}.delivery.json"
+shared_credentials_host_manifest_dest: >-
+  {{ shared_credentials_host_config_dir }}/{{ shared_credentials_host_manifest_src }}
+shared_credentials_host_profile_dest: >-
+  {{ shared_credentials_host_config_dir }}/{{ shared_credentials_host_profile_src }}
+# Per-host pins of those two files' exact bytes (host_vars). Empty is refused.
+shared_credentials_host_manifest_sha256: ""
+shared_credentials_host_profile_sha256: ""
+
+# The tool refuses a manifest, sealer or tool path unless every ancestor is
+# root-owned and not group- or world-writable (shared_credentials.trust walks
+# from /). The readback asserts exactly that over these directories.
+shared_credentials_host_trusted_dirs:
+  - /
+  - /usr
+  - /usr/bin
+  - /usr/local
+  - /usr/local/libexec
+  - "{{ shared_credentials_host_libexec_dir }}"
+  - /usr/local/aws-cli
+  - /usr/local/aws-cli/v2
+  - /usr/local/aws-cli/v2/{{ shared_credentials_host_awscli_version }}
+  - /usr/local/aws-cli/v2/{{ shared_credentials_host_awscli_version }}/dist
+  - /etc
+  - "{{ shared_credentials_host_config_dir }}"
+
+# The seal directory already exists on the server (it holds the secret
+# reinjection seals). This role never creates or chmods it; it only asserts it is
+# a root-owned directory with no group or other permission bits.
+shared_credentials_host_credstore_dir: /etc/credstore.encrypted
+
+# ---- The single initial bootstrap-key delivery (tasks/mint.yml). Never on a
+# normal converge: it needs BOTH this flag and the `poweredge_bootstrap_mint`
+# tag, and it carries the `never` tag. See README.md for the run order.
+shared_credentials_host_mint_bootstrap_key: false
+# homelab's committed delivery path, consumed at the exact commit this pin file
+# names. The commit must carry the register row for this host's bootstrap user
+# (docs/credential-exception-register.md), or homelab's tool refuses.
+shared_credentials_host_homelab_pin: "{{ role_path }}/files/homelab-delivery.pin"
+shared_credentials_host_homelab_stage: "{{ shared_credentials_host_stage_dir }}/homelab"
+shared_credentials_host_mint_dir: /root/shared-credentials-bootstrap-mint
+shared_credentials_host_mint_account: "672283019497"
+shared_credentials_host_mint_region: us-west-2
+shared_credentials_host_mint_issuer_role_arn: arn:aws:iam::672283019497:role/OrganizationAccountAccessRole
