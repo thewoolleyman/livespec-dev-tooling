@@ -87,7 +87,16 @@ incident_observer_manifest_path: /etc/livespec-incident/released-installation.js
 # controller account. The role writes each from the CONTROL NODE's environment
 # — the named variable, projected by /usr/local/bin/with-livespec-env.sh from
 # its configured source — and never from a value in this tree.
-# Current seeding route — until the writer is active and this host converts. BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. Writer activation is blocked on the OPEN maintainer mint/apply ruling; no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values. See README.md §"Maintainer-only steps". Target seeding route — after writer activation and this host conversion: use the dedicated stdin writer and converted wrapper procedure in README.md.
+# Current seeding route — until the writer is active and this host converts.
+# BLOCKED: new-secret seeding is blocked until the dedicated writer is active
+# and this host converts. Writer activation is blocked on the OPEN maintainer
+# mint/apply ruling; no authorized ordinary Parameter Store write route exists
+# today. homelab#1176 authorized only the one interim write of the seven setup
+# tokens; it is not ongoing write authority. Neither 1Password nor an admin role
+# is an authorized current route for new canonical values. See README.md
+# §"Maintainer-only steps". Target seeding route — after writer activation and
+# this host conversion: use the dedicated stdin writer and converted wrapper
+# procedure in README.md.
 incident_observer_secrets:
   - name: webhook
     path: /etc/livespec-incident/webhook-secret

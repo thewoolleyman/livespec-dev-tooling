@@ -251,7 +251,7 @@ knows what to redo.
 
 BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. Writer activation is blocked on the OPEN maintainer mint/apply ruling; no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values.
 
-The required environment variables remain `LIVESPEC_INCIDENT_WEBHOOK_SECRET`, `LIVESPEC_INCIDENT_CONTROL_SECRET` and `LIVESPEC_INCIDENT_QUERY_SECRET`, each at least 32 bytes and all three distinct, plus the existing `BEADS_DOLT_PASSWORD`. Existing installed wrappers project their configured source; that read behavior does not authorize new-secret seeding. Missing required values must continue to refuse the apply.
+The required environment variables remain `LIVESPEC_INCIDENT_WEBHOOK_SECRET`, `LIVESPEC_INCIDENT_CONTROL_SECRET` and `LIVESPEC_INCIDENT_QUERY_SECRET`, each at least 32 bytes and all three distinct, plus the existing `BEADS_DOLT_PASSWORD`. Existing installed wrappers project their configured source (until this host converts, the livespec 1Password Environment `fufpvkvatwkmqjzvilvfnemsue`, which is a temporary downstream copy of Parameter Store); that read behavior does not authorize new-secret seeding. Missing required values must continue to refuse the apply.
 
 2. **Done 2026-11-05 — the GitHub `workflow_job` webhook on
    `thewoolleyman/livespec-dev-tooling`**, delivering to
