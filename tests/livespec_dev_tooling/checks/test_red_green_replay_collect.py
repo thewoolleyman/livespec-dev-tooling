@@ -101,7 +101,7 @@ def _commit(*, repo: Path, files: dict[str, str], message: str) -> str:
     return _git(repo=repo, args=["rev-parse", "HEAD"])
 
 
-def _pair_message(*, red_test: str | None = _MODULE_PATH) -> str:
+def _pair_message(*, red_test: str | None = _MODULE_PATH, incident_item: str | None = None) -> str:
     lines = ["feat: record a Red+Green pair", ""]
     if red_test is not None:
         lines.append(f"TDD-Red-Test: {red_test}")
@@ -109,10 +109,12 @@ def _pair_message(*, red_test: str | None = _MODULE_PATH) -> str:
         "TDD-Red-Test-File-Checksum: sha256:deadbeef",
         "TDD-Green-Verified-At: 2026-11-10T00:00:00Z",
     ]
+    if incident_item is not None:
+        lines.append("Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: " + incident_item)
     return "\n".join(lines) + "\n"
 
 
-def _measured_history(*, repo: Path) -> _History:
+def _measured_history(*, repo: Path, incident_item: str | None = None) -> _History:
     """The measured shape: a pair whose test cannot import on its own tree, then a fix.
 
     The first commit records `tests/test_x.py` but its tree defines only
@@ -124,9 +126,13 @@ def _measured_history(*, repo: Path) -> _History:
     broken = _commit(
         repo=repo,
         files={"livespec/foo.py": _OLD_IMPL, _MODULE_PATH: _TEST},
-        message=_pair_message(),
+        message=_pair_message(incident_item=incident_item),
     )
-    fixed = _commit(repo=repo, files={"livespec/foo.py": _NEW_IMPL}, message=_pair_message())
+    fixed = _commit(
+        repo=repo,
+        files={"livespec/foo.py": _NEW_IMPL},
+        message=_pair_message(incident_item=incident_item),
+    )
     return _History(repo=repo, shas=[broken, fixed])
 
 
@@ -409,7 +415,7 @@ def test_a_pair_shaped_commit_touching_no_product_file_is_not_collected(
 def test_a_recorded_incident_exempts_a_commit_from_collection(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    history = _measured_history(repo=tmp_path)
+    history = _measured_history(repo=tmp_path, incident_item="livespec-dev-tooling-item")
     monkeypatch.chdir(history.repo)
     monkeypatch.setattr(module, "admitted_by_recorded_incident", lambda **_kw: True)
 
