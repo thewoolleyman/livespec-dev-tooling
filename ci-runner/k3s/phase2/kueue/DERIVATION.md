@@ -1489,7 +1489,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 5 | 10 | **20** | 2026-11-14 |
-| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-14 |
+| `livespec-orchestrator-beads-fabro` | 4 | 8 | **16** | 2026-11-14 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -1528,6 +1528,8 @@ empty. The measurement is in "Small-queue floor of 2: cohort 30 re-split
 queue's admitted count exceeds its new quota in the hours when the small queues
 are idle, and Kueue's pending count stays bounded by maxRunners. If neither
 queue ever borrows past its rule value, drop the row and take the rule value.
+The orchestrator row then moved 14 to 16 the same day; see "Orchestrator
+ceiling 14 to 16 (2026-11-14)" at the end of this file.
 
 ## The gates quota on gmktec-xubuntu and hp-xubuntu (2026-11-03)
 
@@ -2546,3 +2548,52 @@ ci-runtime-and-cost finds the 11-13 small-repository demand surge was waste
 10 and livespec-orchestrator-beads-fabro-cq to 7, and drop their two exception
 rows. Then apply with `just ansible-apply ansible/ci-pool.yml --tags
 ci_converge_unit`.
+
+## Orchestrator ceiling 14 to 16 (2026-11-14)
+
+**What changed.** `livespec-orchestrator-beads-fabro`'s `maxRunners` moves 14
+-> 16, a recorded exception (its quota is 4, rule value 8; row above). No
+ClusterQueue quota, cohort, churn-slot capacity or gate lane changes. The two
+extra runners are admitted only by borrowing cohort-30 slots that other queues
+leave idle, so they never displace a queue's guaranteed share.
+
+**Why now.** ci-runtime-and-cost asked for it once the PowerEdge gate lane went
+30 -> 20 cpu (livespec-dev-tooling#4635, applied 2026-11-14 15:33:19Z) and set a
+gate: PowerEdge CPU median under about 60 of 72 cores and host CPU pressure
+median under 10. Its read of the first hour after #4635 (Honeycomb metrics,
+15:35-16:35Z): poweredge `k8s.node.cpu.usage` P50 31.8, P90 71.5, max 71.8 of
+72; host `livespec.host.pressure` cpu some.avg60 P50 4.6, P90 46, max 62. Both
+medians pass. Two caveats are recorded with it: that pressure series is
+host-level, not the CI slice's; and the P90 still reaches the 72-core ceiling,
+so bursts saturate. gmktec-xubuntu stays the hotter node (CPU P50 32 of 32,
+pressure P50 51). Runners are placed by churn-slot fraction among nodes with a
+free slot ("Runner placement follows admission capacity"), so an extra runner
+can land on gmktec when its fraction is lowest; this change does not steer it.
+
+**CI-side read at +2 h.** Owner: ci-runtime-and-cost, whose window starts at
+the apply time posted on livespec-dev-tooling-ib3oe3. About two hours after the
+apply, read, against the same window before the apply and recorded on
+livespec-dev-tooling-ukoeah:
+orchestrator CI queue wait (GitHub jobs API, created to started, PR and master
+runs) p50 and p95; orchestrator CI job duration p50, counting only spans with
+duration_ms under one day; orchestrator admitted runners above quota 4 and
+pending runner pods; and, on poweredge-xubuntu and gmktec-xubuntu, node CPU
+P50/P90 and the CI slice's CPU pressure where a series exists, host pressure
+otherwise.
+
+**Measured revert trigger.** Judged over the 2 h after the apply. Revert to 14
+if poweredge-xubuntu `k8s.node.cpu.usage` P50 exceeds 60 cores, or its host CPU
+pressure some.avg60 P50 exceeds 10, or gmktec-xubuntu's host CPU pressure
+some.avg60 P50 exceeds 55 (it read P50 50.5 and P90 70 before the apply, with
+CPU P50 32 of 32), or the orchestrator's CI queue-wait p50 or p95 rises above
+its pre-apply value by more than its noise band.
+
+**Revert.** Restore `maxRunners: 14` in
+`ci-runner/k3s/phase2/arc/values-livespec-orchestrator-beads-fabro.yaml`, the
+exception row and both test tables to 14, then apply with `just ansible-apply
+ansible/ci-pool.yml --tags ci_converge_unit --limit poweredge-xubuntu`. The
+apply waits for ci-cache-optimization to post 4oeffe DONE on
+livespec-dev-tooling-ib3oe3, since its straddle drill holds every
+ci_converge_unit apply.
+
+**Result.** Due within 24 h of this commit, recorded here.
