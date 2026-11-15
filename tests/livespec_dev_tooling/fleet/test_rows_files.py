@@ -375,7 +375,6 @@ def test_pin_row_lock_shapes_without_a_dt_tag_defer() -> None:
     # defers to the freshness leg (never a false red). latest == pin, so
     # each defer yields a clean pass.
     defer_locks = [
-        "[[[",  # unparseable TOML
         'package = "x"\n',  # `package` is not an array
         'package = ["x"]\n',  # array element is not a table
         '[[package]]\nname = "other"\n',  # no dev-tooling entry
@@ -390,3 +389,14 @@ def test_pin_row_lock_shapes_without_a_dt_tag_defer() -> None:
             table=_pin_lock_table(pyproject=_PINNED_PYPROJECT, latest_tag="v1.2.0", uv_lock=lock)
         )
         assert assert_dev_tooling_pin(ctx=ctx, member=_MEMBER) == RowPass(), lock
+
+
+def test_pin_row_unparseable_uv_lock_is_a_warning_finding() -> None:
+    ctx = make_context(
+        table=_pin_lock_table(pyproject=_PINNED_PYPROJECT, latest_tag="v1.2.0", uv_lock="[[[")
+    )
+    outcome = assert_dev_tooling_pin(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert _MEMBER.repo in outcome.message
+    assert "uv.lock" in outcome.message

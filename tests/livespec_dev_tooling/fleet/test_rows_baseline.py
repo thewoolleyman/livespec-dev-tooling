@@ -156,16 +156,20 @@ def test_absent_file_with_truncated_tree_skips() -> None:
     assert isinstance(outcome, RowSkip)
 
 
-def test_unparseable_livespec_jsonc_skips() -> None:
+def test_unparseable_livespec_jsonc_is_a_warning_finding() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="{ this is not valid json ::: ")})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
-    assert isinstance(outcome, RowSkip)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert _MEMBER.repo in outcome.message
+    assert LIVESPEC_JSONC_PATH in outcome.message
 
 
-def test_non_object_root_skips() -> None:
+def test_non_object_root_is_a_warning_finding() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="[1, 2, 3]\n")})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
-    assert isinstance(outcome, RowSkip)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
 
 
 def test_genuine_master_absence_finds_even_when_default_branch_carries_the_file() -> None:
@@ -301,14 +305,20 @@ def test_non_string_implementation_plugin_is_error_finding() -> None:
     assert outcome.severity == "error"
 
 
-def test_acceptance_mode_row_skips_unparseable_config() -> None:
+def test_acceptance_mode_row_finds_unparseable_config() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="{ not valid json ::: ")})
-    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert LIVESPEC_JSONC_PATH in outcome.message
 
 
-def test_acceptance_mode_row_skips_non_object_root() -> None:
+def test_acceptance_mode_row_finds_non_object_root() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="[1, 2, 3]\n")})
-    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert LIVESPEC_JSONC_PATH in outcome.message
 
 
 def test_acceptance_mode_row_skips_when_absence_is_unprovable() -> None:

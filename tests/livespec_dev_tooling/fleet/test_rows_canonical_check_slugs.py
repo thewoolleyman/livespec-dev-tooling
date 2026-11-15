@@ -182,7 +182,6 @@ def test_preflight_excludes_an_aggregate_missing_a_slug_required_by_its_pin() ->
 @pytest.mark.parametrize(
     "pyproject",
     [
-        "[tool",
         'tool = "not-a-table"\n',
         "[project]\nname = 'widget'\n",
         "[tool.uv]\n",
@@ -199,13 +198,23 @@ def test_preflight_skips_when_a_member_pin_cannot_be_resolved(pyproject: str) ->
     assert "tag pin missing" in outcome.reason
 
 
+def test_preflight_finds_an_unparseable_member_pin() -> None:
+    rows = _rows_module()
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=_pinned_preflight_context(pyproject="[tool", pinned_tree=None), member=_MEMBER
+    )
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert _MEMBER.repo in outcome.message
+    assert _PYPROJECT_PATH in outcome.message
+
+
 @pytest.mark.parametrize(
     ("pyproject", "pinned_tree", "reason"),
     [
         (None, None, "pin inventory unknown"),
         (_member_pin(), None, "canonical check inventory at v1.187.0 unreadable"),
         (_member_pin(), {"tree": [], "truncated": True}, "unreadable"),
-        (_member_pin(), {"tree": [{"path": "README.md", "mode": "100644"}]}, "is empty"),
     ],
 )
 def test_preflight_skips_when_the_pinned_inventory_is_unavailable(
@@ -217,6 +226,22 @@ def test_preflight_skips_when_the_pinned_inventory_is_unavailable(
     )
     assert isinstance(outcome, RowSkip)
     assert reason in outcome.reason
+
+
+def test_preflight_finds_an_empty_pinned_inventory() -> None:
+    rows = _rows_module()
+    outcome = rows.assert_canonical_check_slugs_wired(
+        ctx=_pinned_preflight_context(
+            pyproject=_member_pin(),
+            pinned_tree={"tree": [{"path": "README.md", "mode": "100644"}]},
+        ),
+        member=_MEMBER,
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert _MEMBER.repo in outcome.message
+    assert _PYPROJECT_PATH in outcome.message
 
 
 def test_row_skips_unreadable_member_tree_and_aggregate() -> None:
@@ -376,22 +401,27 @@ def test_a_malformed_waiver_is_an_error_naming_the_slug_or_the_position(
     assert "entry at position 1" in outcome.message
 
 
-def test_an_unreadable_or_unparseable_pyproject_skips_rather_than_applying_no_waiver(
+def test_an_unreadable_pyproject_skips_rather_than_applying_no_waiver(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     unreadable = _evaluate(
         monkeypatch=monkeypatch,
         ctx=_waiver_context(targets=("check-alpha",), pyproject=None),
     )
-    unparseable = _evaluate(
+    assert isinstance(unreadable, RowSkip)
+    assert _PYPROJECT_PATH in unreadable.reason
+    assert _MEMBER.repo in unreadable.reason
+
+
+def test_an_unparseable_pyproject_is_a_warning_finding(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    outcome = _evaluate(
         monkeypatch=monkeypatch,
         ctx=_waiver_context(targets=("check-alpha",), pyproject="[tool.livespec_dev_tooling\nx"),
     )
-
-    for outcome in (unreadable, unparseable):
-        assert isinstance(outcome, RowSkip)
-        assert _PYPROJECT_PATH in outcome.reason
-        assert _MEMBER.repo in outcome.reason
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert _PYPROJECT_PATH in outcome.message
+    assert _MEMBER.repo in outcome.message
 
 
 def test_a_member_without_a_pyproject_declares_no_waiver(

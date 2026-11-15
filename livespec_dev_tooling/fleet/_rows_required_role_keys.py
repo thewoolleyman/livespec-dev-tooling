@@ -20,6 +20,7 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
     TreeState,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -80,7 +81,10 @@ def _required_role_declared_keys(
         return frozenset(), RowSkip(reason=f"{member.repo}: pyproject.toml unreadable")
     parsed_keys = _declared_role_keys_from_pyproject(pyproject_text=pyproject_text)
     if parsed_keys is None:
-        return frozenset(), RowFinding(message=f"{member.repo}: malformed pyproject.toml")
+        return frozenset(), cant_parse_finding(
+            message=f"{member.repo}: malformed pyproject.toml",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     return parsed_keys, None
 
 

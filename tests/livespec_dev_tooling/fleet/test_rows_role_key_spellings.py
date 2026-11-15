@@ -224,6 +224,7 @@ def test_row_flags_malformed_pyproject() -> None:
     outcome = assert_role_key_spellings_conformant(ctx=ctx, member=_MEMBER)
 
     assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
     assert "malformed pyproject" in outcome.message
 
 

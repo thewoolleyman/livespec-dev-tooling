@@ -23,8 +23,9 @@ the fleet-conformance sweep and the release fan-out preflight both gate on
 error-severity findings.
 
 Per the fleet contract's can't-read-is-not-absent discipline, a member
-whose `.livespec.jsonc` is transiently unreadable, unparseable, or not a
-JSON object yields a skip rather than a false finding. A GENUINELY-absent
+whose `.livespec.jsonc` is transiently unreadable yields a skip rather than a
+false finding. An unparseable document or non-object root is instead a
+context-scoped finding about committed bytes. A GENUINELY-absent
 `.livespec.jsonc` is the exception: proven via the member's master tree (a
 readable, non-truncated tree that does not list the file), it is an ERROR
 finding — the vacuous-pass closure (livespec-zs22.8 M3), which stops a
@@ -56,6 +57,7 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -172,9 +174,15 @@ def assert_acceptance_mode_declared(*, ctx: FleetContext, member: FleetMember) -
     try:
         raw = cast("object", jsoncomment.loads(text))
     except ValueError:
-        return RowSkip(reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} is not valid JSONC")
+        return cant_parse_finding(
+            message=f"{member.repo}: {LIVESPEC_JSONC_PATH} is not valid JSONC",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     if not isinstance(raw, dict):
-        return RowSkip(reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} root is not a JSON object")
+        return cant_parse_finding(
+            message=f"{member.repo}: {LIVESPEC_JSONC_PATH} root is not a JSON object",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     declared = _declared_acceptance_mode(document=cast("dict[str, object]", raw))
     finding = _acceptance_finding(repo=member.repo, declared=declared)
     return finding if finding is not None else RowPass()
@@ -220,7 +228,8 @@ def assert_baseline_harnesses(*, ctx: FleetContext, member: FleetMember) -> RowO
     vacuously. Genuine absence is proven via the member's master tree (a
     readable, non-truncated tree that does not list the file); a transiently
     unreadable read stays a skip (can't-read is not absent). A member whose
-    `.livespec.jsonc` is unparseable or not a JSON object also skips. A
+    `.livespec.jsonc` is unparseable or not a JSON object is a context-scoped
+    finding. A
     readable document carrying a non-empty top-level `harnesses` object passes;
     one missing it yields an ERROR-severity finding (the declaration is
     required fleet-wide since M6).
@@ -231,9 +240,15 @@ def assert_baseline_harnesses(*, ctx: FleetContext, member: FleetMember) -> RowO
     try:
         raw = cast("object", jsoncomment.loads(text))
     except ValueError:
-        return RowSkip(reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} is not valid JSONC")
+        return cant_parse_finding(
+            message=f"{member.repo}: {LIVESPEC_JSONC_PATH} is not valid JSONC",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     if not isinstance(raw, dict):
-        return RowSkip(reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} root is not a JSON object")
+        return cant_parse_finding(
+            message=f"{member.repo}: {LIVESPEC_JSONC_PATH} root is not a JSON object",
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
+        )
     harnesses = cast("dict[str, object]", raw).get("harnesses")
     if isinstance(harnesses, dict) and harnesses:
         return RowPass()

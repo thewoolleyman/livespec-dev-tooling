@@ -115,6 +115,7 @@ from livespec_dev_tooling.fleet._public_api_unresolved import (  # noqa: E402
     UnresolvedReach,
     broken_consumer_message,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding  # noqa: E402
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.config import Config
@@ -357,7 +358,13 @@ def assert_cross_repo_public_api_declared(*, ctx: FleetContext, member: FleetMem
         )
     state = fleet_consumption(ctx=ctx)
     if member.repo in state.unavailable:
-        return RowSkip(reason=f"{member.repo}: {state.unavailable[member.repo]}")
+        unavailable = state.unavailable[member.repo]
+        if unavailable.startswith("pyproject unparseable"):
+            return cant_parse_finding(
+                message=f"{member.repo}: committed pyproject.toml is not parseable ({unavailable})",
+                filter_consuming_preflight=ctx.filter_consuming_preflight,
+            )
+        return RowSkip(reason=f"{member.repo}: {unavailable}")
     if member.repo not in state.sources:
         return RowSkip(reason=f"{member.repo}: not present in this run's fleet roster")
     absence = _absence_note(state=state, repo=member.repo)

@@ -26,10 +26,9 @@ stated in `checks/_ci_matrix_parse.py`'s docstring; the two rule-bearing
 justfile parsers are IMPORTED from that shared home rather than copied.
 
 Every read distinguishes definitive absence from can't-read, the discipline
-the sibling committed-file rows in `_rows_files.py` hold to. An aggregate
-this row cannot ENUMERATE is a skip, never a finding: a member whose
-aggregate is unreadable, or whose shape neither reader understands, has not
-been shown to omit anything.
+the sibling committed-file rows in `_rows_files.py` hold to. An unreadable
+aggregate is a skip, while a committed justfile whose `check:` recipe or
+`targets=(...)` array cannot be parsed is a context-scoped finding.
 """
 
 from __future__ import annotations
@@ -51,6 +50,7 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
     TreeState,
 )
+from livespec_dev_tooling.fleet._row_finding import cant_parse_finding
 
 # Declared here regardless of which sibling import currently drags `_vendor/`
 # onto the path first, for the reason `_context.py`'s own preamble states: the
@@ -142,19 +142,21 @@ def _justfile_targets(
         return RowSkip(reason=f"{member.repo}: {JUSTFILE_PATH} unreadable")
     recipe_body = extract_check_recipe_body(justfile_text=text)
     if isinstance(recipe_body, Failure):
-        return RowSkip(
-            reason=(
+        return cant_parse_finding(
+            message=(
                 f"{member.repo}: no bare `check:` recipe in {JUSTFILE_PATH} and no "
                 f"{CHECK_TARGETS_INVENTORY} — aggregate targets not enumerable"
-            )
+            ),
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
         )
     targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
     if isinstance(targets, Failure):
-        return RowSkip(
-            reason=(
+        return cant_parse_finding(
+            message=(
                 f"{member.repo}: `check:` recipe in {JUSTFILE_PATH} carries no readable "
                 "targets=(...) array — aggregate targets not enumerable"
-            )
+            ),
+            filter_consuming_preflight=ctx.filter_consuming_preflight,
         )
     return ResolvedCheckAggregate(source=JUSTFILE_PATH, targets=tuple(targets.unwrap()))
 
