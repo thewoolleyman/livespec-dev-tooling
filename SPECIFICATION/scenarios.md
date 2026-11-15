@@ -740,6 +740,34 @@ Then the read-back MUST exit with status 2
 
 And the read-back MUST NOT print a per-node count of listener pods
 
+## Scenario: the ARC secret reinjection projects the livespec-ai-arc credential and leaves the personal-account Secret unchanged
+
+Given the homelab shared-credentials launcher, as consumer `livespec-ai-arc`, has set `LIVESPEC_AI_ARC_APP_ID`, `LIVESPEC_AI_ARC_INSTALLATION_ID` and `LIVESPEC_AI_ARC_PRIVATE_KEY` from the SSM parameters under `/gitops/v1/shared/providers/github/livespec-ai-arc/`
+
+And the Secret `arc-github-app-installation` in namespace `arc-runners` carries the personal-account ARC App credential
+
+When the organization projection of the ARC secret reinjection runs on the CI node as its dedicated non-root user
+
+Then the Secret `arc-github-app-installation-livespec-ai` in namespace `arc-runners` MUST carry those three values under `github_app_id`, `github_app_installation_id` and `github_app_private_key`
+
+And the Secret `arc-github-app-installation` MUST be byte-identical to its value before the run
+
+And the run's output MUST NOT contain any of the three values
+
+## Scenario: the ARC secret reinjection refuses the organization projection when a livespec-ai-arc value is missing
+
+Given the Secret `arc-github-app-installation-livespec-ai` in namespace `arc-runners` holds a credential
+
+And the launcher could not read one of the three `livespec-ai-arc` SSM parameters, so its environment variable is missing or empty
+
+When the organization projection of the ARC secret reinjection runs
+
+Then the projection MUST exit non-zero
+
+And its output MUST name the missing variable and MUST NOT contain any credential value
+
+And the Secret `arc-github-app-installation-livespec-ai` MUST be unchanged
+
 ## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads
 
 Given an agent node that is neither the control-plane node nor a Fabro factory host
