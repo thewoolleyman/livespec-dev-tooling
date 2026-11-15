@@ -51,6 +51,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from _red_green_replay_incident import (  # noqa: E402  — sibling private import
     admitted_by_recorded_incident,
+    has_incident_override_trailer,
 )
 from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     is_forge_authored_revert,
@@ -126,7 +127,9 @@ def _in_scope_message(*, sha: str, base_ref: str, impl_prefixes: tuple[str, ...]
     message = _git(args=["log", "-1", "--format=%B", sha]).stdout
     if not all(key in message for key in _PAIR_KEYS):
         return None
-    if admitted_by_recorded_incident(sha=sha, message=message):
+    if has_incident_override_trailer(message=message) and admitted_by_recorded_incident(
+        sha=sha, message=message
+    ):
         return None
     forge = is_forge_authored_revert(sha=sha, product_paths=product_paths, base_ref=base_ref)
     return None if is_successful(forge) and unsafe_perform_io(forge.unwrap()) else message

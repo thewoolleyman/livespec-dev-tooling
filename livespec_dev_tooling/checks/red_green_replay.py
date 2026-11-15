@@ -101,6 +101,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from _red_green_replay_collect import collect_recorded_tests  # noqa: E402  — sibling private import
 from _red_green_replay_incident import (  # noqa: E402  — sibling private import
     admitted_by_recorded_incident,
+    has_incident_override_trailer,
 )
 from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     RED_GREEN_REPLAY_PROTOCOL,
@@ -377,7 +378,13 @@ def _commit_violates(*, sha: str) -> bool:
     # An expedited commit deferred its replay. Only the canonical incident chain,
     # never the commit's own trailer, can say so (work-item livespec-dev-tooling-zbzls2).
     forge_authored = unsafe_perform_io(exemption.unwrap())
-    return not (forge_authored or admitted_by_recorded_incident(sha=sha, message=message))
+    return not (
+        forge_authored
+        or (
+            has_incident_override_trailer(message=message)
+            and admitted_by_recorded_incident(sha=sha, message=message)
+        )
+    )
 
 
 def _validate_range() -> int:

@@ -17,11 +17,13 @@ on its missing evidence (contracts `Expedited incident execution`).
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_dev_tooling.budgeted_gh import forge_call
 from livespec_dev_tooling.incident_ci_authority import (
     CiAuthorityBoundary,
     ObserverTokenError,
@@ -36,13 +38,23 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.incident_ci_payload import CiAuthority
     from livespec_dev_tooling.incident_execution import OperationIdentity
 
-__all__: list[str] = ["admitted_by_recorded_incident"]
+__all__: list[str] = ["admitted_by_recorded_incident", "has_incident_override_trailer"]
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-zbzls2
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-a6wgjz
 _REFUSAL_PREFIX = "incident-provenance-refused: "
 _URL = "LIVESPEC_INCIDENT_OBSERVER_URL"
 _TOKEN = "LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN"
+_PULL_REQUEST_READ = "red-green-replay-pull-request-body-read"
+_REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def has_incident_override_trailer(*, message: str) -> bool:
+    """Whether this commit asks for the recorded-incident admission path."""
+    return any(
+        line.startswith("Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: ")
+        for line in message.splitlines()
+    )
 
 
 def _refuse(*, sha: str, reason: str) -> bool:
@@ -55,15 +67,27 @@ def _mapping(*, value: object) -> dict[str, Any]:
 
 
 def _pull_request(*, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The event's pull request, or nothing outside a readable pull_request event."""
+    """The current pull request, or nothing outside a readable pull_request event."""
     if environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return {}
     try:
         text = Path(environ.get("GITHUB_EVENT_PATH", "")).read_text(encoding="utf-8")
-        return _mapping(
-            value=_mapping(value=strict_json(text=text, limit=None)).get("pull_request")
+        event = _mapping(value=strict_json(text=text, limit=None))
+        recorded = _mapping(value=event.get("pull_request"))
+        number = event.get("number", recorded.get("number"))
+        repository = environ.get("GITHUB_REPOSITORY", "")
+        if type(number) is not int or number <= 0 or _REPOSITORY.fullmatch(repository) is None:
+            return recorded
+        reply = forge_call(
+            name=_PULL_REQUEST_READ,
+            endpoint=f"repos/{repository}/pulls/{number}",
         )
-    except (OSError, ValueError, IncidentJsonRefusalError):
+        for line in reply.lines:
+            _ = sys.stderr.write(f"{line}\n")
+        if reply.outcome != "answer":
+            return {}
+        return _mapping(value=strict_json(text=reply.body, limit=1048576))
+    except (OSError, ValueError, IncidentJsonRefusalError, TypeError):
         return {}
 
 
@@ -86,7 +110,7 @@ def _unmet(
     ):
         return "the block names a different pull request, base or head"
     trailer = "Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: " + identity.incident_item_id
-    if trailer not in message.splitlines():
+    if not has_incident_override_trailer(message=message) or trailer not in message.splitlines():
         return "the commit has no audited trailer naming the incident"
     try:
         ancestor = run_git(
@@ -111,7 +135,10 @@ def admitted_by_recorded_incident(
     body = pull_request.get("body")
     block = incident_block(body=body) if isinstance(body, str) else None
     if block is None:
-        return False
+        return _refuse(
+            sha=sha,
+            reason="incident admission skipped: no livespec-incident-ci block in pull request body",
+        )
     authority = decode_authority(payload=block)
     identity = None if authority is None else authority.context.identity
     if authority is None or identity is None:
