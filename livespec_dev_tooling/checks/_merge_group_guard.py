@@ -12,7 +12,11 @@ from livespec_dev_tooling.checks._self_hosted_routing_parse import (
     workflow_triggers,
 )
 
-__all__: list[str] = ["guarded_merge_group_is_valid", "routes_merge_group_to_self_hosted"]
+__all__: list[str] = [
+    "guarded_merge_group_guard_name",
+    "guarded_merge_group_is_valid",
+    "routes_merge_group_to_self_hosted",
+]
 
 
 _JOB_LINE = re.compile(r"^  (?P<name>[A-Za-z_][\w-]*):\s*$")
@@ -203,6 +207,12 @@ def _ci_green_reads_required_legs(*, jobs: dict[str, _Job]) -> bool:
     )
 
 
+def guarded_merge_group_guard_name(*, source: str) -> str | None:
+    """Return the first job's name, which is the guarded shape's guard candidate."""
+    jobs = _job_blocks(source=source)
+    return jobs[0].name if jobs else None
+
+
 def guarded_merge_group_is_valid(
     *, source: str, gating_labels: frozenset[str], author_allowlist: tuple[str, ...]
 ) -> bool:
@@ -218,6 +228,7 @@ def guarded_merge_group_is_valid(
     return (
         bool(author_allowlist)
         and _hosted_read_only_guard(job=guard, labels=gating_labels)
+        and not guard.condition
         and all(
             _depends_on_guard(job=job, guard=guard.name, jobs=jobs, seen=frozenset())
             for job in jobs_in_order[1:]
