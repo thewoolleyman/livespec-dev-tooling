@@ -9,18 +9,24 @@ automation, or ~5877 across a nine-PR release fan-out.
 `repos/{owner}/{repo}/tarball/{ref}` answers with the whole tree in ONE
 request: 9 reads per run, 81 across a fan-out.
 
-⚠️ THE POOL SIZE RECORDED HERE WAS WRONG, and the correction is kept rather
-than silently applied. This paragraph read "a 5000/hr App installation pool"
-and called the fan-out "1.2x the entire hourly budget". The installation's
-core limit was MEASURED at 12,500/hr on 2026-09-07
-(`livespec-dev-tooling-7yeveq`), against which ~5877 is 0.47x, not 1.2x. The
-optimization stands on its own arithmetic — 9 reads beat 653 — but a capacity
-decision taken against the old figure would have been wrong with it. HOW to
-re-measure, because the obvious way answers a different question: mint an App
-INSTALLATION token and read `/rate_limit` through THAT. A plain `gh api
-/rate_limit` from an operator session reports the SESSION token's own 5000/hr
-pool and is not evidence about the installation at all — both are called
-"core", which is exactly why the wrong number was believable.
+⚠️ THE POOL SIZE RECORDED HERE HAS BEEN WRONG, THEN STALE, and each
+correction is kept rather than silently applied. This paragraph first read "a
+5000/hr App installation pool", which was wrong at the time; it was corrected
+to 12,500/hr, MEASURED on 2026-09-07 (`livespec-dev-tooling-7yeveq`). That
+figure belonged to the PERSONAL App's installation, which covered 293
+repositories and so sat at GitHub's 12,500/h cap. The fleet now mints the
+livespec-ai ORG App's installation, which covers
+12 repositories in an org with 1 member: neither 20-repo nor 20-user scaling
+applies, and its core limit is the 5,000/h floor, MEASURED 2026-11-15
+(`livespec-dev-tooling-bcwf2z`). Against 5,000/h a ~5877-read fan-out is 1.2x
+the whole hourly budget, so this archive read matters more, not less, and
+`FleetContext.file_text` now serves a sibling's files from this snapshot when
+the run has already fetched it. HOW to re-measure, because the obvious way
+answers a different question: mint an App INSTALLATION token and read
+`/rate_limit` through THAT. A plain `gh api /rate_limit` from an operator
+session reports the SESSION token's own 5000/hr pool and is not evidence
+about the installation at all — both are called "core", which is exactly why
+a wrong number was believable.
 
 The module is imported BY `_context` and imports nothing from it — the same
 arrangement `_read_failure` and `_tree_state` have. That is why the downloader

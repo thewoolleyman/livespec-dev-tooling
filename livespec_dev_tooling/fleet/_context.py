@@ -38,6 +38,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from livespec_dev_tooling.fleet._canonical_ref import resolve_canonical_ref  # noqa: E402
+from livespec_dev_tooling.fleet._file_read import remote_file_text  # noqa: E402
 from livespec_dev_tooling.fleet._gh_runner import (  # noqa: E402
     GhOutcome,
     GhResult,
@@ -209,6 +210,12 @@ class FleetContext:
     installed_cache: dict[str, frozenset[str] | None] = field(default_factory=dict)
     marker_cache: dict[str, bool] = field(default_factory=dict)
     ref_cache: dict[str, str] = field(default_factory=dict)
+    # Per-run read memos (`livespec-dev-tooling-bcwf2z`): SUCCESSFUL reads
+    # only, so a failed read stays retryable and records its cause each call.
+    # `file_cache` is keyed `repo:path@ref`, `api_cache` by the GET path. A
+    # write through `api` clears both, so no read after it can be stale.
+    file_cache: dict[str, str] = field(default_factory=dict)
+    api_cache: dict[str, object] = field(default_factory=dict)
     # Diagnostics sink, mutated in place like the memo caches above. Reads
     # keep returning None on failure — the fail-closed contract is unchanged —
     # and the CAUSE is appended here so a consumer can report it instead of
@@ -219,6 +226,8 @@ class FleetContext:
         """Issue one `gh api` call; non-GET methods stream `body` via stdin."""
         args = ["api", path]
         if method != "GET":
+            self.file_cache.clear()
+            self.api_cache.clear()
             args.extend(["--method", method, "--input", "-"])
         return self.run_gh(args=args, stdin=body)
 
@@ -263,6 +272,9 @@ class FleetContext:
         "never reached the API" and "the API answered with nonsense" call for
         different responses.
         """
+        cached = self.api_cache.get(path)
+        if cached is not None:
+            return cached
         result = gh_answer(outcome=self.api(path=path))
         if isinstance(result, InvocationNotPerformed):
             # This used to reach `classify_gh_failure(stderr=...)` carrying
@@ -280,7 +292,7 @@ class FleetContext:
             )
             return None
         try:
-            return cast("object", json.loads(result.stdout))
+            payload = cast("object", json.loads(result.stdout))
         except json.JSONDecodeError as exc:
             self.record_read_failure(
                 operation=operation,
@@ -290,6 +302,9 @@ class FleetContext:
                 detail=str(exc),
             )
             return None
+        if payload is not None:
+            self.api_cache[path] = payload
+        return payload
 
     def canonical_ref(self, *, repo: str) -> str:
         """Memoized default branch of `repo`; the `master` fallback when unresolvable.
@@ -313,7 +328,9 @@ class FleetContext:
         sibling's state. The remote ref is pinned EXPLICITLY
         (`?ref=<canonical_ref>`) to match `tree`'s pin, so a guard that reads a
         sibling file and then its tree never resolves the two against divergent
-        branches. None on failure.
+        branches. A sibling read is served from this run's memo or its
+        already-fetched tarball at that same ref when it can be
+        (`_file_read`). None on failure.
         """
         if self.local_root is not None and repo == self.local_repo:
             try:
@@ -327,31 +344,7 @@ class FleetContext:
                     detail=str(unreadable),
                 )
                 return None
-        result = gh_answer(
-            outcome=self.run_gh(
-                args=[
-                    "api",
-                    f"repos/{self.owner}/{repo}/contents/{path}?ref={self.canonical_ref(repo=repo)}",
-                    "-H",
-                    "Accept: application/vnd.github.raw",
-                ]
-            )
-        )
-        if isinstance(result, InvocationNotPerformed):
-            # A file this run never managed to ASK about is not an absent
-            # file, and the genuine-absence guard downstream reads this.
-            self.record_not_performed(operation="contents", path=f"{repo}:{path}", failure=result)
-            return None
-        if result.returncode != 0:
-            self.record_read_failure(
-                operation="contents",
-                path=f"{repo}:{path}",
-                returncode=result.returncode,
-                kind=classify_gh_failure(stderr=result.stderr),
-                detail=result.stderr,
-            )
-            return None
-        return result.stdout
+        return remote_file_text(ctx=self, repo=repo, path=path)
 
     def tree(self, *, repo: str) -> TreeState:
         """Memoized checked-out self tree or canonical-ref sibling tree for `repo`."""
