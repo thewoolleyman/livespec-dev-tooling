@@ -614,16 +614,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the ARC secret reinjection projects the livespec-ai-arc credential and leaves the personal-account Secret unchanged",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading, its proof captured on the CI node (host-captured); livespec-dev-tooling-h5r75q owns it.",
+    "test": "tests.consumer.test_arc_org_secret_projection_scenarios.test_the_projection_writes_the_livespec_ai_arc_credential_and_leaves_the_personal_secret_unchanged",
+    "reason": "Consumer-tier (integration-tier or above, the scenario-tier floor): the shipped injector inject-github-app-secret-livespec-ai.sh runs for real with the three LIVESPEC_AI_ARC_* values in its environment and a stand-in kubectl that keeps each Secret as a state file and records every argv. The test asserts the organization Secret afterwards carries exactly the three values under github_app_id, github_app_installation_id and github_app_private_key, that the pre-seeded personal-account Secret's bytes are unchanged and that no call names it, that every value reached kubectl through --from-file (no --from-literal), and that no value appears in any argv, stdout or stderr. Siblings assert the projector Role's rule set (get, update, patch on that one Secret by resourceNames) and that the unit runs the launcher as the dedicated non-root user through the one sudoers command. The live half, the shared-credentials launcher reading the SSM parameters as consumer livespec-ai-arc, the unit, the sudoers rule and the arc-org-projector grant against the real k3s cluster, is host-captured on the CI node by livespec-dev-tooling-h5r75q.",
     "work_item": "livespec-dev-tooling-h5r75q"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the ARC secret reinjection refuses the organization projection when a livespec-ai-arc value is missing",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading, its proof captured on the CI node (host-captured); livespec-dev-tooling-h5r75q owns it.",
+    "test": "tests.consumer.test_arc_org_secret_projection_scenarios.test_the_projection_refuses_and_names_each_missing_value",
+    "reason": "Consumer-tier (integration-tier or above, the scenario-tier floor): the shipped injector runs for every non-empty subset of the three LIVESPEC_AI_ARC_* variables missing, each both absent and set empty, against a stand-in kubectl. Each run must exit non-zero, name every missing variable on stderr, make no kubectl call at all, leave the pre-seeded organization Secret's bytes unchanged, and print no credential value. A sibling slices the converge's organization-Secret guard and asserts an absent, empty-placeholder or partial Secret refuses the converge. The live half, the shared-credentials launcher reading the SSM parameters as consumer livespec-ai-arc, the unit, the sudoers rule and the arc-org-projector grant against the real k3s cluster, is host-captured on the CI node by livespec-dev-tooling-h5r75q.",
     "work_item": "livespec-dev-tooling-h5r75q"
   },
   {

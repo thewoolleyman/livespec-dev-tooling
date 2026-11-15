@@ -1,0 +1,101 @@
+---
+# The ORGANIZATION projection of the ARC secret reinjection
+# (livespec-dev-tooling-h5r75q): the dedicated non-root user, the one sudoers
+# rule that lets it start homelab's shared-credentials launcher as consumer
+# livespec-ai-arc, the injector, its root-run access helper and grant, and the
+# oneshot unit. ENABLED for next boot, never started, like every unit here.
+# No credential value is read, written or sealed by this role.
+
+- name: Install openssl for the projector's client certificate
+  ansible.builtin.apt:
+    name: openssl
+    state: present
+  become: true
+
+- name: Create the projector's group
+  ansible.builtin.group:
+    name: "{{ secret_reinjection_org_user }}"
+    system: true
+  become: true
+
+- name: Create the dedicated non-root projector user
+  # The launcher refuses to run its child as root, and the projection's
+  # Kubernetes identity is this user's alone. No login shell.
+  ansible.builtin.user:
+    name: "{{ secret_reinjection_org_user }}"
+    group: "{{ secret_reinjection_org_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ secret_reinjection_org_home }}"
+    create_home: true
+  become: true
+
+- name: Keep the projector's home private
+  ansible.builtin.file:
+    path: "{{ secret_reinjection_org_home }}"
+    state: directory
+    owner: "{{ secret_reinjection_org_user }}"
+    group: "{{ secret_reinjection_org_user }}"
+    mode: "0700"
+  become: true
+
+- name: Create the projector's kubeconfig directory
+  # root-owned: only the root ExecStartPre=+ helper writes the kubeconfig; the
+  # projector user may only read it.
+  ansible.builtin.file:
+    path: "{{ secret_reinjection_org_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ secret_reinjection_org_user }}"
+    mode: "0750"
+  become: true
+
+- name: Install the organization projection's injector, access helper and grant
+  ansible.builtin.copy:
+    src: "{{ secret_reinjection_secret_dir }}/{{ item.src }}"
+    dest: "{{ secret_reinjection_lib_dir }}/{{ item.src }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  become: true
+  loop: "{{ secret_reinjection_org_files }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Install the projector's sudoers drop-in
+  # Exactly one fully-argumented command. `validate` runs visudo before the file
+  # is moved into place, so a malformed drop-in never reaches /etc/sudoers.d.
+  ansible.builtin.template:
+    src: sudoers.d-arc-org-projector.j2
+    dest: /etc/sudoers.d/{{ secret_reinjection_org_user }}
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+  become: true
+
+- name: Check whether the organization projection service is already installed
+  ansible.builtin.stat:
+    path: "{{ secret_reinjection_unit_dir }}/{{ secret_reinjection_org_service }}"
+  register: secret_reinjection_org_service_present
+  become: true
+
+- name: Install the organization projection service unit
+  ansible.builtin.template:
+    src: inject-github-app-secret-livespec-ai.service.j2
+    dest: "{{ secret_reinjection_unit_dir }}/{{ secret_reinjection_org_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the secret-reinjection units
+
+- name: Publish the changed organization projection unit before enabling it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the organization projection service for next boot (never started here)
+  ansible.builtin.systemd_service:
+    name: "{{ secret_reinjection_org_service }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or secret_reinjection_org_service_present.stat.exists
