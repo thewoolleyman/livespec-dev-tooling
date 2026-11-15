@@ -58,6 +58,26 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.213.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.212.0...v1.213.0) (2026-11-15)
+
+
+### Features
+
+* **ansible:** caam_role_key authorizes the credential-rotation role key (overseer-iyfjbo G2) ([2cd5682](https://github.com/livespec-ai/livespec-dev-tooling/commit/2cd5682f9a89c4de00e2339f05f1e43c5e64a2e5))
+* **ansible:** managed memory-write guard on interactive Claude hosts (livespec-dev-tooling-pik7f2) ([3076825](https://github.com/livespec-ai/livespec-dev-tooling/commit/3076825190667ff4fe5bf9376667305b20d20de2))
+* **ansible:** petri vault carries the livespec-ai org App pair ([133614d](https://github.com/livespec-ai/livespec-dev-tooling/commit/133614d79b285d2607ea591692bf63ed40f580b2))
+* **config:** route petri runs and host mints through the livespec-ai org App ([762fdb7](https://github.com/livespec-ai/livespec-dev-tooling/commit/762fdb7a44b26354ff835ccc6a4942e320739cf5))
+
+
+### Bug Fixes
+
+* **ansible:** narrow the managed memory guard to the projects/&lt;slug&gt;/memory layout (livespec-dev-tooling-pik7f2) ([015522f](https://github.com/livespec-ai/livespec-dev-tooling/commit/015522f4fba78960873cd7076ebf89b29802c8a6))
+* **checks:** pin the node.js pyright's nodeenv fallback installs in check-no-shadow-ledger-body-typechecks (livespec-dev-tooling-igjtqq) ([7d607f4](https://github.com/livespec-ai/livespec-dev-tooling/commit/7d607f4fb1c8871a100ada63238f610610a18b81))
+* narrate passing host authority checks ([294ec7f](https://github.com/livespec-ai/livespec-dev-tooling/commit/294ec7f740390e62b5dd72fc7cebbc2491d8c00e))
+* reject conditional merge-queue guards ([4a0b5bc](https://github.com/livespec-ai/livespec-dev-tooling/commit/4a0b5bc2d4bb6e40a9cf19964aaf4de6342ecf1c))
+* resolve audit and adopter currency owners ([8d3cd26](https://github.com/livespec-ai/livespec-dev-tooling/commit/8d3cd265c8e0ebff087b655c6e316650a611fb63))
+* resolve incident consumers through adopter owner ([04997e0](https://github.com/livespec-ai/livespec-dev-tooling/commit/04997e0fbf0de179eb66fe8800d678c010642e55))
+
 ## [1.212.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.211.0...v1.212.0) (2026-11-15)
 
 
