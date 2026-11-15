@@ -37,8 +37,8 @@ import subprocess
 
 TOP = [
     ("1a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab bootstrap-credentials-and-onboarding)", "hxi-vxsmdv"),
-    ("1b central-credential-service (livespec-overseer; vmi3006760, workspace livespec-overseer, tab central-credential-service)", "overseer-iyfjbo"),
-    ("1c distributed-send-message (hetzner-xubuntu, workspace livespec-dev-tooling, tab distributed-send-message)", "livespec-dev-tooling-rlwppp"),
+    ("1b central-credential-service (livespec-overseer; hetzner-xubuntu, workspace livespec-overseer, tab central-credential-service)", "overseer-iyfjbo"),
+    ("1c no-local-agent-memory (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab no-local-agent-memory)", "hxi-7ituzy"),
     ("2 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
     ("3 stale-base-merge-options (GitHub org move to livespec-ai plus merge queue; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-xowhol"),
     ("KEPT throughput-plans-coordinator (owns every factory throughput problem; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-r7iuj6"),
