@@ -1,7 +1,7 @@
 """A fast incident member never declares a host precondition the hook cannot probe.
 
-`SPECIFICATION/contracts.md` §"Expedited incident execution" says a member classed
-fast MUST NOT read host-installed tools or the host's home directory, and that a
+`SPECIFICATION/contracts.md`, in its expedited incident execution rules, says a member
+classed fast MUST NOT read host-installed tools or the host's home directory, and that a
 member needing one declares the precondition so the hook probes it before running
 the member. The hook has no precondition probe today: every member that declares
 an `incident-precondition` is classed `not-applicable`, so it never runs in
