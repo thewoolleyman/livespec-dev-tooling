@@ -11,6 +11,7 @@ hand-seeded credstore.
 | path | owner, mode | source |
 | --- | --- | --- |
 | `/usr/local/aws-cli/v2/2.34.63/dist/aws` (+ `/usr/local/bin/aws` link) | root, installer | AWS CLI v2 zip, sha256-pinned in defaults; skipped when present |
+| `/opt/shared-credentials/python-3.13.18/` (off every system PATH) | root, `0755` dirs | CPython 3.13.18 python-build-standalone tarball, sha256-pinned; ONLY where `python3.13` is not on root's PATH (see below) |
 | `/usr/local/libexec/shared-credentials/shared-credentials-0.3.0.pyz` | `root:root 0755` | homelab release `shared-credentials-v0.3.0`, staged on the controller |
 | `/etc/livespec-ci-credentials/<host>.json` | `root:root 0644` | `files/<host>.json` (runtime manifest) |
 | `/etc/livespec-ci-credentials/<host>.delivery.json` | `root:root 0644` | `files/<host>.delivery.json` (delivery profile) |
@@ -79,7 +80,8 @@ committed manifest names this host and account; the issuer session
 (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`) is in the
 controller environment; pipelining is on and `keep_remote_files` off; the pinned
 commit registers the bootstrap user exactly once; homelab's declared interpreter
-(`python<.python-version>`) is on root's PATH on the target; the seal file does
+(`python<.python-version>`, equal to the role's pin) is on root's PATH or is the
+role's pinned build at its pinned version; the seal file does
 not exist; the installed profile and manifest are their pinned bytes; and a
 metadata-only readback from the controller shows the bootstrap user holds ZERO
 access keys. It then stages the pinned commit as a root-only archive under
@@ -97,11 +99,28 @@ one Active key.
 3. The mint `--check` above.
 4. The mint itself, once, by legacy-dispatcher-agent.
 
-### Known blocker at the current pin
+### The delivery interpreter
 
 homelab's `deliver-initial-key.sh` (since homelab #1203) execs
-`python$(cat .python-version)` = `python3.13` from PATH. Measured 2026-11-15
-read-only on poweredge-xubuntu (Ubuntu 26.04): `/usr/bin/python3` is 3.14, and
-there is no `python3.13` on PATH or in apt. The mint's interpreter gate refuses
-before any key exists until either homelab admits the host's interpreter or the
-host carries a `python3.13`; this role deliberately installs no interpreter.
+`python$(cat .python-version)` from PATH: `python3.13` at the pinned commit
+(`shared_credentials_host_python_version`, which the mint asserts equals the
+pinned commit's `.python-version`). Measured 2026-11-15, read-only, as root:
+
+| host | OS | `python3` | `python3.13` on root's PATH |
+| --- | --- | --- | --- |
+| poweredge-xubuntu | Ubuntu 26.04 LTS | 3.14.4 | none |
+| gmktec-xubuntu | Ubuntu 26.04 LTS | 3.14.4 | none |
+| hp-xubuntu | Ubuntu 26.04 LTS | 3.14.4 | none |
+| gamingpc-xubuntu | Ubuntu 26.04.1 LTS | 3.14.4 | none |
+| vps | Ubuntu 25.10 | 3.13.7 | `/usr/bin/python3.13` |
+
+So a converge measures `command -v python3.13` as root and, only where it is
+absent, installs the pinned CPython 3.13.18 (astral-sh/python-build-standalone
+release `20261026`, `install_only_stripped`, sha256 `df15fe60…a8b7` from that
+release's own `SHA256SUMS`, verified by `get_url`) root-owned at
+`/opt/shared-credentials/python-3.13.18`, reading back its `--version` and that
+every directory on its path is root-owned and not group- or world-writable. It
+is on NO system PATH and nothing links it into `/usr/bin` or `/usr/local/bin`:
+the mint prepends its `bin` directory to PATH for the one delivery command
+alone, through that task's `environment`. The launcher is unchanged
+(`/usr/bin/python3 -I …pyz launch`).
