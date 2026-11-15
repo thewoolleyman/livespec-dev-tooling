@@ -182,6 +182,17 @@ spec:
   # `fairSharing.weight` is likewise absent: fair sharing apportions WITHIN a
   # cohort, and this queue is in none.
   namespaceSelector: {}
+  # STRICT FIFO (2026-11-15, plan gate-job-resources item (i), research note
+  # 004). Gates are no longer one size: the orchestrator's gate requests 10 cpu,
+  # the default is 5. Under the default BestEffortFIFO, Kueue skips a head that
+  # does not fit, so every 5-cpu gap that opened went to a later 5-cpu gate and a
+  # 10-cpu gate never found 10 free: workload
+  # job-gate-livespec-orchestrator-beads-fabro-9xphj-aea5a (gate_cpu 10, created
+  # 06:58:54Z) sat unadmitted for 30+ minutes while nine later 5-cpu gates were
+  # admitted. StrictFIFO keeps the oldest gate at the head, so it takes the next
+  # capacity that fits it. REVERT: delete this line, if any gate waits over 10
+  # minutes for admission.
+  queueingStrategy: StrictFIFO
   preemption:
     # The pool's three settings, restated EXPLICITLY rather than left to the
     # API defaults (which are these same values at the pinned Kueue v0.19.1).
