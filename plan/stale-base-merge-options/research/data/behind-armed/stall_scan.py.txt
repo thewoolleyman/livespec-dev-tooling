@@ -1,0 +1,63 @@
+# Reads h1.json..h4.json: the pages of timeline_query.graphql.txt (gh api graphql -f query=... -f c=<cursor>).
+# Run with python3 -I. Window start W0 and NOW are the 2026-11-15 read times recorded in note 010.
+import json,datetime as dt,statistics as S,re,collections
+P=lambda s:dt.datetime.fromisoformat(s.replace('Z','+00:00'))
+F=lambda t:t.strftime('%m-%dT%H:%M:%S') if t else '-'
+prs=[]
+for f in ['h1.json','h2.json','h3.json','h4.json']: prs+=json.load(open(f))['data']['repository']['pullRequests']['nodes']
+print('total PRs',len(prs), collections.Counter(p['state'] for p in prs))
+W0=P('2026-11-08T06:23:00Z'); NOW=P('2026-11-15T06:23:43Z')
+def cigreen(c):
+  if not c or not c['statusCheckRollup']: return None
+  for x in c['statusCheckRollup']['contexts']['nodes']:
+    if x.get('name')=='ci-green' and x.get('conclusion')=='SUCCESS': return P(x['completedAt'])
+  return None
+EN=('AutoMergeEnabledEvent','AutoRebaseEnabledEvent','AutoSquashEnabledEvent')
+rows=[];kinds=collections.Counter()
+for p in prs:
+  it=p['timelineItems']['nodes']
+  if p['timelineItems']['totalCount']>60: print('TRUNC',p['number'])
+  ens=[(P(i['createdAt']),i['__typename']) for i in it if i['__typename'] in EN]
+  if not ens: continue
+  mt=P(p['mergedAt']) if p['mergedAt'] else None
+  if mt and mt<W0: continue
+  if not mt and p['state']!='OPEN': continue
+  for e in ens: kinds[e[1]]+=1
+  en=ens[0][0]
+  ev=[];prevc=None;stalls=[]
+  for i in it:
+    t=i['__typename']
+    if t=='PullRequestCommit':
+      c=i['commit']; ev.append(dict(t=P(c['committedDate']),k='commit',h=c['messageHeadline'],par=c['parents']['totalCount'],c=c))
+    elif t=='HeadRefForcePushedEvent':
+      ev.append(dict(t=P(i['createdAt']),k='force',a=(i['actor'] or {}).get('login'),c=i['beforeCommit'],after=i['afterCommit']))
+    elif t in EN+('AutoMergeDisabledEvent','MergedEvent'): ev.append(dict(t=P(i['createdAt']),k=t,a=(i.get('actor') or {}).get('login')))
+  # order: commits use committedDate (may precede push); keep order of timeline as given
+  # detect updates after enable
+  seq=ev
+  lastc=None
+  for j,e in enumerate(seq):
+    if e['k']=='commit':
+      ismerge = e['par']>1 or re.match(r"Merge (remote-tracking )?branch '(origin/)?(master|main)'",e['h'])
+      if ismerge and e['t']>en and lastc is not None:
+        g=cigreen(lastc); start=max(en,g) if g else None
+        stalls.append(dict(kind='merge-commit',at=e['t'],start=start,old=lastc['oid'][:8],g=g))
+      lastc=e['c']
+    elif e['k']=='force' and e['t']>en:
+      b=e['c']; g=cigreen(b)
+      basemoved = b and e['after'] and b['parents']['nodes'] and e['after']['parents']['nodes'] and b['parents']['nodes'][0]['oid']!=e['after']['parents']['nodes'][0]['oid']
+      start=max(en,g) if g else None
+      stalls.append(dict(kind='force'+('/base-moved' if basemoved else '/same-parent'),at=e['t'],start=start,old=b and b['oid'][:8],g=g,a=e['a']))
+  rows.append(dict(n=p['number'],title=p['title'],en=en,mt=mt,st=stalls,ev=ev,state=p['state'],draft=p['isDraft']))
+print('enable kinds',kinds)
+print('armed PRs in window',len(rows),'merged',sum(1 for r in rows if r['mt']),'open',sum(1 for r in rows if not r['mt']))
+out=[]
+for r in rows:
+  if r['st']:
+    print('#%d %s en=%s merged=%s %s'%(r['n'],r['state'],F(r['en']),F(r['mt']),r['title'][:60]))
+    for s in r['st']:
+      d=(s['at']-s['start']).total_seconds()/60 if s['start'] else None
+      print('    update %-22s at=%s old=%s oldCIgreen=%s stall_start=%s stall=%s min'%(s['kind'],F(s['at']),s['old'],F(s['g']),F(s['start']),d and round(d,1)))
+lat=[(r['mt']-r['en']).total_seconds()/60 for r in rows if r['mt'] and not r['st']]
+lat.sort();print('no-update armed->merge minutes: n',len(lat),'median',round(S.median(lat),1),'p90',round(lat[int(.9*len(lat))],1),'max',round(max(lat),1))
+print('top10',[round(x,1) for x in lat[-10:]])
