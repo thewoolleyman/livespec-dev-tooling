@@ -4,12 +4,17 @@
 # Shell entry point; the logic is embedded Python (stdlib only) so the repo's
 # product-Python AST gates, which govern the package, do not apply to a script.
 set -euo pipefail
+# The embedded Python reads committed worker host declarations (homelab-worker/hosts/)
+# relative to this checkout; `python3 -I` ignores PYTHON* variables but not this one.
+FLEET_UTILIZATION_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export FLEET_UTILIZATION_REPO
 exec python3 -I - "$@" <<'PY'
 """READ-ONLY fleet utilization read for the coordinator seat.
 
 Run first every tick:  scripts/coordinator/fleet-utilization.sh [--json] [--stranded-only | --overcommit-only]
 
-Reports each execution node's real utilization (PSI, idle, memory), the
+Reports each execution node's real utilization (PSI, idle, memory) — every Node
+the k3s API lists, read on each run, never a fixed host list — the
 k3s cluster's pods / pending / quota, and the factory's fleet-vs-cap state,
 then FLAGS an idle node beside a saturated one. Saturation is judged from CPU
 PSI and mpstat idle, never from load average (see
@@ -100,15 +105,28 @@ try:
 except ValueError:
     STRANDED_ARC_STARTUP_S = 90
 
-# Candidate ssh targets, in order. First that answers wins. `cwoolley` is the
-# account that holds the authorized key on every execution node (verified
-# 2026-11-03: default `ubuntu` fails on hp-xubuntu with "failed to look up
-# local user"); the bare host is tried too so ~/.ssh/config stanzas still work.
-HOSTS = {
-    "gmktec-xubuntu": ["gmktec-xubuntu", "cwoolley@gmktec-xubuntu"],
-    "poweredge-xubuntu": ["poweredge-xubuntu", "cwoolley@poweredge-xubuntu"],
-    "hp-xubuntu": ["cwoolley@hp-xubuntu", "hp-xubuntu"],
-}
+# The execution nodes are the cluster's Nodes, listed on every run from the k3s
+# API, never a fixed host list: a node that joins is probed from its first run
+# (gamingpc-xubuntu and macbook-m4-max-homelab-worker were invisible to a fixed
+# list for days; plan homelab-k8s-worker-nodes, 2026-11-15). Each Node's ssh
+# candidates are derived from its name, in order, first that answers wins: the
+# bare name (the caller's own account; `ubuntu` exists on gamingpc-xubuntu) and
+# `cwoolley@`, the account that holds the authorized key on the other nodes
+# (verified 2026-11-03: `ubuntu` fails on hp-xubuntu with "failed to look up local
+# user"). See .ai/fleet-host-ssh-routes.md; the tailscale-admin repository is the
+# record of each machine's account.
+NODE_SSH_ACCOUNTS = ("", "cwoolley@")
+# A container worker (homelab-worker/) is not an ssh host: it is probed INSIDE its
+# container, reached through the host its homelab-worker.livespec.dev/host label
+# names, by the WORKER_HOST_OS that host's committed declaration
+# (homelab-worker/hosts/<host>.env) gives. A Darwin host runs the worker in a Lima VM
+# of the node's name holding a docker container of the same name; it takes ordinary
+# ssh over the tailnet, never `tailscale ssh`. A host OS with no route here is
+# printed UNREAD with that reason, never skipped.
+WORKER_HOST_LABEL = "homelab-worker.livespec.dev/host"
+WORKER_HOST_ACCOUNT = "cwoolley"
+TAILNET_DOMAIN = "perch-rudd.ts.net"
+WORKER_HOSTS_DIR = pathlib.Path(os.environ.get("FLEET_UTILIZATION_REPO", ".")) / "homelab-worker" / "hosts"
 K3S_SERVER = "poweredge-xubuntu"
 # Checkouts live under ~/workspace on every seat host: a real directory on hetzner-xubuntu,
 # a symlink to /data/projects on the VPS. /data/projects does not exist on hetzner-xubuntu.
@@ -217,12 +235,56 @@ def parse_probe(text):
     }
 
 
-def probe_node(name):
+def worker_host_os(host):
+    """WORKER_HOST_OS from the committed declaration of a container worker's host, or ''."""
+    if not SAFE_NAME_RE.fullmatch(host):
+        return ""
+    try:
+        text = (WORKER_HOSTS_DIR / f"{host}.env").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r"^WORKER_HOST_OS=(\S+)", text, re.MULTILINE)
+    return m.group(1) if m else ""
+
+
+def node_routes(name, labels):
+    """(routes, reason): the ordered (ssh target, remote command) pairs that read one Node.
+
+    Derived from the Node's own name and labels. An empty route list carries the reason.
+    """
+    if not SAFE_NAME_RE.fullmatch(name):
+        return [], f"node name {name!r} is not a safe ssh target"
+    host = labels.get(WORKER_HOST_LABEL)
+    if not host:
+        return [(f"{account}{name}", "sh -s") for account in NODE_SSH_ACCOUNTS], None
+    host_os = worker_host_os(host)
+    if host_os == "Darwin":
+        inside = f"limactl shell --workdir / {name} sudo docker exec -i {name} sh -s"
+        return [(f"{WORKER_HOST_ACCOUNT}@{host}.{TAILNET_DOMAIN}", f"PATH=$HOME/homebrew/bin:$PATH {inside}")], None
+    declared = host_os or f"undeclared in {WORKER_HOSTS_DIR}/{host}.env"
+    return [], f"no probe route for container worker {name} on host {host} (WORKER_HOST_OS {declared})"
+
+
+def list_cluster_nodes():
+    """(nodes, error): every Node the k3s API lists, each {name, routes, route_error}."""
+    doc, err = kube_json("nodes")
+    if doc is None:
+        return [], err
+    nodes = []
+    for item in sorted(doc.get("items", []), key=lambda i: i["metadata"]["name"]):
+        name = item["metadata"]["name"]
+        routes, reason = node_routes(name, item["metadata"].get("labels") or {})
+        nodes.append({"name": name, "routes": routes, "route_error": reason})
+    return nodes, None
+
+
+def probe_node(cnode):
+    name = cnode["name"]
+    if not cnode["routes"]:
+        return {"name": name, "reachable": False, "errors": [cnode["route_error"]]}
     errors = []
-    for target in HOSTS.get(name, []):
-        if name == "vps":
-            break
-        ok, out = ssh(target, "sh -s", stdin=PROBE)
+    for target, remote_cmd in cnode["routes"]:
+        ok, out = ssh(target, remote_cmd, stdin=PROBE)
         if ok:
             node = parse_probe(out)
             node.update(name=name, target=target, reachable=True)
@@ -1317,27 +1379,32 @@ def parse_overcommit(name, target, text):
     return row
 
 
-def probe_overcommit(name):
-    """Sample one node over ssh (the VPS locally); UNREAD with every candidate's error."""
+def probe_overcommit(cnode):
+    """Sample one node by its routes (the VPS locally); UNREAD with every candidate's error."""
+    name = cnode["name"]
     if name == "vps":
         try:
             return parse_overcommit(name, "local", local(OVERCOMMIT_PROBE))
         except Exception as exc:  # noqa: BLE001 - a read failure is a row, never a crash
             return {"name": name, "status": "UNREAD", "reason": f"local probe failed: {exc}"}
+    if not cnode["routes"]:
+        return {"name": name, "status": "UNREAD", "reason": cnode["route_error"]}
     errors = []
-    for target in HOSTS.get(name, []):
-        ok, text = ssh(target, "sh -s", stdin=OVERCOMMIT_PROBE)
+    for target, remote_cmd in cnode["routes"]:
+        ok, text = ssh(target, remote_cmd, stdin=OVERCOMMIT_PROBE)
         if ok:
             return parse_overcommit(name, target, text)
         errors.append(f"{target}: {text}")
     return {"name": name, "status": "UNREAD", "reason": " ; ".join(errors) or "no ssh candidate"}
 
 
-def read_overcommit():
-    """Every execution node (and the VPS), sampled in parallel so the section costs one probe."""
-    names = [*HOSTS, "vps"]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(names)) as pool:
-        rows = list(pool.map(probe_overcommit, names))
+def read_overcommit(cluster_nodes, nodes_error):
+    """Every Node the cluster lists (and the VPS), sampled in parallel so the section costs one probe."""
+    targets = [*cluster_nodes, {"name": "vps", "routes": [], "route_error": None}]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as pool:
+        rows = list(pool.map(probe_overcommit, targets))
+    if nodes_error:
+        rows.insert(0, {"name": "k3s nodes", "status": "UNREAD", "reason": f"node list unread: {nodes_error}"})
     return {
         "idle_pct_max": OVERCOMMIT_IDLE_PCT_MAX,
         "be_full_avg60_min": OVERCOMMIT_BE_FULL_AVG60_MIN,
@@ -1493,8 +1560,9 @@ def main():
         "--overcommit-only", action="store_true", help="read and print only the OVERCOMMIT section"
     )
     args = ap.parse_args()
+    cluster_nodes, nodes_error = list_cluster_nodes()
     if args.overcommit_only:
-        overcommit = read_overcommit()
+        overcommit = read_overcommit(cluster_nodes, nodes_error)
         if args.json:
             out(json.dumps(overcommit, indent=2))
         else:
@@ -1502,8 +1570,12 @@ def main():
         return 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         # The full read samples OVERCOMMIT beside the node probes; --stranded-only skips it.
-        overcommit_future = None if args.stranded_only else pool.submit(read_overcommit)
-        nodes = [probe_node(h) for h in HOSTS] + [probe_vps()]
+        overcommit_future = (
+            None if args.stranded_only else pool.submit(read_overcommit, cluster_nodes, nodes_error)
+        )
+        nodes = [probe_node(n) for n in cluster_nodes] + [probe_vps()]
+        if nodes_error:
+            nodes.insert(0, {"name": "k3s nodes", "reachable": False, "errors": [f"node list unread: {nodes_error}"]})
         overcommit = overcommit_future.result() if overcommit_future else None
     factory = read_factory()
     stranded = read_stranded(nodes, factory)
