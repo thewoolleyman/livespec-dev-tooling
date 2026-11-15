@@ -5,8 +5,14 @@
 # orchestrator-image/services/reconcile-runs/install.sh (that repository owns
 # its tree; the installer is retired there as a follow-up). The unit TEXT stays
 # that repository's: this role reads it from the host's own checkout,
-# substitutes its @PLACEHOLDER@ tokens and the credential wrapper per tenant, and
-# adds host policy (interval, bound, sweep order, dead-man marker) as drop-ins.
+# substitutes its @PLACEHOLDER@ tokens, points its ExecStart wrapper at
+# livespec-tenant-wrap.sh, and adds host policy (interval, bound, sweep order,
+# dead-man marker) as drop-ins.
+#
+# The tenant's credential wrapper is NOT copied into the unit. The installed
+# livespec-tenant-wrap.sh reads the tenant's committed .livespec.jsonc
+# credential_wrapper each time a pass runs, so a tenant that changes its wrapper
+# needs no converge here (livespec-orchestrator-beads-fabro bd-ib-ft426g).
 #
 # One timer per host starts one sweep; the sweep runs each enabled tenant's
 # pass in list order, one at a time. Every declared tenant's service is always
@@ -26,10 +32,12 @@
       - reconcile_runs_timeout_seconds | int > 0
       - reconcile_runs_stale_after_seconds | int > reconcile_runs_timeout_seconds | int
       - reconcile_runs_manage_systemd is boolean
+      - reconcile_runs_family_wrapper is match('^/')
+      - reconcile_runs_tenant_wrap_bin is match('^/')
     fail_msg: >-
       reconcile_runs_enabled must be a boolean, reconcile_runs_tenants a list,
-      the account declared, and the staleness bound longer than one pass's
-      timeout.
+      the account declared, the staleness bound longer than one pass's
+      timeout, and the family wrapper and tenant-wrap paths absolute.
     success_msg: the reconcile-runs configuration is complete
 
 - name: Refuse a malformed tenant entry
@@ -37,16 +45,13 @@
     that:
       - item.name is defined and item.name is match('^[a-z0-9][a-z0-9-]*$')
       - item.repo is defined and item.repo is match('^/')
-      - item.credential_wrapper is defined
-      - item.credential_wrapper is sequence and item.credential_wrapper is not string
-      - item.credential_wrapper | length >= 2
-      - item.credential_wrapper | last == '--'
-      - item.credential_wrapper | select('search', '\s') | list | length == 0
+      - item.credential_wrapper is not defined
       - item.enabled | default(true) is boolean
     fail_msg: >-
       reconcile_runs_tenants entry {{ item.name | default('(unnamed)') }} needs a
-      lower-case name, an absolute repo, and its committed credential_wrapper
-      argv ending in "--" with no whitespace inside an argument.
+      lower-case name and an absolute repo, and must not carry a
+      credential_wrapper: the pass reads the tenant's committed one at run time,
+      so a copy here would only go stale.
     success_msg: tenant {{ item.name }} is well formed
   loop: "{{ reconcile_runs_tenants }}"
   loop_control:
@@ -56,7 +61,7 @@
   ansible.builtin.set_fact:
     reconcile_runs_resolved: []
 
-- name: Resolve each tenant's units, wrapper and success marker
+- name: Resolve each tenant's units and success marker
   ansible.builtin.set_fact:
     reconcile_runs_resolved: >-
       {{ reconcile_runs_resolved + [{
@@ -64,16 +69,9 @@
            'repo': item.repo,
            'unit': item.unit | default('reconcile-runs-' ~ item.name),
            'plugin_root': item.plugin_root | default(reconcile_runs_plugin_root),
-           'wrapper_head': wrapper_head,
-           'wrapper': ([wrapper_head] + item.credential_wrapper[1:]) | join(' '),
            'effective_enabled': reconcile_runs_enabled and (item.enabled | default(true)),
            'marker': reconcile_runs_state_dir ~ '/' ~ item.name ~ '.last-success'
          }] }}
-  vars:
-    raw_head: "{{ item.credential_wrapper[0] }}"
-    wrapper_head: >-
-      {{ raw_head if raw_head is match('^/')
-         else item.repo ~ '/' ~ (raw_head | regex_replace('^\./', '')) }}
   loop: "{{ reconcile_runs_tenants }}"
   loop_control:
     label: "{{ item.name }}"
@@ -125,6 +123,19 @@
       {{ (reconcile_runs_service_text | regex_search('^ExecStart=(\S+ --) ', '\1', multiline=True) | first)
          if reconcile_runs_service_text is search('^ExecStart=\S+ -- ', multiline=True) else '' }}
 
+# Every tenant's ExecStart runs through livespec-tenant-wrap.sh, which reads the
+# tenant's committed credential_wrapper when the pass starts, and the unit names
+# the family wrapper that script uses. A Jinja '\n' literal is not unescaped
+# here, so the newline comes from a YAML double-quoted var.
+- name: Point the ExecStart wrapper at the run-time tenant-wrap resolver
+  ansible.builtin.set_fact:
+    reconcile_runs_exec_from: "{{ nl ~ 'ExecStart=' ~ reconcile_runs_template_wrapper ~ ' ' }}"
+    reconcile_runs_exec_to: >-
+      {{ nl ~ 'Environment=TW_FAMILY_WRAPPER=' ~ reconcile_runs_family_wrapper
+         ~ nl ~ 'ExecStart=' ~ reconcile_runs_tenant_wrap_bin ~ ' -- ' }}
+  vars:
+    nl: "\n"
+
 - name: Refuse unit text whose substitution points have moved
   ansible.builtin.assert:
     that:
@@ -141,16 +152,15 @@
       the orchestrator's unit text.
     success_msg: the orchestrator unit text carries every substitution point
 
-- name: Check each tenant's checkout, config, wrapper and plugin root
+- name: Check each tenant's checkout, config and plugin root, and the family wrapper
   ansible.builtin.stat:
     path: "{{ item.1 }}"
   loop: >-
-    {{ reconcile_runs_resolved | map(attribute='name')
+    {{ [['(family wrapper)', reconcile_runs_family_wrapper]]
+       + reconcile_runs_resolved | map(attribute='name')
        | zip(reconcile_runs_resolved | map(attribute='repo')) | list
        + reconcile_runs_resolved | map(attribute='name')
        | zip(reconcile_runs_resolved | map(attribute='repo') | map('regex_replace', '$', '/.livespec.jsonc')) | list
-       + reconcile_runs_resolved | map(attribute='name')
-       | zip(reconcile_runs_resolved | map(attribute='wrapper_head')) | list
        + reconcile_runs_resolved | map(attribute='name')
        | zip(reconcile_runs_resolved | map(attribute='plugin_root') | map('regex_replace', '$', '/scripts/bin/dispatcher.py')) | list }}
   loop_control:
@@ -164,17 +174,51 @@
     that:
       - item.stat.exists
       - item.stat.isdir if item.item.1 in (reconcile_runs_resolved | map(attribute='repo')) else true
-      - item.stat.executable if item.item.1 in (reconcile_runs_resolved | map(attribute='wrapper_head')) else true
+      - item.stat.executable if item.item.1 == reconcile_runs_family_wrapper else true
     fail_msg: >-
       tenant {{ item.item.0 }}: {{ item.item.1 }} is missing or not usable. A
       timer installed without its checkout, its .livespec.jsonc, an executable
-      credential wrapper or the orchestrator's dispatcher.py fails every pass
-      (without the wrapper, as an absent tenant rather than an absent
+      family credential wrapper or the orchestrator's dispatcher.py fails every
+      pass (without the wrapper, as an absent tenant rather than an absent
       credential). Provision it before converging this role.
     success_msg: "{{ item.item.0 }}: {{ item.item.1 }} is present"
   loop: "{{ reconcile_runs_inputs.results }}"
   loop_control:
     label: "{{ item.item.0 }}: {{ item.item.1 }}"
+
+# The same script the units run, in its --resolve mode, from the role's own copy
+# so nothing is installed yet. It reads each tenant's committed credential_wrapper
+# exactly as a pass will, and refuses one that is malformed or names a wrapper
+# that is not an executable file, before a timer can run that tenant's pass.
+- name: Resolve each tenant's committed credential wrapper as its pass will
+  ansible.builtin.script:
+    cmd: livespec-tenant-wrap.sh --resolve
+    chdir: "{{ item.repo }}"
+  environment:
+    TW_FAMILY_WRAPPER: "{{ reconcile_runs_family_wrapper }}"
+    TW_REPO: "{{ item.repo }}"
+  loop: "{{ reconcile_runs_resolved }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: reconcile_runs_wrap_resolved
+  changed_when: false
+  failed_when: false
+  become: true
+  become_user: "{{ reconcile_runs_user }}"
+  check_mode: false
+
+- name: Refuse a tenant whose committed credential wrapper a pass could not run
+  ansible.builtin.assert:
+    that: item.rc == 0
+    fail_msg: >-
+      tenant {{ item.item.name }}: {{ (item.stderr | default('') | trim) or (item.stdout | default('') | trim) }}.
+      Every pass of this tenant would exit 78 without running. Fix the tenant's
+      committed .livespec.jsonc credential_wrapper, or provision the wrapper it
+      names, before converging this role.
+    success_msg: "{{ item.item.name }}: {{ item.stdout_lines | default([]) | join(' ') }}"
+  loop: "{{ reconcile_runs_wrap_resolved.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
 
 - name: Check the staleness unit's OnFailure= alert unit
   ansible.builtin.stat:
@@ -210,6 +254,15 @@
     mode: "0755"
   become: true
 
+- name: Install the tenant credential-wrapper resolver every pass runs through
+  ansible.builtin.copy:
+    src: livespec-tenant-wrap.sh
+    dest: "{{ reconcile_runs_tenant_wrap_bin }}"
+    owner: "{{ reconcile_runs_unit_owner }}"
+    group: "{{ reconcile_runs_unit_group }}"
+    mode: "0755"
+  become: true
+
 - name: Install the staleness check
   ansible.builtin.copy:
     src: livespec-reconcile-runs-staleness
@@ -235,7 +288,7 @@
       # Managed by livespec-dev-tooling role reconcile_runs (tenant {{ item.name }}).
       # Rendered from {{ reconcile_runs_template_dir }}/reconcile-runs.service.
       {{ reconcile_runs_service_text
-         | replace(reconcile_runs_template_wrapper, item.wrapper)
+         | replace(reconcile_runs_exec_from, reconcile_runs_exec_to)
          | replace('@PLUGIN_ROOT@', item.plugin_root)
          | replace('@PRIMARY_REPO@', item.repo)
          | replace('@RUN_AS_USER@', reconcile_runs_user) }}
@@ -258,7 +311,7 @@
       # Managed by livespec-dev-tooling role reconcile_runs (tenant {{ item.name }}, dry run).
       # Rendered from {{ reconcile_runs_template_dir }}/reconcile-runs.service.
       {{ reconcile_runs_service_text
-         | replace(reconcile_runs_template_wrapper, item.wrapper)
+         | replace(reconcile_runs_exec_from, reconcile_runs_exec_to)
          | replace('@PLUGIN_ROOT@', item.plugin_root)
          | replace('@PRIMARY_REPO@', item.repo)
          | replace('@RUN_AS_USER@', reconcile_runs_user)
@@ -321,6 +374,22 @@
   register: reconcile_runs_rendered_policies
   become: true
 
+# The hand-installed override this role now replaces: livespec-dev-tooling-xowhol,
+# installed on vmi3006760 2026-11-15T10:49:30Z, reset ExecStart and ran the same
+# command through livespec-tenant-wrap.sh. The unit rendered above now carries
+# that ExecStart itself, so the override is redundant. It is removed in the
+# converge that renders its replacement, so there is no window in which a pass
+# runs without the tenant wrapper.
+- name: Retire the hand-installed tenant-wrap override
+  ansible.builtin.file:
+    path: "{{ reconcile_runs_unit_dir }}/{{ item.unit }}.service.d/60-tenant-wrap.conf"
+    state: absent
+  loop: "{{ reconcile_runs_resolved }}"
+  loop_control:
+    label: "{{ item.unit }}.service"
+  register: reconcile_runs_retired_overrides
+  become: true
+
 - name: Install the host timer's interval
   ansible.builtin.template:
     src: reconcile-runs-interval.conf.j2
@@ -351,6 +420,7 @@
   when: reconcile_runs_manage_systemd and (
     (reconcile_runs_rendered_services.results + reconcile_runs_rendered_dry_runs.results
      + reconcile_runs_rendered_policies.results + reconcile_runs_rendered_staleness.results
+     + reconcile_runs_retired_overrides.results
      + [reconcile_runs_rendered_timer, reconcile_runs_rendered_sweep, reconcile_runs_rendered_interval])
     | selectattr('changed') | list | length > 0)
 

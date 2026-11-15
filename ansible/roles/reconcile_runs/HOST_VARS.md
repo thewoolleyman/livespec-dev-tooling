@@ -10,8 +10,13 @@ that dispatches factory runs. It replaces the hand-run
   livespec-orchestrator-beads-fabro's committed `reconcile-runs.service`. The
   role reads that text from the host's own checkout
   (`reconcile_runs_orchestrator_checkout`). It substitutes `@PLUGIN_ROOT@`,
-  `@PRIMARY_REPO@` and `@RUN_AS_USER@`, and puts the tenant's committed
-  `credential_wrapper` in place of the wrapper the unit text names.
+  `@PRIMARY_REPO@` and `@RUN_AS_USER@`. It puts
+  `/usr/local/libexec/livespec-tenant-wrap.sh --` in place of the wrapper the
+  unit text names, and sets `TW_FAMILY_WRAPPER` to
+  `reconcile_runs_family_wrapper`.
+- `/usr/local/libexec/livespec-tenant-wrap.sh`
+  (`reconcile_runs_tenant_wrap_bin`), from `files/livespec-tenant-wrap.sh`. See
+  "The tenant credential wrapper, read at run time" below.
 - A dry-run twin per tenant, `<unit>-dry-run.service`, with the same user,
   checkout, wrapper and plugin root plus `--dry-run`. It has no timer.
 - A drop-in per tenant service with the pass bound (`TimeoutStartSec`), the
@@ -37,11 +42,64 @@ that dispatches factory runs. It replaces the hand-run
   - With it empty (a host whose own telemetry reads the markers, such as
     hetzner-xubuntu), the unit fails on every stale check.
 
-This role's drop-in is `10-reconcile-runs-role.conf`. On the dev host, role
+This role's drop-in is `10-reconcile-runs-role.conf`. The role also deletes
+`60-tenant-wrap.conf` from each tenant's drop-in directory. That is the override
+installed by hand on vmi3006760 on 2026-11-15 (livespec-dev-tooling-xowhol), and
+the rendered unit now does the same job. The role deletes it in the same
+converge that renders the unit, so no pass ever runs without the tenant
+wrapper. On the dev host, role
 `dev_host_memory_bounds` also places
 `reconcile-runs.service.d/50-livespec-memory-bounds.conf`. That file sorts later,
 so its memory bounds win over the unit text's `MemoryHigh` and `MemoryMax`. The
 two roles write different files and leave each other's alone.
+
+## The tenant credential wrapper, read at run time
+
+Every tenant's ExecStart is
+
+```text
+/usr/local/libexec/livespec-tenant-wrap.sh -- /usr/bin/python3 <plugin_root>/scripts/bin/dispatcher.py reconcile-runs --repo <repo> --invoker timer:reconcile-runs --json
+```
+
+The script reads the tenant's committed `.livespec.jsonc` `credential_wrapper`
+each time a pass starts. The tenant is `$TW_REPO`, or else the unit's
+`WorkingDirectory`, which is the tenant's checkout. The script picks one of
+three routes:
+
+| Committed `credential_wrapper` | The pass runs as |
+|---|---|
+| none | `<family> -- <command>` |
+| first element's basename is the family wrapper's | `<argv...> <command>`, exactly as committed |
+| anything else | `<family> -- env -u BEADS_DOLT_PASSWORD <argv...> <command>` |
+
+`<family>` is `reconcile_runs_family_wrapper`, which defaults to
+`/usr/local/bin/with-livespec-env.sh`. A relative first element resolves
+against the checkout.
+
+A family wrapper therefore runs with every hop it commits after its `--`. One
+example is livespec-orchestrator-beads-fabro's route C, which re-exports the
+livespec-ai organization App's credentials through `/bin/sh -c ... sh`
+(orchestrator PR 5361). After the organization transfer, a bare family wrapper
+mints the personal GitHub App, and livespec-ai repositories refuse that App
+(bd-ib-ft426g).
+
+The script never falls back to the family wrapper when it cannot use the
+committed one. It exits 78 and runs nothing in two cases: the `.livespec.jsonc`
+is unreadable, or its `credential_wrapper` is not a non-empty array of
+non-empty strings. It also exits 78 when a wrapper it would run is not an
+executable file. A failed pass then leaves the dead-man marker to age, so the
+staleness check reports the tenant.
+
+The role used to keep a copy of each tenant's argv here and asserted that the
+copy ended in `--`. A copy goes stale as soon as the tenant changes its
+wrapper, and route C ends in `sh`. A tenant entry that still carries
+`credential_wrapper` is refused.
+
+Read a tenant's route without running anything:
+
+```bash
+cd <repo> && /usr/local/libexec/livespec-tenant-wrap.sh --resolve
+```
 
 ## Why one sweep instead of one timer per tenant
 
@@ -79,17 +137,14 @@ on that item.
 # are disabled and inactive. Drift shows a timer someone enabled by hand.
 reconcile_runs_enabled: false
 
-# The tenants, in sweep order. credential_wrapper is the tenant's committed
-# .livespec.jsonc credential_wrapper argv, verbatim. A relative first element
-# resolves against repo.
+# The tenants, in sweep order. No credential_wrapper: each pass reads the
+# tenant's committed one at run time.
 reconcile_runs_tenants:
   - name: livespec-orchestrator-beads-fabro
     unit: reconcile-runs            # optional; default reconcile-runs-<name>
     repo: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
-    credential_wrapper: [/usr/local/bin/with-livespec-env.sh, "--"]
   - name: hetzner-xubuntu-info
     repo: /home/ubuntu/workspace/hetzner-xubuntu-info
-    credential_wrapper: [./with-hetzner-xubuntu-credentials.sh, "--"]
     enabled: false                  # optional per-tenant hold
     # plugin_root: <dir>            # optional; default reconcile_runs_plugin_root
 
@@ -100,6 +155,8 @@ reconcile_runs_boot_delay: 5min
 reconcile_runs_timeout_seconds: 1800     # one pass's bound
 reconcile_runs_stale_after_seconds: 14400
 reconcile_runs_staleness_on_failure: ""   # e.g. host-unit-alert@%n.service
+reconcile_runs_family_wrapper: /usr/local/bin/with-livespec-env.sh
+reconcile_runs_tenant_wrap_bin: /usr/local/libexec/livespec-tenant-wrap.sh
 ```
 
 Use the explicit `/home/ubuntu/...` paths. These are system units, and in a
@@ -112,12 +169,18 @@ enabled tenant's pass, plus the interval, plus one timed-out pass.
 
 ## Preconditions (asserted before any change)
 
-Each declared tenant must have all of the following, held tenants included:
+The family wrapper (`reconcile_runs_family_wrapper`) must be an executable
+file. Each declared tenant must have all of the following, held tenants
+included:
 
 - its checkout;
 - its `.livespec.jsonc`;
-- an executable first element of its credential wrapper;
-- `<plugin_root>/scripts/bin/dispatcher.py`.
+- `<plugin_root>/scripts/bin/dispatcher.py`;
+- a committed `credential_wrapper` that `livespec-tenant-wrap.sh --resolve`
+  accepts. The role runs the script from its own copy, as the service account,
+  in the tenant's checkout, so the wrapper is checked against what the
+  checkout holds at converge time. A wrapper committed later is checked only
+  when a pass runs. Use the dry-run twin to prove it then.
 
 The orchestrator unit text must still carry every substitution point the role
 rewrites. Without its wrapper, a timer would run `bd` with no

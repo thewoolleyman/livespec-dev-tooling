@@ -14,13 +14,21 @@ reconcile_runs_enabled: false
 # tenant is covered only by a pass run against its own checkout. Each entry:
 #   name                tenant slug; names the service and the success marker
 #   repo                the tenant's primary checkout on this host
-#   credential_wrapper  the tenant's committed `credential_wrapper` argv,
-#                       ending in "--"; a relative first element resolves
-#                       against `repo`, as the dispatcher resolves it
 #   unit                optional service base name (default reconcile-runs-<name>)
 #   plugin_root         optional, defaults to reconcile_runs_plugin_root
 #   enabled             optional per-tenant hold (default true)
+# An entry carries NO credential_wrapper. Each pass runs through
+# reconcile_runs_tenant_wrap_bin, which reads the tenant's committed
+# .livespec.jsonc credential_wrapper when the pass runs (bd-ib-ft426g).
 reconcile_runs_tenants: []
+
+# The run-time credential-wrapper resolver every tenant's ExecStart goes
+# through, installed from files/livespec-tenant-wrap.sh.
+reconcile_runs_tenant_wrap_bin: /usr/local/libexec/livespec-tenant-wrap.sh
+# The family wrapper. A tenant without a credential_wrapper runs under it, and a
+# tenant whose wrapper is not a family one runs nested inside it. Rendered into
+# each service as TW_FAMILY_WRAPPER.
+reconcile_runs_family_wrapper: /usr/local/bin/with-livespec-env.sh
 
 reconcile_runs_user: ubuntu
 reconcile_runs_group: ubuntu
