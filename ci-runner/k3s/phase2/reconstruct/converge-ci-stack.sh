@@ -459,6 +459,31 @@ EOF
   exit 1
 fi
 
+# The ORGANIZATION credential (livespec-dev-tooling-h5r75q): the scale sets
+# registered at the livespec-ai org authenticate with
+# arc-github-app-installation-livespec-ai, which
+# ../../secret-reinjection/inject-github-app-secret-livespec-ai.service projects
+# from AWS SSM at boot (ordered Before= this unit). Its root pre-step creates the
+# Secret EMPTY before the projection fills it, so mere existence proves nothing:
+# require all three keys, or refuse rather than start the org scale sets
+# unregistered. Counts keys only; no value is read or printed.
+ORG_ARC_SECRET="arc-github-app-installation-livespec-ai"
+_org_keys="$(kubectl get secret "$ORG_ARC_SECRET" -n "$RUNNERS_NAMESPACE" \
+  -o go-template='{{len .data}}' 2>/dev/null || echo 0)"
+if [ "${_org_keys:-0}" != 3 ]; then
+  cat <<EOF
+FATAL: secret ${ORG_ARC_SECRET} in ${RUNNERS_NAMESPACE} is missing or does not
+carry its three keys (github_app_id, github_app_installation_id,
+github_app_private_key): found ${_org_keys:-0} key(s). The livespec-ai
+organization scale sets would start unregistered. Check
+  systemctl status inject-github-app-secret-livespec-ai.service
+(it projects the livespec-ai-arc App credential through homelab's
+shared-credentials launcher; see ansible/roles/secret_reinjection/HOST_VARS.md).
+This script never handles or persists that credential itself.
+EOF
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 log "3. Apply the fleet-owned local-path provisioner (the bundled copy is disabled)"
 # ../k3s-config/ disables k3s's packaged local-storage component, so without

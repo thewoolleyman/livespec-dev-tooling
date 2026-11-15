@@ -20,3 +20,33 @@ secret_reinjection_units:
     seed: seed-gate-forge-cred.sh
     creds:
       - gate-forge-token
+
+# ---- The ORGANIZATION projection (livespec-dev-tooling-h5r75q): the
+# livespec-ai-arc GitHub App credential into
+# arc-runners/arc-github-app-installation-livespec-ai, taken ONLY from the
+# environment homelab's shared-credentials launcher builds for consumer
+# livespec-ai-arc (installed by the shared_credentials_host role). Nothing is
+# read from or sealed into the credstore for it. See HOST_VARS.md.
+secret_reinjection_org_user: arc-org-projector
+secret_reinjection_org_home: /var/lib/arc-org-projector
+# The projector's client-certificate kubeconfig lives here (root:<user> 0750).
+secret_reinjection_org_config_dir: /etc/arc-org-projector
+secret_reinjection_org_service: inject-github-app-secret-livespec-ai.service
+secret_reinjection_org_injector: inject-github-app-secret-livespec-ai.sh
+# Root-run ExecStartPre=+ helper and the grant it re-applies at every boot.
+secret_reinjection_org_files:
+  - {src: inject-github-app-secret-livespec-ai.sh, mode: "0755"}
+  - {src: ensure-arc-org-projector-access.sh, mode: "0755"}
+  - {src: arc-org-projector-rbac.yaml, mode: "0644"}
+secret_reinjection_org_consumer: livespec-ai-arc
+# The launcher and manifest the shared_credentials_host role installs; this
+# role names them, it does not install them.
+secret_reinjection_org_launcher: /usr/local/libexec/shared-credentials/shared-credentials-0.3.0.pyz
+secret_reinjection_org_manifest: /etc/livespec-ci-credentials/{{ inventory_hostname }}.json
+# The ONE command the sudoers drop-in permits, and the unit's ExecStart after
+# `sudo -n`. One string, so the two cannot drift apart.
+secret_reinjection_org_launch_command: >-
+  /usr/bin/python3 -I {{ secret_reinjection_org_launcher }} launch
+  --manifest {{ secret_reinjection_org_manifest }}
+  --consumer {{ secret_reinjection_org_consumer }}
+  -- {{ secret_reinjection_lib_dir }}/{{ secret_reinjection_org_injector }}

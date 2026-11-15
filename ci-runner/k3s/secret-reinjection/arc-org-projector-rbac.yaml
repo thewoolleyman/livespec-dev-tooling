@@ -1,0 +1,62 @@
+# arc-org-projector-rbac.yaml — the WHOLE Kubernetes grant of the user that runs
+# the organization projection (inject-github-app-secret-livespec-ai.sh,
+# livespec-dev-tooling-h5r75q).
+#
+# The subject is a USER, `arc-org-projector`, authenticated by a client
+# certificate signed by the k3s client CA (CN=arc-org-projector, no
+# organization, so no group beyond system:authenticated). It is not a
+# ServiceAccount because the k3s datastore is on tmpfs: every reboot would
+# delete the account and its token, and the credential in the node's kubeconfig
+# would authenticate as nobody. The certificate and the CA that signed it live
+# on disk and survive; only this Role and RoleBinding are lost, and
+# ensure-arc-org-projector-access.sh re-applies them, with the admin
+# kubeconfig, before every run.
+#
+# ONE rule, the shape of ../phase2/node-status-credential/node-status-patch-rbac.yaml:
+#
+#   * `resourceNames` names the ONE Secret. The user can neither read nor write
+#     `arc-github-app-installation` (the personal-account credential) or any
+#     other Secret.
+#   * `get`, `update`, `patch` only. NOT `create`: RBAC cannot name-scope a
+#     create (the object has no name until it exists), so a create grant would
+#     let the user create ANY Secret in the namespace. The privileged step makes
+#     the empty placeholder instead. NOT `list` or `watch`: neither honours
+#     `resourceNames`, so either would widen the grant to every Secret in
+#     arc-runners. NOT `delete`.
+#
+# tests/consumer/test_arc_org_secret_projection_scenarios.py asserts this rule
+# set exactly, from these bytes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: arc-org-projector
+  namespace: arc-runners
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    resourceNames:
+      - arc-github-app-installation-livespec-ai
+    verbs:
+      - get
+      - update
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: arc-org-projector
+  namespace: arc-runners
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: arc-org-projector
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: arc-org-projector

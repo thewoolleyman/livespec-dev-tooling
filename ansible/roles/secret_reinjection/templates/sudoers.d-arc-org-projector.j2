@@ -1,0 +1,6 @@
+{{ ansible_managed | comment }}
+# livespec-dev-tooling-h5r75q: the ONE command {{ secret_reinjection_org_user }} may run as root —
+# homelab's shared-credentials launcher, as consumer {{ secret_reinjection_org_consumer }}, running the
+# organization projection. Every argument is fixed: no other manifest, consumer or child is allowed.
+# The launcher drops back to this user (SUDO_UID) for the child, so the child never runs as root.
+{{ secret_reinjection_org_user }} ALL=(root) NOPASSWD: {{ secret_reinjection_org_launch_command }}

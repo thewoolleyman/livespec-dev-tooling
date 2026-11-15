@@ -1591,20 +1591,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: the ARC secret reinjection projects the livespec-ai-arc credential and leaves the personal-account Secret unchanged",
-    "work_item": "livespec-dev-tooling-h5r75q",
-    "first_seen": "2026-11-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the ARC secret reinjection refuses the organization projection when a livespec-ai-arc value is missing",
-    "work_item": "livespec-dev-tooling-h5r75q",
-    "first_seen": "2026-11-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: the CI priority producer is idempotent and its dry-run writes nothing",
     "work_item": "livespec-dev-tooling-5wewi2",
     "first_seen": "2026-11-08"
