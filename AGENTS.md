@@ -95,6 +95,10 @@ The files:
   beside a new test: it lands as ONE commit, not a Red and a Green amend,
   and each later test-only edit is its own one-file `chore(test):` commit
   (three wasted gate cycles on fy6ip4, 2026-11-14).
+  Read it also before staging any Red or Green commit: a Red stub that fails
+  lint, Red cases appended to an existing test module, test code reachable
+  only while the bug exists, and a missing keyword-only `*` each refuse a gate
+  (2026-10-25).
 - Read `.ai/fleet-and-secrets.md` before pushing any change under
   `.github/workflows/` (it needs an exemption, a label and the wrapper), before
   changing fleet coordination workflows,

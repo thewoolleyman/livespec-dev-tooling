@@ -434,3 +434,44 @@ check-fleet-launch case 10b about 20 minutes after bd-ib-tctou7 had claimed
 the same case, and tctou7 was already running on petri. The duplicate cost a
 close and two cross-seat messages. tctou7 also named a deeper cause, a launcher
 re-ticket race, than the seat's own reading of the test's wall-clock deadlines.
+
+## Red And Green Legs: Shape Traps That Refuse A Gate
+
+Each of these traps cost a full aggregate gate cycle on 2026-10-25: about 12
+minutes for a test-only Red, and about an hour for a Green under load. The
+detached gate's lack of stdin (`git commit -F -`) is covered in
+`.ai/gate-runtime-vs-harness-patience.md`.
+
+- A Red-leg stub module must be lint-clean. `ruff check .` lints UNTRACKED
+  files, so a placeholder with unused arguments fails `check-lint` (ARG001) and
+  refuses the Red. Reference the arguments (`_ = (a, b)`).
+- Pyright runs with `reportImplicitStringConcatenation = error`, but exempts a
+  concatenation wrapped in its own parentheses, and ruff UP034 strips
+  "extraneous" parentheses inside call arguments. Assign the multi-line string
+  to a parenthesized variable, then pass the variable.
+- Put Red cases in a NEW sibling test module, never in an existing one.
+  `check-per-file-coverage` runs an existing module's tests as the mirror of its
+  implementation, so the new failing cases fail that recipe at Red. One Red
+  commit stages exactly one new test module (see
+  `red-green-replay-multi-test-file` above); several causes share it.
+- A Red module may carry NO code that runs only while the bug exists. Test
+  files are coverage-gated at Green, so a `try/except` arm or a raising fake
+  that the fix makes unreachable fails `check-per-file-coverage` at the Green
+  amend. Let the defect surface as a raise or a failed assert on a direct call,
+  fake collaborators with `unittest.mock.Mock(return_value=...)` or
+  `Mock(side_effect=...)` and assert `call_count`, and compute every fact first
+  with `assert all(facts)` last.
+- Every new product function takes the `*` keyword-only separator
+  (`check-keyword-only-args`; dunders exempt), INCLUDING a one-argument
+  `@contextmanager`. A violation also fails the coverage recipes, because
+  `tests/test_phase1_mechanical_coverage.py` leaves assertion lines uncovered
+  when a Phase-1 check reports a finding. Run
+  `python -m livespec_dev_tooling.checks.keyword_only_args` before launching a
+  Green.
+- After a long gate, `git log -1` the base before any reset. A soft
+  `git reset origin/master` onto a master that MOVED stages reverse upstream
+  changes. Kill the gate (its pid file is under `tmp/gate-runs/<run>/`) and
+  rebuild from `git reset --hard origin/master` plus the re-added test.
+
+Before any Red gate, run `ruff check .` and pyright on the stub. Moved here from
+a host-local agent memory note by `livespec-dev-tooling-xykmob`.
