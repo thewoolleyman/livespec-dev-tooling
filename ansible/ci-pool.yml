@@ -365,6 +365,10 @@
     - role: shared_credentials_host
       tags: [shared_credentials_host]
       when: cluster_role == 'server'
+      # Every target task installs root-owned files, so the role escalates as a
+      # whole; its controller tasks (delegate_to: localhost) each set
+      # `become: false`, which overrides this.
+      become: true
     # 7b/10 — pool-provided sccache binary + its cache telemetry. Gated: both
     # install into the directory arc/hook-pod-template.yaml mounts READ-ONLY into
     # every JOB container, and cache_telemetry's spans are about the cache tiers.
