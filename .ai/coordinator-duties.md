@@ -221,7 +221,8 @@ suggestion from claude."
 
 Resolve a DECISION picker yourself under ruling R301 with `herdr pane send-keys <pane_id> <keys>`. Then SendMessage
 the explicit answer, so the seat has it in words and knows the coordinator chose under delegated authority. Never
-answer tool-permission or billing prompts.
+answer billing or paid-credit prompts; a tool-permission prompt is the coordinator's to clear (rule PERMISSION-PROMPT
+below).
 
 **Answer a picker by message first, keypress last.** SendMessage the answer to the seat FIRST. Put the provenance in
 that message: who decided (the coordinator under R301/R493, or the maintainer verbatim, relayed). A seat at a picker
@@ -232,6 +233,15 @@ keypress will follow. A relayed keypress is indistinguishable from a human's in 
 Measured 2026-11-02 ~23:1x-23:3xZ: three seats (dolt-connection-exhaustion, dispatcher-run-watch-cost, and
 fabro-currency earlier) recorded the coordinator's keypresses as the maintainer's own answers, and two of them then
 had to post attribution corrections.
+
+**Rule PERMISSION-PROMPT: a seat's tool-permission prompt is the coordinator's to clear that tick (coordinator's
+reading).** A permission prompt in a seat pane is never a FOR THE MAINTAINER item: the coordinator clears it the tick it
+sees it, and may choose "Yes". Billing and paid-credit prompts stay the maintainer's (§12). The maintainer, 2026-11-14
+~23:2xZ, recorded on epic `livespec-dev-tooling-6tgd2z` at 23:08:03Z, after bootstrap-credentials-and-onboarding sat at
+Claude Code's "Dangerous rm operation" prompt and the coordinator listed it for them: "What I want you to do is prevent
+the blockage. I don't really care about dangerous commands." Prevention is livespec-dev-tooling#4732, which puts
+`CLAUDE_CODE_EVEN_MORE_DANGEROUSLY_SKIP_PERMISSIONS=1` in every fleet host's process environment, because a PreToolUse
+allow hook was measured not to suppress the built-in check.
 
 **Never ask the maintainer to relay a message.** The coordinator never asks the maintainer to carry a message to any
 seat. A Claude seat on vps, hetzner-xubuntu or gamingpc-xubuntu is reached by
@@ -302,6 +312,13 @@ auto-merge arming, no failed-job reruns. Every helper spawned during the window 
   hetzner throughput seats, merged too. The incident measured that none forced a re-gen, because the incident PR's base
   read stayed fixed.
 
+**Check a repo for a merge quiet before passing any PR in it (coordinator's reading).** A PASS becomes a merge once the
+PR is ready, so before grading a PR PASS, read whether its repository is inside a merge-quiet window (the dispatcher's
+`hold-repo-<repo>` file and the QUIET ON/OFF comments on this epic). Inside one, the PR stays a draft until QUIET OFF.
+Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T05:56:04Z. Measured 2026-11-15: the coordinator passed
+livespec-overseer#3089 inside the overseer merge quiet for expedited-incident-response-flag's 5v2ajq correction, and the
+incident had to re-stage.
+
 **fabro-currency's pickers are answered like any seat's.** The maintainer, 2026-11-02 ~22:26Z: "WHY THGE FUCK ARE YOU
 LETTING IT B LOCK???" A ruling at 18:57Z had recorded "I'll talk to it myself" as "the coordinator does not direct
 fabro-currency until the maintainer hands it back". Handoffs and the loop prompt copied it forward, and a priority-3
@@ -341,6 +358,12 @@ that day: livespec-dev-tooling-wanebl's approve was refused twice, first on its 
 `## Expedited incident execution` reference. The coordinator first handed the fix to a Codex seat with no watcher, then
 made both edits itself in about two minutes and approved it green.
 
+**An item filed without capture-work-item has no claim token (coordinator's reading).** `approve:` and `accept:` refuse
+such an item with `claim-token-missing` (`.ai/livespec-operation-gotchas.md`), so no valve repair can move it. Have the
+owning seat re-file it through the capture skill and close the raw one as a duplicate. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-15T01:47:22Z. Measured that night: the hetzner overseerd identity-gate and
+relaunch fixes were filed raw and had to be re-filed.
+
 **Read an item's spec-change hold before pressing `approve:` (coordinator's reading).** The approve valve did not read
 that hold. Measured 2026-11-07 ~20:03Z by radar-and-deterministic-admission: 31 of 306 ready items were held with no
 proposal on master. Session 70706809 repeated the error once, at ~01:51Z on 2026-11-10: it approved
@@ -358,6 +381,26 @@ Measured 2026-11-10 00:27Z: livespec-dev-tooling-thhgeg read tier none at v173, 
 was refused at admission as spec-change/partial at v174. It was released green against contracts.md:1076 and the
 scratch-branch scenario. The judge's re-roll is filed as a spec change (a proof-mode-only move carries the prior tier
 record forward), owned by spec-implementation-lockstep; this reading ends when that ships.
+
+**A References repair voids a prior tier release (coordinator's reading).** A References repair is a Definition-of-Done
+edit, so it changes the behaviour digest and an earlier `release-spec-tier` no longer applies. After any DoD edit,
+re-read the tier before telling the dispatcher an item is released. Recorded on epic `livespec-dev-tooling-6tgd2z` at
+2026-11-15T03:54:05Z, from the coordinator's References repair on hl-u5jlef after run 01M7EN4KTKFG failed at
+dod_gate@1 on a missing governing heading.
+
+**Ratify is the default route when the spec states no security or credential behaviour (coordinator's reading).** When
+an item's security or credential behaviour is stated nowhere in the spec, or only in a spec file the tier judge does
+not read, route it to ratify (propose-change, then revise) when it is filed, rather than waiting for the placement-time
+tier verdict to find it. Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T04:19:28Z. Measured that night:
+hl-bfl2ln, hxi-hemuly and overseer-j4ejek each passed the filing-time judge with "DoD findings: none", and each cost a
+revise cycle at dispatch time.
+
+**Run the tier judgement at approve time (coordinator's reading).** The tier verdict arrives only at placement, after
+approval, so an approved item can still refuse as spec-change. Until the orchestrator runs the tier judge and the
+approve checks at capture or approve time, the coordinator reads an item's tier itself before pressing `approve:`.
+Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T04:19:28Z and 04:51:10Z. Measured 2026-11-15: bd-ib-qdy2k7
+(a test-existence bullet on a workflow-edit deliverable) and bd-ib-x73d36 (an unparseable governing-heading verdict)
+reached the coordinator as approve-ready and refused at the valve.
 
 **Reversible host mutations are authorized.** The coordinator, and seats acting on its direction, may perform a
 reversible host mutation without a maintainer ask. An example is a committed, revertible ansible or converge apply with
@@ -549,6 +592,13 @@ is windowed) instead of waiting for the 4-hourly cron. No other plan or reposito
 usable incident fix from about 05:00-09:00Z to about 01:00-02:00Z on 2026-11-06. Measured 2026-11-05: the coordinator
 dispatched one at 22:37:55Z (run 42123120124).
 
+**The waiver also covers a release that unblocks an orchestrator roll or a throughput fix (coordinator's reading).**
+throughput-plans-coordinator may dispatch Release Please at once for such a release; routine releases keep the
+4-hourly window. For that case it supersedes "No other plan or repository gets the waiver" above. The maintainer,
+2026-11-15 ~02:3xZ in the throughput-plans-coordinator seat, recorded on epic `livespec-dev-tooling-6tgd2z` at
+02:04:31Z: "Yes I want you to take both of those recommendations and do them". First use: v0.332.2, after
+livespec-orchestrator-beads-fabro#5328 merged.
+
 **A hand-landed carrier closes through the valves that exist today, never through a future factory feature.** An item
 implemented and merged outside the factory, for example under a local-only expedited exception, is closed by the
 coordinator with the existing valves: `accept:<id>` for an item in `acceptance`, `dispatcher.py reconcile-merged` for
@@ -604,6 +654,11 @@ armed". It merged at 10:31:04Z, before the fix its PASS-WITH-ONE-FIX grade requi
 separate follow-up PR (livespec-dev-tooling#4157), and c3nd2h and livespec-dev-tooling-brggiu were held unaccepted
 until that follow-up merged.
 
+**In mi-homelab/homelab and livespec-overseer, `gh pr ready` did not arm auto-merge (coordinator's reading).** Two seats
+measured this on 2026-11-15, recorded on epic `livespec-dev-tooling-6tgd2z` at 03:29:54Z. The draft-for-grade rule
+above still holds there, but a PR marked ready after its PASS also needs an explicit `gh pr merge --auto` or a merge,
+or it sits unmerged. After marking a PR ready, read its auto-merge state rather than assuming the workflow armed it.
+
 **"Send it for grade" is never a merge GO, and a handoff must not turn it into one.** A seat merges only after the
 coordinator's PASS on the PR in question; a successor reads the coordinator's own words, not the predecessor's
 paraphrase. Measured 2026-11-14 ~01:1xZ: sandbox-driver-kubernetes#21 merged before its grade because a handoff wrote
@@ -615,6 +670,11 @@ rests on "byte-identical" or "the same as" diffs the two files. It never compare
 disarm-workflow copies on matching secret names and missed client-id versus app-id; ci-runtime-and-cost caught it before
 it shipped. The maintainer, on that day's misses: "How are you making this fix mechanical and permanane for your
 coordinator plan and the dispatcher (if necessry?"
+
+**A go/no-go script must exit 0 at the known-good state (coordinator's reading).** A grade of a go/no-go or readiness
+script runs it against the state that should pass; a non-zero exit there is a defect in the script, not a NO-GO.
+Recorded in the 4d606f00 FINAL handoff on epic `livespec-dev-tooling-6tgd2z` (2026-11-15T03:12:43Z), carried from the
+b9b86f74 session that graded the image-pin go/no-go script (livespec-dev-tooling#4741).
 
 **The release waiver permits, it does not oblige (coordinator's reading).** On 2026-11-07 ~19:4xZ, at
 expedited-incident-response-flag's request, Release Please was not dispatched per merge, so its final fix set rides
@@ -639,6 +699,14 @@ part of the plan, and no reason to not do it". Measured 2026-11-10: the route be
 (livespec-dev-tooling#3962, 7b5021fe). A coordinator hand-apply attempt was blocked by fleet_host_guard and changed
 nothing. The first drift run failed on a first-run namespace NotFound (rc 2) and went back to the owning seat as a role
 fix (livespec-dev-tooling#3972, cb2d48f7).
+
+**An owner-applied root change is split out and owner-applied before the merge-driven parts (coordinator's
+reading).** When a PR mixes a change only the owner applies (an owner-deployment root, such as homelab's
+`roles.auto.tfvars.json`) with parts its merge deploys, the grade orders a split: the owner-applied part alone, merged,
+applied by the owner and read back, then the rest. Recorded in the 4d606f00 FINAL handoff on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-15T03:12:43Z. Measured 2026-11-15: homelab#1174 passed on content but was
+split; its part (a) landed as homelab#1183, the owner apply was receipted in homelab#1185, and only then did the
+writer role land (homelab#1186).
 
 **Cleanup of a provably superseded local artifact is not a maintainer ask.** A branch, worktree or tmp file whose
 content is already on master is looked at first (`git worktree list`, `git ls-remote`, the PR list, a diff against
@@ -685,6 +753,15 @@ had. You don't need to keep asking me." Measured 2026-11-15: the homelab and het
 the tenant parameter `/homelab/v1/providers/anthropic/claude-code/oauth-token`, which hit its weekly limit at ~04:49Z.
 The coordinator ruled a 3.5-day wait for the Nov 19 reset and rejected the copy of the anthropic-4 factory-slot value on
 a scope technicality, although that shared slot was itself an interim copy (homelab 093eb7b).
+
+**A tenant's provider binding names a numbered fleet slot, never a repo-owned account (coordinator's reading).** A
+tenant's factory credential comes from the numbered setup-token slots that central-credential-service owns and rotates
+(for example `--keep CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_4`), never from a repo-owned parameter pinned to one account,
+so an exhausted account is rotated out instead of stalling the tenant. Recorded in the 3e87dcbd FINAL handoff on epic
+`livespec-dev-tooling-6tgd2z` (2026-11-15T06:07:19Z), under the maintainer's ~05:2xZ ruling that every active or
+critical-path tenant gets the fleet credentials (plan tenant-fleet-credentials, overseer-jetvoh). Measured 2026-11-15:
+homelab's token was slot anthropic-6, out of weekly quota until Nov 19 08:00Z; it was re-copied from anthropic-4
+(homelab#1197) and homelab now keeps slot _4 (homelab#1198).
 
 ## 6. Never block: no pickers, ever
 
@@ -774,6 +851,14 @@ asked central-credential-service what it needed, and it said nothing about __ANT
 Measured 2026-11-01: the coordinator copied an ask about a "closed" seat forward, although the maintainer had reopened
 it. It also called a plan by its repository's name.
 
+**Rule PLAIN-ANSWER: "is it fixed, who owns it" opens with the problem in plain words (coordinator's reading).** The
+first line says what breaks and what it costs; the second says fixed yes or no, and names the owner by plan, machine,
+workspace and tab. Item ids, run ids and mechanism terms come after, and only if needed. The test: a reader with no
+ledger context can restate the problem in one sentence from those two lines. The maintainer, 2026-11-14, recorded in a
+scope event on epic `livespec-dev-tooling-6tgd2z`, on the coordinator's answer about the $722/72 h
+build-retry-exhaustion class: "That's a bunch of gibberish that doesn't actually tell me what the problem is, but I
+will ask the throughput coordinator for it."
+
 **Rule J: a "broken since X" claim cites a log from before X and one from after X.** Before telling the maintainer when
 a regression started or what it has cost, read one run log from before the claimed start and one from after it, and
 name both. Measured 2026-11-06 ~05:4xZ-05:57Z: the coordinator told the maintainer the dev-tooling check-coverage
@@ -824,6 +909,20 @@ tab, so messages sent by seat name reach the successor. Measured 2026-11-14: gat
 and implement-test-performance moved to hetzner-xubuntu (workspace throughput-improvements); a coordinator grade sent
 by name reached the stopped old ci-runtime-and-cost session instead of its successor.
 
+**A successor's brief starts its loop in the same turn as its acceptance (coordinator's reading).** A brief that only
+says "resume" leaves the new seat idle, with nothing watching its in-flight work. Recorded in the one-overseerd-per-host
+scope event on epic `livespec-dev-tooling-6tgd2z` at 2026-11-14T22:33:39Z. Measured that day: the hetzner
+central-credential-service successor passed acceptance at ~21:30Z and sat idle, with jd42r2's clean revive proof
+(21:37Z) unactioned.
+
+**A seat moves to a host only after that host's prerequisites are provisioned (coordinator's reading).** The target
+host needs bootstrapped clones (hooks installed), the credential wrappers the seat uses, its provider tokens, a working
+DoD judge and a running overseerd (one per host, scope event 2026-11-14T22:33:39Z). The session-move census
+(hxi-vxsmdv.1, owned by bootstrap-credentials-and-onboarding) carries them as move-gating Definition-of-Done bullets.
+Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T01:15:01Z. Measured 2026-11-14 and 15: seats landed on
+hetzner-xubuntu with unbootstrapped clones (four hookless commits, hxi-zccs5p), vps-only credential wrappers and a
+launcher with no OAuth token for the judge, each found only by a failure.
+
 ## 9. The tick report
 
 Every tick reports, in this order:
@@ -840,6 +939,10 @@ Every tick reports, in this order:
      sandbox-commit-gate-ceiling (P1). Method: the denominator is the records whose `listed` is not `none`, the
      records where a run was listed. A no-run refusal (`listed` is `none`) is excluded from the denominator and
      reported on its own line, bucketed by exit code: 3, 5 and 1.
+     - **When the records carry no `listed` field, use the exit-code approximation (coordinator's reading).** Exit 0
+       (green), 1 (failed run) and 4 (needs-human) count as listed; exit 3 and 5 count as no-run refusals. The tick says
+       it used the approximation. Measured 2026-11-15: `dispatcher.stdout_json` was empty in every record, so a reader
+       keyed on `listed` read every record as no-run; recorded on epic `livespec-dev-tooling-6tgd2z` at 03:49:41Z.
    - M2 DELIVERED: green records per hour over a trailing 6 h. This is the outcome M1 and M3 drive.
    - M3 SLOTS: live factory runs against `tmp/petri-canary/fleet-cap`, naming any pods that hold quota without a live
      run (stranded). Owner: legacy-dispatcher-agent.
@@ -1037,6 +1140,13 @@ routed three times, one knob at a time (the launcher `fleet-cap`, then `dispatch
 `max_concurrent_runs`), with `FLEET_LAUNCH_GMK_CAP` a fourth copy. The coordinator reported "cap file 20" as progress
 while 16 still bound, and no one asked why one queue had several numbers until the maintainer did.
 
+**The orchestrator's CI routes on `CI_RUNNER_LABELS`, option A (coordinator's reading).**
+livespec-orchestrator-beads-fabro's `CI_RUNNER_LABELS` is `["livespec-orchestrator-k3s"]`, set through
+`ci-runner/set-ci-runner-labels.sh` to match livespec and livespec-overseer; it replaced option B's per-job carves. Ruled on epic `livespec-dev-tooling-6tgd2z` at
+2026-11-15T02:04:31Z and applied by throughput-plans-coordinator. Measured: B found the tailnet-only jobs one at a time
+(incident-ci, then check-red-green-replay and check-factory-provenance) and cost two s6jt4u attempts and rebinds, the
+case the paragraph above names.
+
 **Before ruling on a cap, name the cap that binds, measured (coordinator's reading).** A launch exemption from one copy
 of a limit does nothing while another copy binds. The per-repository WIP limit lives twice: the launcher's R77 and the
 dispatcher's committed `wip_cap`, which the loop/drive path enforces. Read the drive's own exit (for example
@@ -1052,6 +1162,21 @@ an expedited carrier that must start past a full repository WIP launches through
 `.livespec.jsonc`. `delegated_pre_commit = true` had sat in `pyproject.toml` `[tool.livespec_dev_tooling]` since
 74b572f3 (2026-11-02). The ruling was corrected at ~14:4xZ; see the tick-6 record on epic `livespec-dev-tooling-6tgd2z`
 at 2026-11-10T14:37:41Z.
+
+**A ruling about a repository's route or config cites the file read (coordinator's reading).** Name the file, and the
+ref it was read at, in the ruling itself, so a handoff that copies the ruling also copies its evidence. Recorded on epic
+`livespec-dev-tooling-6tgd2z` at 2026-11-15T02:22:57Z. Measured 2026-11-15: coordinator session b9b86f74 ruled that
+hetzner-xubuntu-info "has no factory route (no workflow.toml)" without reading its config. The ruling reached a handoff
+and a dispatcher standing rule, and was withdrawn once `.livespec.jsonc` on origin/master showed `default_factory`
+petri and a dod_gate judge (the graph ships with the plugin, so no `workflow.toml` is expected).
+
+**Read the live object before any judgement: fetch and fast-forward first (coordinator's reading).** A stale clone,
+primary checkout or test-merge ref answers with old text and raises no error. Before a valve press, a tier read, a
+grade or any durable write, fetch and fast-forward the checkout the reader uses, or read the object on origin.
+Recorded on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T03:05:04Z, and adopted by legacy-dispatcher-agent and the
+expedited-incident-response-flag seat. Measured 2026-11-15: the dispatcher's stale overseer clone read a tier against
+the pre-v114 spec, and a stale `refs/pull/5323/merge` on old master 405dd70d made orchestrator#5323's red-green-replay
+refuse.
 
 **Rule G: when a fleet-class defect is fixed in one repository, sweep the fleet for it the same day.** A defect whose
 shape can exist in other fleet repositories (a shared check, recipe, workflow or reuse path) gets a same-day sweep of
@@ -1219,12 +1344,40 @@ doesn't happen again, and get things back on track ASAP. THen you can restart". 
 v0.321.0 (171ca17b2) on 2026-11-12 both passed canaries that never reached the changed path. The fix_commit_settle
 success edge cost 6 runs, and the fix was reverted by livespec-orchestrator-beads-fabro#5100.
 
+**A canary's untraversable paths need a factory-captured proof on the ROLLING tag (coordinator's reading).** A changed
+path the canary cannot traverse is covered only by a factory_captured routing test on the very tag being rolled. So a
+test-only fix for such a path forces a new tag, and the canary carries forward only if `git diff --exit-code <old>
+<new>` over the workflow scope is empty. Ruled on epic `livespec-dev-tooling-6tgd2z` at 2026-11-15T01:15:01Z and
+01:47:22Z: for v0.332.1's ~20 untraversable paths the absence test bd-ib-g2kn5s went into v0.332.2, and the roll names
+v0.332.2. A propose-change to the orchestrator's "Canary coverage" clause would let the release commit's CI run of
+exactly the cited routing-test ids count instead; until it ratifies, this reading stands (scope event 02:04:31Z).
+
 **Stop the line at the second deterministic failure (rule STOP-AT-SECOND).** This binds the coordinator and the
 dispatcher. A deterministic failure class is the same node and the same signature on the same launch build. It stops
 the line at its SECOND occurrence, with a fleet-wide hold on new launches. Never wait for a third. A class that is
 plausibly transient follows the flake rules in §2 instead. Recorded on epic `livespec-dev-tooling-6tgd2z` at
 2026-11-13T00:19:55Z. Measured 2026-11-12: the earlier ">2" threshold cost runs to the fix_commit_settle class on
 v0.321.0.
+
+**A STOP-AT-SECOND hold covers only the repos the failure class can reach (coordinator's reading).** Hold the
+repositories where the class can occur and lift the rest. Each placement in a lifted repository goes through a one-shot
+`freeze-allowlist` line. Recorded in the 3e87dcbd FINAL handoff on epic `livespec-dev-tooling-6tgd2z`,
+2026-11-15T06:07:19Z. Measured 2026-11-15: the coverage-hook class (one counted implement re-entry where a coverage fix
+needs two; hits b37cfx, k3lpwj, bjwqz5) held the 10 coverage-hook repos, and homelab, hetzner-xubuntu-info, openbrain,
+1password-env-wrapper and sandbox-driver-kubernetes were lifted.
+
+**A factory merge into an unprotected branch is a stop-the-line (coordinator's reading).** Every factory target's
+default branch must require its CI aggregate as a status check; a target without one gets a repo hold until it does.
+Recorded in the f91e33a6 FINAL handoff on epic `livespec-dev-tooling-6tgd2z`, 2026-11-15T04:34:31Z. Measured
+2026-11-15: mi-homelab/homelab#1190 (hl-u5jlef, 04:15:05Z) and #1192 (hl-bfl2ln, 04:30:25Z) merged with ci-green
+FAILED while the drive reported rc=0 green, because homelab main required no checks and the factory merge verifies no
+rollup. homelab main went red; openbrain was made to require ci-green that hour, and a sweep found the 8 other fleet
+repos already requiring checks.
+
+**`merge-hold:on` is not a safeguard until bd-ib-x73d36 ships (coordinator's reading).** The factory merge ignores the
+label, so hold a repository's factory merges with its `hold-repo-<repo>` file instead. Recorded in the f91e33a6 FINAL
+handoff on epic `livespec-dev-tooling-6tgd2z`, 2026-11-15T04:34:31Z. Measured 2026-11-15: homelab#1192 merged at
+04:30:25Z despite `merge-hold:on`; bd-ib-x73d36 was widened to honour merge-hold and every hold at merge time.
 
 **Preserve before any cancel.** No seat cancels, removes or abandons a factory run until that run's committed tree is
 on a ref on origin, verified with `git ls-remote`. A diff pointer, a run id or a resume pointer is not a preserved
@@ -1473,8 +1626,13 @@ epic `livespec-dev-tooling-6tgd2z`, 2026-11-12T10:33:39Z).
     kept below as history.
     - Once the fleet is on the GitHub organization github.com/livespec-ai (GitHub Team), GitHub's merge queue is
       usable. A seat may then offer it and design on it.
-    - Plan `stale-base-merge-options` (livespec-dev-tooling-xowhol) owns the org move and the direction for the single
-      full-suite run that guards master. That direction is still open with the maintainer.
+    - Plan `stale-base-merge-options` (livespec-dev-tooling-xowhol) owns the org move and the merge queue. Its
+      direction is RULED, option A (coordinator's reading; this line said "still open" until 2026-11-15): merge_group
+      CI runs the FULL suite on the guarded self-hosted runners, behind a first job that routes any PR not from a
+      same-repository branch by an allowlisted author to hosted runners, and every path to master goes through the
+      queue. The maintainer, 2026-11-13, recorded on epic `livespec-dev-tooling-xowhol` at 14:45:12Z (comment 27):
+      "The answer is obviously option A because this gives us control over the capacity and speed I am not accepting
+      contributions to this currently so I'm not concerned about the security risks right now".
     - Before the org move completes, no repository depends on the merge queue.
     - History: the 2026-11-12 limit read "Never offer GitHub's merge queue for any fleet repository". The maintainer,
       2026-11-12 ~18:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`: "FOR THE MILLIONTH TIME, I DO NOT HAVE AN
@@ -1491,6 +1649,14 @@ or an inherited loop prompt is only a pointer to them, never an authority.
 - A restriction recorded from a situational maintainer remark must name the condition that ends it.
 - A restriction that conflicts with §6 (never block) or with answering decision pickers under R301 is a finding to
   raise with the maintainer at once, never an instruction to follow silently.
+
+**A pacing line in a brief exempts the critical-path plans, or names its end (coordinator's reading).** A token-crunch
+line such as "ONE step at a time / no helper swarms / lean turns", carried into a critical-path seat, makes that seat
+stall with no watcher on its own in-flight work. The maintainer, 2026-11-14 ~22:4xZ, recorded on epic
+`livespec-dev-tooling-6tgd2z` at 22:44:01Z: "You were letting stale-base-merge-options stall.  Keep it going, it's a
+critical path to factory stability and throughput and stopping token wastage". The pacing was lifted for that plan: it
+runs independent rows in parallel, watches every in-flight item, and wakes at least every 20 minutes while work is in
+flight.
 
 **Rule P2: a handoff carries no authority.** A restriction carried in a handoff or a `next_action` ("X is the
 maintainer's", "never press X", "X stays held") binds ONLY if it cites the maintainer's ledger words AND names its
