@@ -99,3 +99,83 @@
     enabled: true
   become: true
   when: not ansible_check_mode or secret_reinjection_org_service_present.stat.exists
+
+# ONE-SHOT PROJECTION (attended cutover only). A normal converge never runs this:
+# secret_reinjection_org_project_now defaults to false and is passed true on the
+# command line for the single cutover run (-e secret_reinjection_org_project_now=true).
+# It starts the oneshot unit, which runs the projection, and then proves the result
+# value-free: the organization Secret holds exactly 3 keys, and the personal Secret's
+# data hash is unchanged from the hash this same play read before the start. A
+# failed start or either failed check fails the play, so the guarded
+# converge-ci-stack.sh (ci_converge_unit) is never installed on a failed projection.
+# Nothing here prints or registers a credential value: the shell steps emit only a
+# sha256 or a key count, and no_log covers the registers anyway.
+- name: Run the organization projection once and prove it value-free
+  when:
+    - secret_reinjection_org_project_now | bool
+    - not ansible_check_mode
+  block:
+    - name: Read the personal ARC Secret's data hash before the projection
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          kubectl --kubeconfig {{ secret_reinjection_admin_kubeconfig }}
+          -n {{ secret_reinjection_runners_namespace }}
+          get secret {{ secret_reinjection_personal_secret }} -o jsonpath='{.data}'
+          | sha256sum | cut -d' ' -f1
+        executable: /bin/bash
+      register: secret_reinjection_personal_hash_before
+      changed_when: false
+      no_log: true
+      become: true
+
+    - name: Start the organization projection service once
+      ansible.builtin.systemd_service:
+        name: "{{ secret_reinjection_org_service }}"
+        state: started
+      become: true
+
+    - name: Count the organization Secret's keys
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          kubectl --kubeconfig {{ secret_reinjection_admin_kubeconfig }}
+          -n {{ secret_reinjection_runners_namespace }}
+          get secret {{ secret_reinjection_org_secret }} -o json
+          | python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("data") or {}))'
+        executable: /bin/bash
+      register: secret_reinjection_org_key_count
+      changed_when: false
+      no_log: true
+      become: true
+
+    - name: Read the personal ARC Secret's data hash after the projection
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          kubectl --kubeconfig {{ secret_reinjection_admin_kubeconfig }}
+          -n {{ secret_reinjection_runners_namespace }}
+          get secret {{ secret_reinjection_personal_secret }} -o jsonpath='{.data}'
+          | sha256sum | cut -d' ' -f1
+        executable: /bin/bash
+      register: secret_reinjection_personal_hash_after
+      changed_when: false
+      no_log: true
+      become: true
+
+    - name: Refuse a projection that did not fill the organization Secret or touched the personal one
+      ansible.builtin.assert:
+        that:
+          - secret_reinjection_org_key_count.stdout | trim == '3'
+          - secret_reinjection_personal_hash_after.stdout | trim == secret_reinjection_personal_hash_before.stdout | trim
+        fail_msg: >-
+          {{ secret_reinjection_org_secret }} holds
+          {{ secret_reinjection_org_key_count.stdout | trim }} key(s), not 3, or
+          {{ secret_reinjection_personal_secret }} changed during the projection
+          (personal data hash before/after equal:
+          {{ secret_reinjection_personal_hash_after.stdout | trim == secret_reinjection_personal_hash_before.stdout | trim }}).
+          Do NOT install the guarded converge-ci-stack.sh; fix the projection first.
+        success_msg: >-
+          {{ secret_reinjection_org_secret }} holds 3 keys and
+          {{ secret_reinjection_personal_secret }} is unchanged
+          (data sha256 prefix {{ secret_reinjection_personal_hash_after.stdout | trim | truncate(16, True, '') }}).
