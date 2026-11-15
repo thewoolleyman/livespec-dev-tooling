@@ -87,13 +87,12 @@ def _handler(world: _World) -> type[BaseHTTPRequestHandler]:
         def _route(self) -> None:
             world.requests.append((self.command, self.path))
             length = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(length)) if length else None
-            status, payload = 200, {"id": "written"}
+            body = json.loads(self.rfile.read(length)) if length else {}
             if self.command == "GET":
                 query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 found = world.columns.get(query.get("alias", [""])[0])
                 status, payload = (200, found) if found else (404, {"error": "not found"})
-            elif self.command == "POST" and isinstance(body, dict):
+            else:
                 status, payload = 201, dict(body, id="new-" + str(body.get("alias")))
             raw = json.dumps(payload).encode("utf-8")
             self.send_response(status)

@@ -20,8 +20,10 @@
 #   pr.lead_rule   "new start rule" when the event carries pr.start_rule, else
 #                  "old start rule (not comparable)".
 #
-# The board's M2 and M3 panels break down by these columns, so every series a
-# reader sees is already split into clean and held, new rule and old.
+# The board's M2 and M3 charts FILTER to clean (and M2 to the new rule), and one
+# table counts what they leave out. They never break down by these columns: a held
+# line is orders of magnitude above the clean one and flattens it
+# (.ai/honeycomb-board-charts.md).
 #
 # WHY DERIVED COLUMNS AND NOT MARKERS. A derived column is computed at query
 # time, so a window added to the record relabels every past event with no
@@ -143,9 +145,9 @@ def columns(record):
 
 def markdown(record):
     lines = [
-        "**Read the M2 and M3 series by their breakdown, never as one fleet number.** "
-        "`pr.disruption` = **clean** is the comparable series. A pull request whose life (opened to merged) overlaps one of "
-        "these windows carries the hold inside its stage and lead-time minutes, so its rise is the window, not a CI slowdown:",
+        "**These windows are left out of every M2 and M3 chart** (the charts filter to `pr.disruption` = clean) and are "
+        "counted in the EXCLUDED table instead. A pull request whose life (opened to merged) overlaps one of them carries "
+        "the hold inside its stage and lead-time minutes, so its minutes measure the window, not CI speed:",
         "",
     ]
     for window in sorted(record.get("windows", []), key=lambda w: w["start"]):
@@ -157,8 +159,8 @@ def markdown(record):
     rule = record["start_rule_change"]
     lines += [
         "",
-        "**Lead-time start rule changed %s.** `pr.lead_rule` splits M2: **%s** vs **%s**. %s"
-        % (rule["at"], rule["new_label"], rule["old_label"], rule["text"]),
+        "**Lead-time start rule changed %s.** The M2 charts show only **%s** events; **%s** events are counted in the "
+        "EXCLUDED table. %s" % (rule["at"], rule["new_label"], rule["old_label"], rule["text"]),
     ]
     return "\n".join(lines)
 
