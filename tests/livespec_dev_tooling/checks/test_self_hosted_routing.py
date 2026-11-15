@@ -186,6 +186,29 @@ def test_guarded_merge_group_route_passes(
     assert rc == 0, f"a guarded merge-group route should pass; combined={combined!r}"
 
 
+def test_guarded_merge_group_guard_with_condition_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Condition (f): a conditional guard is a finding naming its workflow and job."""
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n" 'merge_queue_author_allowlist = ["dependabot[bot]"]\n',
+        encoding="utf-8",
+    )
+    body = _GUARDED_MERGE_GROUP.replace(
+        "    runs-on: ubuntu-latest\n",
+        "    if: ${{ github.event_name == 'merge_group' }}\n" "    runs-on: ubuntu-latest\n",
+        1,
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="conditional-guard.yml", body=body)
+
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, combined
+    finding = _findings(combined=combined)[0]
+    assert finding["workflow"] == ".github/workflows/conditional-guard.yml"
+    assert finding["guard_job"] == "merge-queue-guard"
+
+
 def test_guarded_merge_group_allows_transitive_guard_needs(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

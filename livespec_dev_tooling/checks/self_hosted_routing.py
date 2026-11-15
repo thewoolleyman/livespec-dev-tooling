@@ -71,6 +71,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._merge_group_guard import (  # noqa: E402
+    guarded_merge_group_guard_name,
     guarded_merge_group_is_valid,
 )
 from livespec_dev_tooling.checks._self_hosted_routing_parse import (  # noqa: E402
@@ -123,6 +124,7 @@ class _TriggerFinding:
     workflow: str
     forbidden_triggers: tuple[str, ...]
     gating_labels: tuple[str, ...]
+    guard_job: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -204,6 +206,11 @@ def _trigger_finding(
         workflow=str(path.relative_to(cwd)),
         forbidden_triggers=forbidden,
         gating_labels=referenced,
+        guard_job=(
+            guarded_merge_group_guard_name(source=stripped)
+            if forbidden == ("merge_group",)
+            else None
+        ),
     )
 
 
@@ -290,6 +297,7 @@ def main() -> int:
             workflow=trigger.workflow,
             forbidden_triggers=list(trigger.forbidden_triggers),
             gating_labels=list(trigger.gating_labels),
+            guard_job=trigger.guard_job,
         )
     for fail_open in findings.fail_opens:
         log.error(
