@@ -32,7 +32,7 @@
 # already carried `administration: write`. Check this FIRST when a new scale
 # set's listener never starts.
 githubConfigUrl: "https://github.com/livespec-ai/livespec-driver-pi"
-githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 runnerScaleSetName: "livespec-driver-pi-k3s"
 

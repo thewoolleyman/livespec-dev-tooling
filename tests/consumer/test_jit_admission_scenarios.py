@@ -75,6 +75,9 @@ _CLUSTER_QUEUE = re.compile(r"^  clusterQueue:\s*(?P<cq>\S+)", re.MULTILINE)
 _MAX_RUNNERS = re.compile(r"^\s*maxRunners:\s*(?P<max>\d+)\s*$", re.MULTILINE)
 _QUEUE_NAME = re.compile(r"^\s*kueue\.x-k8s\.io/queue-name:\s*(?P<lq>\S+)\s*$", re.MULTILINE)
 _CONFIG_SECRET = re.compile(r"^githubConfigSecret:\s*(?P<secret>\S+)", re.MULTILINE)
+_CONFIG_ACCOUNT = re.compile(
+    r"^githubConfigUrl:\s*\"?https://github\.com/(?P<account>[^/\"\s]+)", re.MULTILINE
+)
 _ADMISSION_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(?P<capacity>\d+)\s*$", re.MULTILINE)
 # A preemption policy Kueue would act on. `Never` is both the fleet's setting and
 # Kueue's default, so an ABSENT block is compliant and only a stated non-`Never`
@@ -147,16 +150,25 @@ def _routed_scale_sets() -> dict[str, tuple[str, int]]:
     return routed
 
 
-def _installation_secrets() -> dict[str, str]:
-    """Each routed scale set's values file mapped to the App installation secret it mints with."""
-    secrets: dict[str, str] = {}
+def _installation_secrets() -> dict[str, tuple[str, str]]:
+    """Each routed scale set's values file mapped to (GitHub account, App installation secret).
+
+    The account is the owner segment of the set's `githubConfigUrl`: a set
+    registers at, and mints registration tokens for, that account only.
+    """
+    secrets: dict[str, tuple[str, str]] = {}
     for name in _routed_scale_sets():
-        secret = _CONFIG_SECRET.search((_ARC_DIR / name).read_text(encoding="utf-8"))
+        source = (_ARC_DIR / name).read_text(encoding="utf-8")
+        secret = _CONFIG_SECRET.search(source)
         assert secret is not None, (
             f"a routed scale set must name the App installation secret it mints with — "
             f"minting is what the point budget accounts for; values file={name}"
         )
-        secrets[name] = secret.group("secret")
+        account = _CONFIG_ACCOUNT.search(source)
+        assert (
+            account is not None
+        ), f"a routed scale set must name the GitHub account it registers at; values file={name}"
+        secrets[name] = (account.group("account"), secret.group("secret"))
     return secrets
 
 
@@ -225,11 +237,22 @@ def test_replacement_admission_is_neither_clock_serialized_nor_billed_to_a_priva
 
     secrets = _installation_secrets()
     assert secrets, "the routed scale sets must be committed for their minting to be readable"
-    assert len(set(secrets.values())) == 1, (
-        f"every routed scale set must mint against ONE App installation, or there is no "
-        f"shared budget for the mint pair to be accounted against — each installation "
-        f"carries its own point ceiling, so a second secret splits the budget in two "
-        f"while every consumer keeps reading it as one; got {secrets!r}"
+    secrets_by_account: dict[str, set[str]] = {}
+    for account, secret in secrets.values():
+        secrets_by_account.setdefault(account, set()).add(secret)
+    split = {account: names for account, names in secrets_by_account.items() if len(names) != 1}
+    assert not split, (
+        f"every routed scale set registered at one GitHub account must mint against that "
+        f"account's ONE App installation (one Secret per account, the runner-pool rebuild "
+        f"recipe), or there is no shared budget for the mint pair to be accounted against — "
+        f"each installation carries its own point ceiling, so a second secret for the same "
+        f"account splits its budget in two while every consumer keeps reading it as one; "
+        f"got {split!r}"
+    )
+    account_secrets = [next(iter(names)) for names in secrets_by_account.values()]
+    assert len(set(account_secrets)) == len(account_secrets), (
+        f"each GitHub account's sets must mint with that account's OWN installation "
+        f"secret, never another account's; got {secrets_by_account!r}"
     )
 
 

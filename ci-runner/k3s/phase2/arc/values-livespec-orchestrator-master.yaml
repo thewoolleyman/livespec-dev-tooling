@@ -3,7 +3,7 @@
 # before Kueue sees a pod, so master traffic needs its own runs-on label and
 # LocalQueue to avoid waiting behind pull-request coverage shards.
 githubConfigUrl: "https://github.com/livespec-ai/livespec-orchestrator-beads-fabro"
-githubConfigSecret: arc-github-app-installation
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 runnerScaleSetName: "livespec-orchestrator-master-k3s"
 

@@ -34,7 +34,7 @@
 # nominalQuota of 1 — a guaranteed floor, not a cap: cohort borrowing lets
 # it burst well above 1 whenever its peers are idle.
 githubConfigUrl: "https://github.com/livespec-ai/livespec-console-beads-fabro"
-githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 # SHORT NAME, deliberately: livespec-s43svm.22 root-caused a hard Kubernetes
 # constraint via actions/actions-runner-controller#4368 (closed won't-fix) --

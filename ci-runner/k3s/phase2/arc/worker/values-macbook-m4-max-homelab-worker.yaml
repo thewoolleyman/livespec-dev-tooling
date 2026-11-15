@@ -33,7 +33,7 @@
 # REPOSITORY-scoped, like the other sets — see ../../../README.md "GitHub
 # registration scope".
 githubConfigUrl: "https://github.com/livespec-ai/livespec-dev-tooling"
-githubConfigSecret: arc-github-app-installation  # same secret as the other sets — see README.md
+githubConfigSecret: arc-github-app-installation-livespec-ai  # the livespec-ai-arc org App (App 5765497, installation 182096616), one Secret per account (SPECIFICATION v232)
 
 runnerScaleSetName: "macbook-m4-max-homelab-worker-k3s"
 
