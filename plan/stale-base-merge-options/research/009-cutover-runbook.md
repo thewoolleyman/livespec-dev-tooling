@@ -98,9 +98,12 @@ livespec, then the other eight.
    `[]` (rehearsal row 2). Add Integration 5761967, mode `always`, to each ruleset whose target includes master, one
    mutation per call, then read each one back. One bypass on `master-incident-recovery-bypass` alone is not enough: with
    the twin on one ruleset only, the other ruleset's required check still refused its push.
-4. **Install the org Apps and re-project their secrets.** Install the org Apps on the repository, then set `APP_ID` and
-   `APP_PRIVATE_KEY` from `GITHUB_APP_ID_ORG` and `GITHUB_PRIVATE_KEY_ORG`. The single-line PEM is rewrapped to 64
-   columns before upload (rehearsal row 5).
+4. **Install the org Apps and re-project their secrets.** First install the org Apps on the repository. Then the seat sends the
+   repository name, or the batch list so far, to central-credential-service, the authorized executor under go/no-go 10.
+   It sets `APP_ID` and `APP_PRIVATE_KEY` from `GITHUB_APP_ID_ORG` and `GITHUB_PRIVATE_KEY_ORG`
+   (livespec-ai-factory-bot, App 5761962). The single-line PEM is rewrapped to 64 columns before upload (rehearsal
+   row 5). The key is JWT-checked against App 5761962 before upload, and the secret names are read back. No value is
+   printed. **Do not advance a repository to step 5 until central-credential-service reports its read-back.**
 5. **Webhook read-back.** The observer webhook stays listed and active, and the next delivery names `livespec-ai/<repo>`
    (rehearsal row 4).
 
