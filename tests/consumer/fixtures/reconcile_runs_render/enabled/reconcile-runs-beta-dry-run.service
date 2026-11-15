@@ -28,7 +28,8 @@ Wants=network-online.target
 Type=oneshot
 User=@USER@
 WorkingDirectory=@ROOT@/workspace/beta
-ExecStart=@ROOT@/workspace/beta/with-beta-env.sh -- /usr/bin/python3 @ROOT@/plugin/scripts/bin/dispatcher.py reconcile-runs --repo @ROOT@/workspace/beta --invoker timer:reconcile-runs --dry-run --json
+Environment=TW_FAMILY_WRAPPER=@ROOT@/bin/with-livespec-env.sh
+ExecStart=@ROOT@/bin/livespec-tenant-wrap.sh -- /usr/bin/python3 @ROOT@/plugin/scripts/bin/dispatcher.py reconcile-runs --repo @ROOT@/workspace/beta --invoker timer:reconcile-runs --dry-run --json
 # One pass surveys every declared factory over the network; the reconciler's own
 # per-factory `fabro ps` timeout is 60s, so this bounds the whole pass rather
 # than any single call. 1800s, not 600s: measured 2026-10-27 on v0.243.15, a live
