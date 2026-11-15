@@ -53,7 +53,7 @@ Three adopter outcome categories, extending the `_lanes` split:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.config import assert_never
@@ -177,7 +177,10 @@ def run_adopter_rows(
     evaluated = 0
     skip_reasons: list[str] = []
     for adopter in released:
-        outcome = assert_claude_plugin_currency(ctx=ctx, member=_currency_member(adopter=adopter))
+        adopter_ctx = replace(ctx, owner=manifest.adopter_owner_for(adopter=adopter))
+        outcome = assert_claude_plugin_currency(
+            ctx=adopter_ctx, member=_currency_member(adopter=adopter)
+        )
         match outcome:
             case RowSkip():
                 skip_reasons.append(outcome.reason.removeprefix(f"{adopter.repo}: "))

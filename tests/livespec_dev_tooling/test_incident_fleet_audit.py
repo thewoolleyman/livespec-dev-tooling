@@ -9,7 +9,7 @@ import pytest
 from livespec_dev_tooling._incident_fleet_types import CapabilityEvidence, FleetAudit
 from livespec_dev_tooling.fleet._context import Adopter, FleetMember
 from livespec_dev_tooling.fleet.contract import Manifest
-from livespec_dev_tooling.incident_fleet_audit import SURFACES, audit_incident_fleet
+from livespec_dev_tooling.incident_fleet_audit import SURFACES, _consumers, audit_incident_fleet
 
 
 def manifest(*, instructions: bool = False) -> Manifest:
@@ -153,6 +153,29 @@ def test_instruction_only_adopters_owe_guidance_without_invented_tenants_or_ci()
     assert sum(row.disposition == "implemented" for row in rows) == 2
     assert sum(row.disposition == "not-applicable" for row in rows) == 35
     assert not result.permits_enablement(repository="example/notes")
+
+
+def test_audit_resolves_adopters_through_their_declared_owners() -> None:
+    owned = Manifest(
+        owner="fleet-owner",
+        adopter_owner="adopter-owner",
+        members=(FleetMember(repo="member", repo_class="library"),),
+        adopters=(
+            Adopter(repo="default", profile=("baseline",), posture="released"),
+            Adopter(
+                repo="override",
+                owner="entry-owner",
+                profile=("baseline",),
+                posture="released",
+            ),
+        ),
+    )
+
+    assert _consumers(manifest=owned) == (
+        ("fleet-owner/member", False),
+        ("adopter-owner/default", False),
+        ("entry-owner/override", False),
+    )
 
 
 def test_foreign_duplicate_and_unknown_surface_receipts_are_refused() -> None:

@@ -68,7 +68,7 @@ _OWN_INSTALLATION = frozenset({"independent-controller", "recovery-authorization
 
 def _consumers(*, manifest: Manifest) -> tuple[tuple[str, bool], ...]:
     return tuple((f"{manifest.owner}/{m.repo}", False) for m in manifest.members) + tuple(
-        (f"{manifest.owner}/{a.repo}", a.profile == ("instruction-only",))
+        (manifest.adopter_repository(adopter=a), a.profile == ("instruction-only",))
         for a in manifest.adopters
     )
 
