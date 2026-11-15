@@ -103,10 +103,27 @@ export HONEYCOMB_API="${HONEYCOMB_API:-https://api.honeycomb.io}"
 : "${HONEYCOMB_CONFIG_KEY_LIVESPEC:?run through /usr/local/bin/with-livespec-env.sh -- (projects the livespec configuration key)}"
 
 rc=0
+# THE CONFOUND COLUMNS FIRST. The throughput board's M2 and M3 panels break
+# down by derived columns generated from the committed quiet record
+# (../throughput/disruption-windows.json), so they are converged before any
+# board, in the same mode: a drift run reports them read-only. A text panel
+# carrying {{disruption-windows}} is rendered from the same record below, so
+# a window added to the record reaches the board's words, its columns and
+# every past event at the next apply, with no edit to a board definition.
+DISRUPTION="${SCRIPT_DIR}/../throughput/apply-disruption-columns.sh"
+if [ -f "${DISRUPTION}" ]; then
+  if [ "${MODE}" = drift ]; then
+    bash "${DISRUPTION}" --drift || rc=1
+  else
+    bash "${DISRUPTION}" || rc=1
+  fi
+fi
+export DISRUPTION
 for def in "${SCRIPT_DIR}"/*.json; do
   if ! python3 - "${def}" "${MODE}" <<'PY'
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -382,9 +399,33 @@ def drift(path, defn):
     return 0
 
 
+PLACEHOLDER = "{{disruption-windows}}"
+
+
+def render_placeholders(defn):
+    """Substitute the quiet record's Markdown for {{disruption-windows}} in text panels."""
+    texts = [p for p in defn.get("panels", []) if p.get("type") == "text"]
+    if not any(PLACEHOLDER in p.get("text_panel", {}).get("content", "") for p in texts):
+        return None
+    script = os.environ.get("DISRUPTION", "")
+    if not os.path.isfile(script):
+        return "%s is used but the quiet record's renderer %r is absent" % (PLACEHOLDER, script)
+    done = subprocess.run(["bash", script, "--markdown"], capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        return "rendering %s failed: %s" % (PLACEHOLDER, done.stderr.strip()[:400])
+    for panel in texts:
+        content = panel["text_panel"]["content"]
+        panel["text_panel"]["content"] = content.replace(PLACEHOLDER, done.stdout.strip())
+    return None
+
+
 def main(path):
     with open(path, encoding="utf-8") as handle:
         defn = json.load(handle)
+    failure = render_placeholders(defn)
+    if failure:
+        print("REFUSED %s: %s" % (path, failure), file=sys.stderr)
+        return 1
     problems = validate(defn)
     if problems:
         for problem in problems:

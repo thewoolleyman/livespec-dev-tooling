@@ -1,0 +1,59 @@
+{
+  "dataset": "pr-throughput",
+  "comment": "The quiet record the throughput board reads. One entry per window in which pull requests were HELD from merging (kind merge-quiet, one repository) or the CI pool itself was stalled (kind ci-pool-stall, every repository). A pull request whose life (opened_at to merged_at) overlaps a window for its repository is labelled with that window in the derived column pr.disruption; every other pull request is labelled clean. apply-disruption-columns.sh converges the derived columns and the board's confound panel from this file. Add a window when its QUIET OFF is posted: id, kind, repos (or [\"*\"]), start and end in UTC, and the ledger source.",
+  "windows": [
+    {
+      "id": "ci-pool-stall-asxhj3",
+      "kind": "ci-pool-stall",
+      "repos": ["*"],
+      "start": "2026-11-13T23:33:44Z",
+      "end": "2026-11-14T07:22:04Z",
+      "label": "fleet CI pool stall (incident asxhj3)",
+      "source": "start: livespec-dev-tooling#4568 merged (the cohort-30 cut, retro cause 2); end: the 07:22:04Z read-back after the incident fix livespec-dev-tooling#4629 applied. Retro: plan/throughput-plans-coordinator/research/002-incident-retro-2026-11-14-ci-pool-stall.md"
+    },
+    {
+      "id": "quiet-dev-tooling-asxhj3",
+      "kind": "merge-quiet",
+      "repos": ["livespec-dev-tooling"],
+      "start": "2026-11-14T03:44:40Z",
+      "end": "2026-11-14T07:03:17Z",
+      "label": "livespec-dev-tooling merge-quiet (incident asxhj3)",
+      "source": "start: the incident PR livespec-dev-tooling#4629 opened (QUIET ON at incident-PR-up, 6tgd2z 03:40:52Z); end: QUIET OFF on livespec-dev-tooling-6tgd2z 07:03:17Z"
+    },
+    {
+      "id": "quiet-livespec-57r6qo",
+      "kind": "merge-quiet",
+      "repos": ["livespec"],
+      "start": "2026-11-14T08:31:10Z",
+      "end": "2026-11-14T12:11:35Z",
+      "label": "livespec merge-quiet (livespec#3199, 57r6qo)",
+      "source": "QUIET ON and QUIET OFF on livespec-dev-tooling-6tgd2z, 08:31:10Z and 12:11:35Z"
+    },
+    {
+      "id": "quiet-orchestrator-s6jt4u-1",
+      "kind": "merge-quiet",
+      "repos": ["livespec-orchestrator-beads-fabro"],
+      "start": "2026-11-15T00:37:08Z",
+      "end": "2026-11-15T01:15:01Z",
+      "label": "orchestrator merge-quiet (s6jt4u attempt 2)",
+      "source": "6tgd2z handoff 00:37:08Z (MERGE-QUIET live) to 01:15:01Z (QUIET OFF applied); bounds are the ledger comments that first and last name it"
+    },
+    {
+      "id": "quiet-orchestrator-s6jt4u-2",
+      "kind": "merge-quiet",
+      "repos": ["livespec-orchestrator-beads-fabro"],
+      "start": "2026-11-15T01:45:00Z",
+      "end": "2026-11-15T03:05:55Z",
+      "label": "orchestrator merge-quiet (s6jt4u gen 8-9)",
+      "source": "MERGE-QUIET ON granted ~01:45Z (dispatcher hold 01:47:39Z); QUIET OFF at the #5323 merge 03:05:55Z, livespec-dev-tooling-6tgd2z 03:06:55Z"
+    }
+  ],
+  "start_rule_change": {
+    "at": "2026-11-14",
+    "field": "pr.start_rule",
+    "new_label": "new start rule",
+    "old_label": "old start rule (not comparable)",
+    "rebuild": "2026-11-21",
+    "text": "M2 lead time's start moved on 2026-11-14: the first commit's author time for a seat PR, or the factory run marker for a factory PR. Events emitted before carry no pr.start_rule and are labelled old start rule in pr.lead_rule. The lead-time band was built under the old rule and is rebuilt about 2026-11-21; until then old and new lead times are not comparable."
+  }
+}
