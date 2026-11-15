@@ -7,17 +7,20 @@ reading module already holds, or read the repository's own workflow files.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import cast
 
 import structlog
 
+from livespec_dev_tooling.budgeted_gh import GhRead
 from livespec_dev_tooling.checks._merge_group_guard import routes_merge_group_to_self_hosted
 
 __all__: list[str] = [
     "only_recovery_bypass",
+    "parse_object",
     "queue_parameter_code",
-    "rule_objects",
+    "restriction_state",
     "uses_guarded_merge_group",
 ]
 
@@ -27,6 +30,39 @@ _CONCURRENCY_FLOOR = 2
 # The built-in gating label `self_hosted_routing` always unions in.
 _DEFAULT_GATING_LABELS = frozenset({"local-ci"})
 _WORKFLOW_GLOBS = ("*.yml", "*.yaml")
+# GitHub answers the classic push-restrictions read with this 404 message when
+# the protected branch carries no push restrictions at all.
+_RESTRICTIONS_NOT_ENABLED = "Push restrictions not enabled"
+_RESTRICTION_HOLDERS = ("users", "teams", "apps")
+
+
+def parse_object(*, completed: GhRead) -> dict[str, object] | None:
+    """A successful read's JSON object; None for a failed read or a malformed body."""
+    if completed.returncode != 0:
+        return None
+    try:
+        parsed: object = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    return cast("dict[str, object]", parsed) if isinstance(parsed, dict) else None
+
+
+def restriction_state(*, completed: GhRead) -> str:
+    """Classify the classic push-restrictions read: `none`, `exception` or `unreadable`.
+
+    Only a restrictions object that names someone allowed to push is an
+    exception. A failed read other than GitHub's "not enabled" answer, or a
+    malformed body, is unreadable, never "no restrictions".
+    """
+    combined = f"{completed.stdout}\n{completed.stderr}"
+    if completed.returncode != 0 and _RESTRICTIONS_NOT_ENABLED in combined:
+        return "none"
+    body = parse_object(completed=completed)
+    if body is None:
+        return "unreadable"
+    holders = (body.get(key) for key in _RESTRICTION_HOLDERS)
+    named = (cast("list[object]", h) for h in holders if isinstance(h, list))
+    return "exception" if any(named) else "none"
 
 
 def uses_guarded_merge_group(*, workflows_dir: Path, gating_labels: tuple[str, ...]) -> bool:
@@ -37,18 +73,6 @@ def uses_guarded_merge_group(*, workflows_dir: Path, gating_labels: tuple[str, .
     return any(
         routes_merge_group_to_self_hosted(source=source, gating_labels=labels) for source in sources
     )
-
-
-def rule_objects(*, pages: list[object]) -> list[dict[str, object]] | None:
-    """Every rule object of a `--paginate --slurp` rules answer; None if malformed."""
-    if not all(isinstance(page, list) for page in pages):
-        return None
-    return [
-        cast("dict[str, object]", raw)
-        for page in pages
-        for raw in cast("list[object]", page)
-        if isinstance(raw, dict)
-    ]
 
 
 def queue_parameter_code(*, log: structlog.stdlib.BoundLogger, rule: dict[str, object]) -> int:

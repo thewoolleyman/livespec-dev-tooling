@@ -48,6 +48,9 @@ class _RulesetRequirements:
     contexts: frozenset[str]
     strict_ruleset_ids: tuple[int, ...]
     non_app_bypass_ruleset_ids: tuple[int, ...]
+    # Every rule object of the read, of every type, so the merge-queue rules
+    # grade this read instead of issuing a second one.
+    rules: tuple[dict[str, object], ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,6 +95,14 @@ def _ruleset_status_rules(*, pages: object) -> dict[int, tuple[frozenset[str], b
                 prior_strict or bool(params.get("strict_required_status_checks_policy")),
             )
     return held
+
+
+def _parse_pages(*, stdout: str) -> object:
+    """The rules read's parsed body, or None when it is not JSON at all."""
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
 
 
 def _non_app_bypass(*, stdout: str) -> bool | None:
@@ -161,7 +172,8 @@ def _fetch_ruleset_requirements(
     completed = gh_read(args=["api", "--paginate", "--slurp", rules_path])
     if completed.returncode != 0:
         return _RulesetsUnreadable(detail=f"rules read failed: {completed.stderr.strip()[:200]}")
-    held = _ruleset_status_rules(pages=json.loads(completed.stdout))
+    pages = _parse_pages(stdout=completed.stdout)
+    held = _ruleset_status_rules(pages=pages)
     if held is None:
         return _RulesetsUnreadable(detail="rules payload was not a list of rule pages")
     non_app: list[int] = []
@@ -181,4 +193,10 @@ def _fetch_ruleset_requirements(
         contexts=frozenset(c for contexts, _ in held.values() for c in contexts),
         strict_ruleset_ids=tuple(i for i, (_, strict) in sorted(held.items()) if strict),
         non_app_bypass_ruleset_ids=tuple(non_app),
+        rules=tuple(
+            cast("dict[str, object]", rule)
+            for page in cast("list[list[object]]", pages)
+            for rule in page
+            if isinstance(rule, dict)
+        ),
     )

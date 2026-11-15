@@ -29,8 +29,8 @@ fails `ruleset_unreadable`, because the classic read before it proved scope.
 
 from __future__ import annotations
 
-import json
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -47,9 +47,14 @@ from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
 from livespec_dev_tooling.checks._branch_protection_api import _RequiredContexts  # noqa: E402
 from livespec_dev_tooling.checks._branch_protection_queue_rules import (  # noqa: E402
     only_recovery_bypass,
+    parse_object,
     queue_parameter_code,
-    rule_objects,
+    restriction_state,
     uses_guarded_merge_group,
+)
+from livespec_dev_tooling.checks._branch_protection_rulesets import (  # noqa: E402
+    _RulesetRequirements,
+    _RulesetsUnreadable,
 )
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 
@@ -59,6 +64,9 @@ _ORGANIZATION = "Organization"
 _STRICTEST_FORK_APPROVAL = "all_external_contributors"
 _WORKFLOWS_DIR = Path(".github/workflows")
 _CHECK_ID = "branch_protection_alignment"
+# Waits between the at most four attempts of one ruleset read: each longer than
+# the last, 14 seconds in all, inside the contract's 30-second bound.
+_RULESET_RETRY_DELAYS_SECONDS: tuple[float, ...] = (2.0, 4.0, 8.0)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,18 +79,32 @@ class _Inputs:
     recovery_app_id: int | None
     gating_labels: tuple[str, ...]
     workflows_dir: Path
-
-
-def _read_json(*, args: list[str]) -> object:
-    """One forge read's parsed body, or None when the read failed."""
-    completed = gh_read(args=args)
-    return json.loads(completed.stdout) if completed.returncode == 0 else None
+    rulesets: _RulesetRequirements | _RulesetsUnreadable
 
 
 def _read_object(*, path: str) -> dict[str, object]:
-    """One forge object, or an empty object when it could not be read."""
-    parsed = _read_json(args=["api", path])
-    return cast("dict[str, object]", parsed) if isinstance(parsed, dict) else {}
+    """One forge object, or an empty object when it could not be read or parsed."""
+    return parse_object(completed=gh_read(args=["api", path])) or {}
+
+
+def _read_bypass_actors(*, path: str) -> list[object] | str:
+    """A ruleset's bypass list, retried; or the detail of a read that never succeeded.
+
+    A read fails when the call exits non-zero, the body is not a JSON object,
+    or it carries no `bypass_actors` list. The detail names the endpoint and
+    the first and last failure, as the contract requires.
+    """
+    failures: list[str] = []
+    for delay in (0.0, *_RULESET_RETRY_DELAYS_SECONDS):
+        if failures:
+            time.sleep(delay)
+        completed = gh_read(args=["api", path])
+        actors = (parse_object(completed=completed) or {}).get("bypass_actors")
+        if isinstance(actors, list):
+            return cast("list[object]", actors)
+        failures.append(completed.stderr.strip()[:200] or "body carried no bypass_actors list")
+    first, last = failures[0], failures[-1]
+    return f"{path}: first attempt failed with {first!r}; last attempt failed with {last!r}"
 
 
 def _ruleset_bypass_code(
@@ -91,18 +113,16 @@ def _ruleset_bypass_code(
     """Hold each active ruleset to the single recovery-Integration bypass."""
     code = 0
     for ruleset_id in ruleset_ids:
-        actors = _read_object(path=f"{base}/rulesets/{ruleset_id}").get("bypass_actors")
-        if not isinstance(actors, list):
+        actors = _read_bypass_actors(path=f"{base}/rulesets/{ruleset_id}")
+        if isinstance(actors, str):
             log.error(
                 "could not read the bypass list of an active default-branch ruleset; "
                 "refusing to report a merge queue this run did not verify",
                 failure_mode="ruleset_unreadable",
-                detail=f"ruleset {ruleset_id} has no readable bypass list",
+                detail=actors,
             )
             return 4
-        if not only_recovery_bypass(
-            actors=cast("list[object]", actors), recovery_app_id=recovery_app_id
-        ):
+        if not only_recovery_bypass(actors=actors, recovery_app_id=recovery_app_id):
             log.error(
                 "an active default-branch ruleset lets an actor other than the "
                 "recovery App bypass the merge queue",
@@ -121,10 +141,14 @@ def _bypass_code(
     base = f"repos/{protection.owner_repo}"
     restrictions = f"{base}/branches/{protection.branch}/protection/restrictions"
     code = 0
-    if gh_read(args=["api", restrictions]).returncode == 0 or not inputs.admins_enabled:
+    state = restriction_state(completed=gh_read(args=["api", restrictions]))
+    if state != "none" or not inputs.admins_enabled:
         log.error(
-            "classic protection leaves a path to the default branch around the merge queue",
+            "classic protection leaves, or may leave, a path to the default branch "
+            "around the merge queue",
             failure_mode="merge_queue_bypass_path",
+            push_restrictions=state,
+            enforce_admins=inputs.admins_enabled,
             hint="set enforce_admins and remove every push restriction exception",
         )
         code = 4
@@ -146,18 +170,11 @@ def _bypass_code(
 
 def _queue_required_code(*, log: structlog.stdlib.BoundLogger, inputs: _Inputs) -> int:
     """The four rules a queue-required repository is held to."""
-    protection = inputs.protection
-    rules_path = f"repos/{protection.owner_repo}/rules/branches/{protection.branch}?per_page=100"
-    pages = _read_json(args=["api", "--paginate", "--slurp", rules_path])
-    rules = rule_objects(pages=cast("list[object]", pages)) if isinstance(pages, list) else None
-    if rules is None:
-        log.error(
-            "could not read the default branch's active ruleset rules; "
-            "refusing to report a merge queue this run did not verify",
-            failure_mode="ruleset_unreadable",
-            detail=f"rules read of {rules_path} was not a list of rule pages",
-        )
-        return 4
+    if isinstance(inputs.rulesets, _RulesetsUnreadable):
+        # The effective-set half read the same rules, failed, and already
+        # reported `ruleset_unreadable`; one unreadable read is one finding.
+        return 0
+    rules = inputs.rulesets.rules
     queues = [rule for rule in rules if rule.get("type") == "merge_queue"]
     code = 0
     if not queues:
@@ -230,6 +247,7 @@ def merge_queue_exit_code(
     log: structlog.stdlib.BoundLogger,
     cwd: Path,
     protection: _RequiredContexts,
+    rulesets: _RulesetRequirements | _RulesetsUnreadable,
     admins_enabled: bool,
     queue_required_names: frozenset[str],
 ) -> int:
@@ -249,5 +267,6 @@ def merge_queue_exit_code(
         recovery_app_id=config.recovery_bypass_integration_id,
         gating_labels=config.gating_self_hosted_labels,
         workflows_dir=cwd / _WORKFLOWS_DIR,
+        rulesets=rulesets,
     )
     return _graded_exit_code(log=log, inputs=inputs)
