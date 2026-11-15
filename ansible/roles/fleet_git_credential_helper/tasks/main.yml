@@ -1,0 +1,66 @@
+---
+# fleet_git_credential_helper -- the git credential helper shim the fleet clones
+# on this host name in .git/config (livespec-orslcm Pillar 3).
+#
+# Installed by hand on 2026-07-02 and committed here when the livespec-ai
+# organization transfer made its single route mint the wrong App
+# (overseer-iyfjbo). The role writes one file. It never edits a clone's
+# .git/config, and it never authenticates to GitHub. The read-back that does is
+# documented in HOST_VARS.md and run by an operator.
+
+- name: Refuse an incomplete shim configuration
+  ansible.builtin.assert:
+    that:
+      - fleet_git_credential_helper_dest is match('^/')
+      - fleet_git_credential_helper_runtime_helper is match('^/')
+      - fleet_git_credential_helper_family_wrapper is match('^/')
+      - fleet_git_credential_helper_tenant_wrap is match('^/')
+      - fleet_git_credential_helper_owner | string | length > 0
+      - fleet_git_credential_helper_group | string | length > 0
+    fail_msg: >-
+      fleet_git_credential_helper needs absolute paths for the shim, the
+      runtime helper and both wrappers, and the account that owns the shim.
+    success_msg: the shim configuration is complete
+
+- name: Check the runtime helper and the family wrapper the shim runs
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ fleet_git_credential_helper_runtime_helper }}"
+    - "{{ fleet_git_credential_helper_family_wrapper }}"
+  register: fleet_git_credential_helper_inputs
+  become: true
+
+- name: Refuse to install a shim whose every route would fail
+  # The tenant wrapper is not required: the shim tests for it at run time, and a
+  # host without it keeps the original path.
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.executable
+    fail_msg: >-
+      {{ item.item }} is missing or not executable. Every git operation that
+      asks the shim for a credential would fail. Provision it before converging
+      this role.
+    success_msg: "{{ item.item }} is present"
+  loop: "{{ fleet_git_credential_helper_inputs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Create the shim's directory
+  ansible.builtin.file:
+    path: "{{ fleet_git_credential_helper_dest | dirname }}"
+    state: directory
+    owner: "{{ fleet_git_credential_helper_owner }}"
+    group: "{{ fleet_git_credential_helper_group }}"
+    mode: "0755"
+  become: true
+
+- name: Install the fleet git credential helper shim
+  ansible.builtin.template:
+    src: livespec-agent-github-credential-helper.j2
+    dest: "{{ fleet_git_credential_helper_dest }}"
+    owner: "{{ fleet_git_credential_helper_owner }}"
+    group: "{{ fleet_git_credential_helper_group }}"
+    mode: "{{ fleet_git_credential_helper_mode }}"
+  become: true
