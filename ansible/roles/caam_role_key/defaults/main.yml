@@ -1,0 +1,28 @@
+---
+# caam_role_key -- authorize the credential-rotation ROLE KEY on every host the role
+# holder pushes to (livespec-overseer SPECIFICATION/contracts.md §"Enrolled-host
+# delivery" **Transport**: "Each listed host MUST authorize the role key for its listed
+# user"). Plan central-credential-service, epic overseer-iyfjbo, gap G2.
+#
+# The key is a DEDICATED ed25519 pair generated on the role holder by
+# hetzner-xubuntu-info's hxi_credential_role; only its public half is committed here.
+# With caam_role_key_public empty (the default) the role changes nothing, so merging this
+# role authorizes no key until the public half is declared in group_vars by its own PR.
+caam_role_key_public: ""
+
+# The listed user is the account the role holder's host list names for each host, which
+# is the account this inventory reaches it as: cwoolley on the ci_pool hosts except
+# gamingpc-xubuntu, ubuntu on gamingpc-xubuntu and the vps (whose local-connection entry
+# sets no ansible_user).
+caam_role_key_user: "{{ ansible_user | default('ubuntu') }}"
+caam_role_key_path: "/home/{{ caam_role_key_user }}/.ssh/authorized_keys"
+caam_role_key_become: true
+
+# `restrict` drops pty, agent, X11 and port forwarding; the push needs none of them. It
+# keeps command execution, which the push needs: the apply step runs as `python3` reading
+# a program on stdin, and the Remote Control re-issue reads and drives multiplexer panes.
+caam_role_key_options: restrict
+
+# present authorizes the declared key; absent removes the managed block, which is the
+# committed rollback (an empty caam_role_key_public only stops managing it).
+caam_role_key_state: present

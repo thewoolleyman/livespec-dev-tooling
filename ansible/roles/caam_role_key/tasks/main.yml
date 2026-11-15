@@ -1,0 +1,35 @@
+---
+- name: Report that no role key is declared (nothing changes)
+  ansible.builtin.debug:
+    msg: caam_role_key_public is empty; no role key is authorized on this host.
+  when: caam_role_key_public | length == 0 and caam_role_key_state == 'present'
+
+- name: Refuse a role key that is not a single ed25519 public key
+  ansible.builtin.assert:
+    that:
+      - caam_role_key_public is match('^ssh-ed25519 [A-Za-z0-9+/=]+( [^\n]*)?$')
+    fail_msg: >-
+      caam_role_key_public must be one ssh-ed25519 public key line (type, base64, optional
+      comment). Nothing has been changed.
+    quiet: true
+  when: caam_role_key_public | length > 0 and caam_role_key_state == 'present'
+
+- name: Authorize the credential-rotation role key for {{ caam_role_key_user }}
+  ansible.builtin.blockinfile:
+    path: "{{ caam_role_key_path }}"
+    create: true
+    owner: "{{ caam_role_key_user }}"
+    group: "{{ caam_role_key_user }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED caam_role_key"
+    block: "{{ caam_role_key_options }} {{ caam_role_key_public }}"
+  become: "{{ caam_role_key_become }}"
+  when: caam_role_key_public | length > 0 and caam_role_key_state == 'present'
+
+- name: Remove the credential-rotation role key block for {{ caam_role_key_user }}
+  ansible.builtin.blockinfile:
+    path: "{{ caam_role_key_path }}"
+    marker: "# {mark} ANSIBLE MANAGED caam_role_key"
+    state: absent
+  become: "{{ caam_role_key_become }}"
+  when: caam_role_key_state == 'absent'
