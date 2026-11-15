@@ -171,6 +171,9 @@ def _fetch_ruleset_requirements(
     rules_path = f"{base}/rules/branches/{protection.branch}?per_page=100"
     completed = gh_read(args=["api", "--paginate", "--slurp", rules_path])
     if completed.returncode != 0:
+        time.sleep(_RULESET_READ_RETRY_DELAYS_SECONDS[0])
+        completed = gh_read(args=["api", "--paginate", "--slurp", rules_path])
+    if completed.returncode != 0:
         return _RulesetsUnreadable(detail=f"rules read failed: {completed.stderr.strip()[:200]}")
     pages = _parse_pages(stdout=completed.stdout)
     held = _ruleset_status_rules(pages=pages)
