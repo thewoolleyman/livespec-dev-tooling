@@ -117,9 +117,9 @@ nodes is work-item `bd-ib-kogktm`.
 3. Drift, then apply, limited to the factory host:
 
    ```bash
-   "$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" \
+   /usr/local/bin/with-livespec-env.sh -- \
      mise exec -- just ansible-drift ansible/fabro-hosts.yml --limit gmktec-xubuntu
-   "$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" \
+   /usr/local/bin/with-livespec-env.sh -- \
      mise exec -- just ansible-apply ansible/fabro-hosts.yml --limit gmktec-xubuntu
    ```
 
