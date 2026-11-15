@@ -68,13 +68,17 @@ For GitHub App work, the projected source env vars are `GITHUB_APP_ID` and
 `APP_PRIVATE_KEY` through stdin. The private key is stored as a single-line PEM
 in the environment and must be rewrapped before use by JWT tooling.
 
-## Current seeding route — until the writer is active and this host converts
+## Current seeding route — until this host converts
 
-BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. Writer activation is blocked on the OPEN maintainer mint/apply ruling; no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values.
+The dedicated writer is ACTIVE: its key was minted 2026-11-15T07:01:37Z for principal gitops-credential-writer-bootstrap, sealed on hetzner-xubuntu, with writer-role assumption verified (receipt HXI-WRITER-MINT-RECEIPT on hxi-vxsmdv).
 
-## Target seeding route — after writer activation and this host conversion
+BLOCKED: new-secret seeding for this host stays blocked until this host converts. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized route for new canonical values.
 
-After writer activation and this host conversion, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Preserve canonical bytes. Existing fleet JWT tooling expects a single-line PEM and rewraps it before signing; validate presence, length and line count without printing the value. Verify a seeded App key end to end with the fleet rewrap, a short JWT and `GET /app`; the returned slug identifies the App. These format and verification requirements do not authorize minting or seeding while blocked.
+## Target seeding route — after this host converts
+
+Once this host converts, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Preserve canonical bytes. Existing fleet JWT tooling expects a single-line PEM and rewraps it before signing; validate presence, length and line count without printing the value. Verify a seeded App key end to end with the fleet rewrap, a short JWT and `GET /app`; the returned slug identifies the App. These format and verification requirements do not authorize seeding while blocked.
+
+The writer's invocation, for record: the credential wrapper with `--profile /etc/hetzner-xubuntu-credentials/gitops-credential-writer.delivery.json` and `--manifest /usr/local/libexec/homelab-writer/1eeb50ba0116a1419b2ab2591eb34f5c4b213b32/infra/shared-credentials/consumer-manifest.json`, running the installed `write-secret.sh` under that prefix with `--consumer`, `--parameter` and `--key-arn` LAST; the value goes on stdin only and is never written anywhere else.
 
 ## The Credential Wrapper Scrubs The Session Environment
 

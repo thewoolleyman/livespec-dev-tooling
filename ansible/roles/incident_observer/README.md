@@ -247,9 +247,11 @@ Steps 2 and 3 were performed by the maintainer on 2026-11-05 against exactly the
 values this role renders; they are recorded here so the next host or rotation
 knows what to redo.
 
-### Current seeding route — until the writer is active and this host converts
+### Current seeding route — until this host converts
 
-BLOCKED: new-secret seeding is blocked until the dedicated writer is active and this host converts. The maintainer resolved the mint/apply question on 2026-11-15, but the dedicated writer's key is not yet minted and delivered, so writer activation is still pending and no authorized ordinary Parameter Store write route exists today. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized current route for new canonical values.
+The dedicated writer is ACTIVE: its key was minted 2026-11-15T07:01:37Z for principal gitops-credential-writer-bootstrap, sealed on hetzner-xubuntu, with writer-role assumption verified (receipt HXI-WRITER-MINT-RECEIPT on hxi-vxsmdv).
+
+BLOCKED: new-secret seeding for this host stays blocked until this host converts. homelab#1176 authorized only the one interim write of the seven setup tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an authorized route for new canonical values.
 
 The required environment variables remain `LIVESPEC_INCIDENT_WEBHOOK_SECRET`, `LIVESPEC_INCIDENT_CONTROL_SECRET` and `LIVESPEC_INCIDENT_QUERY_SECRET`, each at least 32 bytes and all three distinct, plus the existing `BEADS_DOLT_PASSWORD`. Existing installed wrappers project their configured source (until this host converts, the livespec 1Password Environment `fufpvkvatwkmqjzvilvfnemsue`, which is a temporary downstream copy of Parameter Store); that read behavior does not authorize new-secret seeding. Missing required values must continue to refuse the apply.
 
@@ -279,7 +281,7 @@ references to them stay valid.
 4. **Not done — provision the recovery GitHub App (plan note 006, GO-1).**
    Create a GitHub App used only for incident recovery, never the
    factory/publishing bot. Give it `contents: write` on
-   `thewoolleyman/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED under the current seeding route above; retain the variable names `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` for the target route. Add a
+   `thewoolleyman/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED until this host converts (current seeding route above); retain the variable names `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` for the target route. Add a
    master ruleset whose bypass list names only that App, then run the apply
    again. Reason it is maintainer-held: it grants a principal unchecked writes
    to master, and App and ruleset settings are GitHub state and the App's
@@ -290,9 +292,11 @@ references to them stay valid.
 
 No separate seeding step remains for the existing canonical reader credential: the role projects it at apply (`reader.env` above). An apply with missing required values refuses; an observer that is not reachable admits nothing.
 
-### Target seeding route — after writer activation and this host conversion
+### Target seeding route — after this host converts
 
-After writer activation and this host conversion, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Use the planned incident/* and github/recovery-* bindings (central-credential-service research/007; not yet declared), preserving the variable names, distinctness and length requirements. Apply using the converted wrapper on the apply/control host. Provider grants and recovery custody retain their existing authority.
+Once this host converts, deliver canonical values by anonymous pipe on stdin through homelab’s `infra/shared-credentials/write-secret.sh` under the designated dedicated writer. Hosts remain read-only. Never put secret values in argv, logs or plaintext staging files. Keep `/usr/local/bin/with-livespec-env.sh --` and its calling convention; no dual-backend fallback. A required downstream Environment refresh without an API is a blocker whose actor is not ruled. Use the planned incident/* and github/recovery-* bindings (central-credential-service research/007; not yet declared), preserving the variable names, distinctness and length requirements. Apply using the converted wrapper on the apply/control host. Provider grants and recovery custody retain their existing authority.
+
+The writer's invocation, for record: the credential wrapper with `--profile /etc/hetzner-xubuntu-credentials/gitops-credential-writer.delivery.json` and `--manifest /usr/local/libexec/homelab-writer/1eeb50ba0116a1419b2ab2591eb34f5c4b213b32/infra/shared-credentials/consumer-manifest.json`, running the installed `write-secret.sh` under that prefix with `--consumer`, `--parameter` and `--key-arn` LAST; the value goes on stdin only and is never written anywhere else.
 
 ## What the role asserts and never provisions
 

@@ -19,16 +19,16 @@
 # through /usr/local/bin/with-livespec-env.sh, which projects the installed
 # wrapper's configured source. A bare apply refuses at the preflight and names the
 # variable. No value is read back, printed or compared in the run output.
-# Current seeding route — until the writer is active and this host converts.
-# BLOCKED: new-secret seeding is blocked until the dedicated writer is active
-# and this host converts. Writer activation is blocked on the OPEN maintainer
-# mint/apply ruling; no authorized ordinary Parameter Store write route exists
-# today. homelab#1176 authorized only the one interim write of the seven setup
-# tokens; it is not ongoing write authority. Neither 1Password nor an admin role
-# is an authorized current route for new canonical values. See README.md
-# §"Maintainer-only steps". Target seeding route — after writer activation and
-# this host conversion: use the dedicated stdin writer and converted wrapper
-# procedure in README.md.
+# Current seeding route — until this host converts. The dedicated writer is
+# ACTIVE: its key was minted 2026-11-15T07:01:37Z for principal
+# gitops-credential-writer-bootstrap, sealed on hetzner-xubuntu, with
+# writer-role assumption verified (receipt HXI-WRITER-MINT-RECEIPT on
+# hxi-vxsmdv). BLOCKED: new-secret seeding for this host stays blocked until
+# this host converts. homelab#1176 authorized only the one interim write of the
+# seven setup tokens; it is not ongoing write authority. Neither 1Password nor
+# an admin role is an authorized route for new canonical values. See README.md
+# §"Maintainer-only steps". Target seeding route — after this host converts: use
+# the dedicated stdin writer and converted wrapper procedure in README.md.
 #
 # CHECK MODE. On a host this role has never reached, `--check` writes nothing,
 # so the venv, the clones and the unit do not exist; every step that needs one
@@ -60,14 +60,14 @@
       the control node's environment does not carry
       {{ incident_observer_secrets | map(attribute='env') | join(', ') }}
       as three distinct values of at least {{ incident_observer_secret_min_bytes }}
-      bytes together with {{ incident_observer_reader_env_var }}. Current seeding route — until
-      the writer is active and this host converts. BLOCKED: new-secret seeding is blocked until
-      the dedicated writer is active and this host converts. Writer activation is blocked on the
-      OPEN maintainer mint/apply ruling; no authorized ordinary Parameter Store write route
-      exists today. homelab#1176 authorized only the one interim write of the seven setup
-      tokens; it is not ongoing write authority. Neither 1Password nor an admin role is an
-      authorized current route for new canonical values. See README.md §"Maintainer-only steps".
-      Target seeding route — after writer activation and this host conversion: use the dedicated
+      bytes together with {{ incident_observer_reader_env_var }}. Current seeding route — until this
+      host converts. The dedicated writer is ACTIVE: its key was minted 2026-11-15T07:01:37Z for
+      principal gitops-credential-writer-bootstrap, sealed on hetzner-xubuntu, with writer-role
+      assumption verified (receipt HXI-WRITER-MINT-RECEIPT on hxi-vxsmdv). BLOCKED: new-secret
+      seeding for this host stays blocked until this host converts. homelab#1176 authorized only the
+      one interim write of the seven setup tokens; it is not ongoing write authority. Neither
+      1Password nor an admin role is an authorized route for new canonical values. See README.md
+      §"Maintainer-only steps". Target seeding route — after this host converts: use the dedicated
       stdin writer and converted wrapper procedure in README.md.
       Nothing has been written.
     success_msg: the environment carries three distinct secrets and the reader's credential
