@@ -1,0 +1,71 @@
+---
+# claude_memory_write_guard -- refuse writes into Claude Code's local agent
+# memory (~/.claude/projects/<slug>/memory/) and the Codex store
+# (~/.codex/memories/) in EVERY project on an interactive host, through a
+# Claude Code MANAGED-settings PreToolUse hook. Work item
+# livespec-dev-tooling-pik7f2 (plan no-local-agent-memory, epic hxi-7ituzy in
+# hetzner-xubuntu-info).
+#
+# WHY A MANAGED HOOK. Maintainer ruling 2026-11-15: auto-memory stays ON (the
+# harness's memory prompt is the strongest capture signal), and where memory
+# goes is enforced by mechanism, not prose. The livespec Driver's
+# block_auto_memory hook already does this, but only where the Driver plugin is
+# enabled and the project is livespec-governed; sessions elsewhere wrote notes
+# unrefused. Managed hooks MERGE with user, project and plugin hooks, so this
+# adds a backstop without displacing any of them.
+#
+# NOT SET, DELIBERATELY:
+#   allowManagedHooksOnly -- it would disable every user, project and plugin
+#     hook fleet-wide (the Driver's guards included).
+#   autoMemoryEnabled     -- auto-memory stays ON (maintainer ruling).
+#   autoMemoryDirectory   -- evaluated and not adopted: one managed value
+#     would share one memory across every project.
+#
+# THE HOOK IS VENDORED, NOT REWRITTEN: files/_vendor/memory-write-guard/ is the
+# Driver's matcher copied from livespec-driver-claude v0.15.4, commit
+# 4ac6370948d31798c36726caf167bf7039ea4867 (cd-relative fix
+# livespec-driver-claude-ivftll, heredoc fix livespec-driver-claude-zexdsh).
+# Only block_auto_memory.py differs: the governed-project gate is dropped so
+# it acts in every project, and the deny reason names no plugin. Its
+# docstring lists the differences. Re-vendor when the Driver's matcher moves.
+#
+# ROOT SCOPE, like claude_distributed_sendmessage: /etc/claude-code/ is read by
+# every session of every account on the host, and the hook script is
+# root-owned so no session can edit the guard that judges it.
+
+claude_memory_write_guard_policy_dir: /etc/claude-code
+claude_memory_write_guard_dropin_dir: "{{ claude_memory_write_guard_policy_dir }}/managed-settings.d"
+claude_memory_write_guard_dropin: "{{ claude_memory_write_guard_dropin_dir }}/40-memory-write-guard.json"
+claude_memory_write_guard_lib_dir: /usr/local/lib/claude-code
+claude_memory_write_guard_hook_dir: "{{ claude_memory_write_guard_lib_dir }}/memory-write-guard"
+# The entry script; its siblings are imported from the same directory.
+claude_memory_write_guard_hook: "{{ claude_memory_write_guard_hook_dir }}/block_auto_memory.py"
+# Ownership of everything installed. A macOS host would set the group to wheel.
+claude_memory_write_guard_owner: root
+claude_memory_write_guard_group: root
+claude_memory_write_guard_python: /usr/bin/python3
+
+# Every file of the vendored hook, installed one by one so a stray file in the
+# checkout (a __pycache__) never reaches a host.
+claude_memory_write_guard_hook_files:
+  - block_auto_memory.py
+  - _memory_write.py
+  - _shell_io.py
+  - _shell_lex.py
+  - _result.py
+
+claude_memory_write_guard_command: "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook }}"
+
+# The drop-in, whole. File tools are judged by path; Bash by the vendored
+# shell classifier, which passes reads and rm.
+claude_memory_write_guard_settings:
+  hooks:
+    PreToolUse:
+      - matcher: Write|Edit|MultiEdit|NotebookEdit
+        hooks:
+          - type: command
+            command: "{{ claude_memory_write_guard_command }}"
+      - matcher: Bash
+        hooks:
+          - type: command
+            command: "{{ claude_memory_write_guard_command }}"

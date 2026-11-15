@@ -1,0 +1,61 @@
+---
+# See defaults/main.yml for what this role installs, what it deliberately
+# leaves unset, and where the vendored hook comes from.
+
+- name: Create the managed-policy and hook directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ claude_memory_write_guard_owner }}"
+    group: "{{ claude_memory_write_guard_group }}"
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ claude_memory_write_guard_policy_dir }}"
+    - "{{ claude_memory_write_guard_dropin_dir }}"
+    - "{{ claude_memory_write_guard_lib_dir }}"
+    - "{{ claude_memory_write_guard_hook_dir }}"
+
+- name: Install the vendored memory-write guard
+  # Under files/_vendor/: installed foreign content, the same exemption
+  # claude_code_hooks uses for its guard.
+  ansible.builtin.copy:
+    src: "_vendor/memory-write-guard/{{ item }}"
+    dest: "{{ claude_memory_write_guard_hook_dir }}/{{ item }}"
+    owner: "{{ claude_memory_write_guard_owner }}"
+    group: "{{ claude_memory_write_guard_group }}"
+    mode: "{{ '0755' if item == 'block_auto_memory.py' else '0644' }}"
+  become: true
+  loop: "{{ claude_memory_write_guard_hook_files }}"
+
+- name: Prove the installed guard refuses a memory write
+  # Refuse to wire a broken guard: run the INSTALLED copy on one memory write
+  # before the drop-in below points sessions at it. Skipped under --check,
+  # because on a dry run the copy above has not happened.
+  ansible.builtin.command:
+    argv:
+      - "{{ claude_memory_write_guard_python }}"
+      - "{{ claude_memory_write_guard_hook }}"
+    stdin: >-
+      {"tool_name": "Write", "tool_input":
+      {"file_path": "/home/probe/.claude/projects/-probe/memory/MEMORY.md", "content": "x"}}
+  become: false
+  register: claude_memory_write_guard_probe
+  changed_when: false
+  failed_when: >-
+    claude_memory_write_guard_probe.rc != 0
+    or '"permissionDecision": "deny"' not in claude_memory_write_guard_probe.stdout
+  when: not ansible_check_mode
+
+- name: Write the managed-settings drop-in
+  # A drop-in, beside claude_distributed_sendmessage's 50-distributed-sendmessage.json.
+  # Claude Code merges managed-settings.d/*.json alphabetically and LISTS
+  # combine, so this file's PreToolUse entries add to, never replace, any other
+  # managed hook. This role owns this file whole.
+  ansible.builtin.copy:
+    content: "{{ claude_memory_write_guard_settings | to_nice_json(indent=2) }}\n"
+    dest: "{{ claude_memory_write_guard_dropin }}"
+    owner: "{{ claude_memory_write_guard_owner }}"
+    group: "{{ claude_memory_write_guard_group }}"
+    mode: "0644"
+  become: true
