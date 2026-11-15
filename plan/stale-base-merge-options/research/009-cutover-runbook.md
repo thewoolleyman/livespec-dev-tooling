@@ -57,6 +57,16 @@ owns the halt procedure and the phase outline; this note fixes the ORDER and the
    - livespec-runtime, the three drivers, livespec-console-beads-fabro and livespec-orchestrator-git-jsonl: no reader
      of `adopters`.
    GO when each of the four readers above is merged and released, and the manifest PR adding `adopter_owner` has merged.
+10. The maintainer has authorized repository-secret projection, and central-credential-service is ready to run it. Owner:
+   the maintainer's word, then central-credential-service. The 2026-11-14 19:01Z scope event keeps "credential and
+   secret creation or deletion (1Password, GitHub Apps, org settings)" with the maintainer, and as of 2026-11-15 ~04:0xZ
+   no maintainer words authorize step 4 below. The ask goes to the maintainer through the coordinator, with a
+   recommendation of yes. It covers two things: (1) step 4's `APP_ID` / `APP_PRIVATE_KEY` re-projection on all 10
+   transferred repositories, from the org App (`GITHUB_APP_ID_ORG` / `GITHUB_PRIVATE_KEY_ORG`); and (2)
+   `ADOPTER_APP_ID_THEWOOLLEYMAN` / `ADOPTER_APP_PRIVATE_KEY_THEWOOLLEYMAN` on livespec-overseer, from
+   thewoolleyman-factory-bot (App 3668528). No value is printed. Without that word, the call is NO-GO at 12:00Z;
+   step 4 must never surface mid-window. Part (2) alone does not block go/no-go: overseer-j4ejek fails soft, counting
+   thewoolleyman adopters as "not authorized" while the pair is absent.
 
 ## 3. Sequence
 
