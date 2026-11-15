@@ -1389,3 +1389,35 @@ def test_help_flag_exits_zero(
     assert result.returncode == 0
     combined = result.stdout.lower()
     assert "ci-matrix-completeness" in combined or "usage" in combined
+
+
+@pytest.mark.integration
+def test_master_push_concurrency_with_reconciler_caller_is_refused(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A reconciler caller cannot coexist with a master-push concurrency group."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=[])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[]))
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[_ci_green_job(needs="[]")],
+        trailer="concurrency: ci-master\n",
+    )
+    caller = tmp_path / ".github" / "workflows" / "master-health.yml"
+    _ = caller.write_text(
+        "jobs:\n"
+        "  reconcile:\n"
+        "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/"
+        "reusable-master-health-reconcile.yml@master\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 4
