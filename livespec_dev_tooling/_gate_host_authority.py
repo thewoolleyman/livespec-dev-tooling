@@ -54,6 +54,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import structlog  # noqa: E402  — vendor-path-aware import.
 from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — same.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — same.
@@ -62,6 +63,7 @@ __all__: list[str] = [
     "GATE_HOST_AUTHORITY_REFUSED",
     "HostAuthorityRun",
     "host_authority_decision",
+    "narrate_host_authority_passes",
     "run_host_authority_members",
 ]
 
@@ -120,6 +122,25 @@ class HostAuthorityRun:
     tree_hash: str
     returncode: int | None
     detail: str
+
+
+def narrate_host_authority_passes(*, ran: tuple[HostAuthorityRun, ...]) -> None:
+    """Print the affirmative host-side evidence a delegated pre-push otherwise hides.
+
+    The gate Job deliberately skips these members, so its output cannot prove
+    that the pushing host evaluated them. A successful member has no refusal
+    detail to carry its evidence later; emit its own structured line while the
+    record still names the member and the committed tree it judged.
+    """
+    log = structlog.get_logger("gate_host_authority")
+    for run in ran:
+        if run.returncode == 0:
+            log.info(
+                "authority member ran on the pushing host and passed",
+                member=run.member,
+                tree_hash=run.tree_hash,
+                passed=True,
+            )
 
 
 def run_host_authority_members(
