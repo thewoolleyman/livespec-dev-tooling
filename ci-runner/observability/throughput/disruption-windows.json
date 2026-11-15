@@ -1,11 +1,14 @@
 {
   "dataset": "pr-throughput",
   "comment": "The quiet record the throughput board reads. One entry per window in which pull requests were HELD from merging (kind merge-quiet, one repository) or the CI pool itself was stalled (kind ci-pool-stall, every repository). A pull request whose life (opened_at to merged_at) overlaps a window for its repository is labelled with that window in the derived column pr.disruption; every other pull request is labelled clean. apply-disruption-columns.sh converges the derived columns and the board's confound panel from this file. Add a window when its QUIET OFF is posted: id, kind, repos (or [\"*\"]), start and end in UTC, and the ledger source.",
+  "note": "INTERIM: until livespec-dev-tooling-35iexd ships (QUIET OFF appends its own window here in the same act), throughput-plans-coordinator appends each window by pull request at every QUIET OFF it receives (ruling 2026-11-15).",
   "windows": [
     {
       "id": "ci-pool-stall-asxhj3",
       "kind": "ci-pool-stall",
-      "repos": ["*"],
+      "repos": [
+        "*"
+      ],
       "start": "2026-11-13T23:33:44Z",
       "end": "2026-11-14T07:22:04Z",
       "label": "fleet CI pool stall (incident asxhj3)",
@@ -14,7 +17,9 @@
     {
       "id": "quiet-dev-tooling-asxhj3",
       "kind": "merge-quiet",
-      "repos": ["livespec-dev-tooling"],
+      "repos": [
+        "livespec-dev-tooling"
+      ],
       "start": "2026-11-14T03:44:40Z",
       "end": "2026-11-14T07:03:17Z",
       "label": "livespec-dev-tooling merge-quiet (incident asxhj3)",
@@ -23,7 +28,9 @@
     {
       "id": "quiet-livespec-57r6qo",
       "kind": "merge-quiet",
-      "repos": ["livespec"],
+      "repos": [
+        "livespec"
+      ],
       "start": "2026-11-14T08:31:10Z",
       "end": "2026-11-14T12:11:35Z",
       "label": "livespec merge-quiet (livespec#3199, 57r6qo)",
@@ -32,7 +39,9 @@
     {
       "id": "quiet-orchestrator-s6jt4u-1",
       "kind": "merge-quiet",
-      "repos": ["livespec-orchestrator-beads-fabro"],
+      "repos": [
+        "livespec-orchestrator-beads-fabro"
+      ],
       "start": "2026-11-15T00:37:08Z",
       "end": "2026-11-15T01:15:01Z",
       "label": "orchestrator merge-quiet (s6jt4u attempt 2)",
@@ -41,7 +50,9 @@
     {
       "id": "quiet-orchestrator-s6jt4u-2",
       "kind": "merge-quiet",
-      "repos": ["livespec-orchestrator-beads-fabro"],
+      "repos": [
+        "livespec-orchestrator-beads-fabro"
+      ],
       "start": "2026-11-15T01:45:00Z",
       "end": "2026-11-15T03:05:55Z",
       "label": "orchestrator merge-quiet (s6jt4u gen 8-9)",
