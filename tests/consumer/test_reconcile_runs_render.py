@@ -439,3 +439,29 @@ def test_a_malformed_credential_wrapper_is_reported_as_credential_wrapper_unread
     assert done.returncode == _REFUSED
     assert log == []
     assert "credential-wrapper-unreadable: " in done.stderr
+
+
+def test_a_same_named_wrapper_that_is_not_the_family_file_runs_nested(tmp_path: Path) -> None:
+    # The tenant's own ./with-livespec-env.sh shares the family wrapper's basename
+    # but is a different file, so it must not run un-nested as the family wrapper.
+    _ = _script(path=tmp_path / "repo" / "with-livespec-env.sh", text=_FAKE_TENANT)
+    config = '{"credential_wrapper": ["./with-livespec-env.sh", "--"]}\n'
+    resolved, _ = _wrap(root=tmp_path, config=config, args=["--resolve"])
+    done, log = _wrap(root=tmp_path, config=config, args=_command(root=tmp_path))
+
+    assert resolved.returncode == 0, resolved.stderr
+    assert resolved.stdout.splitlines()[0] == "mode=tenant"
+    assert done.returncode == 0, done.stderr
+    assert [line.split(" ", 1)[0] for line in log] == ["family", "tenant", "command"]
+    assert log[1] == "tenant password-before=unset"
+
+
+def test_a_link_that_resolves_to_the_family_file_runs_as_committed(tmp_path: Path) -> None:
+    link = tmp_path / "links" / "family-link.sh"
+    link.parent.mkdir()
+    link.symlink_to(tmp_path / "bin" / "with-livespec-env.sh")
+    config = json.dumps({"credential_wrapper": [str(link), "--"]})
+    resolved, _ = _wrap(root=tmp_path, config=config, args=["--resolve"])
+
+    assert resolved.returncode == 0, resolved.stderr
+    assert resolved.stdout.splitlines()[0] == "mode=family"

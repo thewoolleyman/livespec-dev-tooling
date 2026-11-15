@@ -69,12 +69,16 @@ three routes:
 | Committed `credential_wrapper` | The pass runs as |
 |---|---|
 | none | `<family> -- <command>` |
-| first element's basename is the family wrapper's | `<argv...> <command>`, exactly as committed |
+| first element resolves (`realpath -e`) to the family wrapper's own file | `<argv...> <command>`, exactly as committed |
 | anything else | `<family> -- env -u BEADS_DOLT_PASSWORD <argv...> <command>` |
 
 `<family>` is `reconcile_runs_family_wrapper`, which defaults to
 `/usr/local/bin/with-livespec-env.sh`. A relative first element resolves
 against the checkout.
+
+The match is by resolved path, not by name. A tenant's own
+`./with-livespec-env.sh`, or a vendored copy, is a different file, so it
+runs nested like any other tenant wrapper.
 
 A family wrapper therefore runs with every hop it commits after its `--`. One
 example is livespec-orchestrator-beads-fabro's route C, which re-exports the

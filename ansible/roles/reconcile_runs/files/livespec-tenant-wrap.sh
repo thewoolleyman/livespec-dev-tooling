@@ -14,8 +14,10 @@
 #
 # The family wrapper is $TW_FAMILY_WRAPPER, else /usr/local/bin/with-livespec-env.sh.
 #   - No credential_wrapper:          <family> -- <command...>
-#   - A wrapper whose first element has the family wrapper's basename runs as
-#     committed, including any hop after its "--":
+#   - A wrapper whose first element resolves (realpath -e) to the same file as
+#     the family wrapper runs as committed, including any hop after its "--".
+#     A same-named copy elsewhere, such as a tenant's own ./with-livespec-env.sh,
+#     is not the family wrapper and takes the nested route below:
 #                                     <argv...> <command...>
 #   - Any other tenant's wrapper runs nested in the family wrapper, with the
 #     family BEADS_DOLT_PASSWORD removed so the tenant's wrapper injects its own:
@@ -152,7 +154,11 @@ else
   [[ "${argv[0]}" == /* ]] || argv[0]="${repo}/${argv[0]#./}"
   [[ -f "${argv[0]}" && -x "${argv[0]}" ]] \
     || refuse "credential_wrapper ${argv[0]} from ${config} is not an executable file"
-  if [[ "${argv[0]##*/}" == "${family##*/}" ]]; then
+  family_real="$(realpath -e -- "${family}")" \
+    || refuse "family wrapper ${family} is not an executable file"
+  wrapper_real="$(realpath -e -- "${argv[0]}")" \
+    || refuse "credential_wrapper ${argv[0]} from ${config} is not an executable file"
+  if [[ "${wrapper_real}" == "${family_real}" ]]; then
     mode=family
     chain=("${argv[@]}")
   else
