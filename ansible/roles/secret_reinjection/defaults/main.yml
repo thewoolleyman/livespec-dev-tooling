@@ -50,3 +50,15 @@ secret_reinjection_org_launch_command: >-
   --manifest {{ secret_reinjection_org_manifest }}
   --consumer {{ secret_reinjection_org_consumer }}
   -- {{ secret_reinjection_lib_dir }}/{{ secret_reinjection_org_injector }}
+
+# The ONE-SHOT organization projection run (tasks/org_projection.yml, last block).
+# FALSE by default, so a normal converge only enables the unit and never runs it.
+# Pass -e secret_reinjection_org_project_now=true for the attended cutover run:
+# it starts the unit once, then asserts value-free that the organization Secret
+# holds 3 keys and the personal Secret's data hash did not change.
+secret_reinjection_org_project_now: false
+# The server's admin kubeconfig, used only by that block's value-free read-backs.
+secret_reinjection_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+secret_reinjection_runners_namespace: arc-runners
+secret_reinjection_personal_secret: arc-github-app-installation
+secret_reinjection_org_secret: arc-github-app-installation-livespec-ai

@@ -296,3 +296,19 @@ def test_the_converge_refuses_to_start_without_a_filled_organization_secret(
         assert result.returncode == 1
         assert "ADMITTED" not in result.stdout
         assert f"FATAL: secret {_ORG_SECRET}" in result.stdout
+
+
+def test_a_normal_converge_never_runs_the_one_shot_organization_projection() -> None:
+    """The one-shot block is gated on secret_reinjection_org_project_now, which defaults to false."""
+    defaults = (_ROLE / "defaults" / "main.yml").read_text(encoding="utf-8")
+    tasks = (_ROLE / "tasks" / "org_projection.yml").read_text(encoding="utf-8")
+    assert "\nsecret_reinjection_org_project_now: false\n" in defaults
+    block = tasks[
+        tasks.index("- name: Run the organization projection once and prove it value-free\n") :
+    ]
+    gate = block[: block.index("  block:\n")]
+    assert "    - secret_reinjection_org_project_now | bool\n" in gate
+    assert "    - not ansible_check_mode\n" in gate
+    started = block.index("state: started")
+    assert block.index("secret_reinjection_personal_hash_before") < started
+    assert "secret_reinjection_org_key_count.stdout | trim == '3'" in block[started:]

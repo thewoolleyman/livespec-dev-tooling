@@ -41,6 +41,11 @@ unit's and is never named by this one.
 - **Failure.** A missing or empty value makes the injector exit 1, naming each
   missing variable, before any cluster call; the Secret keeps its last value.
 
+- **The one attended run.** `-e secret_reinjection_org_project_now=true` (default
+  `false`) starts the unit ONCE and asserts value-free that the organization
+  Secret holds 3 keys and the personal Secret's data hash is unchanged; a normal
+  converge only enables the unit.
+
 ## Out-of-band, not provisioned here
 
 The role installs each injector and its oneshot unit and ENABLES the unit for
