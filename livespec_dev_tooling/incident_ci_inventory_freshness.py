@@ -85,7 +85,7 @@ def compare_entry(*, path: Path, snapshot: RepositorySnapshot) -> InventoryDiffe
     fresh = render_inventory(
         workflow=snapshot.workflow,
         inventory=snapshot.inventory,
-        source=InventorySource(repository=source.repository, commit=snapshot.head),
+        source=InventorySource(repository=source.repository, commit=source.commit),
     )
     if fresh == committed:
         return None
