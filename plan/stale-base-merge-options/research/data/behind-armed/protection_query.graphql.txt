@@ -1,0 +1,155 @@
+query{
+ r0: repository(owner:"thewoolleyman", name:"livespec-dev-tooling") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r1: repository(owner:"thewoolleyman", name:"livespec") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r2: repository(owner:"thewoolleyman", name:"livespec-runtime") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r3: repository(owner:"thewoolleyman", name:"livespec-driver-claude") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r4: repository(owner:"thewoolleyman", name:"livespec-driver-codex") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r5: repository(owner:"thewoolleyman", name:"livespec-driver-pi") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r6: repository(owner:"thewoolleyman", name:"livespec-orchestrator-beads-fabro") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r7: repository(owner:"thewoolleyman", name:"livespec-overseer") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r8: repository(owner:"thewoolleyman", name:"livespec-console-beads-fabro") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r9: repository(owner:"thewoolleyman", name:"livespec-orchestrator-git-jsonl") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r10: repository(owner:"thewoolleyman", name:"openbrain") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r11: repository(owner:"thewoolleyman", name:"dolt-server") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r12: repository(owner:"thewoolleyman", name:"resume") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r13: repository(owner:"thewoolleyman", name:"hetzner-xubuntu-info") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r14: repository(owner:"thewoolleyman", name:"vps-info") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r15: repository(owner:"thewoolleyman", name:"poweredge-xubuntu-info") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r16: repository(owner:"thewoolleyman", name:"gmktec-xubuntu-info") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r17: repository(owner:"thewoolleyman", name:"hp-xubuntu-info") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r18: repository(owner:"thewoolleyman", name:"fabro-hosts") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r19: repository(owner:"thewoolleyman", name:"otel-collector") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r20: repository(owner:"thewoolleyman", name:"local-llm") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ }
+ r21: repository(owner:"mi-homelab", name:"homelab") { nameWithOwner isPrivate owner{__typename} defaultBranchRef{name}
+   autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed
+   branchProtectionRules(first:10){nodes{pattern requiresStrictStatusChecks requiresStatusChecks requiredStatusCheckContexts}}
+   rulesets(first:20, includeParents:true){nodes{databaseId name enforcement target source{__typename ... on Repository{nameWithOwner} ... on Organization{login}}
+     conditions{refName{include exclude}}
+     rules(first:30){nodes{type parameters{__typename ... on RequiredStatusChecksParameters{strictRequiredStatusChecksPolicy requiredStatusChecks{context}} ... on MergeQueueParameters{maxEntriesToBuild}}}}}}
+ } rateLimit{cost remaining}}
