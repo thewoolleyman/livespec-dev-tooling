@@ -29,6 +29,7 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_observer_role_funnel_paths as funnel
 from tests.livespec_dev_tooling import test_incident_observer_role_production_unchanged as base
 from tests.livespec_dev_tooling import test_incident_observer_role_scratch_refusals as refusals
@@ -49,7 +50,7 @@ _DISJOINT = (
     " livespec-dev-tooling's installation owns"
 )
 _ASSERTS = (_NAME, _INVENTORY, _SHARED, _LAYOUT, _DISJOINT)
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _IDS = ("repository_id", "owner_id")
 # The owner is read from the role's own default, never spelled here (the fleet is
 # moving to an organization).

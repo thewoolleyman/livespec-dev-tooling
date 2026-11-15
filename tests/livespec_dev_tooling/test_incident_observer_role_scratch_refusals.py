@@ -27,6 +27,7 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_observer_role_production_unchanged as base
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-32qdja
@@ -34,7 +35,7 @@ _REPO_ROOT = base.ROLE.parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
 _SCRATCH_VARS = base.ROLE / "vars" / "scratch.yml"
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
-_ENGINE_TIMEOUT_SECONDS = 600
+_ENGINE_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _PREFLIGHT = "tasks/scratch_preflight.yml"
 _TEARDOWN = "tasks/scratch_teardown.yml"
 _MAIN = "tasks/main.yml"

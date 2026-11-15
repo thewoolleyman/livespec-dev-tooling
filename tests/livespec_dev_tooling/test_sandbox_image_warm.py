@@ -72,6 +72,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -102,7 +104,7 @@ _REFERENCE = f"{_IMAGE}:{_PREFIX}-v{_VERSION}"
 # The shape of this repository's release manifest, which is what the warm reads.
 _PIN_BODY = '{\n  ".": "' + _VERSION + '"\n}\n'
 
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 
 # Long enough that a second unserialized pull would overlap it beyond any

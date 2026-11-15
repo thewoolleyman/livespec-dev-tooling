@@ -22,6 +22,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,8 +37,8 @@ _JUSTFILE = _REPO_ROOT / "justfile"
 _ARC = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "arc"
 
 _IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
-_TIMEOUT_SECONDS = 120
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 _RENDERED = re.compile(r'^\s*"msg": (?P<msg>"RENDERED=.*")$', re.MULTILINE)
 # A scale set whose repository's default branch carries no ci.yml, so it pins no

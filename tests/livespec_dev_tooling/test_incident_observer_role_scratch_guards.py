@@ -33,6 +33,7 @@ from typing import Any
 import pytest
 import yaml
 
+from tests.hang_guard import HANG_GUARD_SECONDS
 from tests.livespec_dev_tooling import test_incident_observer_role_production_unchanged as base
 from tests.livespec_dev_tooling import test_incident_observer_role_scratch_refusals as refusals
 
@@ -42,7 +43,7 @@ _PLAYBOOKS = (
     _ANSIBLE / "incident-observer-scratch.yml",
     _ANSIBLE / "incident-observer-scratch-teardown.yml",
 )
-_PLAYBOOK_TIMEOUT_SECONDS = 600
+_PLAYBOOK_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _SCRATCH_INCLUDE = "Converge the scratch instance only through its refusals"
 _PRODUCTION_INCLUDE = "Converge the production instance"
 _PUBLISH = "Publish only the declared paths through a path-scoped funnel"

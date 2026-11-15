@@ -71,6 +71,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -95,7 +97,7 @@ _EXECUTING_USER_OWNERSHIP = {
 }
 _INSTALL_TASK = "Install this host's Fabro factory registry"
 _RESOLVED_FACT = "fabro_factory_registry_resolved"
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 
 # The committed registry DECLARATION, as three nested matches rather than a walk over

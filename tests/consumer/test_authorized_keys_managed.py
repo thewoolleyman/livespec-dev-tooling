@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import HANG_GUARD_SECONDS
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.consumer
@@ -34,7 +36,7 @@ _ROLES = _REPO_ROOT / "ansible" / "roles"
 _ROLE = _ROLES / "authorized_keys_managed"
 _ROLE_NAME = "authorized_keys_managed"
 _HOST = "fixture-host"
-_TIMEOUT_SECONDS = 600
+_TIMEOUT_SECONDS = HANG_GUARD_SECONDS
 _MARKER = "# {mark} ANSIBLE MANAGED authorized_keys_managed: {name}"
 _DOLT_PUBLIC_KEY = (
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 "
