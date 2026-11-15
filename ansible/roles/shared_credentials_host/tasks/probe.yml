@@ -21,15 +21,21 @@
     quiet: true
 
 - name: Launch the consumer and report variable names and byte counts only
+  vars:
+    # The child's script. Names are counted from awk's ENVIRON, never by splitting `env`
+    # output, so a multi-line value such as a PEM key cannot pose as a name.
+    shared_credentials_host_probe_script: |
+      for n in "$@"; do
+        printf 'name=%s bytes=%s\n' "$n" "$(printenv "$n" | wc -c)"
+      done
+      awk 'BEGIN { n = 0; for (k in ENVIRON) if (k ~ /^AWS_/) n++; print "aws_names=" n }'
   ansible.builtin.command:
     argv: >-
       {{ ['/usr/bin/python3', '-I', shared_credentials_host_artifact_dest, 'launch',
           '--manifest', shared_credentials_host_manifest_dest,
           '--consumer', shared_credentials_host_probe_consumer, '--',
-          '/bin/sh', '-c',
-          'for n in "$@"; do printf "name=%s bytes=%s\n" "$n" "$(printenv "$n" | wc -c)"; done;'
-          ~ ' printf "aws_names=%s\n" "$(env | cut -d= -f1 | grep -c "^AWS_")"',
-          'probe'] + shared_credentials_host_probe_names }}
+          '/bin/sh', '-c', shared_credentials_host_probe_script, 'probe']
+         + shared_credentials_host_probe_names }}
   register: shared_credentials_host_probe_result
   changed_when: false
 

@@ -115,6 +115,7 @@ def _deploy(*, root: Path, checkout: Path, ref: str, unit: str = "active") -> tu
         "caam_delivery_push_checkout": str(checkout),
         "caam_delivery_push_install_command": ["sh", "-c", f"echo install >> {marker}"],
         "caam_delivery_push_active_command": ["printf", unit],
+        "caam_delivery_push_stamp": str(root / "state" / "deployed"),
     }
     play = (
         "---\n- name: fixture\n  hosts: all\n  gather_facts: false\n"
@@ -154,16 +155,44 @@ def test_an_apply_moves_the_checkout_installs_once_and_a_second_apply_changes_no
     assert _installs(marker=marker) == 1
 
 
-def test_a_checkout_already_past_the_pin_is_left_where_it_is(*, tmp_path: Path) -> None:
-    checkout, first, second, third = _fixture(root=tmp_path)
+def _stamp(*, root: Path, commit: str) -> None:
+    path = root / "state" / "deployed"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = path.write_text(f"{commit}\n", encoding="utf-8")
+
+
+def test_a_checkout_past_the_pin_installed_from_its_head_is_left_alone(*, tmp_path: Path) -> None:
+    checkout, _, second, third = _fixture(root=tmp_path)
     _ = _git("merge", "-q", "--ff-only", third, cwd=checkout)
-    del first
+    _stamp(root=tmp_path, commit=third)
 
     output, marker = _deploy(root=tmp_path, checkout=checkout, ref=second)
 
     assert _changed(output=output) == 0
     assert _git("rev-parse", "HEAD", cwd=checkout) == third
     assert _installs(marker=marker) == 0
+
+
+@pytest.mark.parametrize("stamped", ["absent", "stale"])
+def test_a_checkout_that_contains_the_pin_but_was_not_installed_from_is_installed(
+    *, tmp_path: Path, stamped: str
+) -> None:
+    """The running service can be older than its checkout: the stamp, not the move, decides."""
+    checkout, first, second, third = _fixture(root=tmp_path)
+    _ = _git("merge", "-q", "--ff-only", third, cwd=checkout)
+    if stamped == "stale":
+        _stamp(root=tmp_path, commit=first)
+
+    output, marker = _deploy(root=tmp_path, checkout=checkout, ref=second)
+
+    assert _changed(output=output) > 0
+    assert _git("rev-parse", "HEAD", cwd=checkout) == third
+    assert _installs(marker=marker) == 1
+    stamp = (tmp_path / "state" / "deployed").read_text(encoding="utf-8")
+    assert stamp == f"{third}\n"
+    again, _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+    assert _changed(output=again) == 0
+    assert _installs(marker=marker) == 1
 
 
 def test_a_checkout_with_uncommitted_changes_is_refused_and_left_untouched(
@@ -253,6 +282,20 @@ def test_the_probe_reports_names_and_byte_counts_and_never_a_value(*, tmp_path: 
     assert f"name=FIXTURE_PRIVATE_KEY bytes={len(_SECRET) + 1}" in output
     assert "aws_names=0" in output
     assert _SECRET not in output and "12345" not in output
+
+
+def test_a_multi_line_value_is_not_counted_as_an_aws_name(*, tmp_path: Path) -> None:
+    """A PEM-shaped value whose continuation line looks like `AWS_X=1` is not a name."""
+    pem = f"-----BEGIN KEY-----\nAWS_SMUGGLED=1\n{_SECRET}\n-----END KEY-----"
+    output = _probe(
+        root=tmp_path,
+        child_env={"FIXTURE_APP_ID": "12345", "FIXTURE_PRIVATE_KEY": pem},
+        names=_NAMES,
+    )
+
+    assert _changed(output=output) == 0
+    assert "aws_names=0" in output
+    assert _SECRET not in output
 
 
 @pytest.mark.parametrize(

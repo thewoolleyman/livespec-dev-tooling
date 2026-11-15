@@ -26,6 +26,12 @@ caam_delivery_push_active_command:
   - is-active
   - "{{ caam_delivery_push_unit }}"
 
+# What the role last installed: the checkout commit written here after each install. The
+# running service can be older than its checkout (the checkout is a shared primary, and
+# something else may move it), so the install runs whenever this stamp is absent or
+# differs from the checkout's commit, not only when this role moves the checkout.
+caam_delivery_push_stamp: ~/.local/state/caam-usage-rotate/caam-delivery-push.deployed
+
 # The file whose deployed bytes the read-back compares against the pinned commit's:
 # the keep-alive sweep the service ships to every listed host.
 caam_delivery_push_readback_path: overseer/remote_control_sweep.py
