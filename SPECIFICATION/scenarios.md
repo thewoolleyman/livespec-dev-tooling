@@ -3555,6 +3555,32 @@ When that test fails
 
 Then the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
+## Scenario: a failing test whose closure names a changed file through the working directory is touched
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains `tests/fixtures/data.json`
+
+And a failing test whose closure names that file only as `Path.cwd() / "tests" / "fixtures" / "data.json"`
+
+When the flake-retry plugin decides that test's retry
+
+Then the plugin MUST treat the test as touched
+
+And the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains `tests/fixtures/data.json`
+
+And a failing test whose closure names that file only as `request.config.rootpath / "tests" / "fixtures" / "data.json"`
+
+When the flake-retry plugin decides that test's retry
+
+Then the plugin MUST treat the test as touched
+
+And the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
 ## Scenario: a delegated gate Job that routes locked artifacts through the pool's cache still retries an untouched failing test
 
 Given a pushed tree that changes neither `pyproject.toml` nor any `uv.lock`
@@ -3574,6 +3600,56 @@ When a delegated gate Job routes that tree's locked artifacts through the pool's
 Then the Job's change set MUST still list `uv.lock`
 
 And the `uv.lock` contents that change set compares MUST be the pushed tree's own bytes, so the cache rewrite neither hides nor fakes a lockfile change
+
+## Scenario: a failing test whose closure reaches a changed path through getattr, an alias of request or another path form fails at once
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a change set that contains `tests/widgets/data/sample.json` and no module of the test's closure
+
+And a failing test in `tests/widgets/test_render.py` whose closure names `tests/widgets/data/` only through one of these expressions: `getattr(request, "path").parent / "data"`; `req.path.parent / "data"` after `req = request`; a helper `def data_dir(req): return req.path.parent / "data"` called as `data_dir(request)`; `request.node.parent.path.parent / "data"`; `os.path.join(os.path.dirname(request.module.__file__), "data")`; `f"{Path(__file__).parent}/data"`; or `Path(__file__).with_name("data")`
+
+When that test fails, whichever one of those expressions its closure uses
+
+Then the plugin MUST treat the test as touched
+
+And the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
+
+## Scenario: a fixture imported from another test module is judged in the module that defines it
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a fixture `shared_data` defined in `tests/b/test_source.py` as `Path(__file__).parent / "data"`, which `tests/a/test_user.py` imports and a failing test there uses
+
+And a change set that contains `tests/b/data/x.json` and no module of the test's closure
+
+When that test fails
+
+Then the plugin MUST treat the test as touched, and the session MUST fail on that first failure with no re-run
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a fixture `own_data` defined in `tests/b/test_source.py` as `request.path.parent / "data"`, which `tests/a/test_user.py` imports and a failing test there uses
+
+And a change set that contains `tests/a/data/x.json` and no module of the test's closure
+
+When that test fails
+
+Then the plugin MUST treat the test as touched, because a `request` read in the defining module yields the importing test's path, and the session MUST fail on that first failure with no re-run
+
+## Scenario: a module-level name bound to string literals only keeps a joined closure path determinate
+
+Given a repository that loads livespec-dev-tooling's flake-retry pytest plugin
+
+And a failing test whose closure names a path only as `Path(__file__).resolve().parents[1] / CLAIMS_RELATIVE_PATH`, in a module one directory below the repository root, such as `livespec_dev_tooling/_incident_fleet_sources.py`, so that `parents[1]` is the repository root, and where the closure binds `CLAIMS_RELATIVE_PATH = Path("config") / "incident-fleet-evidence.json"` at module level
+
+And a change set whose only path is `docs/unrelated.md`
+
+When that test fails on its first attempt
+
+Then the plugin MUST treat the test as untouched and re-run it on its own, exactly as for any untouched failing test
+
+And when the change set's only path is `config/incident-fleet-evidence.json` instead, the session MUST fail on that first failure, and the plugin MUST NOT re-run the test
 
 ## Scenario: a change set that touches the build or the plugin disables every retry
 
