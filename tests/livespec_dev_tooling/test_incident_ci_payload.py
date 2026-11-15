@@ -57,6 +57,20 @@ def test_exact_packet_projects_six_query_fields_and_absent_identity_refuses():
         module.query_for(authority=replace(value, context=replace(value.context, identity=None)))
 
 
+def test_admission_query_carries_the_authenticated_event_base() -> None:
+    value = module.decode_authority(payload=json.dumps(packet()))
+    assert value is not None
+    event = module.CiEvent(
+        kind="pull_request",
+        repository="owner/repo",
+        base_sha="d" * 40,
+        head_sha="b" * 40,
+        pr_number=7,
+        labels=("expedited-incident-response",),
+    )
+    assert module.query_for(authority=value, event=event)["event_base_sha"] == event.base_sha
+
+
 @pytest.mark.parametrize(
     "value",
     [

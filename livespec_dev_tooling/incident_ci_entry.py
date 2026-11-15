@@ -114,10 +114,11 @@ class CiEntry:
             )
             current, observer = self.current or boundary.current, self.observer or boundary.admitted
             read = self.enablement or boundary.enablement
-            query = query_for(authority=authority)
+            current_query = query_for(authority=authority)
+            admission_query = query_for(authority=authority, event=event)
             trust = CiTrust(
-                current=lambda _: current(query=query),
-                observer=lambda _authority, _event: observer(query=query),
+                current=lambda _: current(query=current_query),
+                observer=lambda _authority, _event: observer(query=admission_query),
             )
         result = select_ci_plan(
             event=event,

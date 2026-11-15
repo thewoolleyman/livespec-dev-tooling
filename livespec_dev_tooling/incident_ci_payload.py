@@ -8,7 +8,7 @@ import re
 from typing import Any, cast
 
 from livespec_dev_tooling._incident_observer_store import read_observer_arm
-from livespec_dev_tooling.incident_ci_policy import CiAuthority, CiOutcome
+from livespec_dev_tooling.incident_ci_policy import CiAuthority, CiEvent, CiOutcome
 from livespec_dev_tooling.incident_execution import ExecutionContext, Invocation, OperationIdentity
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
@@ -61,13 +61,13 @@ def decode_authority(*, payload: str) -> CiAuthority | None:
         return None
 
 
-def query_for(*, authority: CiAuthority) -> dict[str, Any]:
-    """Project the controller's six-field read query from decoded canonical context."""
+def query_for(*, authority: CiAuthority, event: CiEvent | None = None) -> dict[str, Any]:
+    """Project a controller read query, adding the forge's base only for admission."""
     identity = authority.context.identity
     if identity is None:
         message = "incident authority has no identity"
         raise ValueError(message)
-    return dict(
+    query = dict(
         repository=identity.repository,
         arm_id=authority.observer_arm_id,
         pr_number=authority.pr_number,
@@ -75,6 +75,9 @@ def query_for(*, authority: CiAuthority) -> dict[str, Any]:
         head_sha=identity.head_sha,
         receipt_digest=authority.receipt_digest,
     )
+    if event is not None:
+        query["event_base_sha"] = event.base_sha
+    return query
 
 
 def decode_outcome(*, value: object) -> CiOutcome:

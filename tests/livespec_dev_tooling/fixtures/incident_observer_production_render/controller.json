@@ -7,5 +7,7 @@
   "webhook_secret": "/etc/livespec-incident/webhook-secret",
   "control_secret": "/etc/livespec-incident/control-secret",
   "query_secret": "/etc/livespec-incident/query-secret",
-  "port": 8765
+  "port": 8765,
+  "expedited_base_max_commits": 50,
+  "expedited_base_max_minutes": 240
 }

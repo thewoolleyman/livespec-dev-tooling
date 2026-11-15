@@ -30,6 +30,10 @@ incident_observer_repository: thewoolleyman/livespec-dev-tooling
 # Name a scratch branch only for a proof installation: every observer route and
 # the principal then refuse master (livespec-dev-tooling-thhgeg).
 incident_observer_target_branch: ""
+# The default branch may advance after an expedited attempt is armed.  The
+# controller admits its recorded genesis base only while it remains this fresh.
+incident_observer_expedited_base_max_commits: 50
+incident_observer_expedited_base_max_minutes: 240
 # The required master leaf jobs the manifest names: the observer acts on the
 # first FAILING `workflow_job` callback whose name is in this list. It is every
 # leaf job and matrix leg `ci-green` needs in `.github/workflows/ci.yml`, spelled
