@@ -7,7 +7,7 @@ repeats the values ansible/dev-host.yml converges, byte-identical to the role
 before the inventory existed. Every other entry is converged one at a time by
 ansible/incident-observer-installation.yml, with its layout derived from its
 name in vars/installation.yml and its public routes on the role's one funnel
-port at /<name>/callback, /<name>/ordinary-action and /<name>/ci/publish, proxied to its own
+port at /<name>/callback and /<name>/ordinary-action, proxied to its own
 listener. The refusal of an undeclared public path judges the port against the
 union of every declared installation's paths.
 
@@ -328,9 +328,8 @@ def test_a_declared_repository_gets_its_own_layout_derived_from_its_name() -> No
         "incident_observer_funnel_paths": [
             "/livespec/callback",
             "/livespec/ordinary-action",
-            "/livespec/ci/publish",
         ],
-        "incident_observer_funnel_targets": ["/callback", "/ordinary-action", "/ci/publish"],
+        "incident_observer_funnel_targets": ["/callback", "/ordinary-action"],
     }
 
 
@@ -390,12 +389,10 @@ _SECOND_LISTENER = "http://127.0.0.1:8770"
 _DEV_ROUTES = {
     "/callback": _DEV + "/callback",
     "/ordinary-action": _DEV + "/ordinary-action",
-    "/ci/publish": _DEV + "/ci/publish",
 }
 _SECOND_ROUTES = {
     "/livespec/callback": _SECOND_LISTENER + "/callback",
     "/livespec/ordinary-action": _SECOND_LISTENER + "/ordinary-action",
-    "/livespec/ci/publish": _SECOND_LISTENER + "/ci/publish",
 }
 
 
@@ -445,7 +442,6 @@ def _nodes() -> dict[str, tuple[dict[str, Any], dict[str, Any]]]:
                     **_DEV_ROUTES,
                     "/livespec/callback": _DEV + "/callback",
                     "/livespec/ordinary-action": _SECOND_LISTENER + "/ordinary-action",
-                    "/livespec/ci/publish": _SECOND_LISTENER + "/ci/publish",
                 }
             ),
             _production_vars(inventory=_inventory(_SECOND)),
@@ -585,7 +581,6 @@ def test_a_second_installation_publishes_its_prefixed_routes_to_its_own_listener
             _publish(
                 path="/livespec/ordinary-action", target=_SECOND_LISTENER + "/ordinary-action"
             ),
-            _publish(path="/livespec/ci/publish", target=_SECOND_LISTENER + "/ci/publish"),
         ]
     )
 

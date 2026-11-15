@@ -15,7 +15,6 @@ from tests.livespec_dev_tooling import test_incident_observer_role_production_un
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 _SHA = "1" * 40
-_RELEASED_PUBLISHER_SHA = "2145d1d639a398c2cc3ed68a437baf92aeec7baf"
 _RENDER_POLICY = "Render this installation's CI identity policy from its inventory entry"
 _INSTALL_POLICY = "Install the CI identity policy, private to the controller account"
 _CI_TASKS = (
@@ -37,16 +36,36 @@ def _argv(*, variables: dict[str, Any]) -> list[str]:
 
 
 def test_no_approved_publisher_commit_provisions_no_policy() -> None:
-    # The empty list is SET here to prove the explicit disablement behavior;
-    # production's committed configuration instead approves its released publisher.
+    # The empty list is SET here, so a committed rollout that lists a commit does
+    # not break the property: an empty list leaves production's render unchanged.
     variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": []}
+    assert "--ci-identity-policy" not in _argv(variables=variables)
+    base.assert_production_render_matches_fixture(
+        rendered=base.render_installation(variables=variables), variables=variables
+    )
+
+
+def test_production_configuration_provisions_no_policy_until_the_publish_route_is_ratified() -> (
+    None
+):
+    # SPECIFICATION/contracts.md, "Expedited incident execution", public ingress:
+    # /ci/publish is not a ratified public route, so the org move's observer re-key
+    # (livespec-dev-tooling-lcyn5s) converges with no policy. The released
+    # publisher commit is listed again with the ratifying revise.
+    variables = base.production_variables()
+
+    assert variables["incident_observer_ci_publisher_shas"] == []
     assert "--ci-identity-policy" not in _argv(variables=variables)
 
 
-def test_production_configuration_provisions_the_released_publisher() -> None:
-    variables = base.production_variables()
+def test_a_listed_publisher_still_publishes_only_the_ratified_public_routes() -> None:
+    # Provisioning a policy never widens public ingress: the ratified clause
+    # publishes /callback and /ordinary-action, "and only those".
+    variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": [_SHA]}
+    resolved = base.resolve(variables=variables)
 
-    assert variables["incident_observer_ci_publisher_shas"] == [_RELEASED_PUBLISHER_SHA]
+    assert resolved["incident_observer_funnel_paths"] == ["/callback", "/ordinary-action"]
+    assert resolved["incident_observer_installation_routes"] == ["/callback", "/ordinary-action"]
 
 
 def test_an_approved_publisher_commit_binds_the_policy_into_the_manifest() -> None:
