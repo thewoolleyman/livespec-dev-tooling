@@ -90,12 +90,16 @@ env:
   # as the runs-on fallbacks in this file and MUST stay in lockstep with them.
   UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
   UV_HTTP_TIMEOUT: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '30' || '60' }}
-# merge_group is deliberately ABSENT: no merge queue is configured for this
-# repo (verified live — zero rulesets, required_merge_queue: null; branch
-# protection requires only ci-green). Keeping the vestigial trigger would be
-# exactly the routing hole the trusted-event audit forbids, since merge_group
-# is not a fork-gated event and the matrices below are self-hosted. Re-add it
-# WITH hosted routing only if a merge queue is adopted.
+# merge_group is PRESENT in its GUARDED shape (org merge-queue cutover, plan
+# stale-base-merge-options, epic livespec-dev-tooling-xowhol). An Organization
+# now owns this repo, so branch_protection_alignment requires a merge queue
+# (QUEUE_REQUIRED_REPOSITORIES). merge_group is not a fork-gated event, so an
+# unguarded trigger here would be the routing hole the trusted-event audit
+# forbids; instead the first job, merge-group-guard, decides whether a merge
+# group may use self-hosted capacity, and every self-hosted-capable job routes
+# through its output (see the comment above that job). A merge_group run runs
+# the SAME full job graph as a master push and reports the same required
+# ci-green context; only its runner routing can differ.
 #
 # A push to an incident-scratch/** branch runs the SAME master job graph as a
 # push to master (livespec-dev-tooling-7w757z): no job-level `if:` and no
@@ -128,6 +132,8 @@ on:
   pull_request:
   push:
     branches: [master, 'incident-scratch/**']
+  merge_group:
+    types: [checks_requested]
 
 # B' master-push concurrency (SPECIFICATION/constraints.md §"CI matrix shape", v182;
 # livespec-dev-tooling-qzw2gf). Every push to refs/heads/master joins ONE group with
@@ -146,6 +152,109 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # GUARDED merge_group (livespec NFR "Self-hosted CI runner host requirements"
+  # -> Event routing; livespec-dev-tooling contracts.md "The guarded merge_group
+  # exception", checked by self_hosted_routing). This job is the workflow's
+  # FIRST job: it runs on hosted capacity with a read-only token, on EVERY
+  # event, and carries no job-level `if:`. On pull_request and push it makes
+  # no API call and outputs trusted=true, so those events route exactly as
+  # before. On merge_group it resolves every pull request in the group through
+  # the forge API (the base branch's merge queue, up to and including the
+  # entry whose head commit is this group's head) and outputs trusted=true
+  # only when every one has a same-repository head and an author on the
+  # merge_queue_author_allowlist committed in pyproject.toml AT THE GROUP'S
+  # BASE COMMIT (never the enqueued tree). Any error, an unresolved entry, a
+  # fork head or an author off the list outputs trusted=false, which routes
+  # every gating job below to the hosted literal: the batch still runs the
+  # full job graph and still reports ci-green, it only loses self-hosted
+  # capacity. Every self-hosted-capable job needs this job, carries
+  # `!cancelled()` so a failed guard still runs it (hosted), and ci-green's
+  # required-leg reader fails any batch whose leg did not run.
+  merge-group-guard:
+    name: merge-group-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      trusted: ${{ steps.guard.outputs.trusted }}
+    steps:
+      - name: Resolve the merge group's pull requests against the allowlist
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MG_BASE_REF: ${{ github.event.merge_group.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "merge_group" ]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! verdict="$(python3 - <<'PY'
+          import json, os, subprocess, sys, tomllib
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          owner, name = repo.split("/", 1)
+          head = os.environ["MG_HEAD_SHA"]
+          base_sha = os.environ["MG_BASE_SHA"]
+          branch = os.environ["MG_BASE_REF"].removeprefix("refs/heads/")
+
+          def gh(*args):
+              return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+
+          raw = gh("api", "-H", "Accept: application/vnd.github.raw",
+                   f"repos/{repo}/contents/pyproject.toml?ref={base_sha}")
+          table = tomllib.loads(raw)["tool"]["livespec_dev_tooling"]
+          allow = {str(a).removesuffix("[bot]").removeprefix("app/") for a in table["merge_queue_author_allowlist"]}
+          if not allow:
+              sys.exit("empty merge_queue_author_allowlist at the base commit")
+          query = """
+          query($owner: String!, $name: String!, $branch: String!) {
+            repository(owner: $owner, name: $name) {
+              mergeQueue(branch: $branch) {
+                entries(first: 100) {
+                  nodes {
+                    position
+                    headCommit { oid }
+                    pullRequest {
+                      number
+                      isCrossRepository
+                      headRepository { nameWithOwner }
+                      author { login }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          """
+          data = json.loads(gh("api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}",
+                               "-f", f"name={name}", "-f", f"branch={branch}"))
+          entries = sorted(data["data"]["repository"]["mergeQueue"]["entries"]["nodes"],
+                           key=lambda e: e["position"])
+          cut = [i for i, e in enumerate(entries) if (e.get("headCommit") or {}).get("oid") == head]
+          if len(cut) != 1:
+              sys.exit(f"merge group head {head} is not exactly one queue entry's head commit")
+          group = entries[: cut[0] + 1]
+          for entry in group:
+              pr = entry["pullRequest"]
+              head_repo = (pr.get("headRepository") or {}).get("nameWithOwner")
+              login = ((pr.get("author") or {}).get("login") or "").removesuffix("[bot]")
+              if pr["isCrossRepository"] or head_repo != repo:
+                  sys.exit(f"PR #{pr['number']} head repository {head_repo} is not {repo}")
+              if login not in allow:
+                  sys.exit(f"PR #{pr['number']} author {login!r} is not on the allowlist")
+          print("true")
+          PY
+          )" || [ "$verdict" != "true" ]; then
+            echo "::warning::merge-group-guard: routing this merge group to hosted capacity"
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "trusted=true" >> "$GITHUB_OUTPUT"
+
   check-python:
     timeout-minutes: 90  # 7-day max 63 min on a starved node (livespec-dev-tooling-u6jztk)
     name: ${{ matrix.target }}
@@ -156,7 +265,9 @@ jobs:
     # arm64 homelab worker set (livespec-dev-tooling-arm64-k3s,
     # livespec-dev-tooling-ko26ez.7) while jobs whose images are amd64-only
     # keep CI_RUNNER_LABELS. Unset, it routes exactly as before.
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_PYTHON_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    needs: [merge-group-guard]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_PYTHON_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
@@ -249,9 +360,9 @@ jobs:
     # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
     # this job running IN FULL when incident-ci failed or refused: only its
     # passed aggregate can omit work here.
-    needs: [incident-ci]
+    needs: [merge-group-guard, incident-ci]
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
@@ -366,9 +477,9 @@ jobs:
     # incident-ci is needed only to read its `omitted` output. `!cancelled()`
     # keeps this job running IN FULL when incident-ci failed or refused, and
     # the producer term keeps today's rule: no consumer without a producer.
-    needs: [check-per-file-coverage, incident-ci]
+    needs: [merge-group-guard, check-per-file-coverage, incident-ci]
     if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
@@ -450,7 +561,9 @@ jobs:
   check-python-batch:
     timeout-minutes: 90  # 7-day max 38 min (livespec-dev-tooling-u6jztk)
     name: check-python-batch
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    needs: [merge-group-guard]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
@@ -529,6 +642,7 @@ jobs:
   # it), and no CI workflow runs it.
   check-fleet-conformance:
     name: check-fleet-conformance
+    needs: [merge-group-guard]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -607,10 +721,10 @@ jobs:
     # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
     # this job running IN FULL when incident-ci failed or refused: only its
     # passed aggregate can omit work here.
-    needs: [incident-ci]
+    needs: [merge-group-guard, incident-ci]
     if: ${{ !cancelled() }}
     # The same single variable routes every ordinary gating target.
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
@@ -719,9 +833,9 @@ jobs:
     # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
     # this job running IN FULL when incident-ci failed or refused: only its
     # passed aggregate can omit work here.
-    needs: [incident-ci]
+    needs: [merge-group-guard, incident-ci]
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     env:
@@ -881,7 +995,9 @@ jobs:
   incident-ci:
     timeout-minutes: 90  # 7-day max 58 min (livespec-dev-tooling-u6jztk)
     name: incident-ci
-    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    needs: [merge-group-guard]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.183.1
     permissions:

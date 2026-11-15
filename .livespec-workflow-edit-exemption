@@ -1,17 +1,13 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/auto-enable-merge.yml's enable step gains, ONLY
-# as added lines around the existing arm call:
-# - stderr capture of the `gh pr merge --auto --rebase` call, replayed to the log;
-# - on success, an arm read-back that counts only "OPEN true" or MERGED as armed
-#   (a failed read counts as NOT armed), retries the arm once, and otherwise fails
-#   with ::error:: and exit 1;
-# - on refusal, a direct `gh pr merge --rebase` ONLY when the refusal says
-#   "unstable status". The merge API applies the ruleset's required checks; the
-#   App behind APP_ID (thewoolleyman-factory-bot, 3668528) is not the bypass actor
-#   on master-incident-recovery-bypass (Integration 5656677).
-# Nothing is deleted or modified.
-work_item=livespec-dev-tooling-cxj64i
-reason=Break the circular arm in which auto-enable-merge's own failed run keeps a PR unstable (livespec-dev-tooling#4590), and never report an unarmed PR as armed (#4634, #4651). Coordinator re-grade fixes applied.
-change=additive
-ci_runtime=no-significant-increase
+# The change: .github/workflows/ci.yml adopts the GUARDED merge_group shape
+# (org merge-queue cutover, plan stale-base-merge-options, epic
+# livespec-dev-tooling-xowhol). It adds the merge_group trigger and a first,
+# hosted, read-only merge-group-guard job, and it MODIFIES existing lines:
+# every self-hosted-capable job's runs-on is wrapped in the guard output
+# (trusted == 'true' && <unchanged expression> || 'ubuntu-latest'), its needs
+# gains merge-group-guard, and its if gains !cancelled(). On pull_request and
+# push the guard outputs true with no API call, so every job, its runs-on and
+# its run condition are unchanged on those events. MAINTAINER tier.
+work_item=livespec-dev-tooling-5foyvs
+reason=Adopt the guarded merge_group trigger so the merge queue the org cutover requires (branch_protection_alignment merge_queue_absent) runs the full suite and reports ci-green without opening an unguarded self-hosted routing path.

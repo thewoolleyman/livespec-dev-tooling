@@ -183,6 +183,19 @@ dev = [
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
+# Org merge-queue cutover (plan stale-base-merge-options, epic
+# livespec-dev-tooling-xowhol). The incident recovery principal's GitHub App
+# id, the ONLY bypass actor branch_protection_alignment admits on a
+# queue-required repository's default-branch rulesets: the
+# livespec-ai-incident-recovery org App's Integration id. An App id is not a
+# secret.
+recovery_bypass_integration_id = 5761967
+# Pull-request authors whose merge groups the ci.yml merge-group-guard job
+# admits to self-hosted capacity (the guarded merge_group shape of
+# self_hosted_routing). The guard reads this list from the merge group's BASE
+# commit, so an enqueued change to it takes effect only once it is on master.
+# Bot logins are written without the "[bot]" / "app/" decoration.
+merge_queue_author_allowlist = ["thewoolleyman", "thewoolleyman-factory-bot"]
 source_trees = ["livespec_dev_tooling"]
 # The delegated gate Job's memory request and limit (contracts.md, "Declared
 # gate resources"). The default is 6Gi. The full-suite green-verified leg at

@@ -118,6 +118,7 @@ def test_the_repository_own_workflow_resolves_to_a_closed_graph() -> None:
     assert {"check-types", "check-lint", "check-coverage", "incident-ci", "ci-green"} <= declared
     assert all(set(job.needs) <= declared for job in graph)
     assert next(job for job in graph if job.name == "check-coverage").needs == (
+        "merge-group-guard",
         "check-per-file-coverage",
         "incident-ci",
     )

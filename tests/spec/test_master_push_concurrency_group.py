@@ -250,5 +250,15 @@ def test_pull_request_and_incident_scratch_runs_never_join_the_master_group() ->
     )
     assert pull_request == "CI-301"
     assert scratch == "CI-302"
+    merge_group = _group(
+        github={
+            "workflow": _workflow()["name"],
+            "event_name": "merge_group",
+            "ref": "refs/heads/gh-readonly-queue/master/pr-4010-0123abc",
+            "run_id": "303",
+            "event": {"merge_group": {"head_sha": "0123abc"}},
+        },
+    )
+    assert merge_group == "CI-303"
     triggers = _workflow()[True]  # PyYAML reads the bare `on:` key as boolean True.
-    assert "merge_group" not in triggers
+    assert "merge_group" in triggers
