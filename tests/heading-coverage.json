@@ -4142,6 +4142,29 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a managed hook refuses a local agent-memory write on an interactive host",
+    "test": "tests.consumer.test_claude_memory_write_guard.test_a_bash_write_into_memory_is_refused",
+    "reason": "Consumer-tier (v234): the test runs the claude_memory_write_guard role's committed hook against each Bash memory-write form, including the cd-then-here-document form, and asserts the refusal; sibling tests in the same module cover Write, Edit, the read and the tracked .ai/memory/ write. The live behaviour on interactive_claude_hosts was converged under livespec-dev-tooling-pik7f2."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Mac converged for the memory-write guard refuses a local agent-memory write",
+    "test": "TODO",
+    "reason": "Spec-first (v234): a real test at the integration tier or above is owed for this heading: the memory-write guard playbook applied from the control node to a member of interactive_claude_macs, a session there with no Driver enabled refusing Write, Edit and a literal-target Bash tee into its memory directory, and a clean drift report. livespec-dev-tooling-i76rv2 owns it.",
+    "work_item": "livespec-dev-tooling-i76rv2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a memory-write guard run fails at its start when a Mac precondition is missing",
+    "test": "TODO",
+    "reason": "Spec-first (v234): a real test at the integration tier or above is owed for this heading: the memory-write guard playbook applied from the control node with a member of interactive_claude_macs unreachable or lacking a Python interpreter for Ansible, asserting the run fails at its start naming that Mac and changes no host. livespec-dev-tooling-i76rv2 owns it.",
+    "work_item": "livespec-dev-tooling-i76rv2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a role script that decides whether a host alerts is tested in every alert state",
     "test": "TODO",
     "reason": "Spec-first (v222): a real test at the integration tier is owed for this scenario, running ansible/roles/reconcile_runs/files/livespec-reconcile-runs-staleness with its clock, markers and alert-state file faked through every alert state (first alert, repeat inside the re-alert interval, re-alert after it, a growing and a shrinking set, recovery, a missing marker, and a run without --alert-state), asserting each exit status and the alert-state file; livespec-dev-tooling-ba7ypx owns it.",

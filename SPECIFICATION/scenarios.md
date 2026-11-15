@@ -5774,6 +5774,40 @@ Then no hook installed by the role refuses the command
 
 And the managed `CLAUDE.md` that session loaded tells it to prefer `SendMessage` and that typing into a pane stays available when that is necessary
 
+## Scenario: a managed hook refuses a local agent-memory write on an interactive host
+
+Given `ansible/claude-memory-guard.yml` has been applied to a member of `interactive_claude_hosts`
+
+And a Claude Code session on that host runs in a repository whose installed livespec Driver predates the Bash memory-write fix
+
+When the session attempts a Write, an Edit, a Bash output redirection, and a Bash `cd` into its `~/.claude/projects/<project>/memory/` directory followed by a here-document written to a literal file name
+
+Then each attempt MUST be refused by the managed PreToolUse hook, with a reason that routes the content to `AGENTS.md`, a referenced `.ai/<topic>.md` by pull request, or the ledger
+
+And a read of that directory and a write to a tracked `.ai/memory/` path MUST NOT be refused
+
+## Scenario: a Mac converged for the memory-write guard refuses a local agent-memory write
+
+Given the memory-write guard's committed playbook has been applied from the control node to a member of `interactive_claude_macs`
+
+And a Claude Code session on that Mac is started in a directory where no livespec Driver plugin is enabled
+
+When the session attempts a Write, an Edit, and a Bash `tee` whose literal target is under its `~/.claude/projects/<project>/memory/` directory
+
+Then each attempt MUST be refused by a PreToolUse hook declared under `/Library/Application Support/ClaudeCode/managed-settings.d/`
+
+And the drift report for that Mac MUST read clean
+
+## Scenario: a memory-write guard run fails at its start when a Mac precondition is missing
+
+Given a member of `interactive_claude_macs` is unreachable over ssh as `cwoolley@<mac>.perch-rudd.ts.net`, or has no Python interpreter Ansible can use
+
+When the memory-write guard's committed playbook is applied from the control node
+
+Then the run MUST fail at its start with a diagnostic that names that Mac and the missing precondition
+
+And the run MUST NOT have changed any host
+
 ## Scenario: a role script that decides whether a host alerts is tested in every alert state
 
 Given a role under `ansible/roles/` that installs a script whose non-zero exit makes a unit's `OnFailure=` raise an alert
