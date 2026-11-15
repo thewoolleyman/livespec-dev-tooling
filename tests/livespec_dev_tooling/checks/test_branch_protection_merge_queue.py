@@ -351,6 +351,17 @@ def test_a_failed_restrictions_read_fails_closed(
     assert (rc, _modes(findings=findings)) == (4, ["merge_queue_bypass_path"])
 
 
+def test_a_restrictions_object_without_its_holder_keys_fails_closed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Delta fix: "none" needs users, teams and apps PRESENT and empty; else unreadable."""
+    forge = _Forge(restrictions={"unexpected": 1})
+    rc, findings = _run(forge=forge, tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (rc, _modes(findings=findings)) == (4, ["merge_queue_bypass_path"])
+    errors = [f for f in findings if f.get("level") == "error"]
+    assert errors[0]["push_restrictions"] == "unreadable"
+
+
 def test_a_restrictions_object_with_no_exception_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
