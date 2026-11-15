@@ -232,6 +232,11 @@ ci_converge_unit_files:
   - src: gates/prune-gate-refs.sh
     dest: gates/prune-gate-refs.sh
     mode: "0755"
+  # Read by converge-gates-mirror.sh from beside itself: the delegated-gate
+  # repositories that have no ARC values file but still need a mirror.
+  - src: gates/mirror-repos-extra.txt
+    dest: gates/mirror-repos-extra.txt
+    mode: "0644"
   # Shipped, never applied: the template carries placeholder markers and is not
   # a valid manifest until render-gate-job.sh substitutes them, so the converge
   # must NOT kubectl apply it. The gate client renders and submits; the converge

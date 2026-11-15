@@ -35,6 +35,15 @@
 # the pool needs no edit here. `--repo NAME` (repeatable) overrides the
 # derivation for an operator converging one repository by hand.
 #
+# ONE EXCEPTION THE VALUES FILES CANNOT SEE: a repository that sets
+# `delegated_gate` or `delegated_pre_commit` but runs its CI on hosted runners
+# has no values file, yet its gate Jobs still fetch from this mirror. The
+# derivation alone gives it no mirror, and its delegated commit falls back to
+# GATED_LOCALLY with "gates-mirror/<repo>.git does not appear to be a git
+# repository" (dolt-server, 2026-11-15). ./mirror-repos-extra.txt lists those
+# repositories, and the converge unions it with the derived set, so the fix
+# is committed rather than a hand `--repo`.
+#
 # THE CONVERGE REFUSES when the `ci-cache` tier is not mounted. A mirror
 # written to the root disk under an unmounted mountpoint is invisible the
 # moment the tier mounts, and every push after that lands somewhere the daemon
@@ -55,6 +64,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="gates"
 VALUES_DIR="${GATES_VALUES_DIR:-${SCRIPT_DIR}/../arc}"
+EXTRA_REPOS_FILE="${GATES_EXTRA_REPOS_FILE:-${SCRIPT_DIR}/mirror-repos-extra.txt}"
 CACHE_TIER_MOUNT="${CI_CACHE_TIER_MOUNT:-/var/cache/ci-runner}"
 MIRROR_ROOT="${GATES_MIRROR_ROOT:-${CACHE_TIER_MOUNT}/gates-mirror}"
 # The account Tailscale SSH lands the driver host as (./README.md, "The receive
@@ -119,7 +129,26 @@ else
     | sed -E 's#/+$##; s#.*/##' \
     | sort -u)
   [ "${#REPOS[@]}" -gt 0 ] || { echo "FATAL: no githubConfigUrl found under ${VALUES_DIR}"; exit 1; }
-  echo "${#REPOS[@]} repositories, derived from ${VALUES_DIR}/values-*.yaml:"
+  echo "${#REPOS[@]} repositories derived from ${VALUES_DIR}/values-*.yaml."
+  # The second source: repositories that gate through this pool but run their
+  # CI elsewhere, so no values file names them (see ./mirror-repos-extra.txt).
+  # One name per line; `#` starts a comment; blank lines are ignored. Unioned
+  # with the derived set and de-duplicated, so listing a pool repository here
+  # changes nothing. A missing file adds nothing.
+  if [ -f "${EXTRA_REPOS_FILE}" ]; then
+    declare -a extra=()
+    while IFS= read -r line; do
+      line="${line%%#*}"; line="${line//[[:space:]]/}"
+      [ -n "${line}" ] && extra+=("${line}")
+    done < "${EXTRA_REPOS_FILE}"
+    echo "${#extra[@]} more listed in ${EXTRA_REPOS_FILE}."
+    if [ "${#extra[@]}" -gt 0 ]; then
+      mapfile -t REPOS < <(printf '%s\n' "${REPOS[@]}" "${extra[@]}" | sort -u)
+    fi
+  else
+    echo "no ${EXTRA_REPOS_FILE}; nothing more listed."
+  fi
+  echo "${#REPOS[@]} repositories:"
 fi
 for name in "${REPOS[@]}"; do
   # The name becomes a directory under the mirror root AND a path element of

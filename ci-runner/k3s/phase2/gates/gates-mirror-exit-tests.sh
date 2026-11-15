@@ -30,7 +30,10 @@
 #      research/003 correction 3 moved the mirror off;
 #   K. the sweep folds a mirror's per-push packs into one, and an object no
 #      ref reaches but pushed inside the cutoff survives it -- the pack bloat
-#      that OOM-killed the daemon (livespec-dev-tooling-g2ez52).
+#      that OOM-killed the daemon (livespec-dev-tooling-g2ez52);
+#   L. ./mirror-repos-extra.txt adds mirrors for delegated-gate repositories
+#      no values file names, unioned and de-duplicated, under the same
+#      plain-name rule, and the committed list itself converges.
 #
 # HOW IT STAYS OFF THE HOST AND OFF THE CLUSTER. `kubectl` is a FAKE on this
 # suite's own PATH that accepts the converge's apply/patch/rollout calls and
@@ -94,6 +97,11 @@ cat > "${VALUES_DIR}/values-EXAMPLE-repo.yaml" <<'YAML'
 githubConfigUrl: "https://github.com/thewoolleyman/<REPO>"
 YAML
 
+# An EMPTY extra-repos list by default, so tests A-C see only the derived set
+# and never the committed ./mirror-repos-extra.txt. Test L supplies its own.
+EXTRA_FILE="${SCRATCH}/no-extra-repos.txt"
+: > "${EXTRA_FILE}"
+
 converge() {
   # Runs the converge with the fake kubectl ahead of the real PATH, the tier
   # pre-gate pointed at a real mountpoint, and everything else in scratch.
@@ -101,6 +109,7 @@ converge() {
   PATH="${FAKEBIN}:${PATH}" \
     KUBECONFIG="${SCRATCH}/fake.kubeconfig" \
     GATES_VALUES_DIR="${VALUES_DIR}" \
+    GATES_EXTRA_REPOS_FILE="${EXTRA_FILE}" \
     CI_CACHE_TIER_MOUNT="/" \
     GATES_MIRROR_ROOT="${root}" \
     GATES_MIRROR_OWNER="$(id -un)" \
@@ -393,6 +402,42 @@ if [ -n "${offenders}" ]; then
   fail "J: /var/lib/git referenced in:${offenders} (research/003 correction 3 moved the mirror to the ci-cache tier)"
 else
   pass "the mirror lives on the ci-cache tier and nothing points at the package-owned path"
+fi
+
+echo "== L. the extra-repos list adds the mirrors the values files cannot see =="
+# A delegated-gate repository with hosted CI has no values file. Without the
+# list it gets no mirror, and its delegated commit falls back to
+# GATED_LOCALLY (dolt-server, 2026-11-15).
+root_l="${SCRATCH}/mirror-l"
+EXTRA_FILE="${SCRATCH}/extra-repos.txt"
+printf '%s\n' "# a comment line" "" "gamma-repo   # trailing comment" "alpha-repo" > "${EXTRA_FILE}"
+if out="$(converge "${root_l}")"; then
+  ok=1
+  [ -f "${root_l}/gamma-repo.git/git-daemon-export-ok" ] || { fail "L: gamma-repo from the list got no servable mirror"; ok=0; }
+  count="$(find "${root_l}" -maxdepth 1 -name '*.git' -type d | wc -l)"
+  [ "${count}" -eq 3 ] || { fail "L: ${count} mirrors, expected 3 (alpha and beta derived, gamma listed; alpha listed again must not duplicate)"; ok=0; }
+  [ "${ok}" -eq 1 ] && pass "listed repositories are unioned with the derived set, comments and duplicates ignored"
+else
+  fail "L: converge exited non-zero: ${out}"
+fi
+printf '%s\n' "../escape" > "${EXTRA_FILE}"
+if out="$(converge "${SCRATCH}/mirror-l2")"; then
+  fail "L: a listed name that is not a plain name was accepted"
+elif ! printf '%s' "${out}" | grep "refusing repository name" >/dev/null; then
+  fail "L: a bad listed name failed for the wrong reason: ${out}"
+else
+  pass "a listed name is held to the same plain-name rule as a derived one"
+fi
+# The committed list must name only plain names: run the real file through the
+# same converge, which refuses anything else.
+EXTRA_FILE="${SCRIPT_DIR}/mirror-repos-extra.txt"
+if [ ! -f "${EXTRA_FILE}" ]; then
+  fail "L: the committed ${EXTRA_FILE} is missing"
+elif out="$(converge "${SCRATCH}/mirror-l3")"; then
+  [ -d "${SCRATCH}/mirror-l3/dolt-server.git" ] && pass "the committed list converges and carries dolt-server" \
+    || fail "L: the committed list converged without a dolt-server mirror"
+else
+  fail "L: the committed list does not converge: ${out}"
 fi
 
 echo
