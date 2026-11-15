@@ -3,7 +3,7 @@
 The wiring side of the shared contract definition (livespec v108
 section "Fleet membership contract", "assert mode is CI; reconcile mode is
 wiring"): push the required secret NAMES from the operator's
-1Password-wrapper-provided environment (values flow env→stdin, never
+configured-credential-wrapper-provided environment (values flow env→stdin, never
 argv / logs / outcomes), set branch protection derived from the
 member's own ci.yml matrix, apply the `livespec-sibling` topic, and
 open one shim-workflow PR for any missing pin-and-bump shims. Every
@@ -75,10 +75,11 @@ _PEM_PRIVATE_KEY_RE = re.compile(
 def _rewrap_pem(*, value: str) -> str:
     """Re-wrap a PEM private key to canonical 64-column lines (idempotent).
 
-    The 1Password Environment stores the App key un-wrapped (single-line), and
-    `op run` cannot be relied on to preserve interior newlines. A GitHub Actions
-    secret set from that raw value fails to decode (`DECODER routines`). Extract
-    the base64 body, strip all whitespace, and re-emit a canonical 64-column PEM
+    The fleet stores the App key un-wrapped (single-line), and a wrapper
+    backend (for example `op run`) cannot be relied on to preserve interior
+    newlines. A GitHub Actions secret set from that raw value fails to decode
+    (`DECODER routines`). Extract the base64 body, strip all whitespace, and
+    re-emit a canonical 64-column PEM
     so the minted-token step can parse it. A non-PEM value (e.g. APP_ID) has no
     match and passes through unchanged; an already-wrapped PEM re-wraps to itself.
     """
@@ -117,8 +118,8 @@ def _gh_failed(*, outcome: GhOutcome, note: str) -> RowFinding | None:
 def reconcile_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Push APP_ID + APP_PRIVATE_KEY from env via `gh secret set` (stdin only).
 
-    The operator invokes wire-fleet-member under the 1Password
-    environment wrapper, which projects the canonical values as
+    The operator invokes wire-fleet-member under the configured
+    credential wrapper, which projects the canonical values as
     GITHUB_APP_ID and GITHUB_PRIVATE_KEY. Those source env vars flow
     to GitHub via stdin under the destination secret names APP_ID and
     APP_PRIVATE_KEY, with the destination names also accepted as a
@@ -131,7 +132,7 @@ def reconcile_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutc
             return RowFinding(
                 message=(
                     f"{member.repo}: env var(s) {source_names} absent — invoke under "
-                    "with-livespec-env.sh so the 1Password projection provides them"
+                    "with-livespec-env.sh, which supplies the required environment"
                 )
             )
         value = _rewrap_pem(value=value)
