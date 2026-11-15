@@ -23,7 +23,10 @@ of the launch hold files.
 The HOLDS section (rule HOLD-ENDS-ARE-DRIVEN, coordinator 2026-11-13, after hold-gmktec
 stood more than 3 h past the release of its fix) prints every live hold with its age,
 marks one older than 60 minutes STALE HOLD, and marks one with no OWNER: line or no
-END CONDITION as MALFORMED HOLD.
+END CONDITION as MALFORMED HOLD. A hold whose END CONDITION says it was drained under the
+2026-11-14 ~17:5xZ shutdown directive prints DRAINED and is not counted STALE: it ends only
+when a priorities-record re-adds its plan, and about 30 of them printed STALE every tick
+buried the real stalls (coordinator 2026-11-15).
 
 The OVERCOMMIT section (maintainer-approved 2026-11-13) prints, first in the header, every
 node fleet-utilization.sh --overcommit-only marks FLAGGED (idle under 5 % with the BestEffort
@@ -107,6 +110,7 @@ def stranded_header():
 HOLD_DIR = os.path.join(WORKSPACE, "livespec-orchestrator-beads-fabro", "tmp", "petri-canary")
 HOLD_SNIPPET = 160
 HOLD_RESOLVE = "<<< resolve THIS tick: each clause, its owner, its next action; drive the unmet one"
+DRAINED_MARK = "drained under the 2026-11-14 ~17:5xZ shutdown directive"
 
 
 def is_live_hold(name):
@@ -133,8 +137,9 @@ def hold_line(name, path):
     shown = cond[cond.index("END CONDITION"):] if cond else (lines[0] if lines else "(empty file)")
     shown = " ".join(shown.split())[:HOLD_SNIPPET]
     has_owner = any(ln.lstrip().startswith("OWNER:") for ln in lines)
-    stale = age > STALE_MINUTES
-    head = "STALE HOLD" if stale else "HOLD"
+    drained = bool(cond) and DRAINED_MARK in cond
+    stale = age > STALE_MINUTES and not drained
+    head = "DRAINED" if drained else ("STALE HOLD" if stale else "HOLD")
     out = [f"{head} {name} age {age:.0f} min: {shown}" + (f"  {HOLD_RESOLVE}" if stale else "")]
     missing = [what for what, ok in (("OWNER: line", has_owner), ("END CONDITION", cond)) if not ok]
     if missing:
@@ -156,9 +161,11 @@ def holds_header():
         return
     rows = sorted(hold_line(e.name, e.path) for e in entries)
     stale = sum(1 for _, out in rows if out[0].startswith("STALE HOLD"))
+    drained = sum(1 for _, out in rows if out[0].startswith("DRAINED "))
     malformed = sum(1 for _, out in rows if any("MALFORMED HOLD" in ln for ln in out))
     print(
-        f"HOLDS ({HOLD_DIR}; {len(rows)} live, {stale} STALE, {malformed} MALFORMED). A STALE HOLD is resolved THIS"
+        f"HOLDS ({HOLD_DIR}; {len(rows)} live, {stale} STALE, {drained} DRAINED, {malformed} MALFORMED). A DRAINED"
+        " hold ends only when a priorities-record re-adds its plan. A STALE HOLD is resolved THIS"
         " tick like a STALE plan line: name each END CONDITION clause, its owner and its next action, and drive the"
         " unmet clause; building a proof for a clause that waits on a natural event counts as driving it"
         " (rule HOLD-ENDS-ARE-DRIVEN, coordinator-duties §3):"
