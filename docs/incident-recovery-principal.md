@@ -123,5 +123,4 @@ refusal.
 They do not prove deployed capability. Applying the role on the observer host,
 the real App installation and token, the ruleset bypass, and a real merge of an
 inverse are host-captured evidence for the plan's live sequence (note 006,
-phase 3). Provisioning the App, its 1Password key and the ruleset is the
-maintainer's step GO-1 (role README, maintainer step 4).
+phase 3). Provisioning the App and the ruleset remains the maintainer's step GO-1 (role README, maintainer step 4). Parameter Store is canonical key storage; the target dedicated writer receives canonical values on stdin after activation. Writer activation remains blocked on the OPEN mint/apply ruling. Provider authority and recovery custody are unchanged; no host conversion is asserted.

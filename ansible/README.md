@@ -428,8 +428,8 @@ from the control node's projected environment and never from this tree:
 tailnet-internal and which must be public (the role publishes exactly its
 declared public paths, `/callback` and `/ordinary-action`, through a
 path-scoped Tailscale Funnel), and the exact
-maintainer-only steps (the secrets in 1Password, the webhook, the repository
-variable and secret) with one reason each.
+maintainer-only steps (Parameter Store canonical secret ownership through the target central stdin writer, the webhook, the repository
+variable and secret) with one reason each. Writer activation awaits the OPEN mint/apply ruling; consumers retain the wrapper interface until conversion. Webhook and repository permission changes retain their existing authority.
 
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that

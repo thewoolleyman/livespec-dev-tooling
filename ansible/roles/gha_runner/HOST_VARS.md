@@ -6,15 +6,7 @@ Measured from the live host `vps` (system hostname `vmi3006760`) on
 the repository retired the installer convention first, and this role is where
 the service landed).
 
-**Why vps and not hp-xubuntu.** The job this runner serves,
-`livespec-orchestrator-beads-fabro`'s `acceptance-live-golden-master.yml`, is
-specified against the ORCHESTRATOR runtime — the pinned `fabro` binary, `bd`,
-`dolt`, and the livespec 1Password wrapper — and vps is the host that carries
-all four (`fabro` → `/home/ubuntu/.local/bin/fabro`, `bd` → `/usr/local/bin/bd`,
-`dolt` → `/usr/local/bin/dolt`, `with-livespec-env.sh` →
-`/usr/local/bin/with-livespec-env.sh`). An hp-xubuntu entry would be a
-prediction about a host nobody has measured for this job. Enablement is
-expressed by listing the role in that host's play and nothing else.
+**Why vps and not hp-xubuntu.** The job this runner serves, `livespec-orchestrator-beads-fabro`’s `acceptance-live-golden-master.yml`, is specified against the orchestrator runtime: the pinned `fabro` binary, `bd`, `dolt`, and the installed livespec credential wrapper. The measurement recorded above places all four on vps (`fabro` at `/home/ubuntu/.local/bin/fabro`, `bd` at `/usr/local/bin/bd`, `dolt` at `/usr/local/bin/dolt`, and the wrapper at `/usr/local/bin/with-livespec-env.sh`). This is not a receipt of a wrapper backend conversion or a measurement of hp-xubuntu for this job. Enablement is expressed by listing the role in that host’s play.
 
 **The runner's identity is the operator account, deliberately.** The job is
 specified against the operator's environment (the host fabro binary, the

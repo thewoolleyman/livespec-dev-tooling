@@ -492,8 +492,7 @@ of the following hold:
 
 ### Ledger access needs the credential wrapper
 
-The tenant password is projected from 1Password rather than stored on disk. A
-bare `bd` therefore fails with:
+The tenant password is injected by `/usr/local/bin/with-livespec-env.sh --` as the bare `BEADS_DOLT_PASSWORD`, rather than read from a credential file. A bare `bd` without that credential therefore fails with:
 
 ```text
 Error: failed to open database: failed to check if database
