@@ -24,7 +24,7 @@ jobs:
   check-lint-arm64:
     runs-on: macbook-m4-max-homelab-worker-k3s
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-sha-fbecb10
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.213.0
     env:
       LIVESPEC_CI_LANE: local
       MISE_DATA_DIR: /root/.local/share/mise
