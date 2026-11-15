@@ -123,4 +123,4 @@ refusal.
 They do not prove deployed capability. Applying the role on the observer host,
 the real App installation and token, the ruleset bypass, and a real merge of an
 inverse are host-captured evidence for the plan's live sequence (note 006,
-phase 3). Provisioning the App and the ruleset remains the maintainer's step GO-1 (role README, maintainer step 4). Parameter Store is canonical key storage; the target dedicated writer receives canonical values on stdin after activation. The mint/apply question was resolved on 2026-11-15; writer activation remains pending until the writer's key is minted and delivered. Provider authority and recovery custody are unchanged; no host conversion is asserted.
+phase 3). Provisioning the App and the ruleset remains the maintainer's step GO-1 (role README, maintainer step 4). Parameter Store is canonical key storage; the target dedicated writer receives canonical values on stdin after activation. The dedicated writer is active: its key was minted 2026-11-15T07:01:37Z (receipt HXI-WRITER-MINT-RECEIPT on hxi-vxsmdv). Provider authority and recovery custody are unchanged; no host conversion is asserted.
