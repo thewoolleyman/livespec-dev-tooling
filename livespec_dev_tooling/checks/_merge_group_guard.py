@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from itertools import takewhile
 
 from livespec_dev_tooling.checks._self_hosted_routing_parse import (
     runs_on_values,
@@ -15,9 +16,17 @@ __all__: list[str] = ["guarded_merge_group_is_valid", "routes_merge_group_to_sel
 
 
 _JOB_LINE = re.compile(r"^  (?P<name>[A-Za-z_][\w-]*):\s*$")
-_FIELD_LINE = re.compile(r"^    (?P<name>[A-Za-z_-]+):(?P<value>.*)$", re.MULTILINE)
-_OUTPUT_REFERENCE = "needs.{guard}.outputs."
+_FIELD_LINE = re.compile(r"^    (?P<name>[A-Za-z_-]+):(?P<value>.*)$")
+_CONTINUATION_INDENT = "     "
 _HOSTED_LITERAL = "ubuntu-latest"
+# The route has exactly two arms at each operator: the guard condition && the
+# selection, then that || the hosted literal.
+_ROUTE_ARMS = 2
+# A guard names hosted capacity only when its `runs-on` is one plain label,
+# never an expression or a variable route.
+_PLAIN_LABEL = re.compile(r"^(?P<q>[\"']?)[A-Za-z0-9._-]+(?P=q)$")
+_READ_ENTRY = re.compile(r"^[A-Za-z_-]+:\s*read$")
+_EXPRESSION = re.compile(r"^\$\{\{(?P<body>.*)\}\}$", re.DOTALL)
 _REQUIRED_LEGS_MODULE = "livespec_dev_tooling.ci_green_required_legs"
 _MERGE_GROUP = "merge_group"
 
@@ -65,10 +74,25 @@ def _job_blocks(*, source: str) -> tuple[_Job, ...]:
 
 
 def _field(*, body: str, name: str) -> str:
-    """Return one top-level job field's scalar or block text, if present."""
-    for match in _FIELD_LINE.finditer(body):
-        if match.group("name") == name:
-            return match.group("value").strip()
+    """Return one top-level job field's scalar, or its indented block, if present.
+
+    A field written as a block (`runs-on:` then `- local-ci` lines) is read
+    through its continuation lines, so a block-list route is never mistaken
+    for an absent one.
+    """
+    lines = body.splitlines()
+    for index, line in enumerate(lines):
+        match = _FIELD_LINE.match(line)
+        if match is None or match.group("name") != name:
+            continue
+        value = match.group("value").strip()
+        if value:
+            return value
+        block = takewhile(
+            lambda text: text.startswith(_CONTINUATION_INDENT) or not text.strip(),
+            lines[index + 1 :],
+        )
+        return "\n".join(text.strip() for text in block if text.strip())
     return ""
 
 
@@ -91,20 +115,63 @@ def _needs(*, body: str) -> frozenset[str]:
 
 
 def _hosted_read_only_guard(*, job: _Job, labels: frozenset[str]) -> bool:
-    """Recognise a hosted guard with only read-level declared permissions."""
-    if not job.runs_on or any(label in job.runs_on for label in labels | {"self-hosted"}):
+    """Recognise a guard that names one hosted label and declares only read permissions.
+
+    Both facts are read from the guard's OWN `runs-on` and `permissions` keys,
+    never from text anywhere in its body.
+    """
+    label = job.runs_on.strip("\"'")
+    if _PLAIN_LABEL.match(job.runs_on) is None or label in labels | {"self-hosted"}:
         return False
-    if "permissions: read-all" in job.body:
+    permissions = _field(body=job.body, name="permissions")
+    if permissions == "read-all":
         return True
-    permissions = re.search(
-        r"^    permissions:\s*$([\s\S]*?)(?=^    [A-Za-z_-]+:|\Z)",
-        job.body,
-        re.MULTILINE,
-    )
-    if permissions is None:
+    entries = permissions.splitlines()
+    return bool(entries) and all(_READ_ENTRY.match(entry) for entry in entries)
+
+
+def _split_top_level(*, text: str, operator: str) -> list[str]:
+    """Split an expression on `operator` outside quotes and parentheses."""
+    parts: list[str] = []
+    depth = 0
+    quoted = False
+    start = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "'":
+            quoted = not quoted
+        elif not quoted and char in "([":
+            depth += 1
+        elif not quoted and char in ")]":
+            depth -= 1
+        elif not quoted and depth == 0 and text.startswith(operator, index):
+            parts.append(text[start:index].strip())
+            start = index + len(operator)
+            index = start
+            continue
+        index += 1
+    parts.append(text[start:].strip())
+    return parts
+
+
+def _route_selects_self_hosted_only_under_guard(*, runs_on: str, guard: str) -> bool:
+    """Whether `runs-on` is `${{ <guard output> && <selection> || '<hosted literal>' }}`.
+
+    Condition (c): self-hosted capacity is reachable ONLY through the guard's
+    output. The expression must have exactly that top-level shape — one `||`
+    whose right arm is the hosted literal, and one `&&` whose left arm is the
+    guard-output condition alone — so no other operand can select a label.
+    """
+    expression = _EXPRESSION.match(runs_on)
+    if expression is None:
         return False
-    entries = re.findall(r"^      [A-Za-z_-]+:\s*(\w+)\s*$", permissions.group(1), re.MULTILINE)
-    return bool(entries) and all(value == "read" for value in entries)
+    alternatives = _split_top_level(text=expression.group("body").strip(), operator="||")
+    if len(alternatives) != _ROUTE_ARMS or alternatives[1] != f"'{_HOSTED_LITERAL}'":
+        return False
+    conjuncts = _split_top_level(text=alternatives[0], operator="&&")
+    condition = rf"needs\.{re.escape(guard)}\.outputs\.[\w-]+(\s*==\s*'true')?"
+    return len(conjuncts) == _ROUTE_ARMS and re.fullmatch(condition, conjuncts[0]) is not None
 
 
 def _depends_on_guard(
@@ -148,7 +215,6 @@ def guarded_merge_group_is_valid(
     gating_jobs = tuple(
         job for job in jobs_in_order if any(label in job.runs_on for label in gating_labels)
     )
-    output_reference = _OUTPUT_REFERENCE.format(guard=guard.name)
     return (
         bool(author_allowlist)
         and _hosted_read_only_guard(job=guard, labels=gating_labels)
@@ -159,8 +225,7 @@ def guarded_merge_group_is_valid(
         and bool(gating_jobs)
         and all(
             guard.name in job.needs
-            and output_reference in job.runs_on
-            and _HOSTED_LITERAL in job.runs_on
+            and _route_selects_self_hosted_only_under_guard(runs_on=job.runs_on, guard=guard.name)
             for job in gating_jobs
         )
         and (
