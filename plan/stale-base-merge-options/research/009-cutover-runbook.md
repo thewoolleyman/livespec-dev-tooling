@@ -19,7 +19,11 @@ owns the halt procedure and the phase outline; this note fixes the ORDER and the
 3. gf5g2x (guarded merge_group routing plus the merge-queue rules in branch_protection_alignment) is merged AND released
    in livespec-dev-tooling.
 4. Every held PR is green, apart from checks named in its body with their note-005 class (owner-equality, live read by
-   org/repo, org-ref `uses:` not yet resolvable).
+   org/repo, org-ref `uses:` not yet resolvable). Three window conditions for group B (orchestrator-beads-fabro,
+   overseer, console, orchestrator-git-jsonl) come from the coordinator's grade of 2026-11-15 ~02:2xZ:
+   (a) each held PR merges ONLY inside the window, after its own repository's transfer;
+   (b) the post-transfer `ci-green` run is the grade of record;
+   (c) before the window, the PR body confirms that every non-workflow hunk is an owner rename or its formatting.
 5. The image mirror has been re-run with the halt-time pins, and every pinned image is present at `ghcr.io/livespec-ai`
    (yqpwy3). At the halt, run `python3 -I plan/stale-base-merge-options/research/data/org-move/image_pins.py.txt
    --out /tmp/image-pins-need.txt` from the livespec-dev-tooling checkout. If it reports any NEED, dispatch
@@ -32,6 +36,27 @@ owns the halt procedure and the phase outline; this note fixes the ORDER and the
    livespec-ai-incident-recovery (5761967). DONE 2026-11-14.
 7. Hosted minutes fit. GO on cost, accepted 2026-11-15 ~00:0xZ (§5).
 8. dev-tooling master is green and no incident is open (condition B, note 008 §4). Otherwise NO-GO.
+9. Every reader that builds an adopter's repository name from the fleet manifest is merged and released with
+   livespec v247's resolution rule (livespec#3242): an adopter resolves as `<adopter.owner or adopter_owner or owner>/<repo>`.
+   After that, a livespec manifest PR sets `adopter_owner: "thewoolleyman"` and `homelab`'s `owner: "mi-homelab"`, BEFORE
+   the window. The `owner` flip to `livespec-ai` lands only inside the window (livespec#3237); never land it early.
+   Coordinator-endorsed 2026-11-15 ~02:2xZ. The reader inventory below was taken 2026-11-15 ~02:45Z by searching
+   origin/master of all 10 fleet repositories for reads of the manifest's `adopters` array:
+   - livespec-dev-tooling: `fleet/contract.py` parses adopters and ignores both new keys. It builds
+     `<manifest.owner>/<repo>` in `_incident_fleet_command.py` (lines 78-88) and `incident_fleet_audit.py` (lines 70-72).
+     The adopter currency lane (`fleet/_adopter_lane.py`) adapts each adopter to a `FleetMember` and reads it under the
+     fleet owner.
+   - livespec: `dev-tooling/refresh_tenant_repos_registry.py` line 131 derives each adopter URL from `owner`.
+     `docs/activity/update-activity.sh` reads identity from each clone's origin, so it is unaffected.
+   - livespec-orchestrator-beads-fabro: `.claude-plugin/hooks/codex_yolo_gate.py` lists adopters only while
+     `owner == manifest.owner`, so after the flip a `thewoolleyman` adopter is no longer listed.
+   - livespec-overseer: `.github/workflows/adopter-release-dispatch.yml` dispatches to
+     `${{ github.repository_owner }}/<adopter>`. It mints its App token for that same owner. After the transfer that
+     is `livespec-ai`, which owns no adopter. This one is a workflow edit and needs an App token that can reach
+     `thewoolleyman` and `mi-homelab`.
+   - livespec-runtime, the three drivers, livespec-console-beads-fabro and livespec-orchestrator-git-jsonl: no reader
+     of `adopters`.
+   GO when each of the four readers above is merged and released, and the manifest PR adding `adopter_owner` has merged.
 
 ## 3. Sequence
 
