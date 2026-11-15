@@ -55,6 +55,8 @@ _LOADER_KEYS = {
     "control_secret",
     "query_secret",
     "port",
+    "expedited_base_max_commits",
+    "expedited_base_max_minutes",
 }
 _SCRATCH_ROOT_TASK = "Create the scratch instance's own root beside production's state"
 _SHARED_WRITES = (
@@ -256,7 +258,11 @@ def test_the_loader_reads_the_branch_the_role_renders_and_master_when_none(host)
         base.render_installation(variables=base.production_variables())["controller.json"]
     )
 
-    config.update(target_branch=scratch["target_branch"])
+    config.update(
+        target_branch=scratch["target_branch"],
+        expedited_base_max_commits=scratch["expedited_base_max_commits"],
+        expedited_base_max_minutes=scratch["expedited_base_max_minutes"],
+    )
     loaded = ControllerInstallation.load(config=write())
     assert loaded is not None
     assert loaded.target_branch == _BRANCH

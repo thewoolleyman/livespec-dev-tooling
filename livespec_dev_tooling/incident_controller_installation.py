@@ -20,6 +20,10 @@ from livespec_dev_tooling.incident_ci_identity_policy import (
     CiIdentityPolicy,
     load_identity_policy,
 )
+from livespec_dev_tooling.incident_controller_config import (
+    valid_branch_name,
+    valid_freshness_bound,
+)
 from livespec_dev_tooling.incident_protected_path import protected_path
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
@@ -30,7 +34,6 @@ _PRIVATE_DIRECTORY_MODE = 0o700
 _SECRET_BYTES = 32
 _PORT_LIMIT = 65536
 _DEFAULT_TARGET_BRANCH = "master"
-_BRANCH_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -51,6 +54,8 @@ class ControllerInstallation:
     query_secret: bytes
     port: int
     config: Path
+    expedited_base_max_commits: int = 50
+    expedited_base_max_minutes: int = 240
     ci_identity_policy: CiIdentityPolicy | None = None
     target_branch: str = _DEFAULT_TARGET_BRANCH
     ci_identity_declared: bool = False
@@ -62,7 +67,12 @@ class ControllerInstallation:
             data = _record(path=config)
             if (
                 data is None
-                or set(data) - {"target_branch"}
+                or set(data)
+                - {
+                    "target_branch",
+                    "expedited_base_max_commits",
+                    "expedited_base_max_minutes",
+                }
                 != {
                     "manifest",
                     "candidate_uid",
@@ -111,6 +121,12 @@ class ControllerInstallation:
                 or type(data["port"]) is not int
                 or not 0 < data["port"] < _PORT_LIMIT
                 or not valid_branch_name(name=data.get("target_branch", _DEFAULT_TARGET_BRANCH))
+                or not valid_freshness_bound(
+                    value=data.get("expedited_base_max_commits", cls.expedited_base_max_commits)
+                )
+                or not valid_freshness_bound(
+                    value=data.get("expedited_base_max_minutes", cls.expedited_base_max_minutes)
+                )
             ):
                 return None
             return cls(
@@ -128,6 +144,12 @@ class ControllerInstallation:
                 query_secret=query,
                 port=data["port"],
                 config=config,
+                expedited_base_max_commits=data.get(
+                    "expedited_base_max_commits", cls.expedited_base_max_commits
+                ),
+                expedited_base_max_minutes=data.get(
+                    "expedited_base_max_minutes", cls.expedited_base_max_minutes
+                ),
                 ci_identity_policy=load_identity_policy(
                     descriptor=manifest.get("ci_identity_policy"), repository=data["repository"]
                 ),
@@ -143,16 +165,6 @@ class ControllerInstallation:
             importlib.metadata.PackageNotFoundError,
         ):
             return None
-
-
-def valid_branch_name(*, name: object) -> bool:
-    """A plain branch name: no option-like lead, no `..`, no `.lock` component, no empty part."""
-    return (
-        isinstance(name, str)
-        and _BRANCH_NAME.fullmatch(name) is not None
-        and ".." not in name
-        and not any(part.endswith(".lock") for part in name.split("/"))
-    )
 
 
 def _valid_build(*, manifest: dict[str, Any]) -> bool:

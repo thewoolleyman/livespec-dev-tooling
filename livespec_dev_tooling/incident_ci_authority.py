@@ -71,13 +71,21 @@ _ARM_FIELDS: dict[str, frozenset[str]] = {
     "digest": frozenset({"arm_id", "receipt_digest"}),
     "sha": frozenset({"base_sha", "head_sha"}),
 }
+_ADMISSION_FIELDS: dict[str, frozenset[str]] = {
+    **_ARM_FIELDS,
+    "sha": _ARM_FIELDS["sha"] | {"event_base_sha"},
+}
 _PROVENANCE_FIELDS: dict[str, frozenset[str]] = {
     "text": frozenset({"repository", "item_id", "attempt_id", "phase", "operation_id", "owner"}),
     "int": frozenset({"generation", "pr_number"}),
     "digest": frozenset(),
     "sha": frozenset({"base", "head", "commit_sha", "tree_sha"}),
 }
-_FIELDS = {"current": _ARM_FIELDS, "admitted": _ARM_FIELDS, "provenance": _PROVENANCE_FIELDS}
+_FIELDS = {
+    "current": _ARM_FIELDS,
+    "admitted": _ARM_FIELDS,
+    "provenance": _PROVENANCE_FIELDS,
+}
 
 
 class ObserverUnreachableError(Exception):
@@ -184,6 +192,11 @@ class CiAuthorityBoundary:
             parsed = urlsplit(self.observer_url)
             host = parsed.hostname or ""
             port = parsed.port or http.client.HTTPS_PORT
+            fields = (
+                _ADMISSION_FIELDS
+                if route == "admitted" and "event_base_sha" in query
+                else _FIELDS[route]
+            )
             if (
                 parsed.scheme != "https"
                 or not host
@@ -192,24 +205,18 @@ class CiAuthorityBoundary:
                 or parsed.query
                 or parsed.fragment
                 or not _is_header_value(token=self.observer_token)
-                or set(query) != set[str]().union(*_FIELDS[route].values())
-                or any(
-                    type(query[key]) is not int or query[key] <= 0 for key in _FIELDS[route]["int"]
-                )
+                or set(query) != set[str]().union(*fields.values())
+                or any(type(query[key]) is not int or query[key] <= 0 for key in fields["int"])
                 or not all(
                     isinstance(value, str)
                     for key, value in query.items()
-                    if key not in _FIELDS[route]["int"]
+                    if key not in fields["int"]
                 )
                 or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", query["repository"]) is None
                 or any(
-                    re.fullmatch(r"[0-9a-f]{64}", query[key]) is None
-                    for key in _FIELDS[route]["digest"]
+                    re.fullmatch(r"[0-9a-f]{64}", query[key]) is None for key in fields["digest"]
                 )
-                or any(
-                    re.fullmatch(r"[0-9a-f]{40}", query[key]) is None
-                    for key in _FIELDS[route]["sha"]
-                )
+                or any(re.fullmatch(r"[0-9a-f]{40}", query[key]) is None for key in fields["sha"])
             ):
                 return False
         except (OSError, ValueError, TypeError, RecursionError, http.client.HTTPException):

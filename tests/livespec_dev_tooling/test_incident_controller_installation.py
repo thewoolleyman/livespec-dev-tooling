@@ -95,6 +95,14 @@ def test_configuration_naming_no_target_branch_means_master(host):
     assert result.target_branch == "master"
 
 
+def test_configuration_loads_committed_expedited_base_freshness_bounds(host):
+    _, config, _, write = host
+    config.update(expedited_base_max_commits=3, expedited_base_max_minutes=7)
+    result = installation.ControllerInstallation.load(config=write())
+    assert result is not None
+    assert (result.expedited_base_max_commits, result.expedited_base_max_minutes) == (3, 7)
+
+
 @pytest.mark.parametrize("name", ["", 3, "-x", "a..b", "a b", "/lead", "trail/", "x.lock", "a//b"])
 def test_configuration_refuses_a_target_branch_that_is_not_a_plain_branch_name(host, name):
     _, config, _, write = host
@@ -140,6 +148,8 @@ def test_configuration_refuses_a_target_branch_that_is_not_a_plain_branch_name(h
         "secret-mode",
         "bad-port",
         "bool-port",
+        "commits-bound",
+        "minutes-bound",
         "malformed-json",
     ],
 )
@@ -184,6 +194,8 @@ def test_invalid_installation_never_returns_serving_settings(host, change):
         "secret-mode": lambda: (root / "control").chmod(0o644),
         "bad-port": lambda: config.update(port=65536),
         "bool-port": lambda: config.update(port=True),
+        "commits-bound": lambda: config.update(expedited_base_max_commits=True),
+        "minutes-bound": lambda: config.update(expedited_base_max_minutes=-1),
         "malformed-json": lambda: config.update(port=None),
     }
     actions[change]()

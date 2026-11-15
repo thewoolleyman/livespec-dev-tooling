@@ -107,6 +107,15 @@ _GIT_FORMAT_SPEC = re.compile(r"--format=|--pretty|format:")
 # plan/red-master-self-healing/research/003-commit-metadata-invariance-audit.md.
 _DECLARED_INVARIANT_READS: tuple[tuple[str, str, str], ...] = (
     (
+        "livespec_dev_tooling/incident_expedited_base.py",
+        "%ct",
+        "The controller reads these timestamps only from its independently fetched "
+        "default-branch reference to enforce the explicit moving-base freshness "
+        "limit. They are runtime authority facts, not this repository commit's "
+        "metadata, so rebase-merging this implementation cannot change the "
+        "admission verdict for an already fetched reference clone.",
+    ),
+    (
         "livespec_dev_tooling/heading_coverage_debt.py",
         "%H",
         "Read beside `%cI` on the same log line and used ONLY as the revision the "

@@ -217,6 +217,25 @@ def test_admitted_accepts_a_recent_genesis_base_behind_the_event_base(tmp_path):
     }
 
 
+def test_admitted_refuses_the_named_base_freshness_failure_before_reader(provisioned, monkeypatch):
+    application, query, _, calls = provisioned
+    application.installation.expedited_base_max_commits = 2
+    application.installation.expedited_base_max_minutes = 2
+    query["event_base_sha"] = "f" * 40
+    refusal = "genesis base eeeee is not an ancestor of event base fffff"
+    monkeypatch.setattr(
+        "livespec_dev_tooling.incident_observer_query.base_freshness_refusal",
+        lambda **_kwargs: refusal,
+    )
+
+    assert _request(application=application, path="/admitted", payload=query)[1] == {
+        "schema": 1,
+        "status": "refused",
+        "reason": refusal,
+    }
+    assert calls == []
+
+
 @pytest.mark.parametrize("path", ["/arm", "/bind"])
 def test_query_credential_cannot_mutate_retained_arm(provisioned, path):
     application, query, _, calls = provisioned

@@ -64,6 +64,16 @@ def test_exact_authenticated_route_reply_and_connection_cleanup(monkeypatch, rou
     assert calls[-1] == "closed"
 
 
+def test_admitted_route_sends_and_echoes_the_current_event_base(monkeypatch):
+    admitted = query() | {"event_base_sha": "c" * 40}
+    calls = wire(
+        monkeypatch,
+        raw=json.dumps(dict(schema=1, status="admitted", query=admitted)).encode(),
+    )
+    assert boundary().admitted(query=admitted) is True
+    assert json.loads(calls[1][1]["body"]) == admitted
+
+
 @pytest.mark.parametrize(
     "url",
     [
