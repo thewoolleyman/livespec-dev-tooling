@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import fcntl
 import json
+import re
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
@@ -153,10 +154,12 @@ def test_strict_config_is_derived_from_pyproject_without_layout_keys(
         capture_output: bool,
         text: bool,
         check: bool,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         _ = capture_output
         _ = text
         _ = check
+        _ = env
         captured_config.update(json.loads((Path(cwd) / "pyrightconfig.json").read_text()))
         captured_config_path.append(Path(cwd) / "pyrightconfig.json")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}", stderr="")
@@ -173,6 +176,62 @@ def test_strict_config_is_derived_from_pyproject_without_layout_keys(
         "reportPrivateUsage": "none",
         "include": ["no_shadow_ledger_body.py"],
     }
+
+
+_REPO_PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
+
+
+def _nodejs_wheel_dev_pin() -> str:
+    """The `nodejs-wheel-binaries==<version>` pin in this repository's dev group."""
+    found = re.search(
+        r'"nodejs-wheel-binaries==([^"]+)"', _REPO_PYPROJECT.read_text(encoding="utf-8")
+    )
+    assert found is not None
+    return found.group(1)
+
+
+def test_pyright_runs_with_its_nodeenv_fallback_pinned(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Pyright's nodeenv fallback installs the pinned node.js, never the newest release.
+
+    With no `nodejs_wheel` and no `node` on PATH, an unpinned wrapper installs
+    the head of nodejs.org/dist/index.json (a prebuilt-less 27.0.0-alpha on
+    2026-11-15) and crashes. The spawned pyright gets the pin whatever the
+    ambient value, the pin is this repository's own nodejs-wheel dev pin, and
+    the rest of the caller's environment is passed through.
+    """
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyright]\ntypeCheckingMode = "strict"\n', encoding="utf-8"
+    )
+    captured_env: list[Mapping[str, str] | None] = []
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: str,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        env: Mapping[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = (cwd, capture_output, text, check)
+        captured_env.append(env)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYRIGHT_PYTHON_NODE_VERSION", "latest")
+    monkeypatch.setenv("LIVESPEC_IGJTQQ_PASSTHROUGH", "kept")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _ = _run_pyright_strict(body="pass\n")
+
+    env = captured_env[0]
+    assert env is not None
+    assert env["PYRIGHT_PYTHON_NODE_VERSION"] == _nodejs_wheel_dev_pin()
+    assert env["LIVESPEC_IGJTQQ_PASSTHROUGH"] == "kept"
 
 
 # --- failure record (_typecheck_body) --------------------------------------
@@ -197,8 +256,9 @@ def _run_failing_pyright(
         capture_output: bool,
         text: bool,
         check: bool,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        _ = (cwd, capture_output, text, check)
+        _ = (cwd, capture_output, text, check, env)
         return subprocess.CompletedProcess(args=args, returncode=1, stdout=stdout, stderr=stderr)
 
     monkeypatch.setattr(module, "_pyright_available", lambda: True)
