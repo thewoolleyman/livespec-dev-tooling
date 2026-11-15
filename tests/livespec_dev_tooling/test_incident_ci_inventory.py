@@ -17,8 +17,9 @@ _WORKFLOW = _ROOT / ".github/workflows/ci.yml"
 _PACKAGED = _ROOT / "livespec_dev_tooling/data/incident-ci-inventory.json"
 _INVENTORY = _ROOT / "check-targets.txt"
 _HOSTED_RUNS_ON = (
-    "    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER"
-    " || vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]') }}\n"
+    "    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && "
+    "fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER"
+    " || vars.CI_RUNNER_LABELS || '[\"ubuntu-latest\"]') || 'ubuntu-latest' }}\n"
 )
 
 

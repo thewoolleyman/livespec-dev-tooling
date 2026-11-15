@@ -91,7 +91,9 @@ _REQUIRED = frozenset(
         _INCIDENT_JOB,
     }
 )
-_ALL_JOBS = _REQUIRED | {"export-telemetry", _GATE_JOB}
+# merge-group-guard is the guarded merge_group shape's first job (org merge-queue
+# cutover, livespec-dev-tooling-xowhol): it is not required and holds no member.
+_ALL_JOBS = _REQUIRED | {"export-telemetry", _GATE_JOB, "merge-group-guard"}
 
 # The members each job may omit: exactly what the released controller defers
 # for the coverage or spec policy reason. `test_the_guarded_members_are_...`
@@ -499,8 +501,9 @@ _GUARD_OF_MATRIX_TARGET = _GUARD.format(member="matrix.target")
             f"{_GATE_JOB} does not repeat the released omission list",
         ),
         (
-            "    needs: [incident-ci]\n    if: ${{ !cancelled() }}\n    # The same single variable",
-            "    if: ${{ !cancelled() }}\n    # The same single variable",
+            "    needs: [merge-group-guard, incident-ci]\n    if: ${{ !cancelled() }}\n"
+            "    # The same single variable",
+            "    needs: [merge-group-guard]\n    if: ${{ !cancelled() }}\n    # The same single variable",
             f"job check-metadata does not read the {_INCIDENT_JOB} job's output",
         ),
         (

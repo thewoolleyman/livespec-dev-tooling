@@ -95,7 +95,7 @@ def _trigger_findings(*, workflow: dict[Any, Any]) -> list[str]:
     """What keeps the triggers from being exactly any-base PRs plus the two push patterns."""
     triggers = _triggers(workflow=workflow)
     findings: list[str] = []
-    if sorted(str(name) for name in triggers) != ["pull_request", "push"]:
+    if sorted(str(name) for name in triggers) != ["merge_group", "pull_request", "push"]:
         findings.append(f"triggers are {sorted(str(name) for name in triggers)}")
     if triggers.get("pull_request") is not None:
         findings.append("pull_request carries a filter")
@@ -165,6 +165,8 @@ on:
   pull_request:
   push:
     branches: [master, 'incident-scratch/**']
+  merge_group:
+    types: [checks_requested]
 jobs:
   check:
     runs-on: ubuntu-latest
