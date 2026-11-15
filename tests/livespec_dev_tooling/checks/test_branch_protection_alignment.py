@@ -1395,6 +1395,37 @@ def test_ruleset_read_retries_once_before_accepting_an_app_only_bypass(
     assert (tmp_path / "bin" / "gh.rules-count").read_text(encoding="utf-8").strip() == "2"
 
 
+def test_ruleset_read_retries_with_bounded_detail_before_reporting_unreadable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every failed rules-endpoint attempt is retried and its endpoints are reported."""
+    delays: list[float] = []
+    monkeypatch.setattr(
+        _branch_protection_rulesets,
+        "time",
+        type("_Time", (), {"sleep": delays.append})(),
+    )
+    result = _ruleset_run(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        rules_api_replies=[
+            ("", "first rules failure", 1),
+            ("", "second rules failure", 2),
+            ("", "third rules failure", 3),
+            ("", "last rules failure", 4),
+        ],
+    )
+    assert result.returncode == 4
+    assert (tmp_path / "bin" / "gh.rules-count").read_text(encoding="utf-8").strip() == "4"
+    assert delays == [1.0, 2.0, 4.0]
+    assert all(later > earlier for earlier, later in pairwise(delays))
+    assert sum(delays) <= 30.0
+    assert "repos/test-owner/test-repo/rules/branches/master?per_page=100" in result.stderr
+    assert "first failed attempt: call exited 1: first rules failure" in result.stderr
+    assert "last failed attempt: call exited 4: last rules failure" in result.stderr
+
+
 def test_ruleset_bypass_read_retries_a_missing_list_before_using_an_app_only_answer(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
