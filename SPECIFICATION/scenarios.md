@@ -1232,6 +1232,8 @@ And the pre-push gate MUST run that member on the pushing host against the commi
 
 And the push MUST complete only when the gate Job reports a green verdict and that member passes on the pushing host
 
+And when that member passes on the pushing host, the pre-push gate MUST print one line naming the member, saying it ran on the pushing host, naming the committed tree hash it judged, and saying it passed
+
 And when that member fails or cannot be evaluated on the pushing host, the push MUST be refused with a line naming the member and saying it ran on the pushing host
 
 ## Scenario: a delegated gate Job path that runs an authority member without honouring the skip variable is reported
@@ -5758,6 +5760,8 @@ Then it reports no finding for that workflow
 And when the gating job's needs: omits the guard job, self_hosted_routing fails naming the workflow file and the merge_group trigger
 
 And when the gating job lacks the !cancelled() condition and ci-green carries no ci_green_required_legs step, self_hosted_routing fails naming the workflow file
+
+And when the guard job carries an if: condition, so it does not run on every event, self_hosted_routing fails naming the workflow file and the guard job
 ```
 
 ## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue
