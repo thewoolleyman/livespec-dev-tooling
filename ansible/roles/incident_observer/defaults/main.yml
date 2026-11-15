@@ -240,7 +240,7 @@ incident_observer_funnel_paths:
 incident_observer_installations:
   - repository: livespec-ai/livespec-dev-tooling
     repository_id: 1245319543
-    owner_id: 158
+    owner_id: 356397670
     required_jobs:
       - check-types
       - check-lint
@@ -274,7 +274,7 @@ incident_observer_installations:
   # password cannot silently cross.
   - repository: livespec-ai/livespec
     repository_id: 1215509712
-    owner_id: 158
+    owner_id: 356397670
     required_jobs:
       - check-lint
       - check-format
@@ -294,7 +294,7 @@ incident_observer_installations:
     reader_env_var: BEADS_DOLT_PASSWORD
   - repository: livespec-ai/livespec-orchestrator-beads-fabro
     repository_id: 1262632932
-    owner_id: 158
+    owner_id: 356397670
     required_jobs:
       - check-lint (nonroot)
       - check-format (nonroot)
@@ -321,7 +321,7 @@ incident_observer_installations:
     reader_env_var: BEADS_DOLT_PASSWORD
   - repository: livespec-ai/livespec-overseer
     repository_id: 1307110964
-    owner_id: 158
+    owner_id: 356397670
     required_jobs:
       - check-lint
       - check-format
