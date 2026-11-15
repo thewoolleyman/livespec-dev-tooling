@@ -58,7 +58,11 @@
 - name: Refuse a mint unless module arguments travel on ssh stdin and no remote copy is kept
   ansible.builtin.assert:
     that:
-      - lookup('ansible.builtin.config', 'ANSIBLE_PIPELINING') | bool
+      # ansible/ansible.cfg sets `pipelining` under [ssh_connection], which is the ssh connection
+      # plugin's own option. The global ANSIBLE_PIPELINING stays at its default False under that
+      # config (measured 2026-11-15 with `ansible-config dump --only-changed -t connection`), so
+      # read the option the ssh plugin actually uses.
+      - lookup('ansible.builtin.config', 'pipelining', plugin_type='connection', plugin_name='ssh') | bool
       - not (lookup('ansible.builtin.config', 'DEFAULT_KEEP_REMOTE_FILES') | bool)
     fail_msg: >-
       ssh pipelining must be on and keep_remote_files off, so the issuer session reaches the target only on
