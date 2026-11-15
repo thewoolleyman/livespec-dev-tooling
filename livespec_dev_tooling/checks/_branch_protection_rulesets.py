@@ -161,6 +161,36 @@ def _read_rules(*, path: str) -> GhRead:
     return gh_read(args=["api", "--paginate", "--slurp", path])
 
 
+def _read_ruleset_rules(
+    *, path: str
+) -> tuple[object, dict[int, tuple[frozenset[str], bool]]] | _RulesetsUnreadable:
+    """Read and validate the active rules with bounded retries."""
+    failures: list[str] = []
+    for delay_seconds in (*_RULESET_READ_RETRY_DELAYS_SECONDS, None):
+        completed = _read_rules(path=path)
+        pages = _parse_pages(stdout=completed.stdout) if completed.returncode == 0 else None
+        held = _ruleset_status_rules(pages=pages)
+        if held is not None:
+            return pages, held
+        failures.append(
+            _ruleset_read_failure(
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+                returncode=completed.returncode,
+            )
+            if completed.returncode != 0
+            else "rules payload was not a list of rule pages"
+        )
+        if delay_seconds is not None:
+            time.sleep(delay_seconds)
+    return _RulesetsUnreadable(
+        detail=(
+            f"rules read failed: {path}; first failed attempt: {failures[0]}; "
+            f"last failed attempt: {failures[-1]}"
+        )
+    )
+
+
 def _fetch_ruleset_requirements(
     *, protection: _RequiredContexts
 ) -> _RulesetRequirements | _RulesetsUnreadable:
@@ -174,18 +204,10 @@ def _fetch_ruleset_requirements(
     """
     base = f"repos/{protection.owner_repo}"
     rules_path = f"{base}/rules/branches/{protection.branch}?per_page=100"
-    completed = _read_rules(path=rules_path)
-    for delay_seconds in (_RULESET_READ_RETRY_DELAYS_SECONDS[0],):
-        if completed.returncode == 0:
-            break
-        time.sleep(delay_seconds)
-        completed = _read_rules(path=rules_path)
-    if completed.returncode != 0:
-        return _RulesetsUnreadable(detail=f"rules read failed: {completed.stderr.strip()[:200]}")
-    pages = _parse_pages(stdout=completed.stdout)
-    held = _ruleset_status_rules(pages=pages)
-    if held is None:
-        return _RulesetsUnreadable(detail="rules payload was not a list of rule pages")
+    rules_read = _read_ruleset_rules(path=rules_path)
+    if isinstance(rules_read, _RulesetsUnreadable):
+        return rules_read
+    pages, held = rules_read
     non_app: list[int] = []
     for ruleset_id in sorted(held):
         verdict, detail = _read_ruleset_bypass(path=f"{base}/rulesets/{ruleset_id}")
