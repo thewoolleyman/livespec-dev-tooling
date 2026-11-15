@@ -151,6 +151,111 @@
         - /root/awscli-{{ shared_credentials_host_awscli_version }}.zip
         - /root/awscli-{{ shared_credentials_host_awscli_version }}
 
+- name: Look for the delivery interpreter on root's PATH
+  # homelab's deliver-initial-key.sh execs python<.python-version> from PATH.
+  # Keyed on this measurement, never on the host's name.
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -c
+      - command -v "$1"
+      - interpreter
+      - "python{{ shared_credentials_host_python_version }}"
+  register: shared_credentials_host_python_on_path
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the pinned delivery interpreter
+  ansible.builtin.stat:
+    path: "{{ shared_credentials_host_python_binary }}"
+    get_checksum: false
+  register: shared_credentials_host_python_installed
+
+- name: Install the pinned delivery interpreter off the system PATH
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - not shared_credentials_host_python_installed.stat.exists
+  block:
+    - name: Download the pinned CPython build
+      ansible.builtin.get_url:
+        url: "{{ shared_credentials_host_python_url }}"
+        dest: /root/{{ shared_credentials_host_python_asset }}
+        checksum: "sha256:{{ shared_credentials_host_python_sha256 }}"
+        mode: "0600"
+
+    - name: Create the root-owned interpreter directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ shared_credentials_host_python_root }}"
+        - "{{ shared_credentials_host_python_prefix }}"
+
+    - name: Unpack the pinned CPython build root-owned
+      ansible.builtin.unarchive:
+        src: /root/{{ shared_credentials_host_python_asset }}
+        dest: "{{ shared_credentials_host_python_prefix }}"
+        remote_src: true
+        owner: root
+        group: root
+        extra_opts: [--strip-components=1]
+        creates: "{{ shared_credentials_host_python_binary }}"
+      # In check mode the download above did not happen, so there is nothing to unpack.
+      when: not ansible_check_mode
+
+    - name: Remove the CPython download
+      ansible.builtin.file:
+        path: /root/{{ shared_credentials_host_python_asset }}
+        state: absent
+
+- name: Read back the pinned delivery interpreter's version
+  ansible.builtin.command:
+    argv:
+      - "{{ shared_credentials_host_python_binary }}"
+      - --version
+  register: shared_credentials_host_python_version_read
+  changed_when: false
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - not ansible_check_mode
+
+- name: Read back the pinned interpreter's directories
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop:
+    - /opt
+    - "{{ shared_credentials_host_python_root }}"
+    - "{{ shared_credentials_host_python_prefix }}"
+    - "{{ shared_credentials_host_python_bin_dir }}"
+    - "{{ shared_credentials_host_python_binary }}"
+  register: shared_credentials_host_python_paths
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - not ansible_check_mode
+
+- name: Refuse a pinned interpreter that is not the pin or that a non-root user can write
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_python_version_read.stdout | trim == 'Python ' ~ shared_credentials_host_python_build
+      - shared_credentials_host_python_paths.results | map(attribute='stat.exists') | reject | list | length == 0
+      - shared_credentials_host_python_paths.results | map(attribute='stat.uid', default=-1) | unique | list == [0]
+      - shared_credentials_host_python_paths.results | map(attribute='stat.wgrp', default=true) | select | list | length == 0
+      - shared_credentials_host_python_paths.results | map(attribute='stat.woth', default=true) | select | list | length == 0
+    fail_msg: >-
+      {{ shared_credentials_host_python_binary }} does not report Python {{ shared_credentials_host_python_build }},
+      or a directory on its path is missing, not root-owned, or group- or world-writable
+    quiet: true
+  when:
+    - shared_credentials_host_python_on_path.rc != 0
+    - not ansible_check_mode
+
 - name: Create the root-owned shared-credential directories
   ansible.builtin.file:
     path: "{{ item }}"

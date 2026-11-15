@@ -128,30 +128,66 @@
       it. Nothing was issued
     quiet: true
 
+- name: Refuse a homelab pin whose declared interpreter is not the role's pinned one
+  ansible.builtin.assert:
+    that:
+      - shared_credentials_host_homelab_reads.results[1].stdout | trim == shared_credentials_host_python_version
+    fail_msg: >-
+      homelab's .python-version at {{ shared_credentials_host_homelab_commit }} is
+      {{ shared_credentials_host_homelab_reads.results[1].stdout | trim }}, but shared_credentials_host_python_version
+      pins {{ shared_credentials_host_python_version }}; re-pin both together by reviewed change. Nothing was issued
+    quiet: true
+
 - name: Look for homelab's declared interpreter on the target, as root
   # deliver-initial-key.sh execs python<.python-version> from PATH and exits 127
-  # without it. Measured 2026-11-15: the pinned commit declares 3.13 and the
-  # server carries only /usr/bin/python3 -> python3.14.
+  # without it. Root's PATH first; otherwise the role's pinned build, which only
+  # the delivery command below sees.
   ansible.builtin.command:
     argv:
       - /bin/bash
       - -c
-      - command -v "$1"
+      - command -v "$1" || PATH="$2" command -v "$1"
       - interpreter
-      - "python{{ shared_credentials_host_homelab_reads.results[1].stdout | trim }}"
+      - "python{{ shared_credentials_host_python_version }}"
+      - "{{ shared_credentials_host_python_bin_dir }}"
   register: shared_credentials_host_mint_interpreter
   changed_when: false
   failed_when: false
   check_mode: false
 
+- name: Read the found interpreter's version
+  ansible.builtin.command:
+    argv:
+      - "{{ shared_credentials_host_mint_interpreter.stdout | trim }}"
+      - --version
+  register: shared_credentials_host_mint_interpreter_version
+  changed_when: false
+  check_mode: false
+  when: shared_credentials_host_mint_interpreter.rc == 0
+
 - name: Refuse a mint the delivery script cannot start
   ansible.builtin.assert:
     that:
       - shared_credentials_host_mint_interpreter.rc == 0
+      - >-
+        shared_credentials_host_mint_interpreter_version.stdout | trim
+        is match('^Python ' ~ (shared_credentials_host_python_version | regex_escape) ~ '\.')
+      - >-
+        shared_credentials_host_mint_interpreter.stdout | trim != shared_credentials_host_python_binary
+        or shared_credentials_host_mint_interpreter_version.stdout | trim == 'Python ' ~ shared_credentials_host_python_build
     fail_msg: >-
-      python{{ shared_credentials_host_homelab_reads.results[1].stdout | trim }} (homelab .python-version at the pinned
-      commit) is not on root's PATH on this host, so deliver-initial-key.sh would exit 127; nothing was issued
+      python{{ shared_credentials_host_python_version }} is neither on root's PATH nor installed as the pinned build at
+      {{ shared_credentials_host_python_binary }} (run the normal converge first), so deliver-initial-key.sh would exit
+      127; nothing was issued
     quiet: true
+
+- name: Name the PATH the delivery command runs under
+  # Only when root's own PATH lacks the interpreter; then the pinned bin
+  # directory leads, for that one command alone.
+  ansible.builtin.set_fact:
+    shared_credentials_host_mint_environment: >-
+      {{ {'PATH': shared_credentials_host_python_command_path}
+         if shared_credentials_host_mint_interpreter.stdout | trim == shared_credentials_host_python_binary else {} }}
 
 - name: Read the seal on the target, existence only
   ansible.builtin.stat:
@@ -282,6 +318,9 @@
       AWS_ACCESS_KEY_ID={{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}
       AWS_SECRET_ACCESS_KEY={{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}
       AWS_SESSION_TOKEN={{ lookup('ansible.builtin.env', 'AWS_SESSION_TOKEN') }}
+  # PATH (never a secret) is set for this one command only; empty when root's
+  # PATH already carries the interpreter.
+  environment: "{{ shared_credentials_host_mint_environment }}"
   register: shared_credentials_host_mint_run
   changed_when: shared_credentials_host_mint_run.rc == 0
   failed_when: false

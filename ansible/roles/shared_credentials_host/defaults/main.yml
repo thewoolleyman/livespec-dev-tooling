@@ -76,6 +76,39 @@ shared_credentials_host_trusted_dirs:
 # a root-owned directory with no group or other permission bits.
 shared_credentials_host_credstore_dir: /etc/credstore.encrypted
 
+# homelab's delivery script execs python<.python-version> from root's PATH.
+# shared_credentials_host_python_version is the value homelab's .python-version
+# holds at the pinned homelab commit; the mint asserts the two agree, so a
+# re-pin that moves it fails loudly instead of silently running another Python.
+# A host WITHOUT python<version> on root's PATH (measured with `command -v` as
+# root at every converge) gets the pinned CPython build below, root-owned under
+# a versioned prefix that is on NO system PATH and has no link into /usr/bin or
+# /usr/local/bin. Only the mint's one delivery command sees it, through that
+# command's own PATH. A host that already carries it (vps, measured 2026-11-15)
+# installs nothing. The launcher keeps /usr/bin/python3 (the pyz runs on 3.14).
+shared_credentials_host_python_version: "3.13"
+# astral-sh/python-build-standalone release 20261026, the install_only_stripped
+# tarball uv itself installs; sha256 copied from that release's own SHA256SUMS.
+shared_credentials_host_python_build: 3.13.18
+shared_credentials_host_python_release: "20261026"
+shared_credentials_host_python_asset: >-
+  cpython-{{ shared_credentials_host_python_build }}+{{ shared_credentials_host_python_release
+  }}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+shared_credentials_host_python_url: >-
+  https://github.com/astral-sh/python-build-standalone/releases/download/{{ shared_credentials_host_python_release
+  }}/{{ shared_credentials_host_python_asset | urlencode }}
+shared_credentials_host_python_sha256: df15fe60d3ff55bf9dcf25824b5572756bb8816ff93865a273d3301d7066a8b7
+shared_credentials_host_python_root: /opt/shared-credentials
+shared_credentials_host_python_prefix: >-
+  {{ shared_credentials_host_python_root }}/python-{{ shared_credentials_host_python_build }}
+shared_credentials_host_python_bin_dir: "{{ shared_credentials_host_python_prefix }}/bin"
+shared_credentials_host_python_binary: >-
+  {{ shared_credentials_host_python_bin_dir }}/python{{ shared_credentials_host_python_version }}
+# The PATH the mint's delivery command runs under when the pinned build is used:
+# the pinned bin directory first, then the sudo secure_path.
+shared_credentials_host_python_command_path: >-
+  {{ shared_credentials_host_python_bin_dir }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # ---- The single initial bootstrap-key delivery (tasks/mint.yml). Never on a
 # normal converge: it needs BOTH this flag and the `poweredge_bootstrap_mint`
 # tag, and it carries the `never` tag. See README.md for the run order.
