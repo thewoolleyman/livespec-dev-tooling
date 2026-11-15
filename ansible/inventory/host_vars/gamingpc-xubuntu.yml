@@ -60,7 +60,19 @@ disk_guard_threshold_gb: 40
 # (92.4 - 8 - 0.5) / 7.45 = 11.3, so 2. Both remaining parts of the revert
 # condition above held: the hand-land burst ended, and gate waits read under
 # 300 s.
-factory_pod_budget: 2
+#
+# ZERO on 2026-11-15, by plan homelab-k8s-worker-nodes (this value's owner in
+# ci-runner/k3s/phase2/NODE-CPU-BUDGET.md), so the gate lane can go back to 10
+# cpu and carry an orchestrator gate. Plan gate-job-resources raises the
+# orchestrator's gate to 10 cpu (an orchestrator gate drew P90 14.7 cores here),
+# which no longer fits a 5-cpu lane, and gamingpc is the fastest x86 lane. The
+# derivation above, with the 10-cpu lane: (12 - 10 - 0.5) / 3 = 0.5, so 0.
+# Measured: factory use here averaged 0.9 cores (NODE-CPU-BUDGET.md W1-W4), and
+# the node read 87.6% idle at 07:00Z while poweredge-xubuntu and gmktec-xubuntu
+# were saturated (scripts/coordinator/fleet-utilization.sh --overcommit-only).
+# ORDER: this lands and is applied (ansible/ci-pool.yml) BEFORE the gate lane
+# widens to 10. REVERT to 2 together with the gate lane back to 5.
+factory_pod_budget: 0
 
 # --- k3s_config ---
 # user.slice's CPU share, so the maintainer's local sessions on this
