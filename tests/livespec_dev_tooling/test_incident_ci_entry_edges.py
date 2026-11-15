@@ -251,6 +251,26 @@ def test_missing_current_or_admitted_endpoint_never_falls_back(tmp_path, which):
     assert value.plan(event=event(), payload="not-json", environ=dict(os.environ)) is None
 
 
+def test_admission_sees_an_advanced_event_base_but_current_keeps_the_genesis_base(tmp_path):
+    seen = []
+
+    def read(*, query):
+        seen.append(query)
+        return True
+
+    value = entry(tmp_path=tmp_path, current=read, observer=read)
+    selected = value.plan(
+        event=replace(event(), base_sha="c" * 40),
+        payload=json.dumps(packet()),
+        environ=dict(os.environ),
+    )
+    assert selected is not None
+    current, admitted = seen
+    assert current["base_sha"] == "a" * 40
+    assert "event_base_sha" not in current
+    assert admitted == current | {"event_base_sha": "c" * 40}
+
+
 def test_missing_hosted_configuration_and_missing_selected_outcome_refuse(tmp_path):
     value = module.CiEntry(
         repo=tmp_path, targets=(CiTarget(name="check-fast", classification="fast"),)

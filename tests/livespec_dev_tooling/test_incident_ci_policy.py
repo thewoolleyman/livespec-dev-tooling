@@ -211,7 +211,6 @@ def test_label_alone_cannot_authorize_an_incident() -> None:
     [
         {"repository": "other/repo"},
         {"head_sha": "c" * 40},
-        {"base_sha": "c" * 40},
         {"pr_number": 8},
         {"pr_number": True},
     ],
@@ -226,6 +225,19 @@ def test_event_identity_must_match_current_authority(changes: dict[str, Any]) ->
     )
     assert isinstance(result, IncidentConfigurationRefusal)
     assert result.code == "incident-ci-identity-mismatch"
+
+
+def test_advanced_event_base_reaches_independent_admission() -> None:
+    observed = Mock(return_value=True)
+    result = select_ci_plan(
+        event=_event(base_sha="c" * 40),
+        targets=_targets(),
+        authority=_authority(),
+        trust=CiTrust(current=lambda _: True, observer=observed),
+        environ={},
+    )
+    assert isinstance(result, CiPlan)
+    observed.assert_called_once()
 
 
 @pytest.mark.parametrize(

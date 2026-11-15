@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from livespec_dev_tooling._incident_enablement_fence import controller_fence
@@ -22,6 +22,7 @@ from livespec_dev_tooling._incident_observer_store import (
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverArmQuery
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_enablement import IdentitySource, production_identity_source
+from livespec_dev_tooling.incident_expedited_base import base_freshness_refusal
 from livespec_dev_tooling.incident_observer import route_reconciler_window
 from livespec_dev_tooling.incident_observer_authority import CurrentAuthorityReader
 
@@ -36,7 +37,15 @@ __all__: list[str] = [
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-wanebl
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-ariayn
 _QUERY_FIELDS = frozenset(
-    {"repository", "arm_id", "pr_number", "base_sha", "head_sha", "receipt_digest"}
+    {
+        "repository",
+        "arm_id",
+        "pr_number",
+        "base_sha",
+        "event_base_sha",
+        "head_sha",
+        "receipt_digest",
+    }
 )
 ORDINARY_ACTION_PATH = "/ordinary-action"
 _ORDINARY_ACTION_FIELDS = frozenset({"repository", "action", "window_shas"})
@@ -68,10 +77,40 @@ class ObserverQuery:
             or payload["repository"] != settings.repository
         ):
             return _refused(reason="invalid exact protected query")
-        query = ObserverArmQuery(**payload)
+        event_base_sha = cast("str", payload.get("event_base_sha", ""))
+        query = ObserverArmQuery(
+            **{name: value for name, value in payload.items() if name != "event_base_sha"}
+        )
+        return self._arm_query(
+            path=path,
+            query=query,
+            event_base_sha=event_base_sha,
+            response_query=payload,
+        )
+
+    def _arm_query(
+        self,
+        *,
+        path: str,
+        query: ObserverArmQuery,
+        event_base_sha: str,
+        response_query: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Answer a validated protected arm query after its base freshness fence."""
+        settings = self.installation
         arm = self._snapshot(query=query)
         if arm is None:
             return _refused(reason="exact unbound pre-merge arm unavailable")
+        if event_base_sha:
+            base_refusal = base_freshness_refusal(
+                root=settings.repo,
+                genesis_base=arm.base_sha,
+                event_base=event_base_sha,
+                max_commits=settings.expedited_base_max_commits,
+                max_minutes=settings.expedited_base_max_minutes,
+            )
+            if base_refusal is not None:
+                return _refused(reason=base_refusal)
         # An armed enablement fence refuses here too, so an entrance that did not ask
         # is still fenced before CI omission and merge (livespec-dev-tooling-exdkra).
         _, refusal = controller_fence(
@@ -93,7 +132,7 @@ class ObserverQuery:
         return {
             "schema": 1,
             "status": "current" if path == "/current" else "admitted",
-            "query": asdict(query),
+            "query": response_query,
         }
 
     def _ordinary_action(self, *, payload: dict[str, Any]) -> dict[str, Any]:
@@ -145,18 +184,20 @@ class ObserverQuery:
 
 
 def _valid_query(*, payload: dict[str, Any]) -> bool:
+    fields = frozenset(payload)
+    accepted = frozenset({_QUERY_FIELDS, _QUERY_FIELDS - {"event_base_sha"}})
     return (
-        frozenset(payload) == _QUERY_FIELDS
+        fields in accepted
         and type(payload["pr_number"]) is int
         and payload["pr_number"] > 0
-        and all(isinstance(payload[name], str) for name in _QUERY_FIELDS - {"pr_number"})
+        and all(isinstance(payload[name], str) for name in fields - {"pr_number"})
         and all(
             re.fullmatch(r"[0-9a-f]{64}", payload[name]) is not None
             for name in ("arm_id", "receipt_digest")
         )
         and all(
             re.fullmatch(r"[0-9a-f]{40}", payload[name]) is not None
-            for name in ("base_sha", "head_sha")
+            for name in fields & {"base_sha", "event_base_sha", "head_sha"}
         )
     )
 

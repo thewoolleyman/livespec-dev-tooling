@@ -66,8 +66,10 @@ def _authority_matches(*, event: CiEvent, authority: CiAuthority) -> bool:
         authority.context.mode == ExecutionMode.EXPEDITED_REPAIR
         and identity is not None
         and identity.phase == "repair"
-        and (identity.repository, identity.base_sha, identity.head_sha)
-        == (event.repository, event.base_sha, event.head_sha)
+        # The authority is anchored to the reviewed attempt's genesis base.  A
+        # default-branch advance changes only the event base; the independent
+        # observer validates that movement and its configured freshness bound.
+        and (identity.repository, identity.head_sha) == (event.repository, event.head_sha)
         and type(event.pr_number) is int
         and event.pr_number > 0
         and type(authority.pr_number) is int
