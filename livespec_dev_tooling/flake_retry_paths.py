@@ -7,8 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from livespec_dev_tooling._flake_retry_places import repository_root_expressions
-from livespec_dev_tooling._flake_retry_scopes import ScopeIndex, index_scopes
-from livespec_dev_tooling.flake_retry_divisions import division_operands
+from livespec_dev_tooling._flake_retry_scopes import (
+    Scope,
+    ScopeIndex,
+    binding_scope,
+    index_scopes,
+    owning_scope,
+)
+from livespec_dev_tooling.flake_retry_divisions import path_operands
 
 __all__: list[str] = ["PathChain", "path_chains", "path_literals"]
 
@@ -73,6 +79,7 @@ def _path_names(
             isinstance(operands[0], ast.Constant)
             and bool(operands[0].value)
             and isinstance(operands[0].value, str)
+            and not operands[0].value.startswith("/")
         )
         or (id(operands[0]) in repository_root_expression_ids)
     )
@@ -96,6 +103,114 @@ def _path_names(
     return paths, undeterminable
 
 
+def _literal_parts(
+    *, expression: ast.expr, scope: Scope, index: ScopeIndex, seen: frozenset[int] = frozenset()
+) -> tuple[ast.expr, ...] | None:
+    """Expand a name only when its binding is a chain of string literals."""
+    parts: tuple[ast.expr, ...] | None = None
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+        parts = (expression,)
+    elif isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Div):
+        left = _literal_parts(expression=expression.left, scope=scope, index=index, seen=seen)
+        right = _literal_parts(expression=expression.right, scope=scope, index=index, seen=seen)
+        parts = None if left is None or right is None else (*left, *right)
+    elif isinstance(expression, ast.Call):
+        callee = (
+            expression.func.id
+            if isinstance(expression.func, ast.Name)
+            else getattr(expression.func, "attr", "")
+        )
+        if callee in {"Path", "PurePath", "PosixPath", "PurePosixPath"}:
+            pieces = [
+                _literal_parts(expression=argument, scope=scope, index=index, seen=seen)
+                for argument in expression.args
+            ]
+            parts = (
+                tuple(item for piece in pieces if piece is not None for item in piece)
+                if pieces and all(piece is not None for piece in pieces)
+                else None
+            )
+    elif isinstance(expression, ast.Name) and id(expression) not in seen:
+        owner = owning_scope(name=expression.id, scope=scope, index=index)
+        values = (
+            []
+            if owner is None or owner.parent is not None
+            else [
+                value
+                for targets, value, target_scope in index.assignments
+                if binding_scope(name=expression.id, scope=target_scope, index=index) is owner
+                if any(
+                    isinstance(target, ast.Name) and target.id == expression.id
+                    for target in targets
+                )
+            ]
+        )
+        if owner is not None and len(values) == 1:
+            parts = _literal_parts(
+                expression=values[0], scope=owner, index=index, seen=seen | {id(expression)}
+            )
+    return parts
+
+
+def _expanded_operands(
+    *, operands: tuple[ast.expr, ...], index: ScopeIndex
+) -> tuple[ast.expr, ...]:
+    """Replace literal-only path-name operands without treating them as dynamic."""
+    if not operands:
+        return operands
+    expanded = [operands[0]]
+    for operand in operands[1:]:
+        scope = index.scope_of[id(operand)]
+        expanded.extend(_literal_parts(expression=operand, scope=scope, index=index) or (operand,))
+    return tuple(expanded)
+
+
+def _forced_undeterminable(*, expression: ast.expr, operands: tuple[ast.expr, ...]) -> bool:
+    """Identify path forms whose replacement or interpolation cannot be located exactly."""
+    indirect_request = (
+        any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and bool(node.args)
+            and getattr(node.args[0], "id", "") == "request"
+            for node in ast.walk(expression)
+        )
+        or any(
+            isinstance(node, ast.Attribute)
+            and node.attr == "path"
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "parent"
+            and isinstance(node.value.value, ast.Attribute)
+            and node.value.value.attr == "node"
+            and getattr(node.value.value.value, "id", "") == "request"
+            for node in ast.walk(expression)
+        )
+        or any(
+            isinstance(node, ast.Attribute)
+            and node.attr == "__file__"
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "module"
+            and getattr(node.value.value, "id", "") == "request"
+            for node in ast.walk(expression)
+        )
+    )
+    if indirect_request:
+        return True
+    if not isinstance(expression, ast.Call):
+        return False
+    callee = (
+        expression.func.id
+        if isinstance(expression.func, ast.Name)
+        else getattr(expression.func, "attr", "")
+    )
+    if callee == "with_name":
+        return False
+    if callee == "join":
+        return any(not isinstance(operand, ast.Constant) for operand in operands[1:])
+    return bool(expression.args and isinstance(expression.args[0], ast.JoinedStr))
+
+
 def path_chains(
     *,
     tree: ast.AST,
@@ -114,22 +229,22 @@ def path_chains(
         root_expression_ids = _repository_root_context(
             source_path=source_path, repo_root=repo_root, index=scope_index
         )
-    nested_divisions = {
+    nested_paths = {
         id(child)
         for node in scope_index.nodes
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
-        for child in (node.left, node.right)
-        if isinstance(child, ast.BinOp) and isinstance(child.op, ast.Div)
+        if isinstance(node, ast.expr)
+        if path_operands(expression=node) is not None
+        for child in ast.iter_child_nodes(node)
+        if isinstance(child, ast.expr) and path_operands(expression=child) is not None
     }
     chains: list[PathChain] = []
     for node in scope_index.nodes:
-        if (
-            not isinstance(node, ast.BinOp)
-            or not isinstance(node.op, ast.Div)
-            or id(node) in nested_divisions
-        ):
+        if not isinstance(node, ast.expr) or id(node) in nested_paths:
             continue
-        operands = division_operands(expression=node)
+        found_operands = path_operands(expression=node)
+        if found_operands is None:
+            continue
+        operands = _expanded_operands(operands=found_operands, index=scope_index)
         names, undeterminable = _path_names(
             operands=operands,
             repo_root=repo_root,
@@ -146,7 +261,8 @@ def path_chains(
             PathChain(
                 names=frozenset(names),
                 segments=frozenset(segments),
-                undeterminable=undeterminable,
+                undeterminable=undeterminable
+                or _forced_undeterminable(expression=node, operands=operands),
                 base=operands[0],
                 operand_ids=frozenset(id(operand) for operand in operands),
                 ascent=sum(

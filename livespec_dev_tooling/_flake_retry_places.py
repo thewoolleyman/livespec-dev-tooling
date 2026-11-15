@@ -44,6 +44,11 @@ def _called_path(*, call: ast.Call, again: _Resolve) -> Path | None:
     if isinstance(func, ast.Attribute) and callee == "resolve":
         base = again(expression=func.value)
         return None if base is None else base.resolve()
+    if isinstance(func, ast.Attribute) and callee == "with_name" and len(call.args) == 1:
+        name = call.args[0]
+        base = again(expression=func.value)
+        if base is not None and isinstance(name, ast.Constant) and isinstance(name.value, str):
+            return base.with_name(name.value)
     if argument is None or callee not in _SAME_PATH_FUNCTIONS | {"dirname"}:
         return None
     base = again(expression=argument)

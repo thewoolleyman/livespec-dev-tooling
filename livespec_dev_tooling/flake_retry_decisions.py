@@ -45,6 +45,32 @@ _UNSAFE_NAMES = {"pyproject.toml", "uv.lock", "justfile", "conftest.py"}
 _PLUGIN_FILE_NAMES = {"flake_retry.py", Path(__file__).name}
 
 
+def _request_indirection(*, tree: ast.AST) -> bool:
+    """Whether an alias or helper hides pytest's request object from path analysis."""
+    aliases = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "request"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    functions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    passed = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in functions
+        and any(getattr(argument, "id", "") == "request" for argument in node.args)
+        for node in ast.walk(tree)
+    )
+    return bool(aliases) or passed
+
+
 @dataclass(frozen=True, kw_only=True)
 class _ModuleFacts:
     """What one parsed source module contributes to any closure that reaches it.
@@ -99,6 +125,13 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         if id(node) not in path_component_nodes
         or (Path(node.value).suffix and id(node) not in operand_ids)
     }
+    literals.update(
+        place
+        for node in index.nodes
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "with_name"
+        for place in [places.get(id(node))]
+        if place is not None
+    )
     dependent: list[tuple[RootTerm, frozenset[str], frozenset[str]]] = []
     undeterminable = any(chain.undeterminable for chain in chains)
     for chain, base in zip(chains, base_terms, strict=True):
@@ -110,6 +143,7 @@ def _module_facts(*, repo_root: Path, path: Path) -> _ModuleFacts | None:
         dependent.extend(
             [(term, chain.names | chain.segments, chain.names)] if term.through else []
         )
+    undeterminable = undeterminable or (bool(dependent) and _request_indirection(tree=tree))
     return _ModuleFacts(
         imports=frozenset(module_imports(repo_root=repo_root, path=path, tree=tree)),
         literals=frozenset(literals),
@@ -183,7 +217,8 @@ def _closure(
             terms=bindings, queries=(key for term, _, _ in dependent for key in term.through)
         )
         for term, names, spelled in dependent:
-            found, unknowable = named(spans=reached_from(term=term, located=located), names=spelled)
+            spans = reached_from(term=term, located=located)
+            found, unknowable = named(spans=spans, names=spelled)
             literals.update(found | (names if term.through & rooted else set()))
             undeterminable = undeterminable or unknowable
     return set(reached), literals, undeterminable

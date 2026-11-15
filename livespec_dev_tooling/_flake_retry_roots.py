@@ -27,6 +27,7 @@ from functools import partial
 from livespec_dev_tooling._flake_retry_parameters import Thunk, fixture_name, parameter_sites
 from livespec_dev_tooling._flake_retry_root_terms import (
     DOUBT,
+    NOT_ROOTED,
     Key,
     RootTerm,
     TermContext,
@@ -96,6 +97,31 @@ def _returned_term(*, scope: Scope, context: TermContext) -> RootTerm:
     )
 
 
+def _argument_term(
+    *,
+    function: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda,
+    position: int,
+    context: TermContext,
+) -> RootTerm:
+    """The values passed to a directly-called helper parameter in this module."""
+    if isinstance(function, ast.Lambda):
+        return NOT_ROOTED
+    outer = context.index.scope_of[id(function)]
+    values = [
+        call.args[position]
+        for call in context.index.nodes
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == function.name
+        and len(call.args) > position
+        and owning_scope(
+            name=call.func.id, scope=context.index.scope_of[id(call)], index=context.index
+        )
+        is outer
+    ]
+    return union(terms=(base_term(expression=value, context=context) for value in values))
+
+
 def _function_sites(
     *, function: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda, context: TermContext
 ) -> Iterator[tuple[Key, Thunk]]:
@@ -117,6 +143,12 @@ def _function_sites(
         key_of=lambda name: binding_key(name=name, scope=inner, context=context),
         context=context,
     )
+    arguments = [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
+    for position, parameter in enumerate(arguments):
+        yield (
+            binding_key(name=parameter.arg, scope=inner, context=context),
+            partial(_argument_term, function=function, position=position, context=context),
+        )
 
 
 def _import_term(*, alias: ast.alias, context: TermContext) -> RootTerm:
