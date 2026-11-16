@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.consumer
@@ -24,6 +26,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULE = "livespec_dev_tooling.checks.ci_single_container_image"
 _OLD = "livespec-fabro-sandbox:python-v1.174.0"
 _NEW = "livespec-fabro-sandbox:python-v1.175.0"
+_RENDERER = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "gates" / "render-gate-job.sh"
+_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
 def _workflow(*, images: tuple[str, ...]) -> str:
@@ -91,3 +95,40 @@ def test_a_container_block_with_no_image_at_the_end_of_the_file_declares_nothing
 
     assert code == 0
     assert [r for r in records if r["level"] == "error"] == []
+
+
+def test_the_gate_refuses_the_same_commented_block_images_as_the_shared_check(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    _ = workflow.write_text(
+        "jobs:\n"
+        "  current:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    container:\n"
+        f"      image: {_NEW}\n"
+        "  legacy:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    container:\n"
+        "      # The legacy image remains until its test suite is migrated.\n"
+        "      # Keep this comment beside the pin for reviewers.\n"
+        f"      image: {_OLD}\n",
+        encoding="utf-8",
+    )
+
+    code, records = _run_check(root=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    completed = run_under_hang_guard(
+        [str(_RENDERER), "--repo-root", str(tmp_path), "--tree-hash", _TREE],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    errors = {str(record["image"]) for record in records if record["level"] == "error"}
+    assert code == 1
+    assert errors == {_NEW, _OLD}
+    assert completed.returncode == 1, completed.stderr
+    assert f"  {_NEW}" in completed.stderr
+    assert f"  {_OLD}" in completed.stderr

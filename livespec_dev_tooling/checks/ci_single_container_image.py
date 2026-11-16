@@ -29,9 +29,10 @@ vendor-path-aware import below.
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
+
+from livespec_dev_tooling.ci_container_images import container_images
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -45,10 +46,6 @@ CHECK_PURITY = "tree-pure"
 
 
 _CI_WORKFLOW_PATH = Path(".github") / "workflows" / "ci.yml"
-_CONTAINER_KEY = re.compile(r"^(?P<indent>[ \t]*)container:[ \t]*(?P<value>.*)$")
-_IMAGE_KEY = re.compile(r"^[ \t]*image:[ \t]*(?P<value>.*)$")
-_QUOTED = re.compile(r"""^(?P<quote>["'])(?P<body>.*?)(?P=quote)""")
-_TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 # Two distinct references are the smallest set a delegated gate Job cannot resolve.
 _MIN_CONFLICTING_IMAGES = 2
 _HINT = (
@@ -56,53 +53,6 @@ _HINT = (
     "`render-gate-job.sh` refuses a workflow that declares several. Pin every job "
     "`container:` to the same image reference."
 )
-
-
-def _reference(*, raw: str) -> str:
-    """The image reference a YAML scalar names, without quotes or a trailing comment."""
-    quoted = _QUOTED.match(raw)
-    if quoted is not None:
-        return quoted.group("body")
-    return _TRAILING_COMMENT.sub("", raw).strip()
-
-
-def _indent_of(*, line: str) -> int:
-    return len(line) - len(line.lstrip(" \t"))
-
-
-def _block_image(*, lines: list[str], start: int, parent_indent: int) -> tuple[int, str] | None:
-    """The `image:` that is a direct child of the `container:` block opened above `start`."""
-    child_indent: int | None = None
-    for offset, line in enumerate(lines[start:], start=start):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = _indent_of(line=line)
-        if indent <= parent_indent:
-            return None
-        if child_indent is None:
-            child_indent = indent
-        match = _IMAGE_KEY.match(line)
-        if indent == child_indent and match is not None:
-            return offset + 1, _reference(raw=match.group("value"))
-    return None
-
-
-def _container_images(*, source: str) -> list[tuple[int, str]]:
-    """Every job `container:` image in the workflow, as (1-based line, reference)."""
-    lines = source.splitlines()
-    declared: list[tuple[int, str]] = []
-    for index, line in enumerate(lines):
-        match = _CONTAINER_KEY.match(line)
-        if match is None:
-            continue
-        scalar = _reference(raw=match.group("value"))
-        if scalar:
-            declared.append((index + 1, scalar))
-            continue
-        block = _block_image(lines=lines, start=index + 1, parent_indent=len(match.group("indent")))
-        if block is not None:
-            declared.append(block)
-    return declared
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -128,7 +78,7 @@ def main() -> int:
         )
         return 0
     lines_by_image: dict[str, list[int]] = {}
-    for lineno, image in _container_images(source=workflow.read_text(encoding="utf-8")):
+    for lineno, image in container_images(source=workflow.read_text(encoding="utf-8")):
         lines_by_image.setdefault(image, []).append(lineno)
     if len(lines_by_image) < _MIN_CONFLICTING_IMAGES:
         return 0
