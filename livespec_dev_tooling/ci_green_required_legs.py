@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 __all__: list[str] = [
+    "GUARD_JOB",
     "NEVER_CREATED",
     "NO_NEEDS",
     "UNDERIVABLE",
@@ -62,6 +63,15 @@ NEVER_CREATED = "never created in this run"
 UNDERIVABLE = "its leg names cannot be derived from the workflow"
 NO_NEEDS = "the gate job is absent from the workflow or declares no parseable needs"
 _SUCCESS = "success"
+_SKIPPED = "skipped"
+# The merge-group guard job is a SIGNAL-ONLY need of the gate: the gate lists it so its
+# `skip` output reaches the gate step (the jobs API does not expose outputs), and it is
+# never itself a required leg. A failed or cancelled guard still fails the gate through
+# the needs-result step.
+GUARD_JOB = "merge-group-guard"
+# A gating job whose `if:` carries this term may be SKIPPED, and only in a run whose
+# guard output `skip` is true (livespec-dev-tooling-ymog6r, the merge-group tree-equality skip).
+_SKIP_CONDITION = f"needs.{GUARD_JOB}.outputs.skip != 'true'"
 _MATRIX_TARGET_NAME = "${{ matrix.target }}"
 # The workflow's two-space YAML style: job ids at indent 2, job keys at 4.
 _JOB_ID_INDENT = 2
@@ -188,14 +198,32 @@ def required_legs(*, ci_yaml_text: str, gate_job: str) -> tuple[tuple[str, tuple
     gate = blocks.get(gate_job)
     needs_value = None if gate is None else _job_key(body=gate, key="needs")
     needed = () if needs_value is None else _needs(value=needs_value)
+    needed = tuple(job for job in needed if job != GUARD_JOB)
     return tuple((job, _leg_names(job=job, body=blocks.get(job))) for job in needed)
 
 
+def _skippable_jobs(*, ci_yaml_text: str) -> frozenset[str]:
+    """The job ids whose `if:` carries the guard's skip condition."""
+    return frozenset(
+        job
+        for job, body in _job_blocks(ci_yaml_text=ci_yaml_text).items()
+        if _SKIP_CONDITION in (_job_key(body=body, key="if") or "")
+    )
+
+
 def leg_gaps(
-    *, ci_yaml_text: str, gate_job: str, run_jobs: tuple[RunJob, ...]
+    *, ci_yaml_text: str, gate_job: str, run_jobs: tuple[RunJob, ...], guard_skip: bool = False
 ) -> tuple[LegGap, ...]:
-    """Every required leg that is absent from the run or did not succeed."""
+    """Every required leg that is absent from the run or did not succeed.
+
+    `guard_skip` is the same run's guard output. Only when it is true may a leg of a
+    skippable job be absent or `skipped`; every other leg, and every leg of any run
+    whose guard did not output skip=true, must still be created and succeed.
+    """
     needed = required_legs(ci_yaml_text=ci_yaml_text, gate_job=gate_job)
+    skippable: frozenset[str] = (
+        _skippable_jobs(ci_yaml_text=ci_yaml_text) if guard_skip else frozenset[str]()
+    )
     if not needed:
         return (LegGap(leg=gate_job, finding=NO_NEEDS),)
     gaps: list[LegGap] = []
@@ -203,8 +231,10 @@ def leg_gaps(
         if not legs:
             gaps.append(LegGap(leg=job, finding=UNDERIVABLE))
         for leg in legs:
+            may_skip = job in skippable
+            accepted = (_SUCCESS, _SKIPPED) if may_skip else (_SUCCESS,)
             reported = [run_job for run_job in run_jobs if run_job.name == leg]
-            if not reported:
+            if not reported and not may_skip:
                 gaps.append(LegGap(leg=leg, finding=NEVER_CREATED))
             gaps.extend(
                 LegGap(
@@ -212,7 +242,7 @@ def leg_gaps(
                     finding=f"status {run_job.status}, conclusion {run_job.conclusion or 'none'}",
                 )
                 for run_job in reported
-                if run_job.conclusion != _SUCCESS
+                if run_job.conclusion not in accepted
             )
     return tuple(gaps)
 
@@ -236,11 +266,15 @@ def main(*, argv: list[str] | None = None) -> int:
     _ = parser.add_argument("--workflow", type=Path, required=True)
     _ = parser.add_argument("--gate-job", required=True)
     _ = parser.add_argument("--jobs", type=Path, required=True)
+    # The guard job's `skip` output, passed from ci-green's needs context. Only the exact
+    # text `true` counts; anything else is a full run.
+    _ = parser.add_argument("--guard-skip", default="false")
     parsed = parser.parse_args(argv)
     gaps = leg_gaps(
         ci_yaml_text=parsed.workflow.read_text(encoding="utf-8"),
         gate_job=parsed.gate_job,
         run_jobs=parse_run_jobs(jobs_jsonl=parsed.jobs.read_text(encoding="utf-8")),
+        guard_skip=parsed.guard_skip == "true",
     )
     lines = [f"::error::{parsed.gate_job}: required leg {gap.leg}: {gap.finding}\n" for gap in gaps]
     verdict = "FAILED" if gaps else "passed"
