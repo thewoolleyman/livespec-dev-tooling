@@ -36,7 +36,7 @@ Add to `scenarios.md` these five scenarios:
 ```gherkin
 Given a queue-required repository whose committed configuration declares recovery_bypass_integration_id and a different incident_merge_integration_id
 
-And the active ruleset on its default branch carries exactly those two Integrations as its bypass actors
+And the active ruleset on its default branch carries exactly those two Integrations as its bypass actors, with the incident-merge Integration's bypass_mode pull_request
 
 When branch_protection_alignment runs with an admin-scoped token
 
