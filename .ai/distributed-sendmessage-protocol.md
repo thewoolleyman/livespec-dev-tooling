@@ -62,7 +62,8 @@ tool round. That is delivery, not that anyone read it or acted on it. For a
 session on another machine, nothing reports back. **Never treat silence as
 agreement.** When you need a result, ask for a reply. If it matters, record the
 request where the work is tracked (for example a relay on the plan epic).
-Waiting on a peer is not, by itself, a reason to type into its pane.
+A coordinator waiting on a peer may type into its pane to get the result (Rule
+PANE-TYPING-ALLOWED); other seats prefer SendMessage.
 
 To hear when a session on THIS machine goes idle, use
 `SendMessage(notify_when_idle: true)` and don't poll `ListAgents`.
