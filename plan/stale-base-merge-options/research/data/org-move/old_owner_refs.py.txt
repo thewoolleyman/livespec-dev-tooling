@@ -31,6 +31,8 @@ Graded columns (all of them count toward the DoD's 0):
           `uses:` refs, marketplace `repo:` entries, `gh --repo` arguments. Graded at
           legacy-coordinator-agent's direction (its grade of livespec-dev-tooling#4427), because these
           lean on GitHub's redirect just as URLs do.
+Rule G columns (ruled 2026-11-16, all graded): varpath, cfgdefault, profile; see the patterns() comments, the
+EXCLUDES tuple (exact paths, each ruled) and the ALLOW tuple (the only allow-list, applied to `profile` only).
 Informational column:
   prose — url, raw and ghcr hits in live `plan/` research notes.
 
@@ -192,7 +194,7 @@ def main() -> int:
                 git(repo_dir, "fetch", "-q", "origin", "master")
             head = git(repo_dir, "rev-parse", "--short", args.ref).strip()
             hits = {k: [h for h in grep(repo_dir, args.ref, p, (".", *EXCLUDES))
-                        if not (k in RULE_G and allowed(repo, h))] for k, p in pats.items()}
+                        if not (k == "profile" and allowed(repo, h))] for k, p in pats.items()}
             prose = grep(repo_dir, args.ref, "|".join(pats[k] for k in ("url", "raw", "ghcr")), PROSE_ONLY)
         except (subprocess.CalledProcessError, RuntimeError, FileNotFoundError) as err:
             unreadable.append({"repo": repo, "error": str(err)})

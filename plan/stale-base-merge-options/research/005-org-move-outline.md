@@ -280,24 +280,32 @@ when the cutover children are filed (the 14:47:39Z scope event's deferral).
 - In the committed tree of each of the 10 fleet repositories at master, one committed grep counts 0 references to the old
   owner. The grep is `plan/stale-base-merge-options/research/data/org-move/old_owner_refs.py.txt` (`--old-owner`
   defaults to `thewoolleyman`; it is never read from the manifest, whose `owner` names the organization after the
-  move). It counts four forms of reference:
+  move). It counts seven forms of reference (the first four as originally approved, the last three added by the 2026-11-16 Rule G ruling):
   - `github.com/thewoolleyman/<fleet-repo>`, in https, ssh and API forms;
   - `raw.githubusercontent.com/thewoolleyman/<fleet-repo>`;
   - `ghcr.io/thewoolleyman/`;
   - bare `thewoolleyman/<fleet-repo>` slugs: `uses:` refs, marketplace `repo:` entries and `--repo` arguments. The slugs
-    are graded at the coordinator's direction, because they lean on the redirect just as URLs do.
+    are graded at the coordinator's direction, because they lean on the redirect just as URLs do;
+  - Rule G, `varpath`: `thewoolleyman/` followed by a shell, printf or template variable (`$`, `%`, `<` or `{{`), for
+    example `thewoolleyman/$plugin_name` or `github.com/thewoolleyman/%s`; a lone `{name}` is a Python or Rust format
+    placeholder in a fixture and is not matched;
+  - Rule G, `cfgdefault`: an OWNER- or ORG-named variable, or a `github_owner` key, defaulting to `thewoolleyman`
+    (upper-case names only: a lowercase `owner="thewoolleyman"` in a test fixture is a known, accepted gap);
+  - Rule G, `profile`: the bare profile URL `github.com/thewoolleyman` with no path, graded except for the explicit
+    allow-list of the four `.claude-plugin/marketplace.json` author-URL lines (livespec-driver-claude,
+    livespec-orchestrator-beads-fabro, livespec-orchestrator-git-jsonl, livespec-overseer), which is metadata.
 
   Ruled 2026-11-16 (throughput-plans-coordinator, recorded as the xowhol scope event of 18:44:03Z): the grep also
   excludes, narrowly and each as a "historical record or byte-identical adopter fixture", in livespec-dev-tooling
   `config/incident-fleet-evidence.json`, `tests/livespec_dev_tooling/fixtures/incident_fleet/claims-wellformed.json`,
   `tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py` and `tests/fixtures/incident_ci_inventory_sources/`;
-  and, as legal attribution, the vendored `.claude-plugin/scripts/_vendor/livespec_runtime/LICENSE` copyright line.
-  Nothing else is excluded.
+  and, as legal attribution, the vendored `.claude-plugin/scripts/_vendor/livespec_runtime/LICENSE` file (a pathspec
+  excludes a whole file; the attribution line is the only owner reference in it).
   In livespec-console-beads-fabro it also excludes, ruled 2026-11-16 as a "historical record or byte-identical
   upstream fixture", `crates/console-fork-drift-check/src/lib.rs` (`DOCKER_IMAGE_LINE_PREFIXES` deliberately accepts both
   owners while a pinned orchestrator release names the old one; reopen condition: remove the exclusion and the old-owner
   prefix when no live orchestrator pin names the old owner) and `.fabro/workflows/implement-work-item/workflow.toml`
-  (upstream-verbatim; its digest is pinned in `tests/fixtures/fabro-fork-upstream-pins.json`).
+  (upstream-verbatim; its digest is pinned in `tests/fixtures/fabro-fork-upstream-pins.json`). Nothing else is excluded.
 
   It reads each repository's `origin/master` tree and fetches only with `--fetch`. It grades configuration, so it
   excludes `SPECIFICATION/history/`, the root `archive/`, everything under `plan/`, and `CHANGELOG.md` files. Live plan
