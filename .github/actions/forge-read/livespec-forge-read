@@ -98,7 +98,8 @@ def kind_of(*, attempt, read):
     if status == 403:
         limited = RATE_LIMIT_BODY.search(attempt.body) is not None
         spent = attempt.headers.get("x-ratelimit-remaining") == "0"
-        return "rate_limited" if limited or spent else "forbidden"
+        retry_after = bool(attempt.headers.get("retry-after", "").strip())
+        return "rate_limited" if limited or spent or retry_after else "forbidden"
     if status == 401:
         return "forbidden"
     if status == 404:
