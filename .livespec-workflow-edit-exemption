@@ -1,15 +1,9 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/reusable-incident-ci-publish.yml stops running on
-# GitHub-hosted capacity against the observer's PUBLIC URL, which can never reach
-# the tailnet-only /ci/publish route, and instead runs where the caller's
-# incident-ci job runs (a new runner-labels input, defaulting to GitHub-hosted)
-# and dials LIVESPEC_INCIDENT_OBSERVER_URL with its connect address, as incident-ci
-# does. Its header is rewritten to match. Ruled route (A) by legacy-coordinator-agent
-# 2026-11-16 ~00:5xZ under coordinator-duties §12 ("Adding OR MODIFYING a runs on
-# is absolutely ADDITIVE"): a dead publisher starts publishing and nothing runs
-# less. The line-diff guard reads the modified lines as the maintainer tier, so
-# the item needs approval:workflow-edit, which the coordinator applies; the edit
-# stays logically additive (§12).
-work_item=livespec-dev-tooling-bqnzcm.4
-reason=bqnzcm.4 host leg: route the incident CI publisher to the self-hosted incident pool and the observer's tailnet URL so an expedited PR's CI run is published, not recorded unpublished
+# The change: one added comment line above the cron in each of release-please.yml and
+# ci-cache-negative-tests.yml, so the commit re-registers their schedules after the
+# org transfer (retro entry on epic livespec-dev-tooling-xowhol, 2026-11-16).
+work_item=livespec-dev-tooling-roh5s6
+reason=Comment-only commit re-registering the release-please and CI cache negative tests cron schedules after the org transfer; adds two lines, changes no job, trigger or runner.
+change=additive
+ci_runtime=no-significant-increase
