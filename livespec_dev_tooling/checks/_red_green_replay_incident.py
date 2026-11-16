@@ -103,6 +103,25 @@ def _unmet(
     return None
 
 
+def _no_block(*, sha: str, event: str | None) -> bool:
+    """No block was found: name it on the two events that carry one, with the source read.
+
+    Scenario "incident commit provenance remains verifiable on normal master": the
+    replay gate prints a line naming the missing block and the source it read, and
+    keeps the commit convicted. Any other event is not an incident pull request run,
+    so it stays silent (livespec-dev-tooling-yfrepg).
+    """
+    if event == "pull_request":
+        return _refuse(sha=sha, reason="no livespec-incident-ci block in the pull_request body")
+    if event == "merge_group":
+        reason = (
+            "no livespec-incident-ci block was read: "
+            "a merge_group event carries no pull_request body"
+        )
+        return _refuse(sha=sha, reason=reason)
+    return False
+
+
 def admitted_by_recorded_incident(
     *, sha: str, message: str, environ: Mapping[str, str] = os.environ
 ) -> bool:
@@ -111,7 +130,7 @@ def admitted_by_recorded_incident(
     body = pull_request.get("body")
     block = incident_block(body=body) if isinstance(body, str) else None
     if block is None:
-        return False
+        return _no_block(sha=sha, event=environ.get("GITHUB_EVENT_NAME"))
     authority = decode_authority(payload=block)
     identity = None if authority is None else authority.context.identity
     if authority is None or identity is None:
