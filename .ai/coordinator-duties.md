@@ -878,6 +878,16 @@ not a freeze: it names its own lift, and §3's rule on a hold's stated condition
 - **Announce a load-cut lift to every seat it bound (coordinator's reading).** A cut reaches seats by message and its
   end does not reach them by itself (2026-11-07: two seats believed a cut in force hours after it ended).
 
+**Rule FOCUS-TWO-LEVERS: until fleet M1 is back at its floor, only two levers move.**
+stale-base-merge-options finishes the org migration in flight; after that, no new fleet-wide change starts until fleet
+M1 (24 h) is back at the 6.90/h floor. LEVER 1 is factory greens, owned by legacy-dispatcher-agent. LEVER 2 is CI
+capacity moved off hp-xubuntu and onto gmktec, owned by gate-job-resources and ci-runtime-and-cost. Every other plan
+only finishes work already in flight: no new lanes, no cancels. Each lever reports M1 before and after it lands. The
+rule ends when M1 is at or above the floor, or on the maintainer's word. Maintainer, verbatim [r7iuj6
+2026-11-16T20:19:41Z, ported to 6tgd2z 20:20:22Z]: "Okay it seems like we're just thrashing around and not making any
+progress on anything. The whole point of this was to make things more stable and increase throughput. Why isn't it?",
+then "Yes do that".
+
 The coordinator never reorders, adds or drops a priority on its own initiative; it reports evidence for a change as a
 finding with a recommendation.
 
