@@ -139,6 +139,7 @@ from livespec_dev_tooling.checks._master_ci_green_runs import (  # noqa: E402
     master_push_runs_endpoint,
     master_push_suite_ids,
 )
+from livespec_dev_tooling.external_cause import classify_failure_kind  # noqa: E402
 
 __all__: list[str] = []
 
@@ -241,9 +242,10 @@ def _gh_failed_due_to_invalid_credential(*, stderr: str) -> bool:
 
 def _is_transient_gh_failure(*, stderr: str) -> bool:
     """Return whether `gh` reported an HTTP 429 or 5xx response."""
-    return "HTTP 429" in stderr or any(
-        f"HTTP {status_code}" in stderr for status_code in range(500, 600)
-    )
+    return classify_failure_kind(status=None, headers={}, body="", stderr=stderr) in {
+        "rate_limited",
+        "server_error",
+    }
 
 
 def _read_check_runs_with_transient_retry(*, args: list[str]) -> GhRead:

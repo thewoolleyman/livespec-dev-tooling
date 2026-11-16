@@ -33,6 +33,8 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+from livespec_dev_tooling.external_cause import classify_failure_kind
+
 __all__: list[str] = [
     "ATTEMPT_TIMEOUT_SECONDS",
     "Attempt",
@@ -49,16 +51,6 @@ WAIT_BUDGET_SECONDS = 300
 _ANSWER_BYTES = 256
 _FIRST_WAIT = 2
 _HEADERLESS_RATE_WAIT = 60
-# The fleet `gh` read-failure classification's secondary-limit bodies
-# (`livespec_dev_tooling/fleet/_read_failure.py`): a 403 is a rate limit only
-# when its body says so, or when the primary budget it reports is spent.
-_RATE_LIMIT_BODY = re.compile(
-    r"rate limit|abuse detection mechanism|secondary quota", re.IGNORECASE
-)
-# The classification's kinds for the statuses it names; any other status is
-# `transport`. 403 and the 5xx range need more than the status and are decided
-# in `_kind`.
-_STATUS_KINDS: dict[int, str] = {429: "rate_limited", 401: "forbidden", 404: "not_found"}
 _HTTP_STATUS_LINE = re.compile(r"HTTP/[0-9.]+ (?P<status>[0-9]{3})")
 _PRINTABLE_LOW = 0x20
 _PRINTABLE_HIGH = 0x7E
@@ -138,13 +130,9 @@ def _kind(*, attempt: Attempt, read: bool) -> str:
         return "transport"
     if 200 <= status < 300:  # noqa: PLR2004  — the 2xx success range.
         return "answer" if not read or _parses(text=attempt.body) else "not_json"
-    if status == 403:  # noqa: PLR2004  — HTTP 403 shared by permission and secondary limits.
-        limited = _RATE_LIMIT_BODY.search(attempt.body) is not None
-        spent = attempt.headers.get("x-ratelimit-remaining") == "0"
-        return "rate_limited" if limited or spent else "forbidden"
-    if 500 <= status < 600:  # noqa: PLR2004  — the 5xx range.
-        return "server_error"
-    return _STATUS_KINDS.get(status, "transport")
+    return classify_failure_kind(
+        status=status, headers=attempt.headers, body=attempt.body, stderr=attempt.stderr
+    )
 
 
 def _retryable(*, kind: str, attempt: Attempt, as_read: bool) -> bool:
