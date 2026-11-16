@@ -1266,6 +1266,10 @@ omit = [
     "/tmp/*",
     "/private/var/folders/*",
     "mutants/*",
+    # Test scaffolding is not first-party source: the fleet coverage policy
+    # omits it through this blocklist. Measuring tests/ made an untouched test
+    # module a 100% per-file coverage subject (livespec-dev-tooling-577hl4).
+    "tests/*",
     # THE INVARIANT: coverage must never measure code the repository does not
     # own. A relative `source` allowlist cannot express it here (see the
     # block comment above: pytest-cov's pth startup hook instruments
