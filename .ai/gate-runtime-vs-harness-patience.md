@@ -144,9 +144,10 @@ flake, which coordinator-duties §2 then forbade. SIGINT was sent to its
 `__child` group to take the relaunch back. The gate ran on, PASSED and
 pushed the branch, and the breach was self-reported to the coordinator.
 
-Since the maintainer's 2026-11-13 ruling a flake MAY be retried, so a
-relaunch after a flake is allowed (coordinator-duties §2, within its
-bounds). Relaunch only after the previous run has ended, with its
+Since the maintainer's 2026-11-13 ruling a flake in work already in
+progress MAY be retried, so a relaunch after a flake is allowed
+(coordinator-duties §2, within its bounds). Per the 2026-11-16 ruling, the
+flake's root fix takes priority over new work outside an incident. Relaunch only after the previous run has ended, with its
 `gate-wait` verdict or exit 75, never while it still runs: two live gates
 on one tree can both commit or both push.
 

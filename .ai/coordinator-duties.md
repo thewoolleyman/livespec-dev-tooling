@@ -27,9 +27,9 @@ to get stable, i accept the burn, your job is to stop wasting tokens on failures
 to 23:30Z: the umask-077 failure class cost about $240 (22% of factory spend) and wall-budget cancels about $227 (21%),
 so their fixes (bd-ib-veyxvz, bd-ib-mr7673) launch first when the dispatch freeze lifts (§9).
 
-## 2. A flaky failure may be retried, and still gets a root fix
+## 2. A flaky failure in progress may be retried, and its root fix takes priority
 
-**Flakes may be retried.** A flaky failure of a CI job, a suite, a local commit or push gate (a `gate-start` relaunch
+**Flakes already in progress may be retried.** A flaky failure of a CI job, a suite, a local commit or push gate (a `gate-start` relaunch
 included), or a factory run MAY be retried. The maintainer, 2026-11-13 ~19:3xZ in the
 bootstrap-credentials-and-onboarding session, recorded in the scope event on epic `livespec-dev-tooling-6tgd2z` at ~19:39Z: "WTF IS THIS RULE:
 "Under the no-retry-on-flake rule the agent didn't retry, so I've asked the coordinator for a ruling."  FLAKES MAY NOW
@@ -45,6 +45,17 @@ Bounds (coordinator's reading):
 - Relaunch a local gate only after the previous run has ended (its `gate-wait` verdict, or exit 75), never alongside
   it: a launched gate cannot be called back (`.ai/gate-runtime-vs-harness-patience.md`).
 - A test the change itself touched is judged on its own failure first, because its failure can be the change's own bug.
+
+**The root fix takes priority over new work (maintainer ruling 2026-11-16 ~07:0xZ, recorded on epics
+`livespec-dev-tooling-6tgd2z` and `livespec-dev-tooling-r7iuj6`).** The retry rule above had been recorded without a
+priority rule. The maintainer: "Okay, I think the retry rule is recorded wrong.  Flakes can be retried if they are already in progress, so their work isn't wasted.  But outside of an incident, if there is a flake, then nothing new should get prioritized to enter the factory or the merge train ahead of the fix.  Things can go in parallel next to a flaky fix, but the flaky fix always must get priority as soon as it is found. Does this make sense?  If so, make a sweep to update this rule everywhere."
+In plain words:
+
+- Work ALREADY IN PROGRESS that hits a flake may be retried, within the bounds above, so its work is not wasted.
+- Outside an incident, from the moment a flake is found, its ROOT FIX has top priority for factory dispatch and for the
+  merge queue (the merge train): nothing new is prioritized to enter the factory or the queue ahead of it. Other work
+  may run in parallel beside the fix, never ahead of it.
+- During an incident, the incident flow (EXPEDITED_INCIDENT_RESPONSE) governs instead.
 
 **The in-place test retry still runs first.** A test the run did not touch is retried up to 3 times, 60 seconds
 apart, by the flake-retry pytest plugin inside the same pytest session, and every retried failure gets a root-fix item
@@ -90,8 +101,9 @@ during the GitHub incident "Actions and Checks API": three orchestrator master r
 way.
 
 A check that fails intermittently is still a defect. Find the commit that introduced the flaky bound
-(`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority. A waiting session
-may retry within the bounds above while the root fix lands.
+(`git log -1 -- <test file>`), and route the root fix to that commit's owner as top priority (2026-11-16: ahead of any new factory dispatch or
+merge-queue entry outside an incident, see above). A waiting session may retry in-progress work within the bounds
+above while the root fix lands.
 
 Measured 2026-10-31: `bd-guard/test/test-capture-start.sh` asserted a 5.0 s wall-clock bound, added that day by
 bd-ib-qbwd7n (#4036). Under normal host load it measured 8-13 s, and it blocked every hand commit in the orchestrator

@@ -222,8 +222,10 @@ The files:
   coordinator, before stating what a burn or spend fix is worth, before
   retrying any check that failed intermittently, or before waiting on a seat's
   "report". Rank spend only from measured Honeycomb data, give a flake a
-  bounded retry (backoff, at most 3, each recorded on a root-fix item) and a
-  root fix, unblock a `blocked` seat's picker every tick, and
+  bounded retry only for work already in progress (backoff, at most 3, each
+  recorded on a root-fix item) and a root fix that takes priority: outside an
+  incident nothing new enters the factory or merge queue ahead of it
+  (maintainer, 2026-11-16), unblock a `blocked` seat's picker every tick, and
   have the owning session decide before the maintainer is asked (maintainer
   corrections, 2026-10-31).
 - Read `.ai/janitor-failed-output.md` before diagnosing a `failed at
