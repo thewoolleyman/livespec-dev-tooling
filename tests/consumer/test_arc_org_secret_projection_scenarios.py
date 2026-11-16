@@ -68,10 +68,16 @@ _KEY_OF = {
 # The stand-in kubectl. A Secret is a state file `<ns>__<name>` holding one
 # `data.<key>=<base64>` line per key, which is also what `create --dry-run=client
 # -o yaml` prints and `replace -f -` stores. Every call appends its argv, joined
-# by the unit separator, to $FAKE_KUBECTL_LOG.
+# by the unit separator, to $FAKE_KUBECTL_LOG. The record is built first and
+# appended with ONE printf, because `create` and `replace` are the two ends of a
+# pipeline and run concurrently: a record written as two printfs let the other
+# end's bytes land between them and merged two records into one line, so the
+# test read fewer than three calls and raised IndexError (about 1 round in 115
+# measured by hand, livespec-dev-tooling-2qayro).
 _FAKE_KUBECTL = r"""#!/usr/bin/env bash
 set -euo pipefail
-{ printf '%s\x1f' "$@"; printf '\n'; } >> "$FAKE_KUBECTL_LOG"
+line="$(printf '%s\x1f' "$@")"
+printf '%s\n' "$line" >> "$FAKE_KUBECTL_LOG"
 case "$1" in
   create)
     name="$4"; ns=""
