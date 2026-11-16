@@ -364,7 +364,8 @@ nothing. Make it an action: run `gh pr merge <n> --disable-auto`, then read
 back `gh pr view <n> --json autoMergeRequest` and confirm it is `null`. Where a
 hold is likely, for example a change whose ruling names a precondition, open
 the pull request with `gh pr create --draft` and mark it ready only once the
-grade and the precondition clear.
+precondition clears. No coordinator grade is awaited (rule NO-GRADE-GATE,
+`.ai/coordinator-duties.md` §5).
 
 Measured 2026-11-10. livespec-dev-tooling#4019 (livespec-dev-tooling-qzw2gf,
 the B' master-push concurrency block) opened at 11:18:42Z, and the bot armed
