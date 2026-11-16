@@ -15,7 +15,7 @@
 # declares the packages its vendored runtime imports from outside itself
 # (v1.183.1 is the first that does), so the role installs the release and
 # nothing beside it.
-incident_observer_release: v1.205.0
+incident_observer_release: v1.215.0
 # The release this particular installation serves. Production keeps the normal
 # release above; the scratch variables set this from their own release pin so a
 # proof may install a candidate tag without changing production.
