@@ -4150,17 +4150,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Mac converged for the memory-write guard refuses a local agent-memory write",
-    "test": "TODO",
-    "reason": "Spec-first (v234): a real test at the integration tier or above is owed for this heading: the memory-write guard playbook applied from the control node to a member of interactive_claude_macs, a session there with no Driver enabled refusing Write, Edit and a literal-target Bash tee into its memory directory, and a clean drift report. livespec-dev-tooling-i76rv2 owns it.",
-    "work_item": "livespec-dev-tooling-i76rv2"
+    "test": "tests.consumer.test_claude_memory_write_guard.test_macos_playbook_converges_the_managed_path_and_reports_clean_drift",
+    "reason": "Integration tier: runs the committed macOS play against an isolated target with the same space-containing managed root, invokes the installed hook without a Driver against Write, Edit and literal-target Bash tee memory writes plus its required passes, and then verifies the committed drift run reports changed=0. The Definition-of-Done host capture applies the same committed play to the four real Macs."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a memory-write guard run fails at its start when a Mac precondition is missing",
-    "test": "TODO",
-    "reason": "Spec-first (v234): a real test at the integration tier or above is owed for this heading: the memory-write guard playbook applied from the control node with a member of interactive_claude_macs unreachable or lacking a Python interpreter for Ansible, asserting the run fails at its start naming that Mac and changes no host. livespec-dev-tooling-i76rv2 owns it.",
-    "work_item": "livespec-dev-tooling-i76rv2"
+    "test": "tests.consumer.test_claude_memory_write_guard.test_macos_playbook_refuses_a_missing_interpreter_before_creating_policy",
+    "reason": "Integration tier: runs the committed macOS play with an absent target Python, asserts the named Mac and refusal, and proves the managed-policy root was never created."
   },
   {
     "spec_root": "SPECIFICATION",

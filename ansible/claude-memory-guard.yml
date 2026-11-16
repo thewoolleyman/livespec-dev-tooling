@@ -27,3 +27,33 @@
   roles:
     - role: claude_memory_write_guard
       tags: [claude_memory_write_guard]
+
+# The Macs use Claude Code's distinct managed-settings root.  They are held in
+# their own inventory group so this is the only role the provisioning tree can
+# apply to them.  `pre_tasks` runs across every selected Mac before roles begin:
+# a missing remote Python or non-interactive root access therefore cannot leave
+# a partial Mac converge behind.
+- name: Claude Code memory-write guard on macOS
+  hosts: interactive_claude_macs
+  gather_facts: false
+  pre_tasks:
+    - name: Require each Mac's Python interpreter and passwordless root access
+      ansible.builtin.raw: |
+        if ! test -x {{ ansible_python_interpreter | quote }}; then
+          echo "REFUSED: {{ inventory_hostname }} has no usable Python interpreter at {{ ansible_python_interpreter }}" >&2
+          exit 1
+        fi
+        if ! {{ ansible_python_interpreter | quote }} -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+          echo "REFUSED: {{ inventory_hostname }} has no usable Python interpreter at {{ ansible_python_interpreter }}" >&2
+          exit 1
+        fi
+        if ! sudo -n true; then
+          echo "REFUSED: {{ inventory_hostname }} cannot obtain passwordless root access" >&2
+          exit 1
+        fi
+      become: false
+      changed_when: false
+      check_mode: false
+  roles:
+    - role: claude_memory_write_guard
+      tags: [claude_memory_write_guard]

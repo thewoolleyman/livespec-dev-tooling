@@ -40,7 +40,8 @@ claude_memory_write_guard_lib_dir: /usr/local/lib/claude-code
 claude_memory_write_guard_hook_dir: "{{ claude_memory_write_guard_lib_dir }}/memory-write-guard"
 # The entry script; its siblings are imported from the same directory.
 claude_memory_write_guard_hook: "{{ claude_memory_write_guard_hook_dir }}/block_auto_memory.py"
-# Ownership of everything installed. A macOS host would set the group to wheel.
+# Ownership of everything installed. The macOS inventory group overrides the
+# group to wheel and both roots to /Library/Application Support/ClaudeCode.
 claude_memory_write_guard_owner: root
 claude_memory_write_guard_group: root
 claude_memory_write_guard_python: /usr/bin/python3
@@ -54,7 +55,10 @@ claude_memory_write_guard_hook_files:
   - _shell_lex.py
   - _result.py
 
-claude_memory_write_guard_command: "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook }}"
+# The macOS managed root contains a space. Quote both paths for the command
+# Claude Code executes, while leaving Linux's rendered command equivalent.
+claude_memory_write_guard_command: >-
+  {{ claude_memory_write_guard_python | quote }} {{ claude_memory_write_guard_hook | quote }}
 
 # The drop-in, whole. File tools are judged by path; Bash by the vendored
 # shell classifier, which passes reads and rm.

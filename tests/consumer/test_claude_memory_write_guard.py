@@ -16,6 +16,9 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
+import shlex
+import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -35,6 +38,8 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _VENDOR = _ROLE / "files" / "_vendor" / "memory-write-guard"
 _HOOK = _VENDOR / "block_auto_memory.py"
 _PLAYBOOK = _REPO_ROOT / "ansible" / "claude-memory-guard.yml"
+_INVENTORY = _REPO_ROOT / "ansible" / "inventory" / "legacy.yml"
+_ANSIBLE_CORE = "ansible-core==2.21.4"
 
 _MEMORY_DIR = "~/.claude/projects/-home-ubuntu-workspace-x/memory"
 _MEMORY_FILE = "/home/ubuntu/.claude/projects/-home-ubuntu-workspace-x/memory/MEMORY.md"
@@ -266,7 +271,8 @@ def test_the_managed_dropin_wires_only_the_two_pretooluse_hooks() -> None:
         "{{ claude_memory_write_guard_policy_dir }}/managed-settings.d"
     )
     assert defaults["claude_memory_write_guard_command"] == (
-        "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook }}"
+        "{{ claude_memory_write_guard_python | quote }} "
+        "{{ claude_memory_write_guard_hook | quote }}"
     )
     assert defaults["claude_memory_write_guard_hook"].endswith("/block_auto_memory.py")
 
@@ -287,5 +293,208 @@ def test_the_guard_is_proved_before_the_dropin_wires_it() -> None:
 
 def test_the_playbook_applies_the_role_to_interactive_claude_hosts() -> None:
     plays = yaml.safe_load(_PLAYBOOK.read_text(encoding="utf-8"))
-    assert [play["hosts"] for play in plays] == ["interactive_claude_hosts"]
+    assert [play["hosts"] for play in plays] == [
+        "interactive_claude_hosts",
+        "interactive_claude_macs",
+    ]
     assert [role["role"] for role in plays[0]["roles"]] == ["claude_memory_write_guard"]
+    assert [role["role"] for role in plays[1]["roles"]] == ["claude_memory_write_guard"]
+
+
+def test_macos_inventory_and_play_use_the_managed_settings_route() -> None:
+    """Every Mac takes only the root-owned guard through the macOS policy path."""
+    inventory = yaml.safe_load(_INVENTORY.read_text(encoding="utf-8"))
+    macs = inventory["all"]["children"]["interactive_claude_macs"]
+    expected_hosts = {
+        "chads-macbook-pro.perch-rudd.ts.net",
+        "macbook-air.perch-rudd.ts.net",
+        "macbook-m4-max.perch-rudd.ts.net",
+        "macmini.perch-rudd.ts.net",
+    }
+    assert set(macs["hosts"]) == expected_hosts
+    assert all(host["ansible_user"] == "cwoolley" for host in macs["hosts"].values())
+
+    variables = macs["vars"]
+    assert variables["ansible_become_flags"] == "-n"
+    assert variables["claude_memory_write_guard_policy_dir"] == (
+        "/Library/Application Support/ClaudeCode"
+    )
+    assert variables["claude_memory_write_guard_lib_dir"].startswith(
+        "/Library/Application Support/ClaudeCode/"
+    )
+    assert variables["claude_memory_write_guard_group"] == "wheel"
+
+    plays = yaml.safe_load(_PLAYBOOK.read_text(encoding="utf-8"))
+    mac_play = plays[1]
+    assert mac_play["hosts"] == "interactive_claude_macs"
+    assert mac_play["gather_facts"] is False
+    assert [task["name"] for task in mac_play["pre_tasks"]] == [
+        "Require each Mac's Python interpreter and passwordless root access"
+    ]
+
+
+def _run_macos_playbook(*, inventory: Path, environment: dict[str, str], check: bool) -> str:
+    command = [
+        "uvx",
+        "--from",
+        _ANSIBLE_CORE,
+        "ansible-playbook",
+        "-i",
+        str(inventory),
+    ]
+    if check:
+        command.extend(["--check", "--diff"])
+    command.append(str(_PLAYBOOK))
+    result = subprocess.run(
+        command,
+        cwd=_REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stdout + result.stderr
+
+
+@pytest.mark.integration
+def test_macos_playbook_converges_the_managed_path_and_reports_clean_drift(
+    *, tmp_path: Path
+) -> None:
+    """The real macOS play applies the role and then has no local drift."""
+    policy_dir = tmp_path / "Library Application Support" / "ClaudeCode"
+    inventory = tmp_path / "inventory.yml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "all": {
+                    "children": {
+                        "interactive_claude_macs": {
+                            "hosts": {
+                                "macbook-air.perch-rudd.ts.net": {
+                                    "ansible_connection": "local",
+                                    "ansible_python_interpreter": sys.executable,
+                                }
+                            },
+                            "vars": {
+                                "claude_memory_write_guard_policy_dir": str(policy_dir),
+                                "claude_memory_write_guard_lib_dir": str(policy_dir / "lib"),
+                                "claude_memory_write_guard_group": "root",
+                                "claude_memory_write_guard_python": sys.executable,
+                            },
+                        }
+                    }
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    sudo = bin_dir / "sudo"
+    sudo.write_text('#!/bin/sh\nif [ "$1" = -n ]; then shift; fi\nexec "$@"\n', encoding="utf-8")
+    sudo.chmod(0o755)
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key != "COVERAGE_PROCESS_START" and not key.startswith("COV_CORE_")
+    } | {
+        "ANSIBLE_CONFIG": str(_REPO_ROOT / "ansible" / "ansible.cfg"),
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+    }
+
+    _ = _run_macos_playbook(inventory=inventory, environment=environment, check=False)
+    drift = _run_macos_playbook(inventory=inventory, environment=environment, check=True)
+    assert "changed=0" in drift
+
+    settings = json.loads(
+        (policy_dir / "managed-settings.d" / "40-memory-write-guard.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    attempts = (
+        (_file_tool(tool_name="Write", file_path=_MEMORY_FILE), True),
+        (_file_tool(tool_name="Edit", file_path=_MEMORY_FILE), True),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"echo note | tee -a {_MEMORY_FILE}"},
+            },
+            True,
+        ),
+        ({"tool_name": "Read", "tool_input": {"file_path": _MEMORY_FILE}}, False),
+        (_file_tool(tool_name="Write", file_path="/tmp/allowed.md"), False),
+    )
+    for payload, should_refuse in attempts:
+        result = subprocess.run(
+            shlex.split(command),
+            check=False,
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert _refused(stdout=result.stdout) is should_refuse
+
+
+@pytest.mark.integration
+def test_macos_playbook_refuses_a_missing_interpreter_before_creating_policy(
+    *, tmp_path: Path
+) -> None:
+    """A failed macOS preflight leaves the managed-settings root untouched."""
+    policy_dir = tmp_path / "Library Application Support" / "ClaudeCode"
+    inventory = tmp_path / "inventory.yml"
+    inventory.write_text(
+        yaml.safe_dump(
+            {
+                "all": {
+                    "children": {
+                        "interactive_claude_macs": {
+                            "hosts": {
+                                "macmini.perch-rudd.ts.net": {
+                                    "ansible_connection": "local",
+                                    "ansible_python_interpreter": str(tmp_path / "missing-python"),
+                                }
+                            },
+                            "vars": {
+                                "claude_memory_write_guard_policy_dir": str(policy_dir),
+                                "claude_memory_write_guard_lib_dir": str(policy_dir / "lib"),
+                            },
+                        }
+                    }
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key != "COVERAGE_PROCESS_START" and not key.startswith("COV_CORE_")
+    } | {"ANSIBLE_CONFIG": str(_REPO_ROOT / "ansible" / "ansible.cfg")}
+    result = subprocess.run(
+        [
+            "uvx",
+            "--from",
+            _ANSIBLE_CORE,
+            "ansible-playbook",
+            "-i",
+            str(inventory),
+            str(_PLAYBOOK),
+        ],
+        cwd=_REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=120,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output
+    assert "macmini.perch-rudd.ts.net" in output
+    assert "no usable Python interpreter" in output
+    assert not policy_dir.exists()

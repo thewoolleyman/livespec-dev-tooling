@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# LEGACY-ONLY inventory — the pre-Talos Ubuntu machines, and ONLY those.
+# Legacy-host inventory, plus the one macOS guard-only group.
 #
 # A TALOS NODE MUST NEVER APPEAR IN THIS FILE. Talos exposes an API and no
 # shell, the homelab specification forbids anything depending on shell access
@@ -9,7 +9,7 @@
 # reach a Talos node even by accident; this header is what stops someone
 # adding one on purpose.
 #
-# These four machines "remain independent and manually managed while their
+# The legacy machines "remain independent and manually managed while their
 # workloads migrate" (homelab `docs/talos-omni-architecture-and-rollout.md`).
 # They are a sunset substrate. When a machine's workload moves to the Talos
 # fleet, delete its entry here rather than porting anything.
@@ -51,6 +51,28 @@
 # ---------------------------------------------------------------------------
 all:
   children:
+    # The one non-Ubuntu group the provisioning tree reaches.  The guard-only
+    # play preflights every member before it changes any of them, then installs
+    # no role other than claude_memory_write_guard.  These are ordinary OpenSSH
+    # targets over the tailnet: the macOS Tailscale client does not serve
+    # Tailscale SSH.
+    interactive_claude_macs:
+      vars:
+        ansible_python_interpreter: /Users/cwoolley/.local/bin/python3
+        ansible_become_flags: "-n"
+        claude_memory_write_guard_policy_dir: /Library/Application Support/ClaudeCode
+        claude_memory_write_guard_lib_dir: /Library/Application Support/ClaudeCode/lib
+        claude_memory_write_guard_group: wheel
+        claude_memory_write_guard_python: "{{ ansible_python_interpreter }}"
+      hosts:
+        chads-macbook-pro.perch-rudd.ts.net:
+          ansible_user: cwoolley
+        macbook-air.perch-rudd.ts.net:
+          ansible_user: cwoolley
+        macbook-m4-max.perch-rudd.ts.net:
+          ansible_user: cwoolley
+        macmini.perch-rudd.ts.net:
+          ansible_user: cwoolley
     # Dispatch hosts that this tree reaches ONLY to log their Fabro client in
     # to every registered factory (ansible/fabro-hosts.yml's dispatch-client
     # play; group_vars/fabro_dispatch_clients.yml). They are deliberately NOT

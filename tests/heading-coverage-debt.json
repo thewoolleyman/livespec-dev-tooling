@@ -184,13 +184,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a Mac converged for the memory-write guard refuses a local agent-memory write",
-    "work_item": "livespec-dev-tooling-i76rv2",
-    "first_seen": "2026-11-15"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
     "work_item": "livespec-dev-tooling-fgy4au",
     "first_seen": "2026-11-02"
@@ -656,13 +649,6 @@
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
     "work_item": "livespec-dev-tooling-lugvnr",
     "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a memory-write guard run fails at its start when a Mac precondition is missing",
-    "work_item": "livespec-dev-tooling-i76rv2",
-    "first_seen": "2026-11-15"
   },
   {
     "spec_root": "SPECIFICATION",
