@@ -27,7 +27,7 @@
         "width": 12
       },
       "text_panel": {
-        "content": "# livespec throughput\n\n**Board created 2026-11-14 07:07Z** (livespec-dev-tooling#4616). **The M2 and M3 charts show only *clean* pull requests, and M2 only the new start rule**; everything they leave out is counted in the EXCLUDED table below the fleet charts.\n\n**Every panel counts non-docs, non-release pull requests.** A pull request is *docs-only* when every changed path ends in `.md`; a *release* pull request is a release-please one (maintainer direction, 2026-11-14).\n\n**One repository per chart, never stacked or overlaid**, because repositories have different build times. Each chart has its own y-axis. The FLEET is its own line. Low-volume repositories are in tables at the bottom, not in charts.\n\n- **M1 throughput**: merged *green* per hour. Green means the first default-branch `CI` push run at or after the merge head that reached a verdict concluded success. Read it against the repository's 7-day floor, which is stated in the panel name.\n- **M2 lead time**: start to merged green, median and p90, never the mean. Start is the first commit's author date (stamped when `git commit` starts, before its gate) for a seat PR, and the factory run marker for a factory PR. **This start rule took effect 2026-11-14**; older events used the old rule.\n- **M3 stage split**: one repository's median minutes per stage: start to opened, opened to PR CI green, PR CI green to merged, merged to master green.\n\n## Left out of the charts: merge-quiet holds, the CI pool stall and the old start rule\n\n{{disruption-windows}}\n\nThe terminal headline (`headline.py`) prints the same clean read.\n\nThe headline stays first on [livespec family — all activity](https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS/livespec-family-all-activity). Defined as code in livespec-dev-tooling `ci-runner/observability/boards/livespec-throughput.json`, converged by `apply-boards.sh`; edit the definition, never the board."
+        "content": "# livespec throughput\n\n**Board created 2026-11-14 07:07Z** (livespec-dev-tooling#4616). **The M2 and M3 charts show only *clean* pull requests, and M2 only the new start rule**; everything they leave out is counted in the EXCLUDED table below the fleet charts.\n\n**Every panel counts non-docs, non-release pull requests.** A pull request is *docs-only* when every changed path ends in `.md`; a *release* pull request is a release-please one (maintainer direction, 2026-11-14).\n\n**Per-repository charts show one repository each, never stacked or overlaid**, because repositories have different build times; each has its own y-axis. The FLEET M1 chart is the one stacked area: one band per repository, and the stack's height is the fleet total (maintainer direction, 2026-11-16). FLEET M2 and M3 are medians and percentiles, which do not add, so they stay single-line. Low-volume repositories are in tables at the bottom, not in charts.\n\n- **M1 throughput**: merged *green* per hour. Green means the first default-branch `CI` push run at or after the merge head that reached a verdict concluded success. Read it against the repository's 7-day floor, which is stated in the panel name.\n- **M2 lead time**: start to merged green, median and p90, never the mean. Start is the first commit's author date (stamped when `git commit` starts, before its gate) for a seat PR, and the factory run marker for a factory PR. **This start rule took effect 2026-11-14**; older events used the old rule.\n- **M3 stage split**: one repository's median minutes per stage: start to opened, opened to PR CI green, PR CI green to merged, merged to master green.\n\n## Left out of the charts: merge-quiet holds, the CI pool stall and the old start rule\n\n{{disruption-windows}}\n\nThe terminal headline (`headline.py`) prints the same clean read.\n\nThe headline stays first on [livespec family — all activity](https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS/livespec-family-all-activity). Defined as code in livespec-dev-tooling `ci-runner/observability/boards/livespec-throughput.json`, converged by `apply-boards.sh`; edit the definition, never the board."
       }
     },
     {
@@ -35,6 +35,14 @@
       "key": "fleet-m1",
       "dataset": "pr-throughput",
       "query_style": "graph",
+      "visualization_settings": {
+        "charts": [
+          {
+            "chart_index": 0,
+            "chart_type": "stacked"
+          }
+        ]
+      },
       "position": {
         "x_coordinate": 0,
         "y_coordinate": 14,
@@ -43,7 +51,7 @@
       },
       "annotation": {
         "name": "FLEET — M1 non-docs PRs merged green per hour (7 d) — 7-day floor 6.90/h",
-        "description": "COUNT of merged-green, non-docs, non-release pull requests across every repository, one line, per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
+        "description": "COUNT of merged-green, non-docs, non-release pull requests across every repository, a stacked area with one band per repository (the stack's height is the fleet total), per hour over 7 days. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer of plan throughput-metric, livespec-dev-tooling-oe7cfw). Definition: spec proposal a-scheduled-graphql-reconciler-emits."
       },
       "query": {
         "calculations": [
@@ -68,6 +76,16 @@
             "value": false
           }
         ],
+        "breakdowns": [
+          "repo"
+        ],
+        "orders": [
+          {
+            "op": "COUNT",
+            "order": "descending"
+          }
+        ],
+        "limit": 20,
         "time_range": 604800,
         "granularity": 3600
       }
