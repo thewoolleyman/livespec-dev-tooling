@@ -1489,7 +1489,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 6 | 12 | **20** | 2026-11-16 |
-| `livespec-orchestrator-beads-fabro` | 6 | 12 | **14** | 2026-11-16 |
+| `livespec-orchestrator-beads-fabro` | 5 | 10 | **14** | 2026-11-16 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -2581,3 +2581,17 @@ The budget document's averages at 6 slots already sum to about 30 of 32 (runners
 **Measured revert trigger.** Roll back the last gmktec step if gmktec idle falls below 5% with BestEffort `cpu.pressure` avg60 above 30 (the saturation test in `.ai/ci-node-capacity-reads.md`; `full` is the stricter and `some` the more sensitive reading, so both are recorded), or if CI queue wait rises with no throughput gain against the baselines above. The +2 h CI-side read is taken against load: it counts only when the arc-runners Pending count at the gate exceeds about 10, since a read in an idle hour proves nothing; it records the pending count at the gate, queue-wait p50/p95 per repository, job duration p50/p95 on gmktec, and each flagged queue's admitted count. throughput-plans-coordinator supplies the +2 h headline.
 
 **Revert.** Restore gmktec 6 in its profile, livespec-dev-tooling-cq 5, livespec-orchestrator-beads-fabro-cq 4 and the two exception rows (quota 5 / rule 10 and quota 4 / rule 8), then apply in the reverse order: `ci_converge_unit` first (quotas back to 30), then `node_extended_resource --limit gmktec-xubuntu`.
+
+## hp 4 -> 3: cohort 32 (2026-11-16)
+
+**Why.** RULE FOCUS-TWO-LEVERS (maintainer, 2026-11-16 20:19Z) lever 2 moves CI capacity off hp-xubuntu. hp read 0.3% idle with `kubepods-besteffort` `cpu.pressure` full avg60 40.55 (legacy-coordinator-agent, 20:12Z) and `--overcommit-only` still flagged it at 2.2% idle with avg60 30.47 about 30 minutes later. This is the second pull request of the stranded-capacity raise above and is stacked on it; gate-job-resources' gates-hp-flavor 5 -> 0 (livespec-dev-tooling#4868) cuts hp's gate share in parallel and owns the per-node budget.
+
+**The change.** hp-xubuntu `ADMISSION_CAPACITY_C` 4 -> 3, so the pool's declared capacity is poweredge 17 + gmktec 9 + hp 3 + gamingpc 3 = 32. livespec-orchestrator-beads-fabro-cq 6 -> 5 gives the unit up, so the quotas sum to 32. The exception row for the orchestrator is now quota 5 / rule 10 / maxRunners 14; dev-tooling stays 6.
+
+**hp cannot gain a slot.** This change only cuts hp. A node's declared churn-slot capacity is the only per-node limit on runner pods ("Runner placement follows admission capacity", SPECIFICATION/non-functional-requirements.md), the runner scheduler profile scores on churn-slot only, and the Kueue quota is cluster-wide on one flavor selected by node label, so a slot a quota adds can land only on a node that advertises capacity.
+
+**Order of apply.** Capacity first, then quota, never above the applied capacity: after the gmktec steps of the section above (capacity 33), `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit hp-xubuntu` (32), then `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`, converging the quotas to 32. One pod admitted on hp may sit unplaceable until a slot drains when hp's four slots are all bound at the moment of the cut.
+
+**Measured read.** hp's own idle and BestEffort `some` and `full` avg60 are read at +2 h against load; they should fall from 2.2% idle and 30.47. throughput-plans-coordinator supplies the +2 h headline.
+
+**Revert.** Restore hp 4, orchestrator 6 and its exception row (quota 6 / rule 12), then apply in reverse: `ci_converge_unit` first, then `node_extended_resource --limit hp-xubuntu`.

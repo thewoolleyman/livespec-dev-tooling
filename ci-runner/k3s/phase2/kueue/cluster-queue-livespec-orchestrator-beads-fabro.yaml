@@ -85,7 +85,9 @@ spec:
               # "Per-node CPU budget cut: cohort 30 (2026-11-13)".
               # 4 -> 6 on 2026-11-16: stranded-capacity raise, cohort 30 -> 33. See DERIVATION.md
               # "Stranded-capacity raise: gmktec 9, cohort 33 (2026-11-16)".
-              nominalQuota: 6
+              # 6 -> 5 on 2026-11-16: the unit leaves with hp 4 -> 3, cohort 33 -> 32. See
+              # DERIVATION.md "hp 4 -> 3: cohort 32 (2026-11-16)".
+              nominalQuota: 5
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed
