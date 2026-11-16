@@ -1,0 +1,57 @@
+---
+topic: merge-group-tree-equality-skip
+author: claude-sonnet-5-5
+created_at: 2026-11-16T18:35:07Z
+---
+
+## Proposal: A single-entry merge group whose tree equals its pull request head's tree reports its required checks green without re-running the suite
+
+### Target specification files
+
+- SPECIFICATION/contracts.md
+- SPECIFICATION/scenarios.md
+
+### Summary
+
+State the guarded merge_group tree-equality skip: the guard outputs skip only for a one-entry group whose head tree equals the pull request head's tree and whose head checks are all green on the forge; ci-green keeps its name; the required-leg reader accepts a skipped leg only under the same run's skip=true.
+
+### Motivation
+
+Maintainer ruling, verbatim on epic livespec-dev-tooling-xowhol, 2026-11-16: "Yes we obviously do that or else we're going to add 20 to 40 minutes to every one-off PR on every one of those repos, right?" and "Yes this needs to be a definition of done and a requirement on the [stale-base-merge-options] plan". Plan assertion 12; carrier livespec-dev-tooling-ymog6r. Measured 2026-11-16: a merge group runs the full suite for about 18 minutes (median) and the first group to merge is about 19.6 minutes after the first group starts, so re-running a suite the pull request's own CI already passed on an identical tree is the avoidable part. Safety bounds from the ruling: skip only on tree equality; read the head's check results from the forge; the guard job always runs; the skip path reports the same required check names. In-flight survey: livespec-dev-tooling#4810 (a-merge-queue-rebuild-cancels) is independent of this change and aligned with it.
+
+### Proposed Changes
+
+Add to `contracts.md` §"Self-hosted routing" (the section holding **The guarded `merge_group` exception**), immediately after the paragraph that ends "...graded by `branch_protection_alignment`.", a new paragraph:
+
+**The merge-group tree-equality skip.** The guard job MAY additionally output `skip`. On `pull_request` and `push` it outputs `skip=false` and makes no API call. On `merge_group` it outputs `skip=true` only when every condition below holds, and in every other case, including any API error, an unresolved queue entry or an unexpected payload, it outputs `skip=false` and the workflow runs its full job graph:
+- The merge group contains exactly one merge queue entry, resolved through the same queue read the guard already makes for its allowlist check.
+- The tree sha of the merge group's head commit equals the tree sha of that entry's pull request head commit, read from the forge. Equal trees mean the group is byte-identical to the head the pull request's own CI judged.
+- The forge reports, for that exact pull request head commit sha, every required check run concluded `success`: each job `ci-green` lists in `needs:`, and `ci-green` itself. The results are read from the check-runs API for that sha and are never inferred from a label, a comment or the queue's own state.
+- The queue entry's base commit equals the group's base commit, so master did not move under the entry.
+
+The guard job still runs on every event with no `if:` condition, so condition (f) of the guarded exception is unchanged. When `skip` is true, the gating jobs do not execute: each carries `if: ${{ !cancelled() && needs.<guard>.outputs.skip != 'true' }}` in place of `if: ${{ !cancelled() }}`, and `ci-green` keeps its name, keeps `if: always()` and reports the same required check context. The required-leg reader (`python3 -m livespec_dev_tooling.ci_green_required_legs`) MUST count a leg whose conclusion is `skipped` as satisfied only when the guard job of the SAME run concluded `success` with output `skip=true`; in every other run a skipped leg still fails `ci-green` closed. `self_hosted_routing` accepts the extra `skip` condition on a gating job as the shape of condition (e).
+
+Known limit, stated so it is never read as a defect: when the merge queue builds more than one group concurrently, a group queued behind another pull request contains that pull request's commits, so its tree is not equal to its own head's tree and it runs in full. The skip fires for a group at the head of an otherwise empty queue.
+
+Add to `scenarios.md`, immediately after "## Scenario: self_hosted_routing passes a guarded merge_group route and fails an unguarded one":
+
+## Scenario: a single-entry merge group whose tree equals its pull request head's tree reports ci-green without re-running the suite
+
+```gherkin
+Given a merge group that contains exactly one merge queue entry
+
+And the tree sha of the group's head commit equals the tree sha of that entry's pull request head commit
+
+And the forge reports every required check run, and ci-green, concluded success for that pull request head commit
+
+When the merge_group CI run starts
+
+Then the guard job runs and outputs skip=true
+
+And the gating jobs are skipped and ci-green concludes success under its unchanged required check name
+
+And when the group's tree differs from the head's tree, or the group holds more than one queue entry, or the base commit moved, or any forge read fails, the guard outputs skip=false and the full job graph runs
+
+And when a gating leg is skipped in a run whose guard did not output skip=true, ci-green fails naming the leg
+```
+
