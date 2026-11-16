@@ -1722,6 +1722,36 @@ follows real CPU use is still livespec-dev-tooling-gvo7fa. The after-read (one
 gate's wall time, and hp's best-effort pressure) is recorded on the plan epic
 livespec-dev-tooling-6vuiwe.
 
+### The hp gate lane to zero (2026-11-16)
+
+This section sits ahead of the gmktec 2026-11-14 section, out of date order, to
+avoid colliding with concurrent edits at the end of this file.
+
+**What was wrong.** `fleet-utilization.sh --overcommit-only` flagged hp-xubuntu
+at 20:12Z: 0.3% idle, BestEffort `cpu.pressure` full avg60 40.55, 14.4 pod cores
+plus 1.5 system cores on nproc 16. By class at that time (`kubectl top`, pods
+on the node): factory 2 pods, 6.0 cpu requested, 6.6 drawn; arc-runners 8
+pods, 0 requested, 4.5 drawn; one gate, 5 requested, 3.5 drawn. Requests were
+11.6 of 14.5 allocatable (80%), so the overload is draw, not schedulability. No
+committed hp file changed on 2026-11-16, so the mix put the load there, not a
+config change from today.
+
+**What changed.** `gates-hp-flavor` goes from 5 cpu / 8 Gi to 0, and
+`node-cpu-budget.yaml` gate_cpu to 0. hp is the slowest x86 gate lane (gate p50
+19 min against gamingpc 8.5) and third in flavor order, so it takes only
+overflow. The maintainer's FOCUS-TWO-LEVERS rule moves CI capacity off hp onto
+gmktec; the gmktec gates raise (livespec-dev-tooling#4866) carries the
+displaced gate. Factory and the churn cohort are not changed here: hp's avg60
+above 30 is a CI-routing fix only and does not cut the factory cap.
+
+**Revert trigger.** Restore 5 cpu / 8 Gi if a gate waits over 10 minutes for
+admission with hp idle over 15%, or `gates-cq` shows 3 or more pending for 15
+minutes. +2 h read by gate-job-resources: hp idle and BestEffort full avg60,
+gates-cq pending and admission wait. Apply with `just ansible-apply
+ansible/ci-pool.yml --tags ci_converge_unit --limit poweredge-xubuntu`.
+
+**Result.** Due within 24 h of the apply, recorded here.
+
 ### The gmktec gate lane to two gates (2026-11-14)
 
 This section sits ahead of the PowerEdge 2026-11-14 section, out of date order,
