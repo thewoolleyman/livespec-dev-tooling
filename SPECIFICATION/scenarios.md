@@ -5885,3 +5885,31 @@ And `DEFAULT_PIPELINING` is `True` for that command
 
 And `check-ansible-recipes-load-config` fails when a recipe's ansible invocation resolves no configuration file
 ```
+
+## Scenario: a pull request that touches no fleet code is swept for its own member only
+
+```gherkin
+Given livespec-dev-tooling's CI runs check-fleet-conformance --member-ci on a pull_request event
+
+And the pull request changes no file in the fleet checker's import closure under livespec_dev_tooling/, and none of uv.lock, pyproject.toml or the workflow file that invokes the check
+
+When the sweep runs
+
+Then it evaluates every obligation row of livespec-dev-tooling
+
+And it reads no other member's files or state
+
+And it logs one line naming the event, the head sha and the skipped members
+```
+
+## Scenario: a pull request that touches the fleet checker's import closure is swept for every member
+
+```gherkin
+Given livespec-dev-tooling's CI runs check-fleet-conformance --member-ci on a pull_request event
+
+And the pull request changes a file outside livespec_dev_tooling/fleet/ that the fleet checker imports, such as a cross_repo pin-format module
+
+When the sweep runs
+
+Then it evaluates every manifest member's rows
+```
