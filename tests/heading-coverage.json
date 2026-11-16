@@ -1037,6 +1037,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Fleet agent-memory sweep",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: converging the fleet_memory_sweep role against a fixture control node and running the sweep over fixture hosts, stores, checkouts and ledgers, asserting the read-only reach, repository resolution, content-free de-duplicated filing, the run summary and its alert exit. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention leaves an in-flight gate run and removes an aged terminal one",
     "test": "tests.livespec_dev_tooling.test_dev_host_retention.test_a_run_removes_an_aged_terminal_gate_run_and_leaves_an_in_flight_one",
@@ -4138,6 +4146,54 @@
     "heading": "## Scenario: a seat may type into a Claude seat's pane and is guided to prefer SendMessage",
     "test": "tests.consumer.test_claude_messaging_guards.test_the_managed_dropin_forces_remote_control_and_blocks_no_pane_input",
     "reason": "Consumer-tier: the test reads the role's committed defaults and asserts the managed drop-in forces remoteControlAtStartup and crossSessionInbound accept and wires no hook, so nothing the role installs refuses pane input. The managed CLAUDE.md guidance text is asserted by the sibling test test_the_managed_memory_prefers_sendmessage_and_allows_pane_typing, and the live behaviour is host-captured on epic livespec-dev-tooling-rlwppp."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a memory file on an agent-seat host becomes one migration item in its owning repository",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: running the committed sweep against fixture hosts, memory stores, checkouts and ledgers and asserting this scenario's Then clauses. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repeated agent-memory sweep files no second item while the first is open",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: running the committed sweep against fixture hosts, memory stores, checkouts and ledgers and asserting this scenario's Then clauses. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the agent-memory sweep changes nothing on the hosts it reads",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: running the committed sweep against fixture hosts, memory stores, checkouts and ledgers and asserting this scenario's Then clauses. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unresolvable memory file is recorded and files no item",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: running the committed sweep against fixture hosts, memory stores, checkouts and ledgers and asserting this scenario's Then clauses. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unreachable agent-seat host is recorded with its reason",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: running the committed sweep against fixture hosts, memory stores, checkouts and ledgers and asserting this scenario's Then clauses. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a ledger the agent-memory sweep cannot write is recorded and alerts",
+    "test": "TODO",
+    "reason": "Spec-first (v237): a real test at the integration tier or above is owed for this heading: running the committed sweep against fixture hosts, memory stores, checkouts and ledgers and asserting this scenario's Then clauses. livespec-dev-tooling-jk54mp owns it.",
+    "work_item": "livespec-dev-tooling-jk54mp"
   },
   {
     "spec_root": "SPECIFICATION",
