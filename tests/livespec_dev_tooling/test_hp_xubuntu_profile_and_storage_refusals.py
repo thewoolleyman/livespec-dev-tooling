@@ -261,9 +261,9 @@ def test_the_committed_hp_profile_parses_as_a_runner_only_agent_at_capacity_eigh
         f"hp takes CI runner pods without carrying storage tiers, so its posture must be "
         f"`runner-only`; the parser read {parsed['CI_NODE_FACILITIES']!r}"
     )
-    assert parsed["ADMISSION_CAPACITY_C"] == "4", (
-        f"hp advertises 4 churn slots after the per-node CPU budget cut (poweredge 17 "
-        f"+ gmktec 6 + hp 4 + gamingpc 3 = 30): its jobs measured 2-6 cores each on 14.5 "
+    assert parsed["ADMISSION_CAPACITY_C"] == "3", (
+        f"hp advertises 3 churn slots after the hp rebalance (poweredge 17 "
+        f"+ gmktec 9 + hp 3 + gamingpc 3 = 32): its jobs measured 2-6 cores each on 14.5 "
         f"allocatable CPU; the parser read {parsed['ADMISSION_CAPACITY_C']!r}"
     )
     assert "node-role/ci=" not in parsed["NODE_TAINTS"], (
