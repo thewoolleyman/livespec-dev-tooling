@@ -92,6 +92,11 @@ name: Bump pin from sibling dispatch
 on:
   repository_dispatch:
     types: [sibling-released]
+  # A bump PR can fall behind after the release dispatch has opened it.  Wake
+  # the reusable bump handler on the default branch so its refresh path rewrites
+  # any pin-bearing lines that arrived with the newer base.
+  push:
+    branches: [master]
 
 jobs:
   bump:
