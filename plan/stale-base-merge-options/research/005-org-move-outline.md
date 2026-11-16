@@ -293,6 +293,11 @@ when the cutover children are filed (the 14:47:39Z scope event's deferral).
   `tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py` and `tests/fixtures/incident_ci_inventory_sources/`;
   and, as legal attribution, the vendored `.claude-plugin/scripts/_vendor/livespec_runtime/LICENSE` copyright line.
   Nothing else is excluded.
+  In livespec-console-beads-fabro it also excludes, ruled 2026-11-16 as a "historical record or byte-identical
+  upstream fixture", `crates/console-fork-drift-check/src/lib.rs` (`DOCKER_IMAGE_LINE_PREFIXES` deliberately accepts both
+  owners while a pinned orchestrator release names the old one; reopen condition: remove the exclusion and the old-owner
+  prefix when no live orchestrator pin names the old owner) and `.fabro/workflows/implement-work-item/workflow.toml`
+  (upstream-verbatim; its digest is pinned in `tests/fixtures/fabro-fork-upstream-pins.json`).
 
   It reads each repository's `origin/master` tree and fetches only with `--fetch`. It grades configuration, so it
   excludes `SPECIFICATION/history/`, the root `archive/`, everything under `plan/`, and `CHANGELOG.md` files. Live plan

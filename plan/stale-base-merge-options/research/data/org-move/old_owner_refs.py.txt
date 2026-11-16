@@ -55,7 +55,13 @@ EXCLUDES = (":(exclude)SPECIFICATION/history", ":(exclude)archive", ":(exclude)p
             ":(exclude)tests/livespec_dev_tooling/fixtures/incident_fleet/claims-wellformed.json",
             ":(exclude)tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py",
             ":(exclude)tests/fixtures/incident_ci_inventory_sources",
-            ":(exclude).claude-plugin/scripts/_vendor/livespec_runtime/LICENSE")
+            ":(exclude).claude-plugin/scripts/_vendor/livespec_runtime/LICENSE",
+            # livespec-console-beads-fabro, ruled 2026-11-16: DOCKER_IMAGE_LINE_PREFIXES deliberately accepts
+            # both owners while a pinned orchestrator release names the old one (reopen: remove this exclusion
+            # and the old-owner prefix when no live orchestrator pin names the old owner), and the
+            # upstream-verbatim workflow whose digest is pinned in tests/fixtures/fabro-fork-upstream-pins.json.
+            ":(exclude)crates/console-fork-drift-check/src/lib.rs",
+            ":(exclude).fabro/workflows/implement-work-item/workflow.toml")
 PROSE_ONLY = ("plan", ":(exclude)plan/archive", ":(exclude,glob)**/CHANGELOG.md")
 END = r"(?![A-Za-z0-9_-])"
 
