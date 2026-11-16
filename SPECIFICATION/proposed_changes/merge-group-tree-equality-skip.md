@@ -21,15 +21,17 @@ Maintainer ruling, verbatim on epic livespec-dev-tooling-xowhol, 2026-11-16: "Ye
 
 ### Proposed Changes
 
-Add to `contracts.md` §"Self-hosted routing" (the section holding **The guarded `merge_group` exception**), immediately after the paragraph that ends "...graded by `branch_protection_alignment`.", a new paragraph:
+Add to `contracts.md` §"### `self_hosted_routing` check" (the section holding **The guarded `merge_group` exception**, contracts.md:111), immediately after the paragraph that ends "...graded by `branch_protection_alignment`.", a new paragraph:
 
 **The merge-group tree-equality skip.** The guard job MAY additionally output `skip`. On `pull_request` and `push` it outputs `skip=false` and makes no API call. On `merge_group` it outputs `skip=true` only when every condition below holds, and in every other case, including any API error, an unresolved queue entry or an unexpected payload, it outputs `skip=false` and the workflow runs its full job graph:
 - The merge group contains exactly one merge queue entry, resolved through the same queue read the guard already makes for its allowlist check.
 - The tree sha of the merge group's head commit equals the tree sha of that entry's pull request head commit, read from the forge. Equal trees mean the group is byte-identical to the head the pull request's own CI judged.
-- The forge reports, for that exact pull request head commit sha, every required check run concluded `success`: each job `ci-green` lists in `needs:`, and `ci-green` itself. The results are read from the check-runs API for that sha and are never inferred from a label, a comment or the queue's own state.
+- The forge reports, for that exact pull request head commit sha, every required check run concluded `success`: each job `ci-green` lists in `needs:`, and `ci-green` itself. The guard counts ONLY the LATEST check run of each name for that sha, and ONLY check runs whose app is the GitHub Actions app (`github-actions`), so an older attempt, a stale success or a success posted by another app or a status context can never stand in for a current Actions result. The results are read from the check-runs API for that sha and are never inferred from a label, a comment or the queue's own state.
 - The queue entry's base commit equals the group's base commit, so master did not move under the entry.
 
 The guard job still runs on every event with no `if:` condition, so condition (f) of the guarded exception is unchanged. When `skip` is true, the gating jobs do not execute: each carries `if: ${{ !cancelled() && needs.<guard>.outputs.skip != 'true' }}` in place of `if: ${{ !cancelled() }}`, and `ci-green` keeps its name, keeps `if: always()` and reports the same required check context. The required-leg reader (`python3 -m livespec_dev_tooling.ci_green_required_legs`) MUST count a leg whose conclusion is `skipped` as satisfied only when the guard job of the SAME run concluded `success` with output `skip=true`; in every other run a skipped leg still fails `ci-green` closed. `self_hosted_routing` accepts the extra `skip` condition on a gating job as the shape of condition (e).
+
+KILL SWITCH and REVERT TRIGGER: a repository variable `LIVESPEC_MERGE_GROUP_SKIP_DISABLED` set to `true` forces `skip=false` on every merge group, so one variable write turns the skip off without a workflow edit. The skip MUST be turned off the same hour, by setting that variable, when a master commit that is red was produced by a skipped merge group, or when any group reports green through the skip path whose tree differs from its pull request head's tree.
 
 Known limit, stated so it is never read as a defect: when the merge queue builds more than one group concurrently, a group queued behind another pull request contains that pull request's commits, so its tree is not equal to its own head's tree and it runs in full. The skip fires for a group at the head of an otherwise empty queue.
 
@@ -55,3 +57,4 @@ And when the group's tree differs from the head's tree, or the group holds more 
 And when a gating leg is skipped in a run whose guard did not output skip=true, ci-green fails naming the leg
 ```
 
+The revise that ratifies this proposal adds, in the same revise commit, the `tests/heading-coverage.json` row for the new scenario heading (a `TODO` row whose reason names the tier it runs at, "A real test at the integration tier or above is owed for this heading", with `"work_item": "livespec-dev-tooling-ymog6r"`) and the regenerated `tests/heading-coverage-debt.json` (`just generate-heading-coverage-debt-register`).
