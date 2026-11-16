@@ -102,7 +102,7 @@ _LEFTHOOK = _REPO_ROOT / "lefthook.yml"
 # directory of the fetched tree, which is what `LIVESPEC_CORE_PLUGIN_ROOT` means
 # everywhere else in the fleet (the consumer's own `just-check-doctor-static.sh`
 # resolves `$LIVESPEC_CORE_PLUGIN_ROOT/scripts/bin/doctor_static.py`).
-_CORE_URL = "https://github.com/thewoolleyman/livespec.git"
+_CORE_URL = "https://github.com/livespec-ai/livespec.git"
 _CORE_PLUGIN_ROOT = "/livespec-core/.claude-plugin"
 _CORE_CONTAINER = "fetch-livespec-core"
 

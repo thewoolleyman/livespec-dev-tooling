@@ -493,10 +493,10 @@ make_repo "${repo_origin}" "ghcr.io/thewoolleyman/livespec-python:v1.64.2"
 git_scrubbed() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git "$@"; }
 git_scrubbed init --quiet "${repo_origin}" 2>/dev/null
 git_scrubbed -C "${repo_origin}" remote add origin \
-  "https://github.com/thewoolleyman/livespec-dev-tooling.git" 2>/dev/null
+  "https://github.com/livespec-ai/livespec-dev-tooling.git" 2>/dev/null
 origin_out="${SCRATCH}/origin.yaml"
 if "${RENDERER}" --repo-root "${repo_origin}" --tree-hash "${HASH_A}" > "${origin_out}" 2>/dev/null; then
-  if grep -qF 'value: "thewoolleyman/livespec-dev-tooling"' "${origin_out}"; then
+  if grep -qF 'value: "livespec-ai/livespec-dev-tooling"' "${origin_out}"; then
     pass "the github.com owner/repo is derived from origin and rendered"
   else
     fail "the rendered manifest does not name the gated repository: $(grep -A1 -F 'LIVESPEC_GATE_REPOSITORY' "${origin_out}")"
