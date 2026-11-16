@@ -78,6 +78,11 @@ _CASES: dict[str, tuple[str, bool, list[GhInvocation]]] = {
         False,
         [_reply(status=403, body='{"message":"Resource not accessible by integration"}'), _OK],
     ),
+    "retry-after-403": (
+        "GET",
+        False,
+        [_reply(status=403, body="{}", extra="retry-after: 10\n"), _OK],
+    ),
     "502": ("GET", False, [_reply(status=502, body='{"message":"Bad Gateway"}'), _OK]),
     "idempotent-write-503": (
         "PATCH",
@@ -144,6 +149,7 @@ def _workflow(*, method: str, idempotent: bool, replies: list[GhInvocation]):
 _EXPECTED: dict[str, tuple[str, int, str, list[float]]] = {
     "secondary-limit-403": ("answer", 200, "answer", [45]),
     "permission-403": ("failed", 403, "forbidden", []),
+    "retry-after-403": ("answer", 200, "answer", [10]),
     "502": ("answer", 200, "answer", [2]),
     "idempotent-write-503": ("answer", 200, "answer", [2]),
     "rate-limits-double-from-every-earlier-one": ("answer", 200, "answer", [10, 120]),
