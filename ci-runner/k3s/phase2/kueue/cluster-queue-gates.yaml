@@ -322,10 +322,17 @@ spec:
             # worst burst used, and the second slot's 5 cpu / 8 Gi of reserved
             # requests go to factory sandboxes. Revert to 10 / 16Gi if a gate
             # waits over five minutes for a lane.
+            #
+            # ZERO from 2026-11-16 (plan gate-job-resources; maintainer rule
+            # FOCUS-TWO-LEVERS, CI capacity moves off hp onto gmktec). hp read
+            # 0.3% idle with BestEffort full avg60 40.55 while its gate drew
+            # 3.5 cores beside factory 6.6 and CI runners 4.5. hp is also the
+            # slowest x86 gate lane. Derivation: DERIVATION.md "The hp gate
+            # lane to zero (2026-11-16)". REVERT: back to 5 cpu / 8Gi.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 0
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 0Gi
         - name: gates-poweredge-flavor
           resources:
             # Four concurrent gates, four gate units of 5 cpu / 8 Gi (2026-11-14,
