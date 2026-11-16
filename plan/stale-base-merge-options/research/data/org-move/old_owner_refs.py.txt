@@ -47,8 +47,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Ruled 2026-11-16 by throughput-plans-coordinator (xowhol scope event 18:44:03Z), each path a historical
+# record, a byte-identical adopter fixture, or legal attribution. Nothing else is excluded.
 EXCLUDES = (":(exclude)SPECIFICATION/history", ":(exclude)archive", ":(exclude)plan",
-            ":(exclude,glob)**/CHANGELOG.md")
+            ":(exclude,glob)**/CHANGELOG.md",
+            ":(exclude)config/incident-fleet-evidence.json",
+            ":(exclude)tests/livespec_dev_tooling/fixtures/incident_fleet/claims-wellformed.json",
+            ":(exclude)tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py",
+            ":(exclude)tests/fixtures/incident_ci_inventory_sources",
+            ":(exclude).claude-plugin/scripts/_vendor/livespec_runtime/LICENSE")
 PROSE_ONLY = ("plan", ":(exclude)plan/archive", ":(exclude,glob)**/CHANGELOG.md")
 END = r"(?![A-Za-z0-9_-])"
 
