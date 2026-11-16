@@ -92,8 +92,9 @@ def patterns(old_owner: str, repos: list[str]) -> dict[str, str]:
         # Not preceded by a host or path character, so it never double-counts a url or raw hit.
         "slug": rf"(?<![A-Za-z0-9_./:-]){owner}/(?:{names}){END}",
         # Rule G (ruled 2026-11-16): an owner path or default that a literal repo name does not follow.
-        # varpath: the old owner followed by a variable or template (thewoolleyman/$plugin, /${x}, /%s, /<repo>, /{{x}}).
-        "varpath": rf"(?:github\.com[:/]|ghcr\.io/|(?<![A-Za-z0-9_./:-])){owner}/(?:[$%<{{]|\{{\{{)",
+        # varpath: the old owner followed by a shell/printf/template variable (thewoolleyman/$plugin, /${x}, /%s, /<repo>, /{{x}}).
+        # A lone `{name}` is a Python or Rust format placeholder in a test fixture or message and is NOT matched here.
+        "varpath": rf"(?:github\.com[:/]|ghcr\.io/|(?<![A-Za-z0-9_./:-])){owner}/(?:[$%<]|\{{\{{)",
         # cfgdefault: an OWNER/ORG-named variable or a github_owner key defaulting to the old owner.
         "cfgdefault": rf"(?:[A-Z_]*(?:OWNER|ORG)[A-Z_]*|github_owner)\W{{0,6}}(?:\$\{{[A-Z_]+:-)?{owner}\b(?!/)",
         # profile: the bare profile URL github.com/<old-owner> not followed by a path.
@@ -139,6 +140,7 @@ def self_test() -> int:
         ("config default", 'DISPATCHER_ORG="${DISPATCHER_ORG:-old}"', {"cfgdefault": 1}),
         ("github_owner key", "github_owner: old", {"cfgdefault": 1}),
         ("profile url", '"url": "https://github.com/old"', {"profile": 1}),
+        ("f-string placeholder is a fixture, not a path", 'f"https://github.com/old/{name}"', {}),
         ("profile url is not a repo url", "https://github.com/old/fabro", {}),
     )
     failures = 0
