@@ -175,6 +175,24 @@ scope event [6tgd2z 2026-11-09T07:48:20Z]: "Isn't keeping the priorities the ent
 directive?  How could you fail to do that so badly?" This file and `scripts/coordinator/top5` are that record.
 Measured 2026-11-09: working in arrival order left priority 1 at a coordinator-answerable picker for ~10.5 h.
 
+**Rule RULES-ACK: a changed rule is read before any ruling.** Every tick runs `scripts/coordinator/top5 --seat <seat>`
+first (legacy-coordinator-agent is the default; throughput-plans-coordinator passes its name). Its RULES-CHANGED section
+prints first. Since the seat's last ack, it shows the diff of this file and of the seat's charter at origin/master, and
+every new SCOPE, MAINTAINER, RULE or VERBATIM comment on the seat's watched epics. A non-zero exit (3) means the seat
+reads the printed changes before ruling on anything, then runs `scripts/coordinator/top5 --seat <seat> --ack`. A FULL
+read of this file happens only in a fresh session; a continuing session reads only the diff. A seat that records a
+maintainer rule on an epic also tells the other coordinator directly. RULES-REREAD records [r7iuj6
+2026-11-16T16:11:22Z and 16:12:00Z; 6tgd2z 16:11:37Z and 16:12:14Z] and CORRECTION [6tgd2z 16:04:53Z]. Measured
+2026-11-16: a coordinator that had read this file once acted on a stale copy of it and missed a maintainer flake rule
+that merged later.
+
+**Rule ALL-PARALLEL: every lane runs in parallel from the moment it is known.** An order between two lanes is allowed
+only for a MEASURED dependency, named next to the order. A seat with several owed lanes runs them as parallel helpers.
+The rule binds both coordinators and every seat they direct. Maintainer, verbatim [r7iuj6 2026-11-16T18:36:53Z, ported
+to 6tgd2z 18:37:07Z]: "How many times do I have to tell you to run everything in parallel before you'll finally do it".
+Measured 2026-11-16: throughput-plans-coordinator ordered stale-base-merge-options "ymog6r first, ahead of lane B" with
+no dependency.
+
 **Rule P3: read the epics of silent seats every tick.** Read the newest comments on the epics of seats that cannot
 SendMessage: Codex seats, and Claude seats on a Mac not yet on Remote Control
 (`.ai/distributed-sendmessage-protocol.md`), today fleet-mutation-testing-rule-26 on chads-macbook-pro (epic

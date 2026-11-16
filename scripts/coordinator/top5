@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # READ-ONLY priority-first tick header for the coordinator seat (rule P1, .ai/coordinator-duties.md §3 and §9).
-# Usage: scripts/coordinator/top5
+# Usage: scripts/coordinator/top5 [--seat <name>] [--ack | --rules-only]
+#   --seat        legacy-coordinator-agent (default) or throughput-plans-coordinator
+#   --ack         record the rules state the last run displayed (rule RULES-ACK) and exit 0
+#   --rules-only  print only the RULES-CHANGED section, with the same exit status
+# Exit status: 0 nothing unacknowledged; 3 RULES-CHANGED (unacknowledged rule changes, or
+# no ack recorded); 4 a rules source could not be read and nothing read has changed.
+# Rule state lives outside the repo: ${XDG_STATE_HOME:-~/.local/state}/livespec-coordinator/.
 # Shell entry point; the logic is embedded Python (stdlib only) so the repo's
 # product-Python AST gates, which govern the package, do not apply to a script.
 set -euo pipefail
@@ -32,11 +38,24 @@ The OVERCOMMIT section (maintainer-approved 2026-11-13) prints, first in the hea
 node fleet-utilization.sh --overcommit-only marks FLAGGED (idle under 5 % with the BestEffort
 CI slice's CPU pressure above 30: the classes sharing the node exceed its CPU) or UNREAD, for
 routing to the per-node CPU budget owner the same tick.
+
+The RULES-CHANGED section (rule RULES-ACK, coordinator-duties §3; after the 2026-11-16
+RULES-REREAD records, when a seat acted on a stale copy of its own rules) prints FIRST,
+before INCIDENT MODE. Since the seat's last `--ack` it shows the diff of
+.ai/coordinator-duties.md at origin/master, the diff of the seat's charter file(s), and every
+new comment on the seat's watched epics whose first line carries SCOPE, MAINTAINER, RULE or
+VERBATIM: at most 80 lines in all, each comment cut at 600 characters. When anything is
+unacknowledged the script still prints its full header, then exits 3. `--ack` records the
+state the last run displayed, so a change that lands between reading and acking stays
+pending. Its only writes are the per-seat state files under the user's state directory and
+the `git fetch` of origin/master.
 """
+import argparse
 import datetime as dt
 import json
 import os
 import subprocess
+import sys
 
 TOP = [
     ("1a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab bootstrap-credentials-and-onboarding)", "hxi-vxsmdv"),
@@ -46,7 +65,8 @@ TOP = [
     ("3 stale-base-merge-options (GitHub org move to livespec-ai plus merge queue; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-xowhol"),
     ("KEPT throughput-plans-coordinator (owns every factory throughput problem; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-r7iuj6"),
 ]
-WRAPPER = ["/usr/local/bin/with-livespec-env.sh", "--"]
+# TOP5_LEDGER_WRAPPER is a test seam only: the scenario test points it at a pass-through stub.
+WRAPPER = [os.environ.get("TOP5_LEDGER_WRAPPER") or "/usr/local/bin/with-livespec-env.sh", "--"]
 # The homelab tenant refuses the livespec wrapper (Error 1045 for user 'homelab');
 # it is read through the homelab tenant's own credential wrapper.
 HOMELAB_WRAPPER = ["/usr/local/bin/with-homelab-env.sh", "--"]
@@ -177,16 +197,6 @@ def holds_header():
     print()
 
 
-print(
-    "INCIDENT MODE: livespec-dev-tooling USABLE (EXPEDITED_INCIDENT_RESPONSE is the default response to a red master;"
-    " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
-)
-print()
-overcommit_header()
-stranded_header()
-holds_header()
-
-
 def run(args, cwd, wrapper):
     try:
         out = subprocess.run(wrapper + args, cwd=cwd, capture_output=True, text=True, timeout=60).stdout
@@ -206,6 +216,299 @@ def repo_for(epic):
     if epic.startswith("overseer-"):
         return os.path.join(WORKSPACE, "livespec-overseer"), WRAPPER
     return os.path.join(WORKSPACE, "livespec-dev-tooling"), WRAPPER
+
+
+# ---- RULES-CHANGED (rule RULES-ACK, coordinator-duties §3) ----
+EXIT_RULES_CHANGED = 3
+EXIT_RULES_UNREAD = 4
+DUTIES = ".ai/coordinator-duties.md"
+SEATS = {
+    "legacy-coordinator-agent": {
+        "epics": ["livespec-dev-tooling-6tgd2z"],
+        "charters": ["plan/legacy-coordinator-agent/research/001-charter-legacy-coordinator-agent.md"],
+    },
+    "throughput-plans-coordinator": {
+        "epics": ["livespec-dev-tooling-r7iuj6", "livespec-dev-tooling-6tgd2z"],
+        "charters": ["plan/throughput-plans-coordinator/research/001-charter-throughput-plans-coordinator.md"],
+    },
+}
+RULE_KEYWORDS = ("SCOPE", "MAINTAINER", "RULE", "VERBATIM")
+RULES_MAX_LINES = 80
+RULES_COMMENT_CHARS = 600
+RULES_REPO = os.path.join(WORKSPACE, "livespec-dev-tooling")
+RULES_REF = "origin/master"
+STATE_DIR = os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state"),
+    "livespec-coordinator",
+)
+NO_ACK_LINE = "RULES-CHANGED: no ack recorded; full read required (fresh session)"
+UTC_NOW = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(prog="top5", description="Priority-first coordinator tick header.")
+    parser.add_argument("--seat", default="legacy-coordinator-agent", choices=sorted(SEATS))
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--ack", action="store_true", help="record the displayed rules state and exit 0")
+    mode.add_argument("--rules-only", action="store_true", help="print only the RULES-CHANGED section")
+    return parser.parse_args(sys.argv[1:])
+
+
+def git(*args, timeout=60):
+    """(exit code, stdout, stderr) of one git command in the livespec-dev-tooling checkout."""
+    try:
+        proc = subprocess.run(["git", "-C", RULES_REPO, *args], capture_output=True, text=True, timeout=timeout)
+    except Exception as exc:
+        return 1, "", str(exc)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def rules_ref(warnings):
+    """Fetch origin/master quietly; on failure keep the local ref and say so."""
+    code, _, err = git("fetch", "--quiet", "origin", "master", timeout=90)
+    if code != 0:
+        last = (err.strip().splitlines() or [f"exit {code}"])[-1]
+        warnings.append(f"WARNING: git fetch failed ({last[:160]}); comparing against the local {RULES_REF} ref")
+    if git("rev-parse", "--verify", "--quiet", RULES_REF + "^{commit}")[0] != 0:
+        warnings.append(f"WARNING: no {RULES_REF} ref in {RULES_REPO}; comparing against HEAD")
+        return "HEAD"
+    return RULES_REF
+
+
+def blob_at(ref, path):
+    code, out, _ = git("rev-parse", "--verify", "--quiet", f"{ref}:{path}")
+    return out.strip() if code == 0 and out.strip() else None
+
+
+def short(sha):
+    return sha[:12] if sha else "absent"
+
+
+def blob_diff(label, path, old, new):
+    """(lines, hint) for one watched file's change since the ack; ([], None) when unchanged."""
+    if old == new:
+        return [], None
+    head = f"{label} {path} {short(old)}..{short(new)}"
+    if new is None:
+        return [f"{head}: the file is gone at {RULES_REF}"], None
+    if old is not None and git("cat-file", "-e", old)[0] != 0:
+        return [f"{head}: the acknowledged copy is not in this clone; read the whole file"], None
+    if old is None:
+        body = ["+" + ln for ln in git("cat-file", "-p", new)[1].splitlines()]
+        hint = f"git -C {RULES_REPO} cat-file -p {short(new)}"
+    else:
+        out = git("diff", "--no-color", "--unified=1", old, new)[1].splitlines()
+        hunk = next((i for i, ln in enumerate(out) if ln.startswith("@@")), len(out))
+        body = out[hunk:]
+        hint = f"git -C {RULES_REPO} diff {short(old)} {short(new)}"
+    return [f"{head} (read in full: {hint})"] + ["  " + ln for ln in body], hint
+
+
+def parse_ts(stamp):
+    try:
+        return dt.datetime.fromisoformat((stamp or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def is_rule_comment(text):
+    """A comment that starts with, or whose first line contains, a rule keyword (case-sensitive)."""
+    first = (text or "").lstrip().split("\n", 1)[0]
+    return any(word in first for word in RULE_KEYWORDS)
+
+
+def read_comments(epic):
+    """Every comment on one epic, oldest first, or None when the ledger read failed."""
+    cwd, wrapper = repo_for(epic)
+    data = run(["bd", "comments", epic, "--json"], cwd, wrapper)
+    if not isinstance(data, list):
+        return None
+    return sorted(data, key=lambda c: parse_ts(c.get("created_at")) or NOW)
+
+
+def comment_lines(epic, comments, since):
+    """(lines, hint) for the epic's rule comments created after `since`."""
+    cut = parse_ts(since)
+    fresh = [
+        c for c in comments
+        if is_rule_comment(c.get("text")) and (cut is None or (parse_ts(c.get("created_at")) or NOW) > cut)
+    ]
+    if not fresh:
+        return [], None
+    hint = f"/usr/local/bin/with-livespec-env.sh -- bd comments {epic} --json"
+    lines = [f"comments {epic}: {len(fresh)} new rule comment(s) since {since or 'never'}"]
+    for c in fresh:
+        text = " | ".join(ln.strip() for ln in (c.get("text") or "").splitlines() if ln.strip())
+        lines.append(f"  {c.get('created_at')} {c.get('author', '')}: {text[:RULES_COMMENT_CHARS]}")
+        if len(text) > RULES_COMMENT_CHARS:
+            lines.append(f"    +{len(text) - RULES_COMMENT_CHARS} more chars ({hint})")
+    return lines, hint
+
+
+def fit(parts, budget):
+    """Share `budget` lines across the parts; a cut part ends with one '+N more lines' line."""
+    sizes = [len(lines) for lines, _ in parts]
+    alloc = [0] * len(parts)
+    remaining = budget
+    active = [i for i, size in enumerate(sizes) if size]
+    while active and remaining > 0:
+        share = max(1, remaining // len(active))
+        for i in list(active):
+            give = min(share, sizes[i] - alloc[i], remaining)
+            alloc[i] += give
+            remaining -= give
+            if alloc[i] == sizes[i]:
+                active.remove(i)
+            if remaining == 0:
+                break
+    out = []
+    for (lines, hint), size, keep in zip(parts, sizes, alloc):
+        if keep >= size:
+            out.extend(lines)
+        elif keep > 0:
+            out.extend(lines[: keep - 1])
+            out.append(f"  +{size - keep + 1} more lines" + (f" ({hint})" if hint else ""))
+    return out
+
+
+def load_json(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def save_json(path, data):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(tmp, path)
+
+
+def state_paths(seat):
+    return (os.path.join(STATE_DIR, f"rules-ack-{seat}.json"), os.path.join(STATE_DIR, f"rules-seen-{seat}.json"))
+
+
+def current_state(seat, warnings):
+    """The watched sources as they stand now; an epic the ledger could not read maps to None."""
+    ref = rules_ref(warnings)
+    conf = SEATS[seat]
+    comments = {epic: read_comments(epic) for epic in conf["epics"]}
+    state = {
+        "duties": blob_at(ref, DUTIES),
+        "charters": {path: blob_at(ref, path) for path in conf["charters"]},
+        "epics": {
+            epic: (max((c.get("created_at") or "" for c in got), default="") if got is not None else None)
+            for epic, got in comments.items()
+        },
+    }
+    return ref, state, comments
+
+
+def rules_changed(seat):
+    """Print the RULES-CHANGED section and return its exit status (0, 3 or 4)."""
+    ack_path, seen_path = state_paths(seat)
+    warnings = []
+    ack = load_json(ack_path)
+    _, state, comments = current_state(seat, warnings)
+    shown = {
+        "duties": state["duties"],
+        "charters": state["charters"],
+        "epics": {e: ts for e, ts in state["epics"].items() if ts is not None},
+        "seen_at": UTC_NOW,
+    }
+    try:
+        save_json(seen_path, shown)
+    except OSError as exc:
+        warnings.append(f"WARNING: could not record the displayed state ({exc}); --ack will record the live state")
+    if ack is None:
+        for line in [NO_ACK_LINE] + [f"RULES-CHANGED {w}" for w in warnings]:
+            print(line)
+        print()
+        return EXIT_RULES_CHANGED
+    since = ack.get("acked_at", "?")
+    parts = [blob_diff("duties", DUTIES, ack.get("duties"), state["duties"])]
+    for epic, got in comments.items():
+        if got is None:
+            warnings.append(f"WARNING: ledger read failed for {epic}; its new rule comments are unknown")
+            continue
+        parts.append(comment_lines(epic, got, (ack.get("epics") or {}).get(epic) or since))
+    for path, blob in state["charters"].items():
+        parts.append(blob_diff("charter", path, (ack.get("charters") or {}).get(path), blob))
+    parts = [p for p in parts if p[0]]
+    unread = any("ledger read failed" in w for w in warnings)
+    if not parts:
+        head = f"RULES-CHANGED: none since ack {since}"
+        if unread:
+            head = f"RULES-CHANGED: unconfirmed since ack {since}; a rules source could not be read"
+        for line in [head] + [f"  {w}" for w in warnings]:
+            print(line)
+        print()
+        return EXIT_RULES_UNREAD if unread else 0
+    head = (
+        f"RULES-CHANGED (seat {seat}; since ack {since}; exit {EXIT_RULES_CHANGED} until acknowledged): read these"
+        f" before ruling on anything, then run scripts/coordinator/top5 --seat {seat} --ack"
+    )
+    lines = [head] + [f"  {w}" for w in warnings]
+    lines += fit(parts, RULES_MAX_LINES - len(lines))
+    for line in lines:
+        print(line)
+    print()
+    return EXIT_RULES_CHANGED
+
+
+def rules_ack(seat):
+    """Record the state the last run displayed (the live state where it displayed none)."""
+    ack_path, seen_path = state_paths(seat)
+    warnings = []
+    old = load_json(ack_path) or {}
+    seen = load_json(seen_path)
+    if seen is None:
+        _, live, _ = current_state(seat, warnings)
+        seen = {"duties": live["duties"], "charters": live["charters"], "epics": live["epics"]}
+    epics = {}
+    for epic in SEATS[seat]["epics"]:
+        stamp = (seen.get("epics") or {}).get(epic)
+        if stamp is None:
+            stamp = (old.get("epics") or {}).get(epic)
+            warnings.append(f"WARNING: no readable comment state for {epic}; its previous ack is kept")
+        epics[epic] = stamp
+    record = {
+        "seat": seat,
+        "acked_at": UTC_NOW,
+        "displayed_at": seen.get("seen_at"),
+        "duties": seen.get("duties"),
+        "charters": seen.get("charters") or {},
+        "epics": epics,
+    }
+    save_json(ack_path, record)
+    charters = ", ".join(f"{p} {short(b)}" for p, b in record["charters"].items())
+    newest = ", ".join(f"{e} {s or 'none'}" for e, s in epics.items())
+    print(f"RULES-ACK seat {seat} at {UTC_NOW}: duties {short(record['duties'])}; charter {charters}; epics {newest}")
+    for w in warnings:
+        print(f"  {w}")
+    return 0
+
+
+ARGS = parse_args()
+if ARGS.ack:
+    sys.exit(rules_ack(ARGS.seat))
+RULES_EXIT = rules_changed(ARGS.seat)
+if ARGS.rules_only:
+    sys.exit(RULES_EXIT)
+
+print(
+    "INCIDENT MODE: livespec-dev-tooling USABLE (EXPEDITED_INCIDENT_RESPONSE is the default response to a red master;"
+    " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
+)
+print()
+overcommit_header()
+stranded_header()
+holds_header()
 
 
 for label, epic in TOP:
@@ -228,4 +531,7 @@ for label, epic in TOP:
     if comments:
         newest = comments[-1]
         print(f"    newest comment {newest['created_at']}: {newest['text'][:220].replace(chr(10), ' ')}")
+
+# Rule RULES-ACK: the full header is printed first, then the exit status carries RULES-CHANGED.
+sys.exit(RULES_EXIT)
 PY
