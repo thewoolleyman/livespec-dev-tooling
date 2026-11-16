@@ -4312,5 +4312,29 @@
     "test": "TODO",
     "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting the master-health reconciler selecting no culprit and opening no revert for a head whose master-health reads external. livespec-dev-tooling-auprb3 owns it.",
     "work_item": "livespec-dev-tooling-auprb3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the replay gate admits a rebased expedited commit in a merge group by its verbatim patch-id",
+    "test": "TODO",
+    "reason": "Spec-first (merge-group-incident-admission, v239): a real test at the tests.consumer tier is owed for this heading, asserting the replay gate admitting a rebased expedited commit on a merge_group event by its verbatim patch-id match against the observer's recorded provenance. livespec-dev-tooling-txon2s owns it.",
+    "work_item": "livespec-dev-tooling-txon2s"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the replay gate convicts a merge-group commit whose patch-id matches nothing recorded",
+    "test": "TODO",
+    "reason": "Spec-first (merge-group-incident-admission, v239): a real test at the tests.consumer tier is owed for this heading, asserting the replay gate convicting a merge_group commit whose patch-id matches no recorded provenance. livespec-dev-tooling-txon2s owns it.",
+    "work_item": "livespec-dev-tooling-txon2s"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the replay gate attributes each commit of a batched merge group to its own pull request",
+    "test": "TODO",
+    "reason": "Spec-first (merge-group-incident-admission, v239): a real test at the tests.consumer tier is owed for this heading, asserting the replay gate attributing each commit of a batched merge group to its own pull request by queue-entry. livespec-dev-tooling-txon2s owns it.",
+    "work_item": "livespec-dev-tooling-txon2s"
   }
 ]

@@ -6017,3 +6017,32 @@ Then it selects no culprit and opens no new revert for that head commit
 And its one re-run of the failed jobs and its classification are unchanged
 And once the same master-health reads expired true, the reconciler behaves as it does for any other red master
 ```
+
+## Scenario: the replay gate admits a rebased expedited commit in a merge group by its verbatim patch-id
+
+```gherkin
+Given a merge group whose queue entry for pull request N has a baseCommit..headCommit range containing a rebased copy of an expedited commit that lacks TDD evidence
+And pull request N's livespec-incident-ci block names its forge-read number, base and head
+And the rebased copy's --verbatim patch-id equals that of exactly one commit in the recorded base..head, and the observer records the head
+When check-red-green-replay runs on the merge_group event
+Then the rebased copy is admitted
+```
+
+## Scenario: the replay gate convicts a merge-group commit whose patch-id matches nothing recorded
+
+```gherkin
+Given a merge group containing a commit that lacks TDD evidence, attributed to pull request N
+And the commit's --verbatim patch-id matches no commit in pull request N's recorded base..head, as after a conflict-resolved rebase
+When check-red-green-replay runs on the merge_group event
+Then the commit stays convicted
+And the gate prints a line naming the commit and the patch-id mismatch
+```
+
+## Scenario: the replay gate attributes each commit of a batched merge group to its own pull request
+
+```gherkin
+Given a merge group batching two queued pull requests, each with its own queue entry baseCommit..headCommit range
+When check-red-green-replay runs on the merge_group event
+Then each commit is attributed to the one entry whose range contains it
+And each commit is judged against its own pull request's livespec-incident-ci block
+```
