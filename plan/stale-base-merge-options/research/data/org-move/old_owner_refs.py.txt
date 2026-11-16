@@ -63,6 +63,22 @@ EXCLUDES = (":(exclude)SPECIFICATION/history", ":(exclude)archive", ":(exclude)p
             ":(exclude)crates/console-fork-drift-check/src/lib.rs",
             ":(exclude).fabro/workflows/implement-work-item/workflow.toml")
 PROSE_ONLY = ("plan", ":(exclude)plan/archive", ":(exclude,glob)**/CHANGELOG.md")
+# EXPLICIT allow-list for the Rule G patterns only (varpath, cfgdefault, profile): each entry is
+# (repository, exact path, reason). Nothing is allowed by a regex carve-out; the identity strings (the
+# human-login allowlists, the thewoolleyman-ci-runners App name, ADOPTER_APP_*_THEWOOLLEYMAN secret names,
+# thewoolleyman-factory-bot, human:thewoolleyman, emails) are not matched by these patterns at all.
+RULE_G = ("varpath", "cfgdefault", "profile")
+ALLOW = (
+    ("livespec-driver-claude", ".claude-plugin/marketplace.json", "marketplace profile URL metadata"),
+    ("livespec-orchestrator-beads-fabro", ".claude-plugin/marketplace.json", "marketplace profile URL metadata"),
+    ("livespec-orchestrator-git-jsonl", ".claude-plugin/marketplace.json", "marketplace profile URL metadata"),
+    ("livespec-overseer", ".claude-plugin/marketplace.json", "marketplace profile URL metadata"),
+)
+
+
+def allowed(repo: str, hit: str) -> bool:
+    path = hit.split(":", 2)[1]
+    return any(repo == r and path == p for r, p, _ in ALLOW)
 END = r"(?![A-Za-z0-9_-])"
 
 
@@ -75,6 +91,13 @@ def patterns(old_owner: str, repos: list[str]) -> dict[str, str]:
         "ghcr": rf"ghcr\.io/{owner}/",
         # Not preceded by a host or path character, so it never double-counts a url or raw hit.
         "slug": rf"(?<![A-Za-z0-9_./:-]){owner}/(?:{names}){END}",
+        # Rule G (ruled 2026-11-16): an owner path or default that a literal repo name does not follow.
+        # varpath: the old owner followed by a variable or template (thewoolleyman/$plugin, /${x}, /%s, /<repo>, /{{x}}).
+        "varpath": rf"(?:github\.com[:/]|ghcr\.io/|(?<![A-Za-z0-9_./:-])){owner}/(?:[$%<{{]|\{{\{{)",
+        # cfgdefault: an OWNER/ORG-named variable or a github_owner key defaulting to the old owner.
+        "cfgdefault": rf"(?:[A-Z_]*(?:OWNER|ORG)[A-Z_]*|github_owner)\W{{0,6}}(?:\$\{{[A-Z_]+:-)?{owner}\b(?!/)",
+        # profile: the bare profile URL github.com/<old-owner> not followed by a path.
+        "profile": rf"github\.com/{owner}(?![/A-Za-z0-9_-])",
     }
 
 
@@ -111,6 +134,12 @@ def self_test() -> int:
         ("non-fleet repo", "https://github.com/old/fabro and old/fabro", {}),
         ("longer name is not a fleet name", "old/livespec-extra", {}),
         ("other owner", "https://github.com/new/livespec", {}),
+        ("variable-built path", 'clone_suffix="git/github.com/old/$plugin_name/x"', {"varpath": 1}),
+        ("templated path", "marketplace add old/<orchestrator-plugin>", {"varpath": 1}),
+        ("config default", 'DISPATCHER_ORG="${DISPATCHER_ORG:-old}"', {"cfgdefault": 1}),
+        ("github_owner key", "github_owner: old", {"cfgdefault": 1}),
+        ("profile url", '"url": "https://github.com/old"', {"profile": 1}),
+        ("profile url is not a repo url", "https://github.com/old/fabro", {}),
     )
     failures = 0
     for desc, text in (("manifest with an empty fleet", '{"fleet": []}'), ("manifest that is not JSON", "{oops"),
@@ -160,7 +189,8 @@ def main() -> int:
             if args.fetch and repo != "livespec":
                 git(repo_dir, "fetch", "-q", "origin", "master")
             head = git(repo_dir, "rev-parse", "--short", args.ref).strip()
-            hits = {k: grep(repo_dir, args.ref, p, (".", *EXCLUDES)) for k, p in pats.items()}
+            hits = {k: [h for h in grep(repo_dir, args.ref, p, (".", *EXCLUDES))
+                        if not (k in RULE_G and allowed(repo, h))] for k, p in pats.items()}
             prose = grep(repo_dir, args.ref, "|".join(pats[k] for k in ("url", "raw", "ghcr")), PROSE_ONLY)
         except (subprocess.CalledProcessError, RuntimeError, FileNotFoundError) as err:
             unreadable.append({"repo": repo, "error": str(err)})
@@ -174,13 +204,14 @@ def main() -> int:
         print(json.dumps({"old_owner": args.old_owner, "rows": rows, "unreadable": unreadable,
                           "graded_total": graded}, indent=2))
     else:
-        print(f"{'repository':36} {'ref':28} {'url':>5} {'raw':>5} {'ghcr':>5} {'slug':>5} {'files':>5} {'prose*':>6}")
+        print(f"{'repository':36} {'ref':28} {'url':>5} {'raw':>5} {'ghcr':>5} {'slug':>5} {'varp':>5} {'cfgd':>5} "
+              f"{'prof':>5} {'files':>5} {'prose*':>6}")
         for r in rows:
             print(f"{r['repo']:36} {r['ref']:28} {r['url']:>5} {r['raw']:>5} {r['ghcr']:>5} {r['slug']:>5} "
-                  f"{r['graded_files']:>5} {r['prose']:>6}")
+                  f"{r['varpath']:>5} {r['cfgdefault']:>5} {r['profile']:>5} {r['graded_files']:>5} {r['prose']:>6}")
         for u in unreadable:
             print(f"{u['repo']:36} UNREADABLE: {u['error']}")
-        print(f"graded total (url + raw + ghcr + slug): {graded}   * prose is informational, not graded")
+        print(f"graded total (url + raw + ghcr + slug + varpath + cfgdefault + profile): {graded}   * prose is informational, not graded")
     if unreadable:
         return 2
     return 0 if graded == 0 else 1
