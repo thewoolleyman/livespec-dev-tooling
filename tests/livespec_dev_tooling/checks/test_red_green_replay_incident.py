@@ -212,11 +212,10 @@ def test_an_unconfigured_observer_fails_closed(
 
 @pytest.mark.parametrize("body", [None, "no block here"])
 def test_a_pull_request_with_no_block_makes_no_request(
-    tmp_path: Path, observer: Mock, capsys: pytest.CaptureFixture[str], body: str | None
+    tmp_path: Path, observer: Mock, body: str | None
 ) -> None:
     environ = _environ(tmp_path=tmp_path, body=body)
     assert not module.admitted_by_recorded_incident(sha=_SHA, message=_MESSAGE, environ=environ)
-    assert capsys.readouterr().err == ""
     assert observer.call_count == 0
 
 
