@@ -39,7 +39,7 @@ from livespec_dev_tooling.incident_conflict_sweep import ConflictSweep, waking_r
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_observer_control import ObserverControl
 from livespec_dev_tooling.incident_observer_endpoint import _read_request, observer_endpoint
-from livespec_dev_tooling.incident_observer_events import verify_leaf_completion
+from livespec_dev_tooling.incident_observer_events import classify_callback
 from livespec_dev_tooling.incident_observer_provenance import ObserverProvenance
 from livespec_dev_tooling.incident_observer_query import ObserverQuery
 from livespec_dev_tooling.incident_observer_reconcile import ObserverReconcile
@@ -200,13 +200,19 @@ class ControllerService:
         self, *, environ: dict[str, Any], start_response: _StartResponse
     ) -> Iterable[bytes]:
         body = _read_request(environ=environ)
-        completion = verify_leaf_completion(
+        completion = classify_callback(
             body=body or b"",
             signature=str(environ.get("HTTP_X_HUB_SIGNATURE_256", "")),
             event=str(environ.get("HTTP_X_GITHUB_EVENT", "")),
             delivery_id=str(environ.get("HTTP_X_GITHUB_DELIVERY", "")),
             secret=self.installation.webhook_secret,
+            repository=self.installation.repository,
         )
+        if isinstance(completion, str):
+            # An authenticated job delivery that is not a completion records nothing and
+            # is not a refusal (livespec-dev-tooling-sbxun3).
+            result = {"status": "ignored", "reason": completion}
+            return _reply(start_response=start_response, status="202 Accepted", result=result)
         if completion is None or completion.repository != self.installation.repository:
             return _reply(
                 start_response=start_response,
