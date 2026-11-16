@@ -12,7 +12,8 @@ and `_result.py`. That release carries the cd-relative fix
 (livespec-driver-claude-zexdsh, v0.15.4). Re-vendor from the Driver when its
 matcher changes; do not fork the matcher here.
 
-The differences from the Driver copy, all in this one file:
+The differences from the Driver copy are in this file, and in `_result.py`
+(difference 5):
 
 1. NO GOVERNED-PROJECT GATE. The Driver hook blocks only when
    `$CLAUDE_PROJECT_DIR` carries a `.livespec.jsonc` naming an impl-plugin.
@@ -29,6 +30,15 @@ The differences from the Driver copy, all in this one file:
    which is harmless behind its governed-project gate but would refuse tracked
    repository files such as `<repo>/.ai/memory/*.md` once this copy acts in
    every project.
+
+5. `_result.py` is PYTHON 3.9 COMPATIBLE. The Driver copy imports
+   `typing.TypeAlias` and evaluates `Success[_T] | Failure[_E]` at module scope,
+   both 3.10+; on a Mac's system `/usr/bin/python3` (3.9.6) the import raises,
+   Claude Code treats the hook error as non-blocking, and the guard silently
+   refuses nothing (livespec-dev-tooling-i76rv2). The copy uses
+   `typing.Union` instead. The same defect is in the Driver's shipped hooks
+   under a bare system python3 3.9; it is filed against livespec-driver-claude.
+   Re-vendoring from a Driver that fixed it drops this difference.
 
 Everything else is the Driver's: a file tool is refused when the target is an
 `.md` file whose parent directory is `memory` and whose great-grandparent is

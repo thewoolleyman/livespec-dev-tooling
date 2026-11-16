@@ -25,9 +25,16 @@
 # Driver's matcher copied from livespec-driver-claude v0.15.4, commit
 # 4ac6370948d31798c36726caf167bf7039ea4867 (cd-relative fix
 # livespec-driver-claude-ivftll, heredoc fix livespec-driver-claude-zexdsh).
-# Only block_auto_memory.py differs: the governed-project gate is dropped so
+# Only block_auto_memory.py differs (and _result.py, which is Python 3.9
+# compatible for a Mac's system python3; both listed in block_auto_memory.py's
+# docstring): the governed-project gate is dropped so
 # it acts in every project, and the deny reason names no plugin. Its
 # docstring lists the differences. Re-vendor when the Driver's matcher moves.
+#
+# macOS: the interactive_claude_macs group (group_vars/interactive_claude_macs.yml)
+# overrides the policy and hook locations to /Library/Application Support/
+# ClaudeCode and the group to wheel; ansible/claude-memory-guard-macs.yml
+# applies it (livespec-dev-tooling-i76rv2).
 #
 # ROOT SCOPE, like claude_distributed_sendmessage: /etc/claude-code/ is read by
 # every session of every account on the host, and the hook script is
@@ -54,7 +61,9 @@ claude_memory_write_guard_hook_files:
   - _shell_lex.py
   - _result.py
 
-claude_memory_write_guard_command: "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook }}"
+# `quote` leaves a plain path untouched and single-quotes one with a space, as the
+# macOS managed location "/Library/Application Support/ClaudeCode" has.
+claude_memory_write_guard_command: "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook | quote }}"
 
 # The drop-in, whole. File tools are judged by path; Bash by the vendored
 # shell classifier, which passes reads and rm.
