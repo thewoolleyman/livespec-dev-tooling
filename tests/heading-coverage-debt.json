@@ -758,6 +758,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pull request that touches no fleet code is swept for its own member only",
+    "work_item": "livespec-dev-tooling-p7mlz2",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pull request that touches the fleet checker's import closure is swept for every member",
+    "work_item": "livespec-dev-tooling-p7mlz2",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
     "work_item": "livespec-dev-tooling-22wpdk",
     "first_seen": "2026-11-02"
@@ -1244,6 +1258,13 @@
     "heading": "## Scenario: an agent session's foreground pytest of a gate-Job-only test module is refused whatever its worker count",
     "work_item": "livespec-dev-tooling-cvef23",
     "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration",
+    "work_item": "livespec-dev-tooling-d2ysfg",
+    "first_seen": "2026-11-15"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1804,12 +1825,5 @@
     "heading": "## Scenario: with the fail variable unset, a consumer's commit-hook check reports an undeclared livespec_dev_tooling function and exits 0",
     "work_item": "livespec-dev-tooling-vobfwi",
     "first_seen": "2026-11-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration",
-    "work_item": "livespec-dev-tooling-d2ysfg",
-    "first_seen": "2026-11-15"
   }
 ]
