@@ -51,7 +51,9 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
-              nominalQuota: 2
+              # 2 -> 3 on 2026-11-16: stranded-capacity raise, cohort 30 -> 34. See DERIVATION.md
+              # "Stranded-capacity raise: gmktec 9, gamingpc 4, cohort 34 (2026-11-16)".
+              nominalQuota: 3
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

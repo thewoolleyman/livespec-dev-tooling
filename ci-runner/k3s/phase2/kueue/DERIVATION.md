@@ -1489,7 +1489,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 5 | 10 | **20** | 2026-11-14 |
-| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-14 |
+| `livespec-orchestrator-beads-fabro` | 6 | 12 | **14** | 2026-11-16 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -2546,3 +2546,37 @@ ci-runtime-and-cost finds the 11-13 small-repository demand surge was waste
 10 and livespec-orchestrator-beads-fabro-cq to 7, and drop their two exception
 rows. Then apply with `just ansible-apply ansible/ci-pool.yml --tags
 ci_converge_unit`.
+
+## Stranded-capacity raise: gmktec 9, gamingpc 4, cohort 34 (2026-11-16)
+
+**Why.** `scripts/coordinator/fleet-utilization.sh --stranded-only` flagged four churn-slot ClusterQueues at their limit with work waiting (~20:1xZ): livespec-orchestrator-beads-fabro-cq 8/4 (+4 borrowed) with 6 pending, livespec-runtime-cq 2/2 with 4, livespec-overseer-cq 3/2 (+1) with 3, livespec-console-beads-fabro-cq 5/2 (+3) with 1. At the same time gamingpc-xubuntu read 66% idle and gmktec-xubuntu 44% idle. Plan ci-runtime-and-cost (epic livespec-dev-tooling-ib3oe3), one-lane STRANDED-CAPACITY exemption from legacy-coordinator-agent via throughput-plans-coordinator.
+
+**The read (Honeycomb, 24 h to 2026-11-16 20:00Z; only 17Z-20Z was loaded).** The idle percentage is not the basis (`.ai/ci-node-capacity-reads.md`); the basis is throughput.
+
+| Node | Slots | Peak arc-runners pods (2 per job) | Avg busy cores by class, 19Z hour (runners / gates / factory) |
+| --- | --- | --- | --- |
+| gmktec-xubuntu | 6 | 12 (= 6 jobs, AT the cap) | 9.0 / 4.4 / 2.4 |
+| gamingpc-xubuntu | 3 | 6 (= 3 jobs, AT the cap) | 4.4 / 3.7 / 0 |
+
+- Both nodes reached their slot cap while 20-39 arc-runners pods sat Pending at the admission gate (19:00-19:50Z, 39 at the peak) and the running count stayed flat: poweredge about 25 pods, gmktec 8-10, hp 5-6, gamingpc 4-5. A flat running count behind a growing held count is the cap-bound signature, not a CPU-bound one.
+- The cohort's 4 master-lane units lend nothing (lendingLimit 0), so 26 of the 30 are borrowable and about 22 jobs were running: the pool was full at its usable total.
+- The runner CPU figure is an upper bound (the `k8s.pod.cpu.usage` gauge reads runner pods about 2.7x high, NODE-CPU-BUDGET.md); no node's pod CPU was the limit.
+- Job duration by node concurrency is a thin sample (84 attributable jobs of 496): gmktec p50 21 s at 4-8 pods against 55 s over 8; gamingpc p50 16 s at 4 or fewer against 42 s at 4-8. It is suggestive of linear growth, not proven, which is why the step is small and carries a measured revert trigger.
+- Not measured: true cores from `k8s.pod.cpu.time` (the MCP endpoint rejects `RATE_SUM`), per-queue wait and held count, and anything after 20:00Z.
+
+**The change.** +3 slots on gmktec (6 -> 9) and +1 on gamingpc (3 -> 4): the pool's declared capacity 30 -> 34. The 4 new units go to the queues that were stranded, weighted by pending work: livespec-orchestrator-beads-fabro-cq 4 -> 6, livespec-runtime-cq 2 -> 3, livespec-overseer-cq 2 -> 3. Console (1 pending) and the master lanes are unchanged. The orchestrator's `maxRunners` stays 14 (recorded exception, row updated to quota 6 / rule 12); runtime and overseer stay 6 (the rule gives max(2 x 3, 6) = 6).
+
+**The combined per-node budget (shared with gate-job-resources, plan ukoeah).** Churn runners request 0 CPU, so the cost is draw, at about 1.7 cores per job (NODE-CPU-BUDGET.md).
+
+| Node | Allocatable | Gates (requests) | Factory (requests, budget) | Added churn draw | Spare at busy p10 (gate-job-resources, live) |
+| --- | --- | --- | --- | --- | --- |
+| gmktec-xubuntu | 32 | 10 now, 15 planned | up to 7 x 3 = 21 | +3 x 1.7 = 5.1 | about 17 less the +5 gate = about 12 |
+| gamingpc-xubuntu | 12 | 10 (stays 10) | 0 | +1 x 1.7 = 1.7 | 4-5 of draw (requests 10 of 12, so 2 free) |
+
+Both raises applied: gmktec 15 + 21 = 36 of requests is possible only if all seven factory runs and the gates fill at once, and its draw still fits its 12 spare cores with 5.1 added; gamingpc adds 1.7 to a 4-5 core spare. The +1 on gamingpc is the part the requests do not show (10 of 12 requested), so it is justified from draw and measured, with its own trigger below. gate-job-resources owns the budget and rules the split if the two do not both fit. The raises share each node's budget: whichever lands second re-measures against the first with `fleet-utilization.sh --overcommit-only`.
+
+**Order of apply.** The reverse of the 2026-11-13 cut, so the quota sum never exceeds the slots that exist: (1) `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit gamingpc-xubuntu,gmktec-xubuntu` (capacity reads 34, quotas still 30); (2) `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit` (quotas to 34). Read `--overcommit-only` before step 1 and after step 2.
+
+**Measured revert trigger.** Within 2 h of step 2, and again at the +2 h CI-side read: revert if either (a) a raised node reads idle under 5% AND its `kubepods-besteffort` `cpu.pressure` full avg60 over 30 (the saturation test in `.ai/ci-node-capacity-reads.md`), or (b) livespec-dev-tooling or livespec-orchestrator-beads-fabro job-duration p95 rises more than its 24 h noise band above its pre-apply value while the held-pod count has not fallen. The +2 h CI-side read records: arc-runners pods Pending at the gate (39 peak before), CI queue-wait p50/p95 per repository, job duration p50/p95 on gmktec and gamingpc, and each flagged queue's admitted count.
+
+**Revert.** Restore gmktec 6 and gamingpc 3 in their profiles, livespec-orchestrator-beads-fabro-cq 4, livespec-runtime-cq 2 and livespec-overseer-cq 2, and the orchestrator exception row to quota 4 / rule 8. Apply in the reverse order: `ci_converge_unit` first (quotas back to 30), then `node_extended_resource --limit gamingpc-xubuntu,gmktec-xubuntu`.

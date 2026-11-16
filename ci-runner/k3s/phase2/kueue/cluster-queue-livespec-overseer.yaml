@@ -51,7 +51,9 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
-              nominalQuota: 2
+              # 2 -> 3 on 2026-11-16: stranded-capacity raise, cohort 30 -> 34. See DERIVATION.md
+              # "Stranded-capacity raise: gmktec 9, gamingpc 4, cohort 34 (2026-11-16)".
+              nominalQuota: 3
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed
