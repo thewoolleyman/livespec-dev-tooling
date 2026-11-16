@@ -33,11 +33,10 @@ factory spend ranked first (bd-ib-veyxvz, bd-ib-mr7673).
 ## 2. A flaky failure in progress may be retried, and its root fix takes priority
 
 **Flakes already in progress may be retried.** A flaky failure of a CI job, a suite, a local commit or push gate (a
-`gate-start` relaunch included), or a factory run MAY be retried. Maintainer [6tgd2z ~2026-11-13T19:39Z]: "WTF IS THIS
-RULE: "Under the no-retry-on-flake rule the agent didn't retry, so I've asked the coordinator for a ruling."  FLAKES MAY
-NOW BE RETRIED>  I MADE THIS CHANGE.  TELL ME WHY YOU THINK THEY CAN'T". This supersedes the no-rerun parts of the
-2026-11-02 and 2026-11-04 rulings and the 2026-11-07 "one maintainer-ordered rerun set no precedent" note: such a rerun
-no longer needs the maintainer's word. Bounds (coordinator's reading):
+`gate-start` relaunch included), or a factory run MAY be retried. Maintainer [6tgd2z ~2026-11-13T19:39Z]: "… FLAKES MAY
+NOW BE RETRIED>  I MADE THIS CHANGE. …". This supersedes the no-rerun parts of the 2026-11-02 and 2026-11-04 rulings and
+the 2026-11-07 "one maintainer-ordered rerun set no precedent" note: such a rerun no longer needs the maintainer's word.
+Bounds (coordinator's reading):
 
 - Back off incrementally between retries; retry one failure at most 3 times.
 - Record each retry against a root-fix item. Search the ledger first
@@ -49,11 +48,10 @@ no longer needs the maintainer's word. Bounds (coordinator's reading):
   it: a launched gate cannot be called back (`.ai/gate-runtime-vs-harness-patience.md`).
 - A test the change itself touched is judged on its own failure first; its failure can be the change's own bug.
 
-**The root fix takes priority over new work.** Maintainer [6tgd2z and r7iuj6, ~2026-11-16T07:0xZ]: "Okay, I think the
-retry rule is recorded wrong.  Flakes can be retried if they are already in progress, so their work isn't wasted.  But
-outside of an incident, if there is a flake, then nothing new should get prioritized to enter the factory or the merge
-train ahead of the fix.  Things can go in parallel next to a flaky fix, but the flaky fix always must get priority as
-soon as it is found. Does this make sense?  If so, make a sweep to update this rule everywhere." In plain words:
+**The root fix takes priority over new work.** Maintainer [6tgd2z and r7iuj6, ~2026-11-16T07:0xZ]: "… Flakes can be
+retried if they are already in progress, so their work isn't wasted.  But outside of an incident, if there is a flake,
+then nothing new should get prioritized to enter the factory or the merge train ahead of the fix.  Things can go in
+parallel next to a flaky fix, but the flaky fix always must get priority as soon as it is found. …" In plain words:
 
 - Work ALREADY IN PROGRESS that hits a flake may be retried, within the bounds above, so its work is not wasted.
 - Outside an incident, from the moment a flake is found, its ROOT FIX has top priority for factory dispatch and for
@@ -102,7 +100,7 @@ run by hand once, after GitHub resolves the incident, and only for the newest co
 refusing an `actions/checkout` download) is re-run with incremental backoff, repeated if the 429 repeats. Any seat may
 do this without asking. Never rebase, push an empty commit or close/reopen to get a fresh run for a 429. Maintainer
 [6tgd2z 2026-11-03T14:06:47Z]: "Retrying on a 429 (and multiple times after a incremental backoff wait if it happens
-mutiple times) should be a no brainer. Why would you uselessly rebase and do more unnecwessary work?"
+mutiple times) should be a no brainer. …"
 
 **The CI range gate re-runs nothing, so it never backstops a hook bypass (coordinator's reading).** In CI,
 `check-red-green-replay` checks only that each commit's TDD trailer keys are present; it compares no checksum and
@@ -127,24 +125,21 @@ Maintainer [6tgd2z 2026-11-12T19:17:17Z]: "It says the expedited is usable on de
 forward, and record this everywhere as a rule to be noticed by coordinator sessions".
 
 **A failed telemetry export is opened as a bug, by a low-cost means.** Maintainer [livespec-dev-tooling-q26e3c
-2026-11-13T23:18:44Z]: "Yes, a failed telemetry export can instead be opened as a bug, via some low-cost means. 
-Probably a plan that collects it for now, address-honeycomb-alerts can be used for now.  Eventually we will have a
-dedicated seat in the radar rearchitecture to be responsible for telemetry management." Carrier
-livespec-dev-tooling-jgkhr5 (owner ci-runtime-and-cost); interim collector plan address-honeycomb-alerts (bd-ib-xkwdap).
+2026-11-13T23:18:44Z]: "Yes, a failed telemetry export can instead be opened as a bug, via some low-cost means. …
+address-honeycomb-alerts can be used for now. …" Carrier livespec-dev-tooling-jgkhr5 (owner ci-runtime-and-cost);
+interim collector plan address-honeycomb-alerts (bd-ib-xkwdap).
 
 **Rule INCIDENT-FIRST: a real breakage that stops work flowing is an incident by default.** Every tick asks whether a
 real breakage is stopping work through the factory or the ecosystem: a red master, an exhausted credential or rate
-budget, a held factory, a jammed queue. If so, it is an INCIDENT, and the expedited flow
-(EXPEDITED_INCIDENT_RESPONSE / _REVERT, `docs/incident-execution.md`) is used wherever it moves work faster, although
-the flow is incomplete today. When the incident path itself is broken, repairing it is the first incident action,
-driven out of order under OVERRIDE-THEN-BACKFILL (§5), never waited out behind the normal lane. The flow is never ruled
-out because the work is "planned plan work" or "the tool is broken": judge by impact, ask what makes it work, and invent
-no restriction on it without the maintainer's words. Maintainer [r7iuj6 2026-11-15T18:18:09Z; 6tgd2z 18:20:15Z]:
-"Record this guidance to leverage the incident recovery process as much as we can right now, knowing that it is
-incomplete. ... you should always consider using the incident flow when it will help move things along and when there
-is actually a breakage that is stopping work from flowing through the factory and ecosystem." Measured 2026-11-15:
-throughput-plans-coordinator ruled "no incident, the flow is for broken masters"; its charter now carries this rule
-(livespec-dev-tooling#4816).
+budget, a held factory, a jammed queue. If so, it is an INCIDENT, and the expedited flow (EXPEDITED_INCIDENT_RESPONSE /
+_REVERT, `docs/incident-execution.md`) is used wherever it moves work faster, although the flow is incomplete today.
+When the incident path itself is broken, repairing it is the first incident action, driven out of order under
+OVERRIDE-THEN-BACKFILL (§5), never waited out behind the normal lane. The flow is never ruled out because the work is
+"planned plan work" or "the tool is broken": judge by impact, ask what makes it work, and invent no restriction on it
+without the maintainer's words. Maintainer [r7iuj6 2026-11-15T18:18:09Z; 6tgd2z 18:20:15Z]: "… you should always
+consider using the incident flow when it will help move things along and when there is actually a breakage that is
+stopping work from flowing through the factory and ecosystem." Measured 2026-11-15: throughput-plans-coordinator ruled
+"no incident, the flow is for broken masters"; its charter now carries this rule (livespec-dev-tooling#4816).
 
 **Rule INCIDENT-IS-A-RECORD: an incident counts only once its record exists, and every later repair commit rides the
 fast lane.**
@@ -194,10 +189,9 @@ countdown to that cap. Measured 2026-11-10: anthropic-3's cap stalled ~25 seats 
 **Rule P4: confirm a plan is not parked before routing it work, and re-justify every hold on a top-5 plan.**
 radar-and-deterministic-admission (`livespec-dev-tooling-w7ley3`, tab w2J:t1E) is PARKED pending the maintainer's
 attention: no work, no revise slot; it resumes only on the maintainer's word. Maintainer [6tgd2z 2026-11-09T07:41:43Z]:
-"Why are you working the radar track?  It should be on hold until we finish other thihngs.  Wasn't the last status that
-we updated it for the legacy coordinator/dispatcher rewrites, and then it pwas parked pending my attention?" A hold that
-blocks a top-5 plan is re-justified each tick against the condition it exists for, and lifted the moment that
-condition is absent. Same 07:48:20Z scope event.
+"Why are you working the radar track?  It should be on hold until we finish other thihngs. … it pwas parked pending my
+attention?" A hold that blocks a top-5 plan is re-justified each tick against the condition it exists for, and lifted
+the moment that condition is absent. Same 07:48:20Z scope event.
 
 A seat sitting at a picker produces no reports, so waiting on its report waits forever (2026-10-31). Every tick:
 
@@ -247,10 +241,10 @@ your reply to me is unacceptable".
 COORDINATOR ledger comments on its plan epic; every tick reads them for every moved seat. Reply by SendMessage or pane
 typing, as above.
 
-**Stopping a seat's own wasteful or contaminated workload is the coordinator's call.** Direct the owning seat to stop
-it and clean up; never list it under FOR THE MAINTAINER. If the seat's own attempt was blocked, re-order it, citing:
-Maintainer [6tgd2z ~2026-11-09T19:3xZ]: "This is useless and wasteful work. Why are you asking me this? This is a
-decision you should make. Enforce the seat to do. Cite whatever recorded guidance you need to if it argues with you."
+**Stopping a seat's own wasteful or contaminated workload is the coordinator's call.** Direct the owning seat to stop it
+and clean up; never list it under FOR THE MAINTAINER. If the seat's own attempt was blocked, re-order it, citing:
+Maintainer [6tgd2z ~2026-11-09T19:3xZ]: "… This is a decision you should make. Enforce the seat to do. Cite whatever
+recorded guidance you need to if it argues with you."
 
 **Codex hook-trust prompts are the coordinator's to answer.** A Codex "N hooks need review before they can run"
 (`t trust all`) prompt may always be answered with trust, without asking. This reverses the earlier limit. Maintainer
@@ -417,8 +411,7 @@ recent-unwrapped` for each seat:
 get the standard §3 duties. A design or direction call on the maintainer-driven plan goes to the maintainer (§9). Their
 CI and factory traffic counts in the tick, and any factory launch they request is subject to the dispatch freeze (§9).
 Maintainer [6tgd2z 2026-11-06T06:05:46Z]: "OK, add fleet-mutation-testing-rule-26 under the chads-macbook-pro
-machine/workspace to your monitored list of plans. They are executing on that machine, but may send stuff to CI and/or
-the factory."
+machine/workspace to your monitored list of plans. …"
 
 **A word given to a seat reaches it at the moment it is given.** A Claude seat on vps, hetzner-xubuntu or
 gamingpc-xubuntu gets it by SendMessage, or typed into its pane when that is faster or necessary. A Codex or pi seat, or
@@ -454,18 +447,16 @@ Ruling [6tgd2z 2026-11-02T01:56:11Z]. Measured 2026-11-02: dev-host-test-gate-lo
 while its seat looked healthy.
 
 **Rule PANE-TYPING-ALLOWED: a coordinator may type into any seat's pane.** legacy-coordinator-agent,
-throughput-plans-coordinator and any seat that directs others MAY type into any seat's pane on any machine
-(`herdr pane send-text`, `herdr pane send-keys`, `herdr pane run`): slash commands such as `/model`, `/rename`,
-`/remote-control` and `/reload-plugins`, picker answers, and nudges. A coordinator never waits on, or routes around, a
-seat it can reach by typing. Use SendMessage when it reaches the seat and the content is a message; type when that is
-faster or necessary. Check the pane is idle first (`herdr pane read`), keep the text short, and send `Enter`
-separately. Read `ListAgents` fresh before a SendMessage: a seat may be listed under a generated or conversation-title
-name, and the listed name is its address. Maintainer, scope event "RULE PANE-TYPING-ALLOWED" [6tgd2z 2026-11-16],
-verbatim: "Okay. I've told you at least a half dozen fucking times and set up rules that coordinators are absolutely
-allowed to type into panes. I have told sessions to write this everywhere and remove every place where instructions
-say the coordinators are not allowed to type into panes. Please explain to me why the fuck you think you are not able
-to type into panes. Answer, and then stop everything you're fucking doing and fix this forever." Supersedes the former
-rule NO-PANE-TYPING (a 2026-11-15 objection to typing into BUSY panes, wrongly widened into a blanket ban).
+throughput-plans-coordinator and any seat that directs others MAY type into any seat's pane on any machine (`herdr pane
+send-text`, `herdr pane send-keys`, `herdr pane run`): slash commands such as `/model`, `/rename`, `/remote-control` and
+`/reload-plugins`, picker answers, and nudges. A coordinator never waits on, or routes around, a seat it can reach by
+typing. Use SendMessage when it reaches the seat and the content is a message; type when that is faster or necessary.
+Check the pane is idle first (`herdr pane read`), keep the text short, and send `Enter` separately. Read `ListAgents`
+fresh before a SendMessage: a seat may be listed under a generated or conversation-title name, and the listed name is
+its address. Maintainer, scope event "RULE PANE-TYPING-ALLOWED" [6tgd2z 2026-11-16], verbatim: "… I've told you at
+least a half dozen fucking times and set up rules that coordinators are absolutely allowed to type into panes. … stop
+everything you're fucking doing and fix this forever." Supersedes the former rule NO-PANE-TYPING (a 2026-11-15 objection
+to typing into BUSY panes, wrongly widened into a blanket ban).
 
 ## 4. The owning session decides first
 
@@ -609,19 +600,18 @@ workflow or credential-path changes, and its PASS is the merge GO. It, or the pl
 on each item, and reads the tier and References before approve. When a valve refuses the seat on authority, the seat
 posts the exact refusal as an ESCALATION on epic `livespec-dev-tooling-6tgd2z`, and the coordinator presses it within
 its next turn. Maintainer [6tgd2z 2026-11-15T17:36:44Z]: "I AM SICK OF SEEING "waiting for legacy coordinators grade".
-YOU ARE TURNING INTO A BOTTLE NECK. GET THIS MIGRATION PLAN DONE! I TOLD YOU THAT IS YOUR ONLY FOCUS!!!!!" (and
-[6tgd2z 17:39:15Z], to throughput-plans-coordinator: "If it stalls on anything you need YELL AT IT UNTIL IT RESPONDS.").
+YOU ARE TURNING INTO A BOTTLE NECK. …" (and [6tgd2z 17:39:15Z], to throughput-plans-coordinator: "If it stalls on
+anything you need YELL AT IT UNTIL IT RESPONDS.").
 
-**Rule SLASH: a seat slash command is never a maintainer ask.** `/remote-control`, `/reload-plugins`, `/mcp`
-reconnects and similar seat-side slash commands never go under `FOR THE MAINTAINER`. Maintainer [6tgd2z
-2026-11-14T19:01:43Z]: "You are asking me things that do not deserve my attention. You have control of the Herder API.
+**Rule SLASH: a seat slash command is never a maintainer ask.** `/remote-control`, `/reload-plugins`, `/mcp` reconnects
+and similar seat-side slash commands never go under `FOR THE MAINTAINER`. Maintainer [6tgd2z 2026-11-14T19:01:43Z]: "…
 You can type things into panes. Any of these slash commands, you should tell the sessions to do themselves or do for
 them." Seats send `/reload-plugins` to each other directly (overseer-iyfjbo scope event 19:24:10Z), and the coordinator
 types any such command into the seat's idle pane itself (rule PANE-TYPING-ALLOWED, §3). When a seat needs a fresh
-process, it writes its handoff and the coordinator relaunches it in a fresh pane with `claude -n <slug>
---remote-control <slug> "<brief>"` (a fresh launch registers Remote Control, loads current plugins and connects its MCP
-servers). Credential and secret creation or deletion, OAuth re-authorization the coordinator cannot complete, and caam
-reserve settings stay the maintainer's.
+process, it writes its handoff and the coordinator relaunches it in a fresh pane with `claude -n <slug> --remote-control
+<slug> "<brief>"` (a fresh launch registers Remote Control, loads current plugins and connects its MCP servers).
+Credential and secret creation or deletion, OAuth re-authorization the coordinator cannot complete, and caam reserve
+settings stay the maintainer's.
 
 **Rule AWS: never hand the maintainer an AWS act the API can do.** The owning seat does it (SSM writes, bindings)
 through its credential wrapper, and any binding lands by PR. Maintainer [overseer-iyfjbo 2026-11-14T19:24:10Z; 6tgd2z
@@ -648,9 +638,8 @@ overseer-jetvoh.]
 CI waits, or a guard refusing a route only on its path), the coordinator makes the change now and backfills the GitOps
 record the same day: the PR merges, a drift from master reads no change, and an audit record goes on the plan epic. An
 item's own safety gates stay, and every override step is logged with the refusal it overrode. Maintainer, scope event
-[6tgd2z ~2026-11-15T07:4xZ]: "This is ridiculous. We're deadlocking ourselves. I authorize you to override whenever you
-need to, to get this unblocked. Whenever the GitOps changes we need to do, we can backfill them. Just make the changes
-now."
+[6tgd2z ~2026-11-15T07:4xZ]: "… I authorize you to override whenever you need to, to get this unblocked. Whenever the
+GitOps changes we need to do, we can backfill them. Just make the changes now."
 
 **central-credential-service finishes first, with ceremony deferred to its end (coordinator's reading).** For plan
 central-credential-service (overseer-iyfjbo), a check that is ceremony is deferred to the plan's end, and a gate on a
@@ -688,9 +677,8 @@ autonomously, never block."
   you need to ask me to start it?"
 - **Never hold off an overseer restart.** No standing rule may stop the overseer restarting the coordinator. On a
   wind-down the coordinator writes its handoff and declares ready. A maintainer remark asking it to hold is situational
-  and ends with its situation. Maintainer [6tgd2z 2026-11-05T17:01:42Z]: "WHY ARE YOU ASKING ME TO RESTART NOW?  THE
-  ONLY TIME I TOLD YOU TO HOLD WAS ONCE WHEN WE NEEDED TO DISCUSS THE REVERT.  REMOVE ANY STANDING RULE YOU HAVE TO
-  AVOID LETTING THE OVERSEER RESTART YOU".
+  and ends with its situation. Maintainer [6tgd2z 2026-11-05T17:01:42Z]: "… REMOVE ANY STANDING RULE YOU HAVE TO AVOID
+  LETTING THE OVERSEER RESTART YOU".
 
 This is enforced: the user-scope hook `~/.claude/hooks/no-blocking-picker-guard.py` (matcher `AskUserQuestion`) denies
 the tool for the sessions in its `AUTONOMOUS_SEATS` set; detail in
@@ -769,8 +757,7 @@ not a ranked priority.
 **An orphan item joins the closest open plan; otherwise it gets a plan of its own.** When an item's owning plan is
 archived, move it to an open plan only if extremely closely related; otherwise make a new plan. Maintainer [6tgd2z
 ~2026-11-09T19:3xZ], on livespec-driver-codex-d2tp5d: "If it's not related to any existing open plan extremely closely,
-then make a new plan.  CI runtime and cost seem like they're turning into a dump truck, but we need to rearchitect all
-this anyway. I guess if that's easier, just get it done." (d2tp5d went to ci-runtime-and-cost.)
+then make a new plan. …" (d2tp5d went to ci-runtime-and-cost.)
 
 **A seat that declares MOVE-READY gets its successor opened at once.** When a seat writes its handoff and says it is
 moving machines, the coordinator opens the successor in the target workspace the same tick
@@ -913,26 +900,25 @@ discussing this plan yet. Don't keep jumping to try to create it. Wait until I t
 
 ## 10. Fleet health, checked every tick
 
-**Throughput first: the coordinator owns infrastructure utilization.** Every tick, before anything else in this
-section, read the factory's throughput and treat an unused slot as a stall: live runs against the fleet cap and each
-per-host cap; queued tickets and launches in the last 30 minutes (launcher `seq-*.log` LAUNCH lines); idle on every
-execution target (gmktec, poweredge, hp, the VPS). When live runs sit below the cap while tickets wait, the cap is not
-the constraint and something serializes: find the serializer that tick, name its mechanism, and route the fix as a
+**Throughput first: the coordinator owns infrastructure utilization.** Every tick, before anything else in this section,
+read the factory's throughput and treat an unused slot as a stall: live runs against the fleet cap and each per-host
+cap; queued tickets and launches in the last 30 minutes (launcher `seq-*.log` LAUNCH lines); idle on every execution
+target (gmktec, poweredge, hp, the VPS). When live runs sit below the cap while tickets wait, the cap is not the
+constraint and something serializes: find the serializer that tick, name its mechanism, and route the fix as a
 stop-the-line. Do NOT read a cap, a freeze or a hold as the constraint before checking that it binds. Check every tick
 that the queue head follows the priorities record (an arrival-ordered queue buries top-priority work). Read
-`.ai/ci-node-capacity-reads.md` before any cap, hold or throttle call. Maintainer (2026-11-02 ~16:5xZ): "I am also very
-disappointed in you that you did not notice the serialization bottleneck yourself, resulting in underutilization of the
-infrastructure. That is one of your main mandates. You are supposed to be looking at it." Measured 2026-11-02: one
-launcher FIFO serialized preflights while gmktec sat 74-96% idle (fix bd-ib-x7bwug).
+`.ai/ci-node-capacity-reads.md` before any cap, hold or throttle call. Maintainer (2026-11-02 ~16:5xZ): "… you did not
+notice the serialization bottleneck yourself, resulting in underutilization of the infrastructure. That is one of your
+main mandates. …" Measured 2026-11-02: one launcher FIFO serialized preflights while gmktec sat 74-96% idle (fix
+bd-ib-x7bwug).
 
-**Factory throughput is delegated to throughput-plans-coordinator.** Maintainer [6tgd2z 2026-11-14T18:24:20Z]:
-"Re-steering.  You need to keep the coordinator track in the hetzner throughput-improvement track open.  It needs to be
-able to keep working on high priority throughput improvements, and you should delegate anything related to throughput
-problems in the factory to it." The read above still runs every tick, as the trigger. Every factory throughput problem
-(serializers, stranded capacity, caps, yield, CI or merge latency on the factory path) goes to
-throughput-plans-coordinator (livespec-dev-tooling-r7iuj6; hetzner-xubuntu, workspace throughput-improvements) by
-SendMessage or pane typing, by a ledger comment on r7iuj6 only when neither reaches it; the coordinator does not work
-them itself. That seat moves one high-priority throughput problem at a time during the token crunch.
+**Factory throughput is delegated to throughput-plans-coordinator.** Maintainer [6tgd2z 2026-11-14T18:24:20Z]: "… you
+should delegate anything related to throughput problems in the factory to it." The read above still runs every tick, as
+the trigger. Every factory throughput problem (serializers, stranded capacity, caps, yield, CI or merge latency on the
+factory path) goes to throughput-plans-coordinator (livespec-dev-tooling-r7iuj6; hetzner-xubuntu, workspace
+throughput-improvements) by SendMessage or pane typing, by a ledger comment on r7iuj6 only when neither reaches it; the
+coordinator does not work them itself. That seat moves one high-priority throughput problem at a time during the token
+crunch.
 
 **Rule FACTORY-GREEN-WATCH: every tick prints the last factory green per repository.** For each repository the factory
 serves, print the time of its last GREEN factory run and the runs since, from the dispatch records or else the drive
@@ -1066,11 +1052,10 @@ Calendar, Drive, Slack, Honeycomb), query it first; if the connector is missing 
 - **Seats.** Read `herdr agent list` (§3, §7).
 
 **Every container node enrolls in the factory automatically.** Maintainer [6tgd2z 2026-11-07T19:22:33Z], on plan
-homelab-k8s-worker-nodes (`livespec-dev-tooling-ko26ez`): "... update it's plan and definition of done so that node
-(and all other container nodes like this) are automatically enrolled in the factory with whatever the default
-taints/routing/load is (or make up some sensible default if one doesn't exist, e.g. a split of gate/factory/ci load.
-Prioritize gettting its plan actually done, with DoD that it is running cluster load live in prod." That plan owns the
-mechanism; the coordinator holds its Definition of Done to it.
+homelab-k8s-worker-nodes (`livespec-dev-tooling-ko26ez`): "… so that node (and all other container nodes like this) are
+automatically enrolled in the factory with whatever the default taints/routing/load is … Prioritize gettting its plan
+actually done, with DoD that it is running cluster load live in prod." That plan owns the mechanism; the coordinator
+holds its Definition of Done to it.
 
 **Prove a model or routing change in one factory pod before widening it.** Every model, adapter or routing change goes
 out in three steps, and the coordinator holds every seat to them:
@@ -1208,19 +1193,11 @@ and the misclassification. bd-ib-3kdjct is kubernetes-sandbox-backend's host rou
   and a rider for a commit the seed has is not added (2026-11-05: bd-ib-uq2ocd cancelled on a mistaken runaway GO).
 - **Re-read the run's current head before a cancel GO (coordinator's reading).** A seed or earlier diff count is not
   the run's state (2026-11-07 overseer-mldt32; 2026-11-09 bd-ib-reuccp [6tgd2z 06:40:46Z, 06:44:24Z]).
-- **The yzrguu flattening class costs whole runs until orchestrator 0.308.0 is the launch build (coordinator's
-  reading).** An engine checkpoint that flattens a master merge into a single-parent commit fails
-  `check-red-green-replay` at every janitor round, and a file-only fix round cannot rewrite it (fix daced5a42, in
-  0.308.0). Until that build launches, read a run stuck at the janitor on that check as this class, re-read its head
-  before calling it non-converging, and relaunch it on 0.308.0 with a restore rider (2026-11-09: three runs lost).
+- **The yzrguu flattening class (coordinator's reading):** ended when 0.308.0 became the launch build; returns only with
+  a new measurement.
 
-**Hotspot co-launch rule, with a sunset (coordinator's reading).** legacy-dispatcher-agent does not co-launch two items
-naming the same hotspot file while the first is live: workflow.fabro, fix.md, scenarios.md, tests/heading-coverage.json,
-tests/heading-coverage-debt.json and fleet-launch/dispatch-dual.sh. The later ticket keeps its place until the first
-merges. It never overrides priority 1, never touches a live run, never leaves a slot idle. contracts.md is NOT a
-hotspot (it would serialize most of the orchestrator queue). The rule ENDS when orchestrator 0.308.0 (daced5a42) is the
-launch build after its canary roll, and returns, with the measurement, if a refresh repair after 0.308.0 still costs a
-whole run. [6tgd2z 2026-11-09T04:31:40Z adopted, 04:35:07Z contracts.md removed, 07:05:54Z sunset.]
+**Hotspot co-launch rule (coordinator's reading):** ended when 0.308.0 became the launch build; returns only with a new
+measurement.
 
 **A route row is not evidence a ruling was honoured (coordinator's reading).** Until bd-ib-ltlg4i ships, a ruled seed
 does not reach `route_recovery`, so read a seeded relaunch's route before its ticket (2026-11-07, code at 1895a0ddbe37).
@@ -1290,14 +1267,13 @@ since [6tgd2z 2026-11-12T10:33:39Z].
     livespec-dev-tooling#3573): "The rule doesn't mean you make me manually type commands, it means you ask for my
     approval."
 - **Capacity and config values change without a test suite, and no test pins a committed value.** Maintainer [6tgd2z
-  2026-11-04T18:41:47Z]: "Do all of those suggestions, now. ... Even if the file is committed, it should be a short
-  circuit, no-tests change to change the wip or cap values. NO TEST SHOIULD BE TIED TO CONFIG VALUE ACTUAL VALUES." Read
-  three ways: collapse the factory concurrency knobs to one source of truth (one queue, one number, §10); a commit,
-  push and CI fast path for value-only edits of declared capacity or config keys (schema-validate only, no suites) is
-  maintainer-authorized and, for that class only, overrides the rule that a gate reduction goes to the maintainer; a
-  test asserting a real committed config or capacity VALUE, rather than a fixture it writes, is a defect. The fast path
-  is still being built (dev-tooling #3423 and #3432, v132; livespec #3100, v237); until it lands, value-only edits run
-  the normal gates.
+  2026-11-04T18:41:47Z]: "… Even if the file is committed, it should be a short circuit, no-tests change to change the
+  wip or cap values. NO TEST SHOIULD BE TIED TO CONFIG VALUE ACTUAL VALUES." Read three ways: collapse the factory
+  concurrency knobs to one source of truth (one queue, one number, §10); a commit, push and CI fast path for value-only
+  edits of declared capacity or config keys (schema-validate only, no suites) is maintainer-authorized and, for that
+  class only, overrides the rule that a gate reduction goes to the maintainer; a test asserting a real committed config
+  or capacity VALUE, rather than a fixture it writes, is a defect. The fast path is still being built (dev-tooling #3423
+  and #3432, v132; livespec #3100, v237); until it lands, value-only edits run the normal gates.
 - **The revise queue is order-based (coordinator's reading).** Each repository's revise queue is an order of seats;
   each seat takes the next free version number when it cuts, never pre-assigned. [6tgd2z 2026-11-09T09:40:47Z, after
   two seats collided at v163.]
@@ -1332,8 +1308,7 @@ since [6tgd2z 2026-11-12T10:33:39Z].
       is RULED, option A: merge_group CI runs the FULL suite on the guarded self-hosted runners, behind a first job that
       routes any PR not from a same-repository branch by an allowlisted author to hosted runners, and every path to
       master goes through the queue. Maintainer [livespec-dev-tooling-xowhol 2026-11-13T14:45:12Z, comment 27]: "The
-      answer is obviously option A because this gives us control over the capacity and speed I am not accepting
-      contributions to this currently so I'm not concerned about the security risks right now".
+      answer is obviously option A because this gives us control over the capacity and speed …".
   - **Never raise vmi3006760's swap/RAM configuration.** It is the VPS provider's and intentional. Maintainer [6tgd2z
     2026-11-12T18:23:54Z]: "This is intentional, it's a VPS, I don't configure it. RIGHT? Seems like a bad question".
 
@@ -1363,10 +1338,9 @@ released with its work on master, and its run died.
 
 **A pacing line in a brief exempts the critical-path plans, or names its end (coordinator's reading).** A token-crunch
 line such as "ONE step at a time / no helper swarms / lean turns", carried into a critical-path seat, makes it stall
-with no watcher on its own in-flight work. Maintainer [6tgd2z 2026-11-14T22:44:01Z]: "You were letting
-stale-base-merge-options stall.  Keep it going, it's a critical path to factory stability and throughput and stopping
-token wastage". For that plan the pacing is lifted: it runs independent rows in parallel, watches every in-flight item,
-and wakes at least every 20 minutes while work is in flight.
+with no watcher on its own in-flight work. Maintainer [6tgd2z 2026-11-14T22:44:01Z]: "… Keep it going, it's a critical
+path to factory stability and throughput and stopping token wastage". For that plan the pacing is lifted: it runs
+independent rows in parallel, watches every in-flight item, and wakes at least every 20 minutes while work is in flight.
 
 **A coordinator's cancels go in its handoff (coordinator's reading).** A cancelled run is invisible to whoever inherits
 the seat and to the seat whose run it was (2026-11-07: a seat had to ask who cancelled four master runs).
