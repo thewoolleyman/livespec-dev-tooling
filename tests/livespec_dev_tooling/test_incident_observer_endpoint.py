@@ -7,7 +7,10 @@ import hmac
 import io
 import json
 import time
+from collections.abc import Iterator
+from pathlib import Path
 from threading import Event, Thread
+from threading import enumerate as live_threads
 
 import pytest
 
@@ -19,6 +22,23 @@ from livespec_dev_tooling.incident_repository_fence import current_repository_fe
 from tests.hang_guard import HANG_GUARD_SECONDS
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-47ij37
+
+
+@pytest.fixture(autouse=True)
+def _recovery_threads_finish_before_tmp_path_goes(tmp_path: Path) -> Iterator[None]:
+    """Join the `incident-recovery-*` threads the endpoint starts before pytest removes tmp_path.
+
+    The endpoint settles a recovered job on a background thread that may still be writing its
+    record when the test body has returned. Under the `failed` tmp_path retention policy the
+    directory is removed at teardown, and a late write raised FileNotFoundError as a
+    PytestUnhandledThreadExceptionWarning in a later test (livespec-dev-tooling-jxhi63). This
+    fixture requests tmp_path, so it tears down first.
+    """
+    _ = tmp_path
+    yield
+    for thread in live_threads():
+        if thread.name.startswith("incident-recovery-"):
+            thread.join(timeout=HANG_GUARD_SECONDS)
 
 
 def _request(*, directory, **changes):
