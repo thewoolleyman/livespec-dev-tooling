@@ -125,7 +125,7 @@ cache_kill_switch="${CI_CACHE_KILL_SWITCH:-}"
 # it is PUBLIC: the anonymous https form is what lets the pod resolve core
 # without being handed a credential, and a flag would be a way to repoint a gate
 # at another tree. WHICH REF is per consumer and is derived below.
-LIVESPEC_CORE_URL="https://github.com/thewoolleyman/livespec.git"
+LIVESPEC_CORE_URL="https://github.com/livespec-ai/livespec.git"
 # What a consumer that pins no livespec release gets — the same fallback its own
 # CI step takes when `.livespec.jsonc` carries no `pinned` field.
 LIVESPEC_CORE_REF_FALLBACK="master"
