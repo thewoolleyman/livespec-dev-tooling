@@ -13,7 +13,7 @@ created_at: 2026-11-15T23:24:54Z
 
 ### Summary
 
-Add a shared external-cause helper that records {dependency, kind, evidence} from the transport or HTTP layer. Add a master-health check run that ci-green publishes on master pushes, stating external only when every failed gating job published a record, otherwise defect. master_ci_green reads it in its existing forge call: it blocks on defect, absent or unreadable; warns and admits on external; and blocks again with a needs-attention signal after 24 hours. ci-green's own red verdict is unchanged, and no lever changes the decision. Add four scenarios.
+Add a shared external-cause helper that records {dependency, kind, evidence} from the transport or HTTP layer. Each failed gating job publishes its records, its defect-finding count and an external_only verdict that is true only when every failed step ended on a recorded external failure and it found no defect. Add a master-health check run that ci-green publishes from master's own push run, conclusion neutral on a red master, verdict in a fixed machine-read field, reading external only when every failed gating job published external_only true, otherwise defect. master_ci_green reads it only from master's own push runs of the head commit, with at most one additional forge read: it exits 1 on defect, absent or unreadable; warns and admits on external; and exits 1 again, raising one idempotent needs-attention issue per episode, after a 24-hour clock that starts at the earliest run of the unbroken external-only sequence and does not restart on a new head. ci-green's own red verdict is unchanged, and no lever changes the decision. Add seven scenarios.
 
 ### Motivation
 
@@ -27,19 +27,21 @@ Add to `contracts.md` a new section, after `## Master-health reconciler`:
 
 This section realizes livespec core `non-functional-requirements.md` §"The master-green gate tolerates an external red, on evidence and for at most one day" for the shared check `master_ci_green` and the shared `ci.yml` aggregate.
 
-**External-cause records.** The library MUST provide one shared helper that every gating job and check calls when a call to a dependency fails at the transport or HTTP layer. The helper MUST classify the failure from that layer's own result and MUST emit an external-cause record `{dependency, kind, evidence}` only for an external kind: a forge rate-limit or quota response, a forge 5xx, a connect failure, DNS failure or timeout to a host the fleet does not run, or a documented outage response of a third-party dependency. A 401 or 403 on a credential the fleet configures, a test, lint or type failure, and a configuration error MUST NOT yield a record. A gating job that fails MUST publish, with its result, the external-cause records produced during its run, and none when the helper produced none.
+**External-cause records.** The library MUST provide one shared helper that every gating job and check calls when a call to a dependency fails at the transport or HTTP layer. The helper MUST classify the failure from that layer's own result and MUST emit an external-cause record `{dependency, kind, evidence}` only for an external kind: a forge rate-limit or quota response, a forge 5xx, a connect failure, DNS failure or timeout to a host the fleet does not run, or a documented outage response of a third-party dependency. The rate-limit kind MUST be recognised from the response's rate-limit evidence — `x-ratelimit-remaining: 0`, a `retry-after` header, or a rate-limit-exceeded message in the body — whatever the status code, because the forge returns it as 403 as well as 429. A 401 or 403 that carries no rate-limit evidence on a credential the fleet configures, a test, lint or type failure, and a configuration error MUST NOT yield a record.
 
-**The master-health check run.** On a `push` to `master`, `ci-green` MUST publish one additional check run named `master-health` on the head commit. Its conclusion MUST be `success` when every gating job succeeded. When a gating job failed, its output MUST state `external` only when every failed gating job published at least one external-cause record, and `defect` otherwise, and it MUST list each failed job with its records. `ci-green`'s own conclusion MUST NOT change: it stays `failure` whenever a gating job failed.
+**What a failed gating job publishes.** A gating job that fails MUST publish, with its result, the external-cause records produced during its run, its count of defect findings, and an `external_only` verdict that is `true` only when every failed step of the job ended on a recorded external failure and the defect-finding count is `0`. A job with any defect finding, or any failed step without a record, publishes `external_only: false`. A failed job that published no result counts as `external_only: false`.
 
-**The gate.** `master_ci_green` MUST read `master-health` from master's own push run of the head commit, in the same forge call it already makes for `ci-green`. It MUST block exactly as today when `master-health` is absent, unreadable, or states `defect` (fail closed). When `master-health` states `external`, it MUST exit `0` with a structured `warning` naming each dependency and kind, for every commit and push, until master's push run reads green. It MUST block again once master's push runs have stated `external` continuously for 24 hours, measured from the earliest consecutive external head's run completion, and it MUST then raise the repository's needs-attention signal. No environment variable, flag or configuration key MAY change this decision; the 24-hour limit is a module constant.
+**The master-health check run.** On a `push` to `master`, `ci-green` MUST publish one additional check run named `master-health` on the head commit, from master's own push run. Its conclusion MUST be `success` when every gating job succeeded and `neutral` when any gating job failed, never `failure`, so it neither duplicates `ci-green`'s verdict nor reads green on a red master. Its verdict MUST be carried in a FIXED machine-read field: `output.title` MUST be exactly one of `master-health: green`, `master-health: external` or `master-health: defect`, and `output.summary` MUST be one JSON object `{verdict, head_sha, run_id, jobs: [{name, external_only, defect_findings, records: [{dependency, kind, evidence}]}]}`; free text MAY appear only in `output.text`. The verdict MUST be `external` only when every failed gating job published `external_only: true`, and `defect` otherwise. `ci-green`'s own conclusion MUST NOT change: it stays `failure` whenever a gating job failed.
+
+**The gate.** `master_ci_green` MUST read `master-health` only from master's own push runs of the head commit, selected exactly as the `ci-green` check run is today (branch `master`, event `push`, the head commit, and a check suite belonging to one of those runs), with no more than one additional forge read beyond the reads it makes today; a `master-health` run from a scratch branch or any other run is not evidence. When `ci-green` is red and `master-health` is absent, unreadable, or reads `defect`, the check MUST exit `1` (fail closed; the warn-only tolerance for a missing `ci-green` run does NOT extend to a missing `master-health`). When `master-health` reads `external`, it MUST exit `0` with a structured `warning` naming each dependency and kind, for every commit and push, until master's push run reads green. The 24-hour limit MUST be measured from the completion of the earliest master push run in the unbroken sequence of external-only red runs that ends at the head commit, with no green run between them; a new head commit MUST NOT restart the clock, and the limit is a module constant. A check that cannot read the run history that measurement needs MUST exit `1`. Once the limit is passed the check MUST exit `1` and MUST raise the repository's needs-attention signal as the one idempotent forge issue per external-only episode, keyed on that earliest run's id, so that repeated local runs past the limit raise nothing new. No environment variable, flag or configuration key MAY change any of these decisions.
 
 Add to `scenarios.md`:
 
 ## Scenario: master_ci_green warns and admits a push while master is red only for an external cause
 
 ```gherkin
-Given master's head push run has a failed gating job whose only failure is a forge 503 recorded by the external-cause helper
-And ci-green reads failure and master-health states external with that record
+Given master's head push run has a failed gating job whose only failure is a forge 503 recorded by the external-cause helper, published with external_only true and 0 defect findings
+And ci-green reads failure and master-health reads external with that record
 When master_ci_green runs in a pre-push gate
 Then it exits 0 with one warning naming the forge dependency and the 5xx kind
 ```
@@ -48,27 +50,55 @@ Then it exits 0 with one warning naming the forge dependency and the 5xx kind
 
 ```gherkin
 Given master's head push run has a failed gating job that published no external-cause record
-And master-health states defect
+And master-health reads defect
 When master_ci_green runs in a pre-push gate
 Then it blocks, naming that job
+```
+
+## Scenario: master-health reads defect for a job with an external record and one defect finding
+
+```gherkin
+Given a gating job on master fails with a rate-limited forge read recorded by the external-cause helper and also reports one defect finding
+When ci-green publishes master-health
+Then that job's published verdict is external_only false
+And master-health reads defect
+And master_ci_green blocks, naming that job
 ```
 
 ## Scenario: master_ci_green treats a 403 on the fleet's own App as a defect
 
 ```gherkin
-Given a gating job on master fails because the fleet's own App token receives a 403
+Given a gating job on master fails because the fleet's own App token receives a 403 with no rate-limit evidence
 When the external-cause helper classifies the failure
 Then it emits no external-cause record
-And master-health states defect
+And master-health reads defect
 ```
 
-## Scenario: master_ci_green blocks and alerts after one day of external-only red
+## Scenario: a rate-limited 403 reads external
 
 ```gherkin
-Given master's push runs have stated external continuously for 24 hours
+Given a gating job on master fails because a forge read returns 403 with x-ratelimit-remaining 0 and a rate limit exceeded message
+And no other step of that job failed and it reports 0 defect findings
+When the external-cause helper classifies the failure
+Then it emits an external-cause record of the rate-limit kind
+And master-health reads external
+```
+
+## Scenario: master_ci_green blocks when ci-green is red and master-health is absent
+
+```gherkin
+Given master's head push run reads ci-green failure and published no master-health check run
 When master_ci_green runs in a pre-push gate
-Then it blocks
-And the repository's needs-attention signal is raised
+Then it exits 1
+```
+
+## Scenario: master_ci_green blocks and alerts once after one day of external-only red
+
+```gherkin
+Given master's push runs have read external in an unbroken sequence for 24 hours measured from the earliest such run's completion, with no green run between
+When master_ci_green runs in a pre-push gate twice
+Then each run exits 1
+And exactly one needs-attention forge issue exists for that episode, keyed on the earliest run's id
 ```
 
 The new `## ` headings MUST receive `tests/heading-coverage.json` rows, and any spec-first `TODO` row its debt-register entry, in the revise commit.
