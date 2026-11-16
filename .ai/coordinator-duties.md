@@ -1327,6 +1327,13 @@ since [6tgd2z 2026-11-12T10:33:39Z].
       routes any PR not from a same-repository branch by an allowlisted author to hosted runners, and every path to
       master goes through the queue. Maintainer [livespec-dev-tooling-xowhol 2026-11-13T14:45:12Z, comment 27]: "The
       answer is obviously option A because this gives us control over the capacity and speed …".
+  - **Rule WEBSITE-DIRECT-COMMIT: livespec-ai/livespec-website is the ONE exception to "merge queue on every
+    livespec-ai repo".** No ruleset, branch protection or required check may block direct web-editor commits to its
+    main, and any fleet-wide check that re-adds the queue or protection excludes it. Maintainer, verbatim [r7iuj6
+    2026-11-16T19:45:36Z; xowhol 19:45:50Z; ported to 6tgd2z 19:46:16Z]: "Livespec website is not unable to commit
+    directly from changes to main.  This is a hard requirement of that repo, it's an exception to the rule, so I can
+    publish edits directluy from the github website. FIx this ASAP". Measured 2026-11-16: ruleset 27402987, created
+    ~19:3xZ, blocked it, and throughput-plans-coordinator deleted it.
   - **Never raise vmi3006760's swap/RAM configuration.** It is the VPS provider's and intentional. Maintainer [6tgd2z
     2026-11-12T18:23:54Z]: "This is intentional, it's a VPS, I don't configure it. RIGHT? Seems like a bad question".
 
