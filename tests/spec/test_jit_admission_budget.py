@@ -255,7 +255,7 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     """Seven-day pool job-hours are the dated, auditable source of every quota."""
     expected = {
-        "livespec-orchestrator-beads-fabro-cq": 5,
+        "livespec-orchestrator-beads-fabro-cq": 4,
         "livespec-orchestrator-master-cq": 1,
         "livespec-dev-tooling-cq": 6,
         "livespec-dev-tooling-master-cq": 3,
@@ -285,6 +285,7 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "## Small-queue floor of 2: cohort 30 re-split (2026-11-14)" in derivation
     assert "## Stranded-capacity raise: gmktec 9, cohort 33 (2026-11-16)" in derivation
     assert "## hp 4 -> 3: cohort 32 (2026-11-16)" in derivation
+    assert "## gmktec 8: cohort 31 (2026-11-16)" in derivation
 
 
 def test_master_push_slice_reserves_its_quota_and_lends_none_of_it() -> None:
