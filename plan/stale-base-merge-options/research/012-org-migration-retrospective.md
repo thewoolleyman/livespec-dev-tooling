@@ -9,10 +9,11 @@ options. Plan and record everything that we've fucked up on this migration".
 
 The cutover ran at about 10:xxZ on 2026-11-15. All times are UTC. A cost is a
 measured duration from the ledger record unless it is marked as an estimate.
-"Prevention" names the work item or plan that stops a recurrence. Where no item
-exists yet, the entry says **PREVENTION OWED**. That is an open question for the
-maintainer, who decides between filing an item and ruling that none is owed.
-This note does not record a "none owed" decision on the maintainer's behalf.
+"Prevention" names the work item or plan that stops a recurrence. Every entry
+that first read **PREVENTION OWED** now names an item. throughput-plans-coordinator
+ruled on 2026-11-16 (03:1xZ) that all of them be filed through capture-work-item
+today, merging entries that share one cause, and this seat filed them as children
+of `livespec-dev-tooling-xowhol`. The note records no "none owed" decision.
 
 Sources: the scope events and tick records on `livespec-dev-tooling-r7iuj6` and
 `livespec-dev-tooling-6tgd2z`; the incident items `mzbt35`, `zq2i4c` and
@@ -55,9 +56,9 @@ raise lifting the gate for that fix at once, with bounds.
 - **Window:** ~10:xxZ to 19:56Z, 2026-11-15. A canary found it at 19:43Z, and it
   was fixed at 19:56Z.
 - **Prevention:** `livespec-dev-tooling-kb2ud6` (prove factory dispatch against
-  the org). **PREVENTION OWED** for the general rule: a committed host route
-  needs a convergence read on the host before the step counts as done. No item
-  covers that yet.
+  the org). For the general rule that a committed host route needs a
+  convergence read on the host before the step counts as done:
+  `livespec-dev-tooling-2ysrwp`.
 
 ### 3. CI runners could not register at the org (incidents xyi5vu and mzbt35)
 
@@ -95,8 +96,8 @@ raise lifting the gate for that fix at once, with bounds.
   19:45:45Z. That broke check-branch-protection-alignment's floor.
 - **Cost:** every dev-tooling commit was refused for about 10 min.
 - **Window:** 19:45:45Z to ~19:56Z, 2026-11-15.
-- **Prevention:** **PREVENTION OWED.** No item yet makes a ruleset edit read the
-  checks that judge that ruleset first.
+- **Prevention:** `livespec-dev-tooling-jw3f6t` (a ruleset edit is preceded by a dry
+  read of every check that judges that ruleset).
 
 ### 6. Incident declared in comments only
 
@@ -105,8 +106,8 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** about 1 h of repair commits running the full aggregate instead of
   the expedited lane.
 - **Window:** 18:18Z to 19:3xZ, 2026-11-15.
-- **Prevention:** **PREVENTION OWED.** No item makes "declare an incident" mean
-  "file the incident record".
+- **Prevention:** `livespec-dev-tooling-zn2oud` (declaring an incident files its
+  incident record at once).
 
 ### 7. The incident lane cannot land product .py through the merge queue
 
@@ -165,11 +166,11 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** #5364 alone sat about 12 h. The template is a live hazard until it
   is fixed.
 - **Window:** 11:19Z onward, 2026-11-15. Partly open.
-- **Prevention:** the identity-fallout items (1)-(5) queued on `xowhol`. Each is
-  to be filed through capture-work-item as a row-10 carrier. **PREVENTION OWED**
-  until they are filed. The value-free org probe
-  (`/var/tmp/ldseat/org_ratelimit_probe.py`) is item 5's content and is still to
-  be committed.
+- **Prevention:** `livespec-dev-tooling-uggmdq`, which covers all five identity
+  surfaces as five Definition-of-Done bullets and may be split per repository at
+  groom time. The value-free org probe
+  (`/var/tmp/ldseat/org_ratelimit_probe.py`) is the content of its fifth bullet and
+  is still to be committed.
 
 ### 11. Automated pin bumps dead
 
@@ -185,8 +186,9 @@ raise lifting the gate for that fix at once, with bounds.
   The fix, `livespec-dev-tooling#4804`, sat ungraded.
 - **Cost:** about 4.5 h with agent pushes refused on vps.
 - **Window:** 16:20Z to 21:00Z (applied), 2026-11-15.
-- **Prevention:** the grading lapse is coordinator error C3. **PREVENTION OWED**
-  for a grade-latency guard. The fix itself is applied.
+- **Prevention:** the grading lapse is coordinator error C3. `livespec-dev-tooling-yuj3zs` (a coordinator-graded PR waiting
+  past a stated bound is surfaced on the coordinator's tick report). The fix
+  itself is applied.
 
 ### 13. No sanctioned read of the ARC App's quota
 
@@ -194,8 +196,9 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** the mzbt35 revert trigger fell back to a log proxy (kubectl logs of
   arc-gha-rs-controller and the listener).
 - **Window:** 2026-11-15 ~21:xxZ onward. It is still open.
-- **Prevention:** **PREVENTION OWED.** The org-bucket probe covers installation
-  182016479, not the ARC App.
+- **Prevention:** `livespec-dev-tooling-l27jyh` (the ARC App's rate budget is
+  readable through a sanctioned, value-free probe). The org-bucket probe covers
+  installation 182016479, not the ARC App.
 
 ### 14. Behaviour changes not announced
 
@@ -206,8 +209,11 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** a wasted merge group for #4818. The same hazard recurred on
   2026-11-16 (A3).
 - **Window:** cutover onward.
-- **Prevention:** **PREVENTION OWED.** No item announces forge-behaviour changes
-  after a migration, and none guards against re-armed held PRs.
+- **Prevention:** `livespec-dev-tooling-gjxx7z`, one item for entries 14 and A3,
+  which share a cause: a held PR whose auto-merge is re-armed by a push, an
+  update-branch or a peer on the shared login is detected and disarmed while the
+  queue owner holds it. It also records that `gh pr ready` no longer arms
+  auto-merge after the migration.
 
 ## Failures added on 2026-11-16 (the stale-base seat)
 
@@ -246,8 +252,8 @@ raise lifting the gate for that fix at once, with bounds.
   installation 182016479 during the throttle.
 - **Window:** 02:08:46Z to 02:16:59Z.
 - **Prevention:** the seat loop now re-reads the queue and disarms re-armed held
-  PRs every tick. **PREVENTION OWED** for the shared-login re-arm hazard itself
-  (see 14).
+  PRs every tick. `livespec-dev-tooling-gjxx7z` for the shared-login re-arm hazard
+  itself (see 14).
 
 ### A4. The incident chain for zq2i4c can never close
 
@@ -270,8 +276,8 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** two near-misses caught before any commit: one handoff cycle each.
 - **Window:** 2026-11-16 ~01:0xZ to ~02:4xZ.
 - **Prevention:** n35tv5's own rule ("each lever MEASURED before it is built").
-  **PREVENTION OWED** for the general rule that a fix ruling reads the current
-  code first.
+  `livespec-dev-tooling-hpef4m` (a fix ruling reads the current
+  code it rules on, and records that read, before the fix is routed).
 
 ## Coordinator failures (legacy-coordinator-agent's RETRO INPUT, 2026-11-15 23:07Z)
 
@@ -296,8 +302,9 @@ raise lifting the gate for that fix at once, with bounds.
 - **Window:** ~22:5xZ, 2026-11-15.
 - **Prevention:** the lesson on `o6mqy5`: a proof-only reboot during
   critical-path work is raised to the maintainer, non-blocking, before any
-  window is announced. **PREVENTION OWED** if a durable rule is wanted beyond
-  that record.
+  window is announced. `livespec-dev-tooling-zvgu6o` makes it a durable rule: a
+  proof-only reboot during critical-path work is raised to the maintainer before
+  any window is announced.
 
 ### C3. Migration-session coordinator errors (the 22:16Z restart handoff, session c0ee298a)
 
@@ -310,9 +317,9 @@ raise lifting the gate for that fix at once, with bounds.
   the ci.yml push run (tick-10 correction): master was reported green while it
   was red.
 - **Cost and window:** each is recorded on `6tgd2z`, 2026-11-15.
-- **Prevention:** each correction is recorded on `6tgd2z`. **PREVENTION OWED**
-  for a mechanical guard against reading master's verdict from the wrong
-  workflow.
+- **Prevention:** each correction is recorded on `6tgd2z`. `livespec-dev-tooling-ymspuf` (master's verdict is read only from
+  the ci.yml push run on master's head) covers the master-verdict error, the one
+  C3 error that has a mechanical guard.
 
 ### C4. A guard-refused act ordered through a second session (withdrawn, 23:19:32Z)
 
@@ -327,7 +334,9 @@ raise lifting the gate for that fix at once, with bounds.
 
 ## Open for the maintainer
 
-The **PREVENTION OWED** entries are 2 (general rule), 5, 6, 10 (until the items
-are filed), 12, 13, 14, A3, A5, C2 and C3. For each one the maintainer decides
-between filing an item and ruling that none is owed. That decision, in the
-maintainer's own words, completes this item's second Definition-of-Done bullet.
+Every entry that first read **PREVENTION OWED** now names an item. The ten items
+are children of `livespec-dev-tooling-xowhol`, all `pending-approval`:
+`2ysrwp` (2), `jw3f6t` (5), `zn2oud` (6), `uggmdq` (10), `yuj3zs` (12),
+`l27jyh` (13), `gjxx7z` (14 and A3), `hpef4m` (A5), `zvgu6o` (C2) and `ymspuf`
+(C3). Entries 7, 8, 9, 11, A1, A2, A4 and C1 already named a preventing item or
+a recorded rule. C4 names the correction recorded on `o6mqy5`.
