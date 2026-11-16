@@ -4,8 +4,13 @@ An original incident run is collected against the jobs its workflow declares, so
 graph must come from the workflow at the merge, never from an operator's file or from
 the jobs that happened to exist. The reader understands the block-style subset a
 GitHub Actions workflow uses for job identity: `jobs`, each job's `name`, `needs` and
-`strategy.matrix` dimensions. The package carries no YAML dependency, so anything the
-reader cannot resolve with certainty (a reusable-workflow job, `include` / `exclude`,
+`strategy.matrix` dimensions. A job that calls a reusable workflow of the SAME repository
+pinned to a full 40-hex commit SHA is expanded from the called workflow's bytes at that SHA,
+read through the caller's `read_called` port: each called job becomes one expected job named
+`<caller job name> / <called job name>`, as the forge names it, needing the caller's needs.
+The package carries no YAML dependency, so anything the
+reader cannot resolve with certainty (any other reusable-workflow call, a called workflow
+that itself calls one, a called workflow that cannot be read, `include` / `exclude`,
 a dynamic matrix, an expression in a name, an inline `{...}` mapping for a job or its
 strategy, a matrix job whose name carries no matrix reference, a version YAML reads as a
 float) refuses by name instead of omitting or misnaming a job.
@@ -16,6 +21,7 @@ from __future__ import annotations
 import itertools
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +39,10 @@ _KEY = re.compile(r"""^(?P<key>"[^"]+"|'[^']+'|[\w.-]+):(?:\s+(?P<value>\S.*))?$
 _MATRIX_REF = re.compile(r"\$\{\{\s*matrix\.([\w-]+)\s*\}\}")
 _UNSUPPORTED_DIMENSIONS = frozenset({"include", "exclude"})
 _FLOAT = re.compile(r"[-+]?(?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?")
+_PINNED_CALL = re.compile(
+    r"(?P<repository>[\w.-]+/[\w.-]+)/(?P<path>\.github/workflows/[\w.-]+\.ya?ml)@(?P<sha>[0-9a-f]{40})"
+)
+_CalledReader = Callable[[str, str], bytes]
 
 
 class _UnresolvableError(Exception):
@@ -61,6 +71,7 @@ class _Job:
     name: str | None
     needs: tuple[str, ...]
     dimensions: tuple[tuple[str, tuple[str, ...]], ...]
+    calls: str | None = None
 
 
 def _strip_comment(*, text: str) -> str:
@@ -167,8 +178,11 @@ def _job(*, entry: _Entry) -> _Job:
     if entry.value:
         raise _UnresolvableError(subject=entry.key, reason="job is an inline mapping")
     fields = {item.key: item for item in _entries(lines=entry.children)}
-    if "uses" in fields:
-        raise _UnresolvableError(subject=entry.key, reason="job calls a reusable workflow")
+    uses = fields.get("uses")
+    if uses and "strategy" in fields:
+        raise _UnresolvableError(
+            subject=entry.key, reason="job calls a reusable workflow from a matrix"
+        )
     name = fields.get("name")
     needs = fields.get("needs")
     return _Job(
@@ -176,6 +190,7 @@ def _job(*, entry: _Entry) -> _Job:
         name=_scalar(value=name.value) if name else None,
         needs=_listing(entry=needs) if needs else (),
         dimensions=_dimensions(strategy=fields.get("strategy")),
+        calls=_scalar(value=uses.value) if uses else None,
     )
 
 
@@ -200,35 +215,112 @@ def _legs(*, job: _Job) -> tuple[dict[str, str], ...]:
     return tuple(dict(zip(keys, combination, strict=True)) for combination in product)
 
 
-@safe
-def _graph(*, source: bytes) -> tuple[ExpectedJob, ...]:
+def _jobs(*, source: bytes) -> list[_Job]:
     block = _lines(source=source.decode("utf-8"))
     top = [index for index, line in enumerate(block) if line == _Line(indent=0, text="jobs:")]
     if not top:
         if any(line.indent == 0 and line.text == "jobs: {}" for line in block):
-            return ()
+            return []
         raise _UnresolvableError(subject="workflow", reason="has no block-style jobs section")
     section = tuple(itertools.takewhile(lambda line: line.indent > 0, block[top[0] + 1 :]))
-    jobs = [_job(entry=entry) for entry in _entries(lines=section)]
-    names = {
+    return [_job(entry=entry) for entry in _entries(lines=section)]
+
+
+def _named(*, jobs: list[_Job]) -> dict[str, list[str]]:
+    return {
         job.job_id: [_leg_name(job=job, leg=leg) for leg in _legs(job=job) or ({},)] for job in jobs
     }
+
+
+def _called_bytes(*, job: _Job, repository: str | None, read_called: _CalledReader | None) -> bytes:
+    pinned = _PINNED_CALL.fullmatch(job.calls or "")
+    if pinned is None or pinned["repository"].lower() != (repository or "").lower():
+        raise _UnresolvableError(
+            subject=job.job_id,
+            reason=(
+                "job calls a reusable workflow that is not this repository's own, "
+                "pinned to a full commit SHA"
+            ),
+        )
+    if read_called is None:
+        raise _UnresolvableError(
+            subject=job.job_id, reason="job calls a reusable workflow and no reader was given"
+        )
+    read = safe(read_called)(pinned["path"], pinned["sha"])
+    if not is_successful(read):
+        raise _UnresolvableError(
+            subject=f"{pinned['path']}@{pinned['sha']}", reason="called workflow cannot be read"
+        )
+    return read.unwrap()
+
+
+def _called_legs(
+    *, job: _Job, repository: str | None, read_called: _CalledReader | None
+) -> list[tuple[str, tuple[str, ...]]]:
+    """Each called job as (`<caller> / <called>`, its needs inside the called workflow)."""
+    called = _jobs(source=_called_bytes(job=job, repository=repository, read_called=read_called))
+    if nested := [inner.job_id for inner in called if inner.calls is not None]:
+        raise _UnresolvableError(
+            subject=", ".join(nested),
+            reason=(
+                "in the called workflow calls a reusable workflow; nested calls are not resolved"
+            ),
+        )
+    caller = job.name or job.job_id
+    inner_names = _named(jobs=called)
+    _require_closed(jobs=called, names=inner_names)
+    return [
+        (
+            f"{caller} / {name}",
+            tuple(f"{caller} / {n}" for need in inner.needs for n in inner_names[need]),
+        )
+        for inner in called
+        for name in inner_names[inner.job_id]
+    ]
+
+
+def _require_closed(*, jobs: list[_Job], names: dict[str, list[str]]) -> None:
     flat = [name for legs in names.values() for name in legs]
     if len(set(flat)) != len(flat):
         raise _UnresolvableError(subject="jobs", reason="resolve to the same name")
     unknown = sorted({need for job in jobs for need in job.needs} - names.keys())
     if unknown:
         raise _UnresolvableError(subject="needs", reason="name no job: " + ", ".join(unknown))
-    return tuple(
-        ExpectedJob(name=name, needs=tuple(n for need in job.needs for n in names[need]))
+
+
+@safe
+def _graph(
+    *, source: bytes, repository: str | None, read_called: _CalledReader | None
+) -> tuple[ExpectedJob, ...]:
+    jobs = _jobs(source=source)
+    calls = {
+        job.job_id: _called_legs(job=job, repository=repository, read_called=read_called)
         for job in jobs
-        for name in names[job.job_id]
+        if job.calls
+    }
+    names = _named(jobs=jobs)
+    names.update({job_id: [name for name, _inner in legs] for job_id, legs in calls.items()})
+    _require_closed(jobs=jobs, names=names)
+    return tuple(
+        ExpectedJob(name=name, needs=tuple(n for need in job.needs for n in names[need]) + inner)
+        for job in jobs
+        for name, inner in (calls.get(job.job_id) or [(n, ()) for n in names[job.job_id]])
     )
 
 
-def derive_graph(*, source: bytes) -> tuple[ExpectedJob, ...] | EvidenceRefusal:
-    """Every job the workflow declares, matrix legs expanded, or a refusal naming why not."""
-    result = _graph(source=source)
+def derive_graph(
+    *,
+    source: bytes,
+    repository: str | None = None,
+    read_called: _CalledReader | None = None,
+) -> tuple[ExpectedJob, ...] | EvidenceRefusal:
+    """Every job the workflow declares, matrix legs and same-repository calls expanded.
+
+    `repository` names the workflow's own `<owner>/<name>`, and `read_called(path, sha)`
+    returns a called workflow's bytes at that commit. Without both, every reusable-workflow
+    job refuses by name. Anything unresolvable is a refusal naming why, never an omission.
+    """
+    result = _graph(source=source, repository=repository, read_called=read_called)
     if is_successful(result):
         return result.unwrap()
     return EvidenceRefusal(

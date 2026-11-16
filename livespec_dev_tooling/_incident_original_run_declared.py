@@ -35,6 +35,12 @@ def _workflow_source(
     return git(["cat-file", "blob", f"{merge}:{workflow_path}"], b"")
 
 
+def _called_reader(*, git: _Git) -> Callable[[str, str], bytes]:
+    """A called workflow's bytes at a pinned commit of the same reference clone."""
+
+    return lambda path, sha: git(["cat-file", "blob", f"{sha}:{path}"], b"")
+
+
 def declared_graph(
     *,
     registration: ObserverRegistration,
@@ -57,7 +63,11 @@ def declared_graph(
             detail="merge, revert or workflow does not resolve",
         )
     source = unsafe_perform_io(fetched.unwrap())
-    graph = derive_graph(source=source)
+    graph = derive_graph(
+        source=source,
+        repository=registration.repository,
+        read_called=_called_reader(git=git),
+    )
     if isinstance(graph, EvidenceRefusal):
         return graph
     refusal = graph_refusal(registration=registration, declared=graph, supplied=supplied)
