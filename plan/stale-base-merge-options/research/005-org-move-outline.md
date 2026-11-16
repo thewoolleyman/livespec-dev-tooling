@@ -297,6 +297,15 @@ when the cutover children are filed (the 14:47:39Z scope event's deferral).
 - On every fleet host, Claude Code and Codex resolve the fleet marketplaces at the organization's names.
 - Merge-queue CI runs on the runners the maintainer chose, and the self-hosted routing check passes in all 10
   repositories.
+- Every repository in the livespec-ai organization requires GitHub's merge queue on its default branch, and a pull
+  request armed for auto-merge lands there only through the queue. Added 2026-11-16 on the maintainer's ruling, verbatim
+  on xowhol: "No I think we should turn on the merge queue for every repo in the org. Why wouldn't we?…"
+- In every livespec-ai repository with a merge queue, a merge group whose tree is byte-identical to its pull request
+  head's tree, and whose head's required checks are all green for that head commit, reports its required checks green
+  without re-running the suite. A group whose tree differs runs the full suite. Added 2026-11-16 on the maintainer's
+  rulings, verbatim on xowhol: "Yes we obviously do that or else we're going to add 20 to 40 minutes to every one-off PR
+  on every one of those repos, right?" and "Yes this needs to be a definition of done and a requirement on the
+  [stale-base-merge-options] plan".
 
 ## 5. Maintainer calls (needed before Phase 1; all four ruled 2026-11-13)
 
