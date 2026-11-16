@@ -66,6 +66,7 @@ name: Release Please
 on:
   push:
     branches: [master]
+  # Cron re-registered after the org transfer (livespec-dev-tooling-roh5s6).
   schedule:
     - cron: "41 */4 * * *"
   workflow_dispatch:
