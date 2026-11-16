@@ -52,6 +52,8 @@ This repository revises in `delegated` mode, with `auto-spawn` review and
   the commit gate.
 
 A spec-change-tier dispatch hold does not always need a revise. When the
+item is not a contract, safety or user-promise change, the coordinator releases it
+as internal (`.ai/coordinator-duties.md`). When the
 dispatch judgement's own rationale says the ratified text already states the
 behaviour, and the item's Definition of Done only adds extras, rewrite the
 Definition of Done to the ratified text. The behaviour digest changes, so the

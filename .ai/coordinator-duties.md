@@ -216,10 +216,21 @@ tells the owning seat; a seat is asked only when the remedy needs its scope or p
 - Read an item's spec-change hold and its tier before pressing `approve:`; the valve reads neither (until bd-ib-bomy33
   ships). After a revise ratifies, name the ratified headings in References first. [6tgd2z 2026-11-15T04:19:28Z.]
 - A DoD edit (a References repair included) changes the behaviour digest and voids a prior tier release; re-read the
-  tier after it. A re-judged hold naming behaviour the ratified spec already states is released with
-  `release-spec-tier:<id>:<## heading>`, citing the clauses. [6tgd2z 2026-11-10T00:34:19Z, 2026-11-15T03:54:05Z.]
-- For work that is a contract, a tier release cites a clause on a fetched origin/master by file and line, never a peer's
-  "the spec states it". [6tgd2z handoff 2026-11-15 18:14Z.]
+  tier after it. [6tgd2z 2026-11-10T00:34:19Z, 2026-11-15T03:54:05Z.]
+- Release any held item that is not a contract, safety or user-promise change as internal: press
+  `release-spec-tier:<id>:<## heading>` itself, citing the nearest ratified heading and recording the basis on the item.
+  A hold on a genuine contract change still waits for its propose-change. For work that is a contract, the tier release
+  cites a clause on a fetched origin/master by file and line, never a peer's "the spec states it". [Maintainer ruling
+  2026-11-16, epic livespec-u2gsfz; widens 6tgd2z 2026-11-10T00:34:19Z and supersedes the clause-only reading;
+  6tgd2z handoff 2026-11-15 18:14Z.]
+- Route to propose-change and revise ONLY an item that changes or adds a contract between components or repositories, a
+  safety or security guarantee, or a promise to users or operators; anything else is internal (code and tests, a skill,
+  a tool, or `.ai` guidance) and ships without a spec change. A behaviour the spec does not state is not by itself a
+  reason to ratify. Criteria:
+  https://github.com/livespec-ai/livespec/blob/master/.ai/spec-scope-criteria.md (the `.ai/spec-scope-criteria.md` file
+  of the `livespec` repository). [Maintainer ruling 2026-11-16; supersedes 6tgd2z 2026-11-15T04:19:28Z.]
+- A `tier: spec-change` ledger line is a tier RECORD, not a hold. `release-spec-tier` refuses an item that is not held
+  and refuses a done item, so read the item's status and hold first.
 
 **Rule SPEC-IS-NOT-THE-DEFAULT: not every change is a spec change.** The spec holds only contracts between components
 or repos, safety or security guarantees, and promises to users or operators. Everything else is code plus tests, skills
