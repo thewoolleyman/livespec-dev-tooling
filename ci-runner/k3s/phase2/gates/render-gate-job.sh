@@ -489,11 +489,42 @@ done
 # --- requirement 1: the image comes from the gated repo's own workflow --------
 workflow="${repo_root}/.github/workflows/ci.yml"
 [ -f "${workflow}" ] || { echo "FATAL: ${workflow} not found — cannot resolve the gated repository's image" >&2; exit 1; }
-# Every `image:` that is the first field of a `container:` block. Anchored to the
-# container block so a `services:` image or a commented tag cannot be picked up.
-mapfile -t images < <(grep -A1 -E '^[[:space:]]*container:[[:space:]]*$' "${workflow}" \
-  | grep -oE 'image:[[:space:]]*[^[:space:]]+' \
-  | sed -E 's/^image:[[:space:]]*//' | sort -u)
+# Read images through the check's reader, so this gate and
+# `check-ci-single-container-image` accept exactly the same `container:` forms.
+# The renderer runs either from this source tree or from the wheel beside the
+# package; in both layouts, locate the package before importing the shared reader.
+source_root="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+if [ -f "${source_root}/livespec_dev_tooling/ci_container_images.py" ]; then
+  reader_path="${source_root}/livespec_dev_tooling/ci_container_images.py"
+elif [ -f "${SCRIPT_DIR}/../ci_container_images.py" ]; then
+  reader_path="${SCRIPT_DIR}/../ci_container_images.py"
+else
+  echo "FATAL: shared CI container-image reader not found beside ${SCRIPT_DIR}" >&2
+  exit 1
+fi
+if ! images_text="$(python3 - "${workflow}" "${reader_path}" <<'PY'
+import importlib.util
+from pathlib import Path
+import sys
+
+reader_spec = importlib.util.spec_from_file_location("ci_container_images", sys.argv[2])
+if reader_spec is None or reader_spec.loader is None:
+    raise RuntimeError(f"cannot load shared reader at {sys.argv[2]}")
+reader = importlib.util.module_from_spec(reader_spec)
+reader_spec.loader.exec_module(reader)
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+for image in sorted({image for _, image in reader.container_images(source=source)}):
+    print(image)
+PY
+)"; then
+  echo "FATAL: could not resolve CI container images with the shared reader" >&2
+  exit 1
+fi
+images=()
+if [ -n "${images_text}" ]; then
+  mapfile -t images <<< "${images_text}"
+fi
 if [ "${#images[@]}" -eq 0 ]; then
   echo "FATAL: no container image found in ${workflow}" >&2
   exit 1
