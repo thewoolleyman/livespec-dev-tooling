@@ -13,7 +13,7 @@ created_at: 2026-11-16T02:37:07Z
 
 ### Summary
 
-livespec-dev-tooling's pull_request and merge_group runs of check-fleet-conformance --member-ci evaluate every row of the running member, and every manifest member's rows only when the change touches the fleet checker's own code or its dependency set. master push runs, the scheduled sweep and the release fan-out preflight keep the full every-member sweep.
+livespec-dev-tooling's pull_request and merge_group runs of check-fleet-conformance --member-ci evaluate every row of the running member, and every manifest member's rows only when the change touches the fleet checker's import closure, its dependency set or its invoking workflow (or when that closure cannot be resolved). master push runs, the scheduled sweep and the release fan-out preflight keep the full every-member sweep.
 
 ### Motivation
 
@@ -23,24 +23,28 @@ Incident livespec-dev-tooling-zq2i4c: concurrent PR and merge-group sweeps on th
 
 Add the following paragraph to contracts.md §"Fleet surface — central conformance and reconcile", directly after the **Assert mode** bullet:
 
-> **Per-PR scope.** A `check-fleet-conformance --member-ci` run in livespec-dev-tooling's own CI whose triggering event is `pull_request` or `merge_group` MUST evaluate every obligation row of the running member. It MUST evaluate every manifest member's rows only when the change under test touches a path that can alter a verdict about another member: any file under `livespec_dev_tooling/fleet/`, `uv.lock`, or `pyproject.toml`. Otherwise it MUST skip the other members' rows, and it MUST log one line naming the event, the skipped members and the reason. A `push` run on `master`, the scheduled `fleet-conformance.yml` sweep and the release fan-out preflight MUST evaluate every member, whatever changed. The per-PR scope MUST NOT change any row's severity, MUST NOT drop any row of the running member, and MUST NOT be settable by a lever, environment variable or label.
+> **Per-PR scope.** A `check-fleet-conformance --member-ci` run in livespec-dev-tooling's own CI whose triggering event is `pull_request` or `merge_group` MUST evaluate every obligation row of the running member. It MUST evaluate every manifest member's rows when the change under test touches a path that can alter a verdict about another member: any file in the fleet checker's import closure under `livespec_dev_tooling/`, resolved from `livespec_dev_tooling/fleet/` at the run's head, plus `uv.lock`, `pyproject.toml` and the workflow file that invokes the check. If that closure cannot be resolved, the run MUST evaluate every member. Otherwise it MUST skip the other members' rows, and it MUST log one line naming the event, the head sha, the skipped members and the reason. A `push` run on `master`, the scheduled `fleet-conformance.yml` sweep and the release fan-out preflight MUST evaluate every member, whatever changed. The per-PR scope MUST NOT change any row's severity, MUST NOT drop any row of the running member, and MUST NOT be settable by a lever, environment variable or label.
 
 Amend contracts.md:949: the sentence that ends "that finding is surfaced by the scheduled central sweep and livespec-dev-tooling's per-PR CI rather than by this dispatch" becomes "that finding is surfaced by the scheduled central sweep and by livespec-dev-tooling's `master` push CI rather than by this dispatch".
 
 Add to scenarios.md:
 
 ```gherkin
-## Scenario: a livespec-dev-tooling pull request that touches no fleet code is swept for its own member only
+## Scenario: a pull request that touches no fleet code is swept for its own member only
 Given livespec-dev-tooling's CI runs check-fleet-conformance --member-ci on a pull_request event
-And the pull request changes no file under livespec_dev_tooling/fleet/, uv.lock or pyproject.toml
+And the pull request changes no file in the fleet checker's import closure under livespec_dev_tooling/, and none of uv.lock, pyproject.toml or the workflow file that invokes the check
 When the sweep runs
 Then it evaluates every obligation row of livespec-dev-tooling
 And it reads no other member's files or state
-And it logs one line naming the event and the skipped members
+And it logs one line naming the event, the head sha and the skipped members
+```
 
-Given the same CI runs on a pull_request event whose change touches livespec_dev_tooling/fleet/contract.py
+```gherkin
+## Scenario: a pull request that touches the fleet checker's import closure is swept for every member
+Given livespec-dev-tooling's CI runs check-fleet-conformance --member-ci on a pull_request event
+And the pull request changes a file outside livespec_dev_tooling/fleet/ that the fleet checker imports, such as a cross_repo pin-format module
 When the sweep runs
 Then it evaluates every manifest member's rows
 ```
 
-Co-edit `tests/heading-coverage.json` with the new scenario heading at revise time.
+Co-edit `tests/heading-coverage.json` at revise time with both new scenario headings: "Scenario: a pull request that touches no fleet code is swept for its own member only" and "Scenario: a pull request that touches the fleet checker's import closure is swept for every member".
