@@ -287,6 +287,13 @@ when the cutover children are filed (the 14:47:39Z scope event's deferral).
   - bare `thewoolleyman/<fleet-repo>` slugs: `uses:` refs, marketplace `repo:` entries and `--repo` arguments. The slugs
     are graded at the coordinator's direction, because they lean on the redirect just as URLs do.
 
+  Ruled 2026-11-16 (throughput-plans-coordinator, recorded as the xowhol scope event of 18:44:03Z): the grep also
+  excludes, narrowly and each as a "historical record or byte-identical adopter fixture", in livespec-dev-tooling
+  `config/incident-fleet-evidence.json`, `tests/livespec_dev_tooling/fixtures/incident_fleet/claims-wellformed.json`,
+  `tests/livespec_dev_tooling/test_incident_fleet_committed_claims.py` and `tests/fixtures/incident_ci_inventory_sources/`;
+  and, as legal attribution, the vendored `.claude-plugin/scripts/_vendor/livespec_runtime/LICENSE` copyright line.
+  Nothing else is excluded.
+
   It reads each repository's `origin/master` tree and fetches only with `--fetch`. It grades configuration, so it
   excludes `SPECIFICATION/history/`, the root `archive/`, everything under `plan/`, and `CHANGELOG.md` files. Live plan
   notes are counted separately as narrative links. Baseline, 2026-11-13 ~02:4xZ: 1,374 graded references in 541 files.
