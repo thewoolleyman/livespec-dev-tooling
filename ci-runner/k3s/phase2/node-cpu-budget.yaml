@@ -21,7 +21,7 @@
 nodes:
   gmktec-xubuntu:
     allocatable_cpu: 32
-    gate_cpu: 10            # gates-flavor (15 -> 10, 2026-11-14)
+    gate_cpu: 15            # gates-flavor (15 -> 10, 2026-11-14; 10 -> 15 measured idle, 2026-11-16)
   poweredge-xubuntu:
     allocatable_cpu: 72
     gate_cpu: 30            # gates-poweredge-flavor (30 -> 20, 2026-11-14; 20 -> 30 honest requests, 2026-11-15)

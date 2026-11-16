@@ -1789,6 +1789,46 @@ that way at about 21:00Z on 2026-11-14, and the live `gates-cq` read back
 
 **Result.** Due within 24 h of this commit, recorded here.
 
+### The gmktec gate lane back to three gates (2026-11-16)
+
+This section sits ahead of the PowerEdge 2026-11-14 section, out of date order,
+for the same reason the 2026-11-14 gmktec section does.
+
+**What was wrong.** `gates-cq` held 10 admitted and 11 pending workloads at
+18:51Z with gmktec's lane at 10/10 cpu, while the node read idle. The lane
+counts requests, and the 2026-11-14 cut to two units answered gates that
+requested 5 cpu and drew 10-20. The orchestrator's gate now requests 10 cpu at
+10 workers, matching its draw (plan gate-job-resources, research note 004), and
+six repositories declare gate requests near their measured draw.
+
+**Measured, per `.ai/ci-node-capacity-reads.md`** (2026-11-16, gmktec-xubuntu,
+32 cores): `mpstat 5 6` read 72.0% idle; `sar -u` over the last 10 h (60
+ten-minute buckets) read idle min 23.7, p10 53.8, p50 99.6; the BestEffort CI
+slice's `cpu.pressure` read some avg60 0.04, full avg60 0.01. The scheduler
+reads requests: the node showed 17.1 of 32 cpu requested (53%).
+
+**What changed.** `gates-flavor` goes from 10 cpu / 16 Gi to 15 cpu / 24 Gi,
+three gate units of 5 cpu / 8 Gi, so the lane admits one orchestrator gate
+(10 cpu) beside one default gate. `node-cpu-budget.yaml` gate_cpu moves with it.
+No test changes: the unit test derives a whole number of units and a floor of
+two default gates. gamingpc is NOT raised: its allocatable is 12 cpu with 10
+requested (83%), so more quota there could never schedule. The churn-slot raise
+on the same node (ci-runtime-and-cost) shares this node's cpu; its draft lands
+first and this change re-measures against it.
+
+**CI-side read at +2 h.** Owner: gate-job-resources. gmktec `mpstat` idle and
+BestEffort `cpu.pressure` full avg60; `gates-cq` pending and gate admission wait;
+gate pod p50 per node. `fleet-utilization.sh --overcommit-only` before and after.
+
+**Revert trigger.** Restore 10 cpu / 16 Gi and gate_cpu 10 if EITHER: (a)
+gmktec reads idle under 5% with BestEffort full avg60 over 30 in two
+consecutive 10-minute windows after the apply; (b) a livespec-dev-tooling gate
+pod p50 on any node rises over 1.25x its pre-change value. Apply with `just
+ansible-apply ansible/ci-pool.yml --tags ci_converge_unit --limit
+poweredge-xubuntu` (the converge unit runs only on the k3s server).
+
+**Result.** Due within 24 h of the apply, recorded here.
+
 ### The PowerEdge gate lane back to four gates (2026-11-14)
 
 This section sits ahead of the two 2026-11-11 PowerEdge sections it reverses

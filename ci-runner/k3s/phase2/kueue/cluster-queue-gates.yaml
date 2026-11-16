@@ -303,10 +303,18 @@ spec:
             # CI and factory pods. v223 lowered the spec floor to two Jobs.
             # Derivation: DERIVATION.md "The gmktec gate lane to two gates
             # (2026-11-14)".
+            #
+            # Three gate units, 15 cpu / 24 Gi, from 2026-11-16 (plan
+            # gate-job-resources, stranded-capacity lane). Gates were requests
+            # and bound by quota here while the node read 72% idle, and the
+            # orchestrator's gate now requests 10 cpu, matching its draw, so
+            # three units admit one orchestrator gate beside a default gate.
+            # Derivation: DERIVATION.md "The gmktec gate lane back to three
+            # gates (2026-11-16)". REVERT: back to 10 / 16Gi.
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 15
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 24Gi
         - name: gates-hp-flavor
           resources:
             # One concurrent gate, one gate unit of 5 cpu / 8 Gi (2026-11-12,
