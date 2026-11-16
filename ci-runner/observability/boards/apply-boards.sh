@@ -324,6 +324,7 @@ def read_live_panel(panel):
         "name": annotation.get("name"),
         "dataset": dataset,
         "query_style": query_panel.get("query_style"),
+        "visualization_settings": query_panel.get("visualization_settings"),
         "position": panel.get("position"),
         "annotation": {"description": annotation.get("description", "")},
         "query": query if ok else None,
@@ -363,6 +364,7 @@ def drift_panels(defn, board):
         want = {
             "dataset": dataset_display_name(panel["dataset"]),
             "query_style": panel.get("query_style", "graph"),
+            **({"visualization_settings": panel["visualization_settings"]} if panel.get("visualization_settings") else {}),
             "position": panel["position"],
             "annotation": {"description": panel["annotation"].get("description", "")},
             "query": panel["query"],
@@ -471,6 +473,11 @@ def main(path):
                     "query_id": query_id,
                     "query_annotation_id": annotation_id,
                     "query_style": panel.get("query_style", "graph"),
+                    **(
+                        {"visualization_settings": panel["visualization_settings"]}
+                        if panel.get("visualization_settings")
+                        else {}
+                    ),
                 },
             }
         )
