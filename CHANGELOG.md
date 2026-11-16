@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.215.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.214.0...v1.215.0) (2026-11-16)
+
+
+### Features
+
+* **ansible:** a committed play converges the caam role holder's push service, plus a value-free launch probe (overseer-iyfjbo.2) ([c270415](https://github.com/livespec-ai/livespec-dev-tooling/commit/c27041516afad08af91883d11373c4167f2ba70e))
+* **ci-runner:** org scale sets mint with the livespec-ai-arc installation secret (livespec-dev-tooling-xyi5vu) ([4aab5de](https://github.com/livespec-ai/livespec-dev-tooling/commit/4aab5de345128908cb000d5ea21e65e178261280))
+
+
+### Bug Fixes
+
+* **ansible:** the caam role holder play installs from a recorded stamp, and the probe counts names from ENVIRON (overseer-iyfjbo.2) ([b026745](https://github.com/livespec-ai/livespec-dev-tooling/commit/b026745ec60775bdb3f4953e7d866ab6afc32cba))
+* **coverage:** the suite coverage omits the test modules and measures first-party source (livespec-dev-tooling-577hl4) ([6ff87fb](https://github.com/livespec-ai/livespec-dev-tooling/commit/6ff87fbf1dc35b43fb1457ffa6a418fabb451bd8))
+* **fleet:** discovery sweep counts registered adopters as known ([f1b5ead](https://github.com/livespec-ai/livespec-dev-tooling/commit/f1b5eade2c88e671406ad32aa391441807a9aa49))
+* **fleet:** the conformance sweep reads each sibling file and API object at most once per run (livespec-dev-tooling-zq2i4c) ([61d934d](https://github.com/livespec-ai/livespec-dev-tooling/commit/61d934dcd471396ab42c13f942104de87b2b542d))
+* **incident:** the original-run graph expands a same-repository SHA-pinned reusable-workflow job (livespec-dev-tooling-jw4a4v) ([836dfcd](https://github.com/livespec-ai/livespec-dev-tooling/commit/836dfcd3aa2dcb50311e7e99b8420cb65383795e))
+* **red-green-replay:** name the missing incident block and the source read when no block is found (livespec-dev-tooling-yfrepg) ([8c7df3e](https://github.com/livespec-ai/livespec-dev-tooling/commit/8c7df3ec1bd8a229bbf940b97a2b619648a4da9c))
+
 ## [1.214.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.213.0...v1.214.0) (2026-11-15)
 
 
