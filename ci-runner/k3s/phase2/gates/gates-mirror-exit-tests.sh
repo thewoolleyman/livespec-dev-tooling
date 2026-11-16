@@ -94,7 +94,7 @@ githubConfigUrl: "https://github.com/thewoolleyman/alpha-repo"
 YAML
 # The template is not a live scale set and must not become a mirror.
 cat > "${VALUES_DIR}/values-EXAMPLE-repo.yaml" <<'YAML'
-githubConfigUrl: "https://github.com/thewoolleyman/<REPO>"
+githubConfigUrl: "https://github.com/livespec-ai/<REPO>"
 YAML
 
 # An EMPTY extra-repos list by default, so tests A-C see only the derived set

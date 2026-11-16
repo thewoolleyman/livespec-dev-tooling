@@ -1468,8 +1468,8 @@ size that build before the converge, not after.
 6. Route the repository at its scale set, through the guarded writer:
 
    ```bash
-   ci-runner/set-ci-runner-labels.sh thewoolleyman/<repo> <scale-set-name> --dry-run
-   ci-runner/set-ci-runner-labels.sh thewoolleyman/<repo> <scale-set-name>
+   ci-runner/set-ci-runner-labels.sh livespec-ai/<repo> <scale-set-name> --dry-run
+   ci-runner/set-ci-runner-labels.sh livespec-ai/<repo> <scale-set-name>
    ```
 
    Steps 1–5 are cluster changes. Step 6 is the security boundary, and
@@ -1985,7 +1985,7 @@ they read before, and the sweep is not edited at all.
 
 **`ci.repository`, derived — and the one queue that is not a repository.**
 This pool's ClusterQueues are named `<repository>-cq`, so `ci.repository` is
-`thewoolleyman/` plus the name with that suffix removed
+`livespec-ai/` plus the name with that suffix removed
 (`livespec-dev-tooling-cq` → `livespec-ai/livespec-dev-tooling`). The one
 live exception is `phase1-proof-cq`, the Kueue proof queue, which is not a
 repository at all: it is denominated in `cpu`/`memory`, so the churn-slot

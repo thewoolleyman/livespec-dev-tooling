@@ -242,7 +242,7 @@ the work is already on origin. Rescue only what is not there.
    pushes only:
 
    ```bash
-   git push https://github.com/thewoolleyman/<repo>.git \
+   git push https://github.com/livespec-ai/<repo>.git \
      refs/heads/rescue/<RUN-ID>:refs/heads/rescue/<RUN-ID>
    ```
 
