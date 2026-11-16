@@ -84,6 +84,7 @@ Standing rules every tick applies (2026-11-15 evening; origins and the maintaine
 - **FACTORY-GREEN-WATCH.** Step 1c: last factory green per repository, every tick.
 - **COMMITTED-IS-NOT-CONVERGED.** A committed host or credential route is not live until its converge on the reader has been read back.
 - **Grep the readers before a setting change.** Before changing any repo setting, grep the checks that read it.
+- **MASTER-CI-STAYS.** Master push CI keeps running beside the merge queue; a master red on a queue-passed tree is a flake whose root fix goes first.
 
 ## Standing rules from the 2026-11-14 incident
 
@@ -165,3 +166,13 @@ The ranked lever table, the baseline, what was moved out of the track, and the m
 - A `bd` call from hetzner-xubuntu takes about 18 s (the Dolt server is on vmi3006760, 207 ms away): batch ledger reads, and prefer reading panes to reading epics.
 - The metric feed is a session-bound stopgap until livespec-dev-tooling-gaetnq converges; throughput-metric owns it.
 - The maintainer ruled on 2026-11-13 that the fleet moves to a GitHub organization and GitHub's merge queue will be usable; stale-base-merge-options carries it.
+
+## Standing rule from 2026-11-16 night
+
+### MASTER-CI-STAYS (maintainer ruling, recorded verbatim on livespec-dev-tooling-6tgd2z ~22:3xZ and on this plan's epic)
+
+> "Yes we should still keep running CI on Master . If it catches flake like this, that's the exact purpose of it"
+
+- Master push CI keeps running in every repository that has a merge queue. Nobody proposes removing or skipping master CI because the queue exists.
+- A master red on a tree the queue already passed is a flake signal, and its root fix takes top priority under the flake rule (`.ai/coordinator-duties.md` §2).
+- Case: orchestrator e3190921b. merge_group run 43951860195 was green and master push run 43961760589 was red on the same commit; root fix bd-ib-gdt3qz.
