@@ -269,7 +269,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_PYTHON_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     env:
       # RUNNER_ENVIRONMENT does not propagate into container jobs. Keep the
       # parallelism policy derived from the same variable the routing reads.
@@ -364,7 +364,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -481,7 +481,7 @@ jobs:
     if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -565,7 +565,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -726,7 +726,7 @@ jobs:
     # The same single variable routes every ordinary gating target.
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -837,7 +837,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -999,7 +999,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
-      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.215.0
     permissions:
       contents: read
       pull-requests: read

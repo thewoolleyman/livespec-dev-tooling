@@ -92,7 +92,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Put livespec-forge-read on the job's path
-        uses: livespec-ai/livespec-dev-tooling/.github/actions/forge-read@v1.203.0
+        uses: livespec-ai/livespec-dev-tooling/.github/actions/forge-read@v1.215.0
       - name: Hold ci-green, re-run the CI workflow on the pull request's current head, release on completion
         shell: bash
         env:
