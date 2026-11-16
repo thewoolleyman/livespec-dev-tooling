@@ -5774,6 +5774,70 @@ Then no hook installed by the role refuses the command
 
 And the managed `CLAUDE.md` that session loaded tells it to prefer `SendMessage` and that typing into a pane stays available when that is necessary
 
+## Scenario: a memory file on an agent-seat host becomes one migration item in its owning repository
+
+Given the `fleet_memory_sweep` role is applied to the control node
+
+And a host the agent-memory sweep reads holds a file under `~/.claude/projects/<project>/memory/` whose project is exactly one checkout of a fleet repository
+
+When the agent-memory sweep runs
+
+Then that repository's ledger holds one open work item whose `external_ref` is `memory-sweep:<host>:<full path>` and which names the host, the full path, the file name, its size and its content sha256
+
+And the filed item does not contain the file's text
+
+## Scenario: a repeated agent-memory sweep files no second item while the first is open
+
+Given the agent-memory sweep has filed an open migration item whose `external_ref` is `memory-sweep:<host>:<full path>`
+
+And the file is still present at that path
+
+When the agent-memory sweep runs again
+
+Then the owning repository's ledger still holds exactly one open item with that `external_ref`
+
+## Scenario: the agent-memory sweep changes nothing on the hosts it reads
+
+Given a host the agent-memory sweep reads holds files in its Claude Code and Codex memory stores
+
+When the agent-memory sweep runs
+
+Then every file in both stores is present with its content unchanged
+
+And no file was added to either store
+
+## Scenario: an unresolvable memory file is recorded and files no item
+
+Given a host the agent-memory sweep reads holds a Codex store file and a Claude Code memory file whose project is not a checkout of a fleet repository
+
+When the agent-memory sweep runs
+
+Then the run summary lists both files as unresolved with the host and full path
+
+And no ledger holds an item for either file
+
+## Scenario: an unreachable agent-seat host is recorded with its reason
+
+Given a host the agent-memory sweep reads refuses or times out its SSH connection
+
+When the agent-memory sweep runs
+
+Then the run summary names that host and the reason the SSH attempt reported
+
+And every other host is still read
+
+## Scenario: a ledger the agent-memory sweep cannot write is recorded and alerts
+
+Given a resolved memory file whose owning repository's ledger rejects the write
+
+When the agent-memory sweep runs
+
+Then the run summary names that repository and the reason
+
+And items for other repositories are still filed
+
+And the run exits non-zero, so `host-unit-alert@` raises an alert naming the sweep's unit and the host
+
 ## Scenario: a managed hook refuses a local agent-memory write on an interactive host
 
 Given `ansible/claude-memory-guard.yml` has been applied to a member of `interactive_claude_hosts`

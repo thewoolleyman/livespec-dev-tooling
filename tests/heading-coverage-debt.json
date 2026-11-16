@@ -72,6 +72,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Fleet agent-memory sweep",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Host provisioning tree",
     "work_item": "livespec-dev-tooling-k5q54n",
     "first_seen": "2026-10-19"
@@ -604,6 +611,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a ledger the agent-memory sweep cannot write is recorded and alerts",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a local coverage run with no reusable data still measures",
     "work_item": "livespec-dev-tooling-s2esff",
     "first_seen": "2026-11-08"
@@ -656,6 +670,13 @@
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
     "work_item": "livespec-dev-tooling-lugvnr",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a memory file on an agent-seat host becomes one migration item in its owning repository",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -845,6 +866,13 @@
     "heading": "## Scenario: a removed worker rejoins only after its old pods are gone, and the join proves its pod subnet",
     "work_item": "livespec-dev-tooling-fvxlzc",
     "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a repeated agent-memory sweep files no second item while the first is open",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1472,9 +1500,23 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unreachable agent-seat host is recorded with its reason",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unready API server or a failing datastore fires its trigger",
     "work_item": "livespec-dev-tooling-r5o5zh",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unresolvable memory file is recorded and files no item",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1713,6 +1755,13 @@
     "heading": "## Scenario: the CI priority producer is idempotent and its dry-run writes nothing",
     "work_item": "livespec-dev-tooling-5wewi2",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the agent-memory sweep changes nothing on the hosts it reads",
+    "work_item": "livespec-dev-tooling-jk54mp",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
