@@ -236,7 +236,7 @@
           "CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_5"
         ]
       },
-      "implement": { "mechanical_targets": ["check-check-coverage-incremental", "check-file-lloc", "check-format", "check-keyword-only-args", "check-lint", "check-no-lloc-soft-warnings", "check-per-file-coverage"] },
+      "implement": { "mechanical_targets": ["check-check-coverage-incremental", "check-coverage", "check-file-lloc", "check-format", "check-keyword-only-args", "check-lint", "check-no-lloc-soft-warnings", "check-per-file-coverage"] },
       // Detection-coverage anchor: the standing backlog ledger item every
       // capture-impl-gaps / capture-spec-drift run records its ATTEMPT on.
       // Provisioned 2026-11-08 (plan spec-implementation-lockstep). It MUST NOT
