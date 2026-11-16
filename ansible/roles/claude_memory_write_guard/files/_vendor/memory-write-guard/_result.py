@@ -27,7 +27,7 @@ which runs from this checkout where that path exists.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, NoReturn, TypeAlias, TypeVar
+from typing import Generic, NoReturn, TypeVar, Union
 
 __all__: list[str] = ["Failure", "IOFailure", "IOResult", "IOSuccess", "Result", "Success"]
 
@@ -69,8 +69,8 @@ class Failure(Generic[_E]):
         return default
 
 
-Result: TypeAlias = Success[_T] | Failure[_E]
+Result = Union[Success[_T], Failure[_E]]
 
-IOResult: TypeAlias = Success[_T] | Failure[_E]
+IOResult = Union[Success[_T], Failure[_E]]
 IOSuccess = Success
 IOFailure = Failure

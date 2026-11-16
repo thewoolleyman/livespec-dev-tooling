@@ -1,0 +1,19 @@
+---
+# Group variables for `interactive_claude_macs` -- the maintainer's Macs that
+# run interactive Claude Code sessions. Converged ONLY for the
+# claude_memory_write_guard role (livespec-dev-tooling-i76rv2); see the header
+# of inventory/legacy.yml.
+
+# Ordinary ssh over the tailnet; the macOS GUI Tailscale client hosts no
+# Tailscale SSH server. Every member's account is cwoolley.
+ansible_user: cwoolley
+# Apple's system python3, present on every Mac with the Command Line Tools, and
+# 3.9: the vendored hook is Python 3.9 compatible for exactly this reason.
+ansible_python_interpreter: /usr/bin/python3
+
+# --- claude_memory_write_guard, macOS locations -----------------------------
+# Claude Code's macOS managed location. The hook is installed beside the
+# policy, not under /usr/local/lib (a Mac's /usr/local is not guaranteed).
+claude_memory_write_guard_policy_dir: /Library/Application Support/ClaudeCode
+claude_memory_write_guard_lib_dir: /Library/Application Support/ClaudeCode
+claude_memory_write_guard_group: wheel

@@ -13,6 +13,7 @@ exactly as Claude Code feeds it, in a project with no `.livespec.jsonc`.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import io
 import json
@@ -35,6 +36,12 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _VENDOR = _ROLE / "files" / "_vendor" / "memory-write-guard"
 _HOOK = _VENDOR / "block_auto_memory.py"
 _PLAYBOOK = _REPO_ROOT / "ansible" / "claude-memory-guard.yml"
+_MAC_PLAYBOOK = _REPO_ROOT / "ansible" / "claude-memory-guard-macs.yml"
+_INVENTORY = _REPO_ROOT / "ansible" / "inventory" / "legacy.yml"
+_MAC_GROUP_VARS = (
+    _REPO_ROOT / "ansible" / "inventory" / "group_vars" / "interactive_claude_macs.yml"
+)
+_MACS = ("chads-macbook-pro", "macbook-air", "macbook-m4-max", "macmini")
 
 _MEMORY_DIR = "~/.claude/projects/-home-ubuntu-workspace-x/memory"
 _MEMORY_FILE = "/home/ubuntu/.claude/projects/-home-ubuntu-workspace-x/memory/MEMORY.md"
@@ -266,7 +273,7 @@ def test_the_managed_dropin_wires_only_the_two_pretooluse_hooks() -> None:
         "{{ claude_memory_write_guard_policy_dir }}/managed-settings.d"
     )
     assert defaults["claude_memory_write_guard_command"] == (
-        "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook }}"
+        "{{ claude_memory_write_guard_python }} {{ claude_memory_write_guard_hook | quote }}"
     )
     assert defaults["claude_memory_write_guard_hook"].endswith("/block_auto_memory.py")
 
@@ -289,3 +296,65 @@ def test_the_playbook_applies_the_role_to_interactive_claude_hosts() -> None:
     plays = yaml.safe_load(_PLAYBOOK.read_text(encoding="utf-8"))
     assert [play["hosts"] for play in plays] == ["interactive_claude_hosts"]
     assert [role["role"] for role in plays[0]["roles"]] == ["claude_memory_write_guard"]
+
+
+def test_the_mac_group_names_each_mac_by_its_full_tailnet_name() -> None:
+    inventory = yaml.safe_load(_INVENTORY.read_text(encoding="utf-8"))
+    group = inventory["all"]["children"]["interactive_claude_macs"]["hosts"]
+    assert sorted(group) == sorted(f"{mac}.perch-rudd.ts.net" for mac in _MACS)
+    group_vars = yaml.safe_load(_MAC_GROUP_VARS.read_text(encoding="utf-8"))
+    assert group_vars["ansible_user"] == "cwoolley"
+
+
+def test_the_mac_policy_lands_under_the_macos_managed_location_owned_by_wheel() -> None:
+    group_vars = yaml.safe_load(_MAC_GROUP_VARS.read_text(encoding="utf-8"))
+    base = "/Library/Application Support/ClaudeCode"
+    assert group_vars["claude_memory_write_guard_policy_dir"] == base
+    assert group_vars["claude_memory_write_guard_lib_dir"] == base
+    assert group_vars["claude_memory_write_guard_group"] == "wheel"
+
+
+def test_the_mac_playbook_checks_preconditions_before_it_converges_anything() -> None:
+    plays = yaml.safe_load(_MAC_PLAYBOOK.read_text(encoding="utf-8"))
+    assert [play["hosts"] for play in plays] == ["interactive_claude_macs"] * 2
+    precondition, converge = plays
+    assert precondition["any_errors_fatal"] is True
+    assert "roles" not in precondition
+    assert [role["role"] for role in converge["roles"]] == ["claude_memory_write_guard"]
+    modules = [next(key for key in task if key != "name") for task in precondition["tasks"]]
+    assert modules == ["ansible.builtin.ping", "ansible.builtin.command"]
+    assert precondition["tasks"][1]["become"] is True
+
+
+def test_only_the_two_memory_guard_playbooks_select_the_mac_group() -> None:
+    playbooks = (_REPO_ROOT / "ansible").glob("*.yml")
+    selecting = sorted(
+        path.name
+        for path in playbooks
+        if "interactive_claude_macs" in path.read_text(encoding="utf-8")
+    )
+    assert selecting == ["claude-memory-guard-macs.yml"]
+
+
+def test_the_vendored_hook_imports_and_runs_on_python_3_9() -> None:
+    """A Mac's system python3 is 3.9, so no 3.10-only construct may be imported.
+
+    `typing.TypeAlias` and a module-scope `X[...] | Y[...]` both raise at
+    import on 3.9; Claude Code treats the hook error as non-blocking, so the
+    guard would refuse nothing. The syntax is parsed as 3.9 too.
+    """
+    for path in sorted(_VENDOR.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), feature_version=(3, 9))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "typing":
+                assert "TypeAlias" not in [alias.name for alias in node.names], path.name
+        for node in tree.body:
+            if isinstance(node, ast.Assign | ast.AnnAssign):
+                value = node.value
+                # A set union (`frozenset | frozenset`) is fine on 3.9; a union of
+                # subscripted generics (`Success[_T] | Failure[_E]`) is not.
+                assert not (
+                    isinstance(value, ast.BinOp)
+                    and isinstance(value.op, ast.BitOr)
+                    and isinstance(value.left, ast.Subscript)
+                ), path.name

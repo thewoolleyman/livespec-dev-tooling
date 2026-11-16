@@ -65,6 +65,19 @@ all:
         # tailscale-admin record.
         hetzner-xubuntu:
           ansible_user: ubuntu
+    # The maintainer's Macs that run interactive Claude Code sessions
+    # (livespec-dev-tooling-i76rv2). The one non-Ubuntu group in this tree, and
+    # converged ONLY for claude_memory_write_guard by
+    # ansible/claude-memory-guard-macs.yml: no other play may select it. Each
+    # is named by its full tailnet name and reached by ORDINARY ssh as
+    # cwoolley, never Tailscale SSH (the macOS GUI client hosts none); see
+    # group_vars/interactive_claude_macs.yml.
+    interactive_claude_macs:
+      hosts:
+        chads-macbook-pro.perch-rudd.ts.net:
+        macbook-air.perch-rudd.ts.net:
+        macbook-m4-max.perch-rudd.ts.net:
+        macmini.perch-rudd.ts.net:
     # The credential-rotation ROLE HOLDER (livespec-overseer plan
     # central-credential-service): the one host that runs caam-delivery-push and pushes
     # credentials to the listed hosts. THE ONE PLACE the role is bound to a machine;
