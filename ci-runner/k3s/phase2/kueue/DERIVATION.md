@@ -1816,6 +1816,13 @@ requested (83%), so more quota there could never schedule. The churn-slot raise
 on the same node (ci-runtime-and-cost) shares this node's cpu; its draft lands
 first and this change re-measures against it.
 
+**Supersedes wirn53's gmktec target.** The node-cpu-budget target of 9 for
+gmktec (work item livespec-dev-tooling-wirn53) is superseded by this
+measurement (throughput-plans-coordinator ruling, 2026-11-16). Idle on this
+node swings: a later read the same evening (`fleet-utilization.sh
+--overcommit-only`) showed 21.8% idle with 24.1 pod cores busy, so the raise
+merges only after the combined-budget check in the pull request.
+
 **CI-side read at +2 h.** Owner: gate-job-resources. gmktec `mpstat` idle and
 BestEffort `cpu.pressure` full avg60; `gates-cq` pending and gate admission wait;
 gate pod p50 per node. `fleet-utilization.sh --overcommit-only` before and after.
