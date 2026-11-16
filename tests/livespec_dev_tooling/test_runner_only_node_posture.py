@@ -213,15 +213,15 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
     }
     assert capacities == {
         "gamingpc-xubuntu": 3,
-        "gmktec-xubuntu": 6,
+        "gmktec-xubuntu": 9,
         "hp-xubuntu": 4,
         "poweredge-xubuntu": 17,
     }, (
-        f"the per-node CPU budget split is poweredge 17, gmktec 6, hp 4 and gamingpc 3 "
-        f'(DERIVATION.md "Per-node CPU budget cut: cohort 30 (2026-11-13)"); got {capacities}'
+        f"the stranded-capacity split is poweredge 17, gmktec 9, hp 4 and gamingpc 3 "
+        f'(DERIVATION.md "Stranded-capacity raise: gmktec 9, cohort 33 (2026-11-16)"); got {capacities}'
     )
-    assert sum(capacities.values()) == 30 == _cohort_quota_total(), (
-        f"the profiles must sum to 30 and equal the summed cohort quotas; "
+    assert sum(capacities.values()) == 33 == _cohort_quota_total(), (
+        f"the profiles must sum to 33 and equal the summed cohort quotas; "
         f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
     )
     derivation = _DERIVATION.read_text(encoding="utf-8")

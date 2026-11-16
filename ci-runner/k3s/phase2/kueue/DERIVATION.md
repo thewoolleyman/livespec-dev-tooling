@@ -1488,8 +1488,8 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 |---|---|---|---|---|
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
-| `livespec-dev-tooling` | 5 | 10 | **20** | 2026-11-14 |
-| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-14 |
+| `livespec-dev-tooling` | 6 | 12 | **20** | 2026-11-16 |
+| `livespec-orchestrator-beads-fabro` | 6 | 12 | **14** | 2026-11-16 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -2546,3 +2546,38 @@ ci-runtime-and-cost finds the 11-13 small-repository demand surge was waste
 10 and livespec-orchestrator-beads-fabro-cq to 7, and drop their two exception
 rows. Then apply with `just ansible-apply ansible/ci-pool.yml --tags
 ci_converge_unit`.
+
+## Stranded-capacity raise: gmktec 9, cohort 33 (2026-11-16)
+
+**Why.** `scripts/coordinator/fleet-utilization.sh --stranded-only` flagged churn-slot ClusterQueues at their limit with work waiting (~20:1xZ and again at ~20:50Z): livespec-dev-tooling-cq 8/5 (+3 borrowed) with 11 pending, livespec-orchestrator-beads-fabro-cq 7/4 (+3) with 6, and every 2-slot queue at 2/2 with 1-4 pending, while gmktec-xubuntu read 8.5% to 72% idle within 25 minutes. Plan ci-runtime-and-cost (epic livespec-dev-tooling-ib3oe3), one-lane STRANDED-CAPACITY exemption from legacy-coordinator-agent via throughput-plans-coordinator; RULE FOCUS-TWO-LEVERS (maintainer, 2026-11-16 20:19Z) makes this lever 2: capacity moves off hp-xubuntu and onto gmktec-xubuntu (the hp cut is the next section's pull request).
+
+**The read (Honeycomb, 24 h to 2026-11-16 20:00Z; only 17Z-20Z was loaded).** The idle percentage is not the basis (`.ai/ci-node-capacity-reads.md`); the basis is throughput.
+
+| Node | Slots | Peak arc-runners pods (2 per job) | Avg busy cores by class, 19Z hour (runners / gates / factory) |
+| --- | --- | --- | --- |
+| gmktec-xubuntu | 6 | 12 (= 6 jobs, AT the cap) | 9.0 / 4.4 / 2.4 |
+| gamingpc-xubuntu | 3 | 6 (= 3 jobs, AT the cap) | 4.4 / 3.7 / 0 |
+
+- Both nodes reached their slot cap while 20-39 arc-runners pods sat Pending at the admission gate (19:00-19:50Z, 39 at the peak) and the running count stayed flat: poweredge about 25 pods, gmktec 8-10, hp 5-6, gamingpc 4-5. A flat running count behind a growing held count is the cap-bound signature, not a CPU-bound one.
+- The cohort's 4 master-lane units lend nothing (lendingLimit 0), so 26 of the 30 are borrowable and about 22 jobs were running: the pool was full at its usable total.
+- The runner CPU figure is an upper bound (the `k8s.pod.cpu.usage` gauge reads runner pods about 2.7x high, NODE-CPU-BUDGET.md); no node's pod CPU was the limit.
+- Job duration by node concurrency is a thin sample (84 attributable jobs of 496): gmktec p50 21 s at 4-8 pods against 55 s over 8. It is suggestive, not proven, which is why the step is small, stepped, and carries a measured revert trigger.
+- Not measured: true cores from `k8s.pod.cpu.time` (the MCP endpoint rejects `RATE_SUM`), per-queue wait and held count, and anything after 20:00Z.
+
+**The change.** +3 slots on gmktec (6 -> 9): the pool's declared capacity 30 -> 33 (poweredge 17 + gmktec 9 + hp 4 + gamingpc 3). The 3 new units go to the queues holding the most waiting work: livespec-dev-tooling-cq 5 -> 6 and livespec-orchestrator-beads-fabro-cq 4 -> 6. The quotas still sum to the capacity, 33. `maxRunners` stays: dev-tooling 20 and orchestrator 14 are recorded exceptions (rows now quota 6 / rule 12 for both). gamingpc is NOT raised: an independent second look read it at 11.65% idle with 3 of 3 slots busy and BestEffort `some` avg60 6.45, against the 66-78% idle reads that suggested spare draw, and its 12 allocatable cpu carry 10 requested (gate-job-resources). A gamingpc +1 waits for a read at load.
+
+**The combined per-node budget (shared with gate-job-resources, plan ukoeah).** Churn runners request 0 CPU, so the cost is draw, about 1.7 cores per job (NODE-CPU-BUDGET.md).
+
+| Node | Allocatable | Gates (requests) | Factory (requests, budget) | Added churn draw |
+| --- | --- | --- | --- | --- |
+| gmktec-xubuntu | 32 | 10 now, 15 planned about 24 h after this applies | up to 7 x 3 = 21 (limits up to 42) | +3 x 1.7 = 5.1 |
+
+The budget document's averages at 6 slots already sum to about 30 of 32 (runners 10.6, gates 9.2, factory 8.4, system 1.6), so at peak the raise does NOT fit by averages; it fits only while the node is below peak, which is why it is applied in single steps with a rollback trigger and a load-gated read, and why gate-job-resources' gates 10 -> 15 waits behind it. gate-job-resources owns the per-node budget and rules the split.
+
+**Order of apply (stepped; quota never above applied capacity).** Capacity first, quota last: (1) gmktec 6 -> 7 (capacity 31), reading mpstat idle and BestEffort `cpu.pressure` between steps, (2) gmktec 8 (32), (3) gmktec 9 (33), each `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit gmktec-xubuntu`; (4) `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`, converging the quotas to 33 only from a merged tree whose quotas equal the capacity actually applied. If a later pull request lowers a node (hp 4 -> 3), the quota follows the capacity down in that pull request's own apply.
+
+**Baselines (recorded before step 1, on the plan epic).** livespec-dev-tooling and livespec-orchestrator-beads-fabro CI queue-wait p50/p95 and job-duration p95, the arc-runners Pending count at the gate (39 at the 19:40Z peak), gmktec idle and BestEffort `some` and `full` avg60 sampled repeatedly, and the fleet headline (throughput-plans-coordinator headline 19:52Z, non-docs non-release PRs merged green per hour as 6 h / 24 h / 7-day: fleet 3.00 / 4.62 / 6.90, livespec-dev-tooling 0.33 / 1.08 / 2.73, orchestrator 0.67 / 0.58 / 1.72; the headline has no 2 h column).
+
+**Measured revert trigger.** Roll back the last gmktec step if gmktec idle falls below 5% with BestEffort `cpu.pressure` avg60 above 30 (the saturation test in `.ai/ci-node-capacity-reads.md`; `full` is the stricter and `some` the more sensitive reading, so both are recorded), or if CI queue wait rises with no throughput gain against the baselines above. The +2 h CI-side read is taken against load: it counts only when the arc-runners Pending count at the gate exceeds about 10, since a read in an idle hour proves nothing; it records the pending count at the gate, queue-wait p50/p95 per repository, job duration p50/p95 on gmktec, and each flagged queue's admitted count. throughput-plans-coordinator supplies the +2 h headline.
+
+**Revert.** Restore gmktec 6 in its profile, livespec-dev-tooling-cq 5, livespec-orchestrator-beads-fabro-cq 4 and the two exception rows (quota 5 / rule 10 and quota 4 / rule 8), then apply in the reverse order: `ci_converge_unit` first (quotas back to 30), then `node_extended_resource --limit gmktec-xubuntu`.
