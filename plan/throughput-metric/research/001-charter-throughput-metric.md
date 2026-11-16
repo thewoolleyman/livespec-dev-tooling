@@ -37,7 +37,7 @@ Opened 2026-11-14 by plan throughput-track-organization (livespec-dev-tooling-q2
 
 ## Rules for this plan's seat
 
-- Talk to every agent session ONLY with SendMessage, on this host or another; NEVER type into a pane (`herdr agent prompt`, `herdr pane send-text`, `herdr pane run`, `tmux send-keys`). See `.ai/distributed-sendmessage-protocol.md` (plan distributed-sendmessage, livespec-dev-tooling-rlwppp). This supersedes the seat's opening brief, which said to report with `herdr agent prompt throughput-plans-coordinator`.
+- Talk to every agent session with SendMessage by default, on this host or another. Typing into a pane (`herdr agent prompt`, `herdr pane send-text`, `herdr pane run`, `tmux send-keys`) is allowed when it is faster or necessary: check the pane is idle, keep it short, send Enter separately (maintainer ruling 2026-11-16, scope event "RULE PANE-TYPING-ALLOWED" on epic livespec-dev-tooling-6tgd2z; rule PANE-TYPING-ALLOWED in `.ai/coordinator-duties.md` §3). See `.ai/distributed-sendmessage-protocol.md` (plan distributed-sendmessage, livespec-dev-tooling-rlwppp). This supersedes the seat's opening brief, which said to report with `herdr agent prompt throughput-plans-coordinator`.
 - Never raise a blocking picker; report to the seat throughput-plans-coordinator, which carries asks to the maintainer.
 - Dispatch goes through legacy-dispatcher-agent.
 - Every tick prints the headline and both board links.

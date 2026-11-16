@@ -269,11 +269,11 @@ the explicit answer, so the seat has it in words and knows the coordinator chose
 answer billing or paid-credit prompts; a tool-permission prompt is the coordinator's to clear (rule PERMISSION-PROMPT
 below).
 
-**Answer a picker by message first, keypress last.** SendMessage the answer to the seat FIRST. Put the provenance in
-that message: who decided (the coordinator under R301/R493, or the maintainer verbatim, relayed). A seat at a picker
-still reads an incoming message and resolves its own picker, so the record shows the true decider. Use
-`herdr pane send-keys` only when the seat is still blocked about 1 minute later, and say in the message that a
-keypress will follow. A relayed keypress is indistinguishable from a human's in the seat's record.
+**Answer a picker by keypress and message, with the provenance in words.** The coordinator may press the picker key in
+the seat's pane directly (rule PANE-TYPING-ALLOWED below); the keypress is never a last resort and needs no wait. A
+relayed keypress is indistinguishable from a human's in the seat's record, so pair it with a message (SendMessage, or
+typed text when that is faster) that names who decided: the coordinator under R301/R493, or the maintainer verbatim,
+relayed. Then the record shows the true decider.
 
 Measured 2026-11-02 ~23:1x-23:3xZ: three seats (dolt-connection-exhaustion, dispatcher-run-watch-cost, and
 fabro-currency earlier) recorded the coordinator's keypresses as the maintainer's own answers, and two of them then
@@ -296,10 +296,11 @@ after the maintainer had answered it.
 
 **Never ask the maintainer to relay a message.** The coordinator never asks the maintainer to carry a message to any
 seat. A Claude seat on vps, hetzner-xubuntu or gamingpc-xubuntu is reached by
-SendMessage across machines (`.ai/distributed-sendmessage-protocol.md`). For a seat this session cannot SendMessage,
-such as a Codex seat or a Claude seat on a Mac not yet on Remote Control, reply as a ledger comment on the work item
-concerned or on its plan epic. A Codex or pi seat also gets the text through `herdr --machine <label> pane send-text`;
-the managed pane-input guard refuses that into a Claude seat. The maintainer, 2026-11-06, relayed verbatim through the
+SendMessage across machines (`.ai/distributed-sendmessage-protocol.md`) or by typing into its pane. Any seat, Codex,
+pi or Claude, can get the text through `herdr --machine <label> pane send-text` (rule PANE-TYPING-ALLOWED below; the
+pane-input guard that once refused this into Claude panes was retired on 2026-11-14). For a seat no live channel
+reaches, reply as a ledger comment on the work item concerned or on its plan epic. The maintainer, 2026-11-06, relayed
+verbatim through the
 homelab-k8s-worker-nodes session, recorded on epic `livespec-dev-tooling-6tgd2z` at 05:57:05Z: "asking the maintainer
 to paste your reply to me is unacceptable".
 
@@ -554,11 +555,11 @@ machine/workspace to your monitored list of plans. They are executing on that ma
 and/or the factory."
 
 **A word given to a seat reaches it at the moment it is given.** A Claude seat on vps, hetzner-xubuntu or
-gamingpc-xubuntu gets it by SendMessage by default (maintainer ruling 2026-11-14, plan `distributed-sendmessage`: pane
-typing can interrupt the maintainer). Typing into its pane is still allowed and not blocked when the job needs it. A Codex or pi seat gets it in its PANE with
-`herdr --machine <m> pane send-text <pane> "<text>"`, then `herdr --machine <m> pane send-keys <pane> Enter`. A Claude
-seat on a Mac not yet on Remote Control gets a ledger comment and is named unreachable in the tick report. Never
-only a ledger comment where a live channel exists, and read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
+gamingpc-xubuntu gets it by SendMessage when that reaches it, and the coordinator may type it into the seat's pane
+instead whenever that is faster or necessary (rule PANE-TYPING-ALLOWED below). A Codex or pi seat, or a Claude seat on
+a Mac not yet on Remote Control, gets it in its PANE with `herdr --machine <m> pane send-text <pane> "<text>"`, then
+`herdr --machine <m> pane send-keys <pane> Enter`. Never only a ledger comment where a live channel exists, and pane
+typing is a live channel. Read every top-5 seat's pane text every tick. overseerd cannot see Mac seats, so the
 coordinator owns their restarts. The maintainer, 2026-11-09 ~15:0xZ, recorded on epic `livespec-dev-tooling-6tgd2z`:
 "why did you let this stall? fleet-mutation-testing-rule-26 . I told overseerd too".
 
@@ -603,25 +604,27 @@ maintainer had to ask why it was held. Ruling recorded on epic `livespec-dev-too
 **Seats on another machine may not reach this session by SendMessage.** Until plan distributed-send-message
 (livespec-dev-tooling-rlwppp) lands, a seat on hetzner-xubuntu cannot SendMessage to the coordinator on vmi3006760; its
 asks arrive as TO COORDINATOR ledger comments on its plan epic, or relayed by the maintainer. Every tick reads those
-comments for every moved seat, and replies go through `herdr --machine <m> pane send-text <pane> "<text>"` then
-`send-keys <pane> Enter` (that reply route is superseded by rule NO-PANE-TYPING below). Never ask the maintainer to
-relay. Measured 2026-11-14 ~01:1xZ: gate-job-resources' successor relayed through the maintainer's paste.
+comments for every moved seat. Replies go by SendMessage when it reaches the seat, or through
+`herdr --machine <m> pane send-text <pane> "<text>"` then `send-keys <pane> Enter`; pane typing remains an allowed
+reply route (rule PANE-TYPING-ALLOWED below). Never ask the maintainer to relay. Measured 2026-11-14 ~01:1xZ:
+gate-job-resources' successor relayed through the maintainer's paste.
 
-**Rule NO-PANE-TYPING: the coordinator messages a seat only by SendMessage, to the name ListAgents prints.** The
-coordinator never types text into a seat pane (`herdr pane send-text`) on any machine; for the coordinator this narrows
-the "typing into its pane is still allowed" clauses above and in CLAUDE.md. Read `ListAgents` fresh each time: a seat
-may be listed under a generated or conversation-title name instead of its seat name, and the listed name is its
-address. A seat absent from the listing gets a comment on its plan's epic. Remote Control drops after a login change
-are reconnected by livespec-overseer's caam-delivery-push keep-alive sweep, never by the coordinator. Picker keypresses
-stay under "message first, keypress last" above. Every resume reads `.ai/distributed-sendmessage-protocol.md` in full.
-The maintainer, 2026-11-15 ~17:4x-17:5xZ in the coordinator's seat, recorded in the scope event and its correction on
-epic `livespec-dev-tooling-6tgd2z` at 17:39:54Z and 17:41:08Z: "WHY THE FUCK ARE YOU TYPING DIRECTLY INTO ITS
-PANE!!!!", then "NO THERE"S LITERALLY GUIDANCE AND A WHOLE MECHANISM WITH REMOTE CONTROL THAT LETS YOU DO IT???
-WHY?????" and "WHY DIDN"T YOU READ IT?" Measured 2026-11-15 ~16:55-17:45Z: the coordinator typed `/remote-control`,
-`/rename` and two ruling pointers into hetzner seat panes, the busy throughput-plans-coordinator and
-stale-base-merge-options panes among them, because it never opened the protocol file. After caam's 16:47:30Z rotation,
-hetzner seats re-joined Remote Control under generated names (provisional-fleet-launch as
-"hetzner-xubuntu-lively-curry" at the 20:13Z handoff), so name-addressed sends to the seat names failed.
+**Rule PANE-TYPING-ALLOWED: a coordinator may type into any seat's pane.** legacy-coordinator-agent,
+throughput-plans-coordinator and any seat that directs others MAY type into any seat's pane on any machine
+(`herdr pane send-text`, `herdr pane send-keys`, `herdr pane run`). That covers slash commands such as `/model`,
+`/rename`, `/remote-control` and `/reload-plugins`, picker answers, and nudges. A coordinator never waits on, or routes
+around, a seat it can reach by typing. SendMessage is used when it reaches the seat and the content is a message;
+typing is used when that is faster or necessary. Check that the pane is idle first (`herdr pane read`), keep the text
+short, and send `Enter` separately. Read `ListAgents` fresh before a SendMessage: a seat may be listed under a
+generated or conversation-title name, and the listed name is its address. The maintainer, 2026-11-16, recorded in the
+scope event "RULE PANE-TYPING-ALLOWED" on epic `livespec-dev-tooling-6tgd2z`, verbatim: "Okay. I've told you at least
+a half dozen fucking times and set up rules that coordinators are absolutely allowed to type into panes. I have told
+sessions to write this everywhere and remove every place where instructions say the coordinators are not allowed to
+type into panes. Please explain to me why the fuck you think you are not able to type into panes. Answer, and then
+stop everything you're fucking doing and fix this forever." This supersedes the former rule NO-PANE-TYPING. Measured
+2026-11-16: a coordinator session turned the 2026-11-15 ~17:4xZ objection (typing `/remote-control` into BUSY panes)
+into a blanket ban here, every resume read it in full, and coordinators stalled seats they could have typed into,
+including on 2026-11-16, when the seat-to-Sonnet switch was routed through the overseers instead of typed.
 
 ## 4. The owning session decides first
 
@@ -842,11 +845,12 @@ and similar seat-side slash commands never go under `FOR THE MAINTAINER`. The ma
 on epic `livespec-dev-tooling-6tgd2z` at 19:01:43Z: "You are asking me things that do not deserve my attention. You
 have control of the Herder API. You can type things into panes. Any of these slash commands, you should tell the
 sessions to do themselves or do for them." Mechanism: seats send `/reload-plugins` to each other directly (the
-central-credential-service scope event on overseer-iyfjbo, 19:24:10Z). Otherwise the seat writes its handoff and the
-coordinator relaunches it in a fresh pane with `claude -n <slug> --remote-control <slug> "<brief>"`, because the
-managed pane-input guard refuses `send-text` into a live Claude pane. A fresh launch registers Remote Control, loads
-the current plugins and connects its MCP servers. Credential and secret creation or deletion, OAuth re-authorization
-the coordinator cannot complete, and caam reserve settings stay the maintainer's.
+central-credential-service scope event on overseer-iyfjbo, 19:24:10Z), and the coordinator types any such slash command
+into the seat's idle pane itself (rule PANE-TYPING-ALLOWED, §3). When a seat needs a fresh process instead, it writes
+its handoff and the coordinator relaunches it in a fresh pane with `claude -n <slug> --remote-control <slug>
+"<brief>"`. A fresh launch registers Remote Control, loads the current plugins and connects its MCP servers.
+Credential and secret creation or deletion, OAuth re-authorization the coordinator cannot complete, and caam reserve
+settings stay the maintainer's.
 
 **Rule AWS: never hand the maintainer an AWS act the API can do.** An AWS act the API can do (SSM writes, bindings) is
 done by the owning seat through its credential wrapper, and any binding lands by PR. The maintainer, 2026-11-14 ~19:20Z,
@@ -1252,8 +1256,8 @@ throughput-improvement track open.  It needs to be able to keep working on high 
 you should delegate anything related to throughput problems in the factory to it." The coordinator's read above still
 runs every tick, as the trigger. Every factory throughput problem (serializers, stranded capacity, caps, yield, CI or
 merge latency on the factory path) is routed to throughput-plans-coordinator (livespec-dev-tooling-r7iuj6;
-hetzner-xubuntu, workspace throughput-improvements) by SendMessage, or by a ledger comment on r7iuj6 when SendMessage
-cannot reach it. The coordinator does not work them itself. That seat moves one high-priority throughput problem at a
+hetzner-xubuntu, workspace throughput-improvements) by SendMessage or by typing into its pane, and by a ledger comment
+on r7iuj6 only when neither reaches it. The coordinator does not work them itself. That seat moves one high-priority throughput problem at a
 time during the token crunch.
 
 **Rule FACTORY-GREEN-WATCH: every tick prints the last factory green per repository.** For each repository the factory

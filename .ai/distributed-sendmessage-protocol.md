@@ -8,6 +8,15 @@ did not create.
 
 ## The rule
 
+**Coordinators are explicitly allowed to type into any pane.**
+legacy-coordinator-agent, throughput-plans-coordinator and any seat that
+directs others MAY type into any seat's pane on any machine, slash commands
+such as `/model` included, and never stall a seat they could type into. See
+rule PANE-TYPING-ALLOWED in
+[`coordinator-duties.md`](coordinator-duties.md) §3 (maintainer ruling
+2026-11-16, epic `livespec-dev-tooling-6tgd2z`); it supersedes any
+"NO-PANE-TYPING" text.
+
 **Agent sessions talk to each other with Claude Code's `SendMessage` tool by
 default.** Text typed into a pane lands in the same input line the maintainer
 may be typing into, which interrupts their direct interaction with that

@@ -268,7 +268,10 @@ The files:
   through `SendMessage` by default (across machines via Remote Control),
   because typed text can interrupt the maintainer. Typing into a pane is still
   allowed and is not blocked; use it when it is necessary (ruling 2026-11-14,
-  plan distributed-sendmessage).
+  plan distributed-sendmessage). Coordinators (legacy-coordinator-agent,
+  throughput-plans-coordinator) MAY type into any seat's pane, including slash
+  commands such as /model, and must never stall a seat they could type into
+  (maintainer ruling 2026-11-16; any 'NO-PANE-TYPING' text is superseded).
 
 ## Backlog drive — this repo has no foreman seat
 
