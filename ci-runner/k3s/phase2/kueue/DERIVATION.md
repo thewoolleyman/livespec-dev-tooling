@@ -1489,7 +1489,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 6 | 12 | **20** | 2026-11-16 |
-| `livespec-orchestrator-beads-fabro` | 5 | 10 | **14** | 2026-11-16 |
+| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-16 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -2595,3 +2595,15 @@ The budget document's averages at 6 slots already sum to about 30 of 32 (runners
 **Measured read.** hp's own idle and BestEffort `some` and `full` avg60 are read at +2 h against load; they should fall from 2.2% idle and 30.47. throughput-plans-coordinator supplies the +2 h headline.
 
 **Revert.** Restore hp 4, orchestrator 6 and its exception row (quota 6 / rule 12), then apply in reverse: `ci_converge_unit` first, then `node_extended_resource --limit hp-xubuntu`.
+
+## gmktec 8: cohort 31 (2026-11-16)
+
+**Why.** The stepped gmktec raise stopped at 8. Step 1 (7, applied 21:01:41Z) was clean for 10 minutes: idle 32-61%, BestEffort `some` avg60 0.09-1.0. Step 2 (8, applied 21:14:20Z) held clean for four minutes and then ran hot from 21:18Z under real load (10 arc-runners pods, 2 factory pods and 1 gate on the node): idle 1-4%, pod cores 28.9 of 32, BestEffort `some` avg60 up to 19.0 and `full` avg60 up to 15.3 (8.0 at the 21:25Z read). The rollback line (idle under 5% with BestEffort avg60 over 30) was not crossed, and throughput-plans-coordinator ruled that a node at 1-5% idle running 10 CI runners is capacity being used, so 8 stays and the third step (9) is not taken tonight. The committed value follows the applied one so the drift read after the merge shows no change.
+
+**The change.** gmktec-xubuntu `ADMISSION_CAPACITY_C` 9 -> 8, so the pool's declared capacity is poweredge 17 + gmktec 8 + hp 3 + gamingpc 3 = 31; livespec-orchestrator-beads-fabro-cq 5 -> 4 gives the unit up, so the quotas sum to 31 (dev-tooling stays at 6). The orchestrator exception row returns to quota 4 / rule 8 / maxRunners 14. The pull requests it stacks on (livespec-dev-tooling#4872 and #4873) are merged as they are, with no gate restart.
+
+**Order of apply.** The node already reads 8. After `--limit hp-xubuntu` (capacity 8 + 17 + 3 + 3 = 31) the quota converge, `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`, takes the quotas 30 -> 31 from the merged tree; the quota never exceeds the applied capacity.
+
+**Revert trigger and read.** Roll back to 7 if BestEffort `full` avg60 crosses 30, or if livespec-dev-tooling or livespec-orchestrator-beads-fabro CI queue wait rises with no throughput gain. Revisit 9 only after a clean read at load. The 22:00Z read: gmktec idle and BestEffort avg60, and the pending CI workloads for dev-tooling and orchestrator against the 21:01Z baseline (10 and 10).
+
+**Revert.** Set gmktec 7 (or 9 after a clean read), the orchestrator quota to match the capacity, and the exception row to its rule value.
