@@ -37,6 +37,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Master-green gate and external red",
+    "work_item": "livespec-dev-tooling-auprb3",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Master-health reconciler",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
@@ -89,6 +96,13 @@
     "heading": "## Scenario: Codex plugin hooks wrapped in shell conditionals with existing plugin-root entrypoints pass",
     "work_item": "livespec-dev-tooling-h6jsgv",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a 403 on the fleet's own App without rate-limit evidence reads defect",
+    "work_item": "livespec-dev-tooling-ravutf",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -782,6 +796,13 @@
     "heading": "## Scenario: a radar that lists the same target twice fails just check",
     "work_item": "livespec-dev-tooling-fgy4au",
     "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a rate-limited 403 reads external",
+    "work_item": "livespec-dev-tooling-ravutf",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1507,6 +1528,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: ci-green alerts once and master_ci_green blocks after one day of external-only red",
+    "work_item": "livespec-dev-tooling-arfnpo",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
     "work_item": "livespec-dev-tooling-pojsfk",
     "first_seen": "2026-11-14"
@@ -1587,6 +1615,48 @@
     "heading": "## Scenario: livespec-dev-tooling's check aggregate fails when its cross_repo_public_api package-data file and pyproject.toml disagree",
     "work_item": "livespec-dev-tooling-vobfwi",
     "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master-health never reads green on a red ci-green",
+    "work_item": "livespec-dev-tooling-arfnpo",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master-health reads defect for a job with an external record and one defect finding",
+    "work_item": "livespec-dev-tooling-arfnpo",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green blocks when ci-green is red and master-health is absent",
+    "work_item": "livespec-dev-tooling-auprb3",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green blocks when master-health reads external without a readable episode",
+    "work_item": "livespec-dev-tooling-auprb3",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green blocks when master-health states defect",
+    "work_item": "livespec-dev-tooling-auprb3",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green warns and admits a push while master is red only for an external cause",
+    "work_item": "livespec-dev-tooling-auprb3",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1682,6 +1752,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: the episode carries forward across a cancelled run and a success ends it",
+    "work_item": "livespec-dev-tooling-arfnpo",
+    "first_seen": "2026-11-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: the first required master leaf failure fences incident recovery",
     "work_item": "livespec-dev-tooling-mdqkkz",
     "first_seen": "2026-11-03"
@@ -1755,6 +1832,13 @@
     "heading": "## Scenario: the local-aggregate entry point writes no evidence for a failed, dirty or changed tree",
     "work_item": "livespec-dev-tooling-fgy4au",
     "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the master-health reconciler stands down while master-health reads an unexpired external red",
+    "work_item": "livespec-dev-tooling-auprb3",
+    "first_seen": "2026-11-16"
   },
   {
     "spec_root": "SPECIFICATION",

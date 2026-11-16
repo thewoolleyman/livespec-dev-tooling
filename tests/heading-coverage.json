@@ -4216,5 +4216,101 @@
     "test": "TODO",
     "reason": "Spec-first (per-pr-fleet-sweep-scope, v236): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running check-fleet-conformance --member-ci on a pull_request event over a change to a file the fleet checker imports outside livespec_dev_tooling/fleet/, such as a cross_repo pin-format module, and asserting that every manifest member's rows are evaluated. livespec-dev-tooling-p7mlz2 owns it.",
     "work_item": "livespec-dev-tooling-p7mlz2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Master-green gate and external red",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting the master-green gate's external-red tolerance contract, over the helper, the master-health check run and the gate together. livespec-dev-tooling-auprb3 owns it.",
+    "work_item": "livespec-dev-tooling-auprb3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green warns and admits a push while master is red only for an external cause",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting master_ci_green admitting a push with one warning while master-health reads external. livespec-dev-tooling-auprb3 owns it.",
+    "work_item": "livespec-dev-tooling-auprb3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green blocks when master-health states defect",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting master_ci_green blocking, naming the job, while master-health reads defect. livespec-dev-tooling-auprb3 owns it.",
+    "work_item": "livespec-dev-tooling-auprb3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master-health reads defect for a job with an external record and one defect finding",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting ci-green publishing master-health defect for a job that has an external record and one defect finding. livespec-dev-tooling-arfnpo owns it.",
+    "work_item": "livespec-dev-tooling-arfnpo"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a 403 on the fleet's own App without rate-limit evidence reads defect",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting the external-cause helper emitting no record for a 403 without rate-limit evidence on the fleet's own App. livespec-dev-tooling-ravutf owns it.",
+    "work_item": "livespec-dev-tooling-ravutf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a rate-limited 403 reads external",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting the external-cause helper emitting a rate-limit record for a 403 carrying x-ratelimit-remaining 0. livespec-dev-tooling-ravutf owns it.",
+    "work_item": "livespec-dev-tooling-ravutf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green blocks when ci-green is red and master-health is absent",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting master_ci_green exiting 1 when ci-green is red and no master-health check run exists. livespec-dev-tooling-auprb3 owns it.",
+    "work_item": "livespec-dev-tooling-auprb3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: ci-green alerts once and master_ci_green blocks after one day of external-only red",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting ci-green raising exactly one needs-attention issue per episode past 24 hours and master_ci_green blocking on the expired episode. livespec-dev-tooling-arfnpo owns it.",
+    "work_item": "livespec-dev-tooling-arfnpo"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master_ci_green blocks when master-health reads external without a readable episode",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting master_ci_green exiting 1 on a master-health external verdict with no readable episode. livespec-dev-tooling-auprb3 owns it.",
+    "work_item": "livespec-dev-tooling-auprb3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the episode carries forward across a cancelled run and a success ends it",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting ci-green copying the preceding completed run's episode across a cancelled run and starting a new episode after a success. livespec-dev-tooling-arfnpo owns it.",
+    "work_item": "livespec-dev-tooling-arfnpo"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: master-health never reads green on a red ci-green",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting ci-green publishing master-health defect, never green, when ci-green itself failed with every gating job green, and master_ci_green exiting 1. livespec-dev-tooling-arfnpo owns it.",
+    "work_item": "livespec-dev-tooling-arfnpo"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the master-health reconciler stands down while master-health reads an unexpired external red",
+    "test": "TODO",
+    "reason": "Spec-first (master-green-tolerates-external-red, v238): a real test at the integration tier or above is owed for this heading, asserting the master-health reconciler selecting no culprit and opening no revert for a head whose master-health reads external. livespec-dev-tooling-auprb3 owns it.",
+    "work_item": "livespec-dev-tooling-auprb3"
   }
 ]

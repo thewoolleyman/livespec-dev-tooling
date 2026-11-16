@@ -5913,3 +5913,107 @@ When the sweep runs
 
 Then it evaluates every manifest member's rows
 ```
+
+## Scenario: master_ci_green warns and admits a push while master is red only for an external cause
+
+```gherkin
+Given master's head push run has a failed gating job whose only failure is a forge 503 recorded by the external-cause helper, published with external_only true and 0 defect findings
+And ci-green reads failure and master-health reads external with that record
+When master_ci_green runs in a pre-push gate
+Then it exits 0 with one warning naming the forge dependency and the 5xx kind
+```
+
+## Scenario: master_ci_green blocks when master-health states defect
+
+```gherkin
+Given master's head push run has a failed gating job that published no external-cause record
+And master-health reads defect
+When master_ci_green runs in a pre-push gate
+Then it blocks, naming that job
+```
+
+## Scenario: master-health reads defect for a job with an external record and one defect finding
+
+```gherkin
+Given a gating job on master fails with a rate-limited forge read recorded by the external-cause helper and also reports one defect finding
+When ci-green publishes master-health
+Then that job's published verdict is external_only false
+And master-health reads defect
+And master_ci_green blocks, naming that job
+```
+
+## Scenario: a 403 on the fleet's own App without rate-limit evidence reads defect
+
+```gherkin
+Given a gating job on master fails because the fleet's own App token receives a 403 with no rate-limit evidence
+When the external-cause helper classifies the failure
+Then it emits no external-cause record
+And master-health reads defect
+```
+
+## Scenario: a rate-limited 403 reads external
+
+```gherkin
+Given a gating job on master fails because a forge read returns 403 with x-ratelimit-remaining 0 and a rate limit exceeded message
+And no other step of that job failed and it reports 0 defect findings
+When the external-cause helper classifies the failure
+Then it emits an external-cause record of the rate-limit kind
+And master-health reads external
+```
+
+## Scenario: master_ci_green blocks when ci-green is red and master-health is absent
+
+```gherkin
+Given master's head push run reads ci-green failure and published no master-health check run
+When master_ci_green runs in a pre-push gate
+Then it exits 1
+```
+
+## Scenario: ci-green alerts once and master_ci_green blocks after one day of external-only red
+
+```gherkin
+Given master's push runs have read external in an unbroken sequence whose earliest run completed more than 24 hours ago, with no green run between
+When ci-green publishes master-health for the head commit twice
+Then each publication carries that earliest run's id and completion time as the episode and expired true
+And exactly one needs-attention forge issue exists for that episode, keyed on the earliest run's id
+And master_ci_green, reading that master-health in a pre-push gate, exits 1 and writes nothing to the forge
+```
+
+## Scenario: master_ci_green blocks when master-health reads external without a readable episode
+
+```gherkin
+Given master's head push run reads ci-green failure and master-health external
+And master-health's output.summary carries no readable episode
+When master_ci_green runs in a pre-push gate
+Then it exits 1
+```
+
+## Scenario: the episode carries forward across a cancelled run and a success ends it
+
+```gherkin
+Given master's preceding completed ci.yml push run read master-health external with an episode that started 3 hours ago
+And a run between them was cancelled
+When ci-green publishes master-health external for the head commit
+Then the head's episode is that same episode, unchanged
+And when the preceding completed run's workflow conclusion is instead success, the head's episode starts at the head run's own publication time
+```
+
+## Scenario: master-health never reads green on a red ci-green
+
+```gherkin
+Given every gating job on master succeeded
+And ci-green itself failed because a required leg was never created
+When ci-green publishes master-health
+Then it reads defect and its conclusion is neutral
+And when a master-health reading green is found beside a red ci-green, master_ci_green exits 1
+```
+
+## Scenario: the master-health reconciler stands down while master-health reads an unexpired external red
+
+```gherkin
+Given master's head commit has a red ci-green and a master-health that reads external with expired false
+When the master-health reconciler runs
+Then it selects no culprit and opens no new revert for that head commit
+And its one re-run of the failed jobs and its classification are unchanged
+And once the same master-health reads expired true, the reconciler behaves as it does for any other red master
+```
