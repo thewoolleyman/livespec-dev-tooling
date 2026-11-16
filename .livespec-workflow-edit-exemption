@@ -1,11 +1,15 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/homelab-worker-arm64-check-job.yml swaps its
-# non-release sandbox pin python-sha-fbecb10 for the published release tag
-# python-v1.213.0 (linux/amd64 and linux/arm64 both published), so the v1.213.0
-# sandbox release's self-reconcile-pins job stops refusing it. Same job, same
-# image line, not slower. Routed by throughput-plans-coordinator 2026-11-15
-# ~17:4xZ. The line-diff guard reads the modified line as the maintainer tier, so
-# the item needs approval:workflow-edit; the edit stays logically additive (§12).
-work_item=livespec-dev-tooling-ko26ez.4
-reason=Make the homelab arm64 check job's sandbox pin release-shaped (python-v1.213.0, arm64 published) so the sandbox release self-reconcile-pins job accepts it; logically additive tag swap.
+# The change: .github/workflows/reusable-incident-ci-publish.yml stops running on
+# GitHub-hosted capacity against the observer's PUBLIC URL, which can never reach
+# the tailnet-only /ci/publish route, and instead runs where the caller's
+# incident-ci job runs (a new runner-labels input, defaulting to GitHub-hosted)
+# and dials LIVESPEC_INCIDENT_OBSERVER_URL with its connect address, as incident-ci
+# does. Its header is rewritten to match. Ruled route (A) by legacy-coordinator-agent
+# 2026-11-16 ~00:5xZ under coordinator-duties §12 ("Adding OR MODIFYING a runs on
+# is absolutely ADDITIVE"): a dead publisher starts publishing and nothing runs
+# less. The line-diff guard reads the modified lines as the maintainer tier, so
+# the item needs approval:workflow-edit, which the coordinator applies; the edit
+# stays logically additive (§12).
+work_item=livespec-dev-tooling-bqnzcm.4
+reason=bqnzcm.4 host leg: route the incident CI publisher to the self-hosted incident pool and the observer's tailnet URL so an expedited PR's CI run is published, not recorded unpublished

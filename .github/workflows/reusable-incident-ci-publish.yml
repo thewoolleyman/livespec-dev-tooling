@@ -17,16 +17,23 @@
 # or tag and never by local path, so a pull request cannot change the publisher
 # the policy approves.
 #
-# WHERE IT RUNS. Like every reusable workflow this library ships, the job runs
-# on GitHub-hosted capacity (tests/consumer/test_ci_matrix_shape.py). A hosted
-# runner cannot reach the tailnet, so it dials the controller's PUBLIC URL,
-# `LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL`, with no connect-address override,
-# exactly as the master-health reconciler does: `/ci/publish` is a token-guarded
-# public path on the observer's path-scoped Funnel (.ai/tailnet-posture.md),
-# guarded by the forge-signed identity token the controller verifies against its
-# pinned policy before it reads or writes anything. Publishing that path is the
-# identity-provisioning slice of livespec-dev-tooling-bqnzcm.4, and ci.yml does
-# not call this workflow before it is published.
+# WHERE IT RUNS. `/ci/publish` is TAILNET-ONLY: the observer publishes only
+# /callback and /ordinary-action through its path-scoped Funnel
+# (SPECIFICATION/contracts.md, "Expedited incident execution", public ingress;
+# .ai/tailnet-posture.md), so a GitHub-hosted runner can never reach it. The job
+# therefore runs where the caller's `incident-ci` job runs, passed in as the
+# `runner-labels` input: the caller supplies the same merge-group-trust-guarded
+# expression over CI_INCIDENT_RUNNER_LABELS that its own incident-ci job uses,
+# so a pull request from a fork is never routed to self-hosted capacity. The
+# input DEFAULTS to GitHub-hosted, so a consumer that passes nothing keeps the
+# hosted shape every shipped reusable workflow has
+# (tests/consumer/test_ci_matrix_shape.py). It dials the controller exactly as
+# incident-ci does: the tailnet URL `LIVESPEC_INCIDENT_OBSERVER_URL` with the
+# connect-address override `LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR`. The
+# controller verifies the forge-signed identity token against its pinned policy
+# before it reads or writes anything (livespec-dev-tooling-bqnzcm.4; the route
+# was ruled tailnet-only and self-hosted by legacy-coordinator-agent,
+# 2026-11-15 and 2026-11-16).
 #
 # WHY `id-token: write` AND NOTHING BROADER. The one permission is what lets the
 # job request its own OIDC identity token; it is not a workflow write scope and
@@ -60,6 +67,13 @@ on:
         description: The six-field retained arm query, as the JSON line incident-ci wrote.
         type: string
         required: true
+      runner-labels:
+        description: >-
+          The runner label set as a JSON array, which the caller resolves exactly as
+          its own incident-ci job's runs-on. Defaults to GitHub-hosted.
+        type: string
+        required: false
+        default: '["ubuntu-latest"]'
 
 permissions: {}
 
@@ -67,7 +81,7 @@ jobs:
   publish:
     name: publish
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
     permissions:
       id-token: write
     steps:
@@ -121,7 +135,8 @@ jobs:
           INCIDENT_CI_RELEASE: ${{ inputs.release }}
           INCIDENT_CI_AGGREGATE: ${{ inputs.aggregate }}
           INCIDENT_CI_QUERY: ${{ inputs.query }}
-          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_PUBLIC_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_URL }}
+          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR }}
           LIVESPEC_INCIDENT_CI_AUDIENCE: ${{ vars.LIVESPEC_INCIDENT_CI_AUDIENCE }}
         run: |
           "$RELEASED_PYTHON" -I -m livespec_dev_tooling.incident_ci_publish publish

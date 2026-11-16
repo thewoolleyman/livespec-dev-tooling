@@ -65,6 +65,17 @@ _HOSTED_IMAGE_FAMILIES = ("ubuntu-", "windows-", "macos-")
 # gating label, and the repo variable that resolves to a label set.
 _SELF_HOSTED_MARKERS = ("self-hosted", "local-ci", "CI_RUNNER_LABELS")
 
+# The one shipped reusable workflow whose runner the CALLER chooses. The incident
+# CI publisher must reach the observer's tailnet-only /ci/publish route, so it
+# runs where the caller's incident-ci job runs; its `runner-labels` input DEFAULTS to
+# GitHub-hosted, so a consumer that passes nothing keeps the hosted shape
+# (livespec-dev-tooling-bqnzcm.4). Exactly this file and exactly this value are
+# allowed; any other caller-chosen or self-hosted runs-on still fails.
+_CALLER_CHOSEN_RUNS_ON = {
+    "reusable-incident-ci-publish.yml": "${{ fromJSON(inputs.runner-labels) }}",
+}
+_CALLER_CHOSEN_RUNS_ON_DEFAULT = "        default: '[\"ubuntu-latest\"]'\n"
+
 _RUNS_ON = re.compile(r"^\s*runs-on:\s*(?P<value>.+?)\s*$", re.MULTILINE)
 
 # Everything under the workflow's top-level `jobs:` key, so a 2-space key under
@@ -189,8 +200,13 @@ def test_the_shipped_reusable_workflows_stay_on_github_hosted_capacity() -> None
         name: sorted(
             value
             for value in _RUNS_ON.findall(text)
-            if not value.startswith(_HOSTED_IMAGE_FAMILIES)
-            or any(marker in value for marker in _SELF_HOSTED_MARKERS)
+            if (
+                not value.startswith(_HOSTED_IMAGE_FAMILIES)
+                or any(marker in value for marker in _SELF_HOSTED_MARKERS)
+            )
+            and not (
+                _CALLER_CHOSEN_RUNS_ON.get(name) == value and _CALLER_CHOSEN_RUNS_ON_DEFAULT in text
+            )
         )
         for name, text in workflows.items()
     }
