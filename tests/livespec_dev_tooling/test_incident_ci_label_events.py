@@ -71,7 +71,16 @@ _JOB_PERMISSIONS = {"actions": "write", "checks": "write", "pull-requests": "rea
 _EXPRESSION = "${{"
 
 # The forge reads and writes the restart must make.
-_HEAD_READ = """livespec-forge-read incident-label-head-read "repos/${repo}/pulls/${PR_NUMBER}" | jq -r '.head.sha'"""
+_HEAD_QUERY = (
+    'head_query="query { repository(owner: \\"${repo%%/*}\\", name: \\"${repo##*/}\\") '
+    '{ pullRequest(number: ${PR_NUMBER}) { headRefOid } } }"'
+)
+_HEAD_READ = (
+    'head="$(livespec-forge-read incident-label-head-read --method POST --idempotent '
+    '--field "query=${head_query}" graphql | '
+    "jq -r '.data.repository.pullRequest.headRefOid // empty')\""
+)
+_HEAD_GUARD = 'if ! [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then'
 _RUNS_ON_HEAD = "actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}"
 _SELECT_BY_PR = "select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))"
 _NO_RUN = re.compile(r'if \[ -z "\$run_id" \]; then\n(?P<body>(?:.*\n)*?)[ ]*fi\n')
@@ -207,8 +216,12 @@ def _selection_findings(*, script: str) -> list[str]:
     findings: list[str] = []
     if _EXPRESSION in script:
         findings.append("a run: script interpolates an expression")
-    if _HEAD_READ not in script:
-        findings.append("the restart does not read the current head from the forge")
+    if _HEAD_QUERY not in script or _HEAD_READ not in script:
+        findings.append("the restart does not read the current head from the forge through GraphQL")
+    if "pulls/${PR_NUMBER}" in script:
+        findings.append("the restart reads the head through the REST pulls endpoint")
+    if _HEAD_GUARD not in script:
+        findings.append("the restart does not fail closed on an unreadable head")
     if _RUNS_ON_HEAD not in script or _SELECT_BY_PR not in script:
         findings.append("the restart does not select THIS PR's pull_request CI run on the head")
     no_run = _NO_RUN.search(script)
@@ -387,9 +400,19 @@ _USES = "uses: livespec-ai/livespec-dev-tooling/.github/actions/forge-read@v1.20
             "a run: script interpolates an expression",
         ),
         (
-            "jq -r '.head.sha'",
-            "jq -r '.base.sha'",
-            "the restart does not read the current head from the forge",
+            "jq -r '.data.repository.pullRequest.headRefOid // empty'",
+            "jq -r '.data.repository.pullRequest.baseRefOid // empty'",
+            "the restart does not read the current head from the forge through GraphQL",
+        ),
+        (
+            'head_query="query',
+            'rest="repos/${repo}/pulls/${PR_NUMBER}"; head_query="query',
+            "the restart reads the head through the REST pulls endpoint",
+        ),
+        (
+            'if ! [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then',
+            'if false && [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then',
+            "the restart does not fail closed on an unreadable head",
         ),
         (
             _SELECT_BY_PR,

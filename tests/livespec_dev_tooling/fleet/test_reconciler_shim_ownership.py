@@ -38,7 +38,7 @@ _PUBLIC_CONNECT_ENV = (
 )
 _MUTATIONS = (
     "gh run rerun",
-    "gh api graphql",
+    "mutation($pr: ID!",
     "gh label create",
     "gh pr edit",
     "gh pr merge",

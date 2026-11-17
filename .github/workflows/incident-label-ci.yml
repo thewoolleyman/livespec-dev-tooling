@@ -102,7 +102,15 @@ jobs:
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
-          head="$(livespec-forge-read incident-label-head-read "repos/${repo}/pulls/${PR_NUMBER}" | jq -r '.head.sha')"
+          # The head and nothing else is read through GraphQL: REST pulls/<n> computes diff
+          # stats and answers a transient 422 "too many files changed" right after a
+          # force-push (livespec-dev-tooling#4889). An unreadable answer fails the step.
+          head_query="query { repository(owner: \"${repo%%/*}\", name: \"${repo##*/}\") { pullRequest(number: ${PR_NUMBER}) { headRefOid } } }"
+          head="$(livespec-forge-read incident-label-head-read --method POST --idempotent --field "query=${head_query}" graphql | jq -r '.data.repository.pullRequest.headRefOid // empty')"
+          if ! [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the current head of PR #${PR_NUMBER} could not be read through GraphQL"
+            exit 1
+          fi
           runs="repos/${repo}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${head}&per_page=20"
           run_id="$(livespec-forge-read incident-label-runs-read "$runs" | jq -r '[.workflow_runs[] | select(any(.pull_requests[]; .number == (env.PR_NUMBER | tonumber)))] | first | .id // empty')"
           if [ -z "$run_id" ]; then

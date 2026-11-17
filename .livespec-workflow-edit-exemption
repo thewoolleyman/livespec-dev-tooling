@@ -1,4 +1,9 @@
-work_item=livespec-dev-tooling-ymog6r
-reason=log the merge_group_skip decision and reason, prefixed, in the guard job log so an inert or refused skip is diagnosable
-change=additive
-ci_runtime=no-significant-increase
+# Workflow-edit exemption — one exemption binds to one reviewed change.
+#
+# The change: the REST pull-request reads that compute diff stats (and so answer a transient
+# 422 "too many files changed" right after a force-push) become GraphQL reads of headRefOid
+# and id, and the reverted pull request's opener login moves to issues/<n>. It rewrites
+# existing run: lines in incident-label-ci.yml and reusable-master-health-reconcile.yml, so
+# it is the maintainer tier.
+work_item=livespec-dev-tooling-23yaqm
+reason=Reading a pull request's head sha and node id through GraphQL and its opener login through the issues endpoint returns the same values without the REST diff computation, so a transient too-many-files 422 cannot fail the incident label restart or the master-health reconciler.
