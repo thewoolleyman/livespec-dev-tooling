@@ -275,6 +275,7 @@ The livespec fleet dogfoods its own telemetry. CI runs, Red→Green commit-gate 
 
 ## More
 
+- [`docs/ci-runner-failover.md`](docs/ci-runner-failover.md) — how merge-gating CI is routed to self-hosted capacity, and how a merge group may skip a suite its head already passed.
 - [`livespec`](https://github.com/livespec-ai/livespec) — the
   parent plugin governing this library's specification.
 - [`livespec-orchestrator-beads-fabro`](https://github.com/livespec-ai/livespec-orchestrator-beads-fabro)
