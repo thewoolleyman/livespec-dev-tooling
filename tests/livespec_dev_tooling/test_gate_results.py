@@ -203,3 +203,17 @@ def test_oversized_evidence_is_truncated_so_the_summary_stays_under_the_limit(
         True,
         True,
     )
+
+
+def test_a_failed_job_with_records_and_a_defect_finding_never_reads_external_only(
+    tmp_path: Path,
+) -> None:
+    _put(
+        root=tmp_path,
+        name="check-lint",
+        attempt=1,
+        result={"records": [_RECORD], "defect_findings": 2, "external_only": True},
+    )
+    run_jobs = [{"name": "check-lint", "conclusion": "failure", "run_attempt": 1}]
+    jobs = collect_jobs(legs=["check-lint"], run_jobs=run_jobs, results_dir=tmp_path)
+    assert (jobs[0]["external_only"], jobs[0]["defect_findings"]) == (False, 2)
