@@ -2,9 +2,9 @@
 
 Use this when a factory run node, a CI job, a gate Job, a flaky test or a probe has failed and its cause is
 not already known from evidence. Use it BEFORE any retry, relaunch, re-dispatch or "wait for the next factory
-run". Every one of those runs in a published container image, so the failing command can be run again, by
-hand, in the same image, usually in seconds or minutes. A factory run takes hours, so waiting for one costs
-far more than a repro.
+run". Every one of those runs in a published container image, so the failing command can be run again in
+the same image, on a route that "Route by failure class" below names for each class. Some classes have no
+lawful same-image route from a seat yet, and that section says what to do instead.
 
 The maintainer, 2026-11-17 ~03:5xZ, to throughput-plans-coordinator: "So are you thrashing and not using this
 clear tool that you have available, where everything is containerized and you can easily reproduce problems
@@ -33,7 +33,8 @@ always" [6tgd2z 2026-11-17T04:0xZ]. This is mechanical and needs no judgment. Wh
 recurs in a row in the factory or CI, the failure MUST be debugged locally in the identical container, and
 nothing is retried or relaunched until the cause is measured and fixed. No label (flake, transient, infra)
 exempts a repeating signature. Rule STOP-AT-SECOND (`.ai/coordinator-duties.md` §10) stops new launches. This
-floor says what the seat does instead: it debugs locally.
+floor says what the seat does instead: it debugs locally, on the route the table below gives for the failure's
+class.
 
 What skipping this cost on 2026-11-17: driver-claude's `commit_green` failure was never reproduced and failed
 twice. git-jsonl was retried three times on a probe token error. A slow coverage job was re-run instead of
@@ -44,16 +45,19 @@ measured.
 | Failure class | Lawful repro route |
 |---|---|
 | Gate image (a delegated pre-commit or pre-push gate Job) | `mise exec -- just gate-repro <repo_root> …` (`justfile:457`, `ci-runner/k3s/phase2/gates/gate-repro.sh`). It runs the gate client and a rendered Job on queue `gates-repro-lq`. It runs only on gamingpc-xubuntu and only with the GATE image. |
-| ARC runner image (a CI job) or factory SANDBOX image (a factory node) | A local container on the dev VPS `vmi3006760.contaboserver.net`, which has docker 28.2.2 and puts the user in the `docker` group. Use `docker run --rm` with the EXACT image reference and digest the failing run used, and clone the preserved tree INSIDE the container. Never write to a host bind-mount. See Step 2. |
+| ARC runner image (a CI job) or factory SANDBOX image (a factory node) | No lawful same-image route from a seat exists today; see below. Measure the real run (the next row), or run the failing node's command inside the factory's own sandbox through a normal factory run of a diagnostic item. |
 | Node-specific performance (a job that is slow on one node only) | Measure the real run on that node: `sar` history for the job's disk, Honeycomb per-pod `k8s.pod.cpu.usage`, and the kubelet journal (`.ai/deleted-gate-pod-diagnosis.md`, `.ai/ci-node-capacity-reads.md`). A new pod elsewhere does not reproduce it. |
 
-**There is no committed per-node k3s lane for the ARC or sandbox images.** `fleet_host_guard` refuses a hand probe
-pod such as `ssh <node> sudo k3s kubectl apply -f -`. Nobody may respell a command to get around that guard. A
-committed repro lane per node, or an image parameter on `gate-repro`, is build work that is still owed. It is
-routed to gate-job-resources. Until it lands, the local container above is the lawful route. **Never route around
-a guard refusal.** Report it as a missing lane.
+**For ARC runner image and factory sandbox image failures, a seat has NO lawful same-image route today.**
+`fleet_host_guard` refuses a hand probe pod (`ssh <node> sudo k3s kubectl apply -f -`). On 2026-11-17 ~05:0xZ it
+also refused `ssh vmi3006760 docker pull <runner image>` as a by-hand fleet change. The committed repro lane is
+being built as livespec-dev-tooling-cwrg3v (gate-job-resources). Until it lands, reproduce such a failure in one of
+two ways. Either measure the real run, or put the failing node's command into a diagnostic work item and let a
+normal factory run execute it inside the factory's own sandbox. Dispatch that run through petri like any other
+(`.ai/fabro-dispatch-diagnosis.md`). That run is the repro, not a retry of the failed item. **Never route around a
+guard refusal, and never respell a refused command.** Report the refusal as a missing lane.
 
-## Step 1: find the exact image and tree
+## Find the exact image and tree
 
 **Factory run (petri or candidate).** The image comes from the factory's catalog, not from the workflow's pin,
 so read it from the run itself. Use the client named by the factory's `bin` in the dispatching repository's
@@ -78,8 +82,7 @@ dump holds the graph as the engine ran it (`graph.fabro`) and one directory per 
 The tree of a failed run is its preserve ref in the target repository,
 `git ls-remote origin refs/heads/needs-human/<dispatch-id>`. For a run that published a PR, use the PR head. If
 there is no preserve ref, follow "Preserve before any cancel" (`.ai/coordinator-duties.md` §10) first. Runs on
-the `homelab-worker-arm64` factory use the `-arm64` image. The dev host (vmi3006760) is x86_64 and has no arm64
-emulator registered, so reproduce those on an arm64 host.
+the `homelab-worker-arm64` factory use the `-arm64` image.
 
 **CI job.** The image is the job's `container: image:` in the workflow at the run's head commit. The ARC job log
 does not print it (checked on 2026-11-17).
@@ -90,77 +93,39 @@ gh api -H 'Accept: application/vnd.github.raw' \
   "repos/livespec-ai/<repo>/contents/.github/workflows/ci.yml?ref=${sha}" | grep -n 'image:'
 ```
 
-Copy the job's `env:` block too. In `ci.yml` that block sets `MISE_DATA_DIR=/root/.local/share/mise` and
-`MISE_NOT_FOUND_AUTO_INSTALL=0`.
-
 **Gate Job.** A delegated gate pod runs the gated repository's own CI image. `render-gate-job.sh` reads it from
 that repository's workflow into `gate-job-template.yaml`'s `@@IMAGE@@` (`ci-runner/k3s/phase2/gates/`), so look
 it up the same way, at the gated tree.
 
-## Step 2: run the failing command in that image
+## Run a gate repro on the cluster
 
-**On the dev host with docker** (`vmi3006760.contaboserver.net` has docker 28.2.2 and podman). Put this in a
-scratchpad script and run it with `bash <file>`. The tree is mounted read-only and cloned inside the container.
-The push URL is disabled, and no secret is passed in. Checked on 2026-11-17: `check-format` on a preserve ref in
-`python-v1.183.1` took 17 s from start to finish.
+Run `mise exec -- just gate-repro <repo-root>` (`ci-runner/k3s/phase2/gates/gate-repro.sh`). It submits ONE gate
+Job for the committed tree through the normal gate client, onto queue `gates-repro-lq` in namespace `gates`
+(gamingpc-xubuntu), and it keeps the Job's logs under `tmp/gate-repro/`. Never hand-create a pod or Job
+(`kubectl run`, `create` or `apply`, directly or over `ssh`): `fleet_host_guard` refuses it, and the gates
+credential cannot delete pods (`gates-rbac.yaml`), so a `kubectl run --rm` pod would leak. Namespace `factory`
+belongs to the sandbox driver. Never create anything there.
 
-Run the image by digest. A run record names only the tag, so resolve the digest with
-`docker buildx imagetools inspect <image:tag> --format '{{json .Manifest.Digest}}'`. If the failing pod's
-`imageID` is on record (pod status or the kubelet journal), that digest wins.
-
-```bash
-set -euo pipefail
-repo=livespec-dev-tooling
-src=refs/heads/needs-human/<dispatch-id>   # or a PR branch ref, or a full commit sha
-img=ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.188.1@sha256:<digest>
-cmd='mise exec -- just check-format'       # the exact failing command
-dir=$(mktemp -d)
-gh repo clone "livespec-ai/${repo}" "${dir}/src" -- -q --reference-if-able "$HOME/workspace/${repo}" --dissociate
-git -C "${dir}/src" fetch -q origin "+${src}:refs/heads/repro"
-git -C "${dir}/src" remote set-url --push origin DISABLED
-docker run --rm --cpus 6 --memory 8g -v "${dir}/src":/src:ro \
-  -e MISE_DATA_DIR=/root/.local/share/mise -e MISE_NOT_FOUND_AUTO_INSTALL=0 \
-  "${img}" bash -lc "git config --global --add safe.directory '*' &&
-    git clone -q -b repro /src /workspace && cd /workspace && ${cmd}"
-```
-
-- `--cpus 6 --memory 8g` matches the `factory-python` environment (cpu 6, memory 8GB). Change it to match the
-  failing job's limits.
-- Inside the container, `origin/master` is the host clone's `master`. Diff-based checks therefore see a real
-  base.
-- Do not use `--filter=blob:none`. A partial clone cannot be cloned again from `/src`, and checkout fails with
-  `unable to read sha1 file`.
-- Use braces in `"+${src}:refs/…"`. In zsh, `$src:r` is a history modifier and mangles the refspec
-  (`.ai/livespec-operation-gotchas.md`).
-
-**On the cluster, gate failures only.** Run `mise exec -- just gate-repro <repo-root>`
-(`ci-runner/k3s/phase2/gates/gate-repro.sh`). It submits ONE gate Job for the committed tree through the normal
-gate client, onto queue `gates-repro-lq` in namespace `gates` (gamingpc-xubuntu), and it keeps the Job's logs
-under `tmp/gate-repro/`. Never hand-create a pod or Job (`kubectl run`, `create` or `apply`, directly or over
-`ssh`): `fleet_host_guard` refuses it, and the gates credential cannot delete pods (`gates-rbac.yaml`), so a
-`kubectl run --rm` pod would leak. Namespace `factory` belongs to the sandbox driver. Never create anything there.
-
-**Stay read-only.** The repro never pushes, never writes config, secrets or the ledger, never runs a credential
-wrapper inside the container, and never prints a secret value. A retained factory sandbox is evidence only.
-Reproduce in a fresh container, never by repairing the retained one.
+**Stay read-only.** A repro never pushes to a working branch, never writes config, secrets or the ledger, and
+never prints a secret value. A retained factory sandbox is evidence only. Never repair it in place.
 
 ## Reproducing a factory node
 
 1. Dump the run and open the failing stage's `status.json` and `output.log`. These often name the cause outright.
    Run `01M7KR00K1FP` `commit_green@3` read "current run's own Red commit was not found beneath checkpoint
    commits".
-2. The node's command is in that stage's `script_invocation.json`. The `stages/*run_prepare_*` directories are
-   the setup that ran before it. Replay the setup steps that use no credential, such as `mise install`,
-   `uv run lefthook install`, `git fetch origin master`, `mise exec -- just install-worktree-pack` and
-   `uv sync --all-groups`. Skip any step that writes a token, `auth.json` or a credential helper.
+2. The node's exact command is in that stage's `script_invocation.json`. The `stages/*run_prepare_*` directories
+   are the setup that ran before it. `checkpoints/*.json` give the tree at each step.
 3. A prepare step writes the helpers a node calls under `$HOME/.claude/plugins`, using the dispatch payload. Their
    source is in the orchestrator. For example, `livespec-commit-green.sh` comes from
-   `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_commit_green_program.sh`. Use the
-   build the dispatching project has installed (`.ai/stale-plugin-build-path.md`). Mount it read-only and run it
-   with the arguments from `script_invocation.json`.
-4. A `commit_green` or gate refusal comes from the repository's own hooks. Run the refused target
+   `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_commit_green_program.sh`, at the
+   build the dispatching project has installed (`.ai/stale-plugin-build-path.md`). Read it next to the stage's
+   output before forming a theory.
+4. A `commit_green` or gate refusal comes from the repository's own hooks. The refused target
    (`mise exec -- just <target>`) or the run's `sandbox_check_suite` input
-   (`mise exec -- just install-worktree-pack check`) on the preserved tree.
+   (`mise exec -- just install-worktree-pack check`) on the preserved tree is the command to reproduce. Run it
+   through `just gate-repro` if it is a gate, or through a diagnostic item's factory run if it needs the sandbox
+   image.
 
 If the repro passes while the run failed, record that and chase the difference (resources, node, network,
 credentials, plugin build). Never relaunch to "see if it happens again".
