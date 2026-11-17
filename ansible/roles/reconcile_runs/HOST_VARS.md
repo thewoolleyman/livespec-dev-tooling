@@ -154,7 +154,7 @@ reconcile_runs_tenants:
 
 reconcile_runs_orchestrator_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
 reconcile_runs_plugin_root: "{{ reconcile_runs_orchestrator_checkout }}/.claude-plugin"
-reconcile_runs_interval: 10min           # OnUnitInactiveSec: idle gap between sweeps
+reconcile_runs_interval: 2min            # OnUnitInactiveSec: idle gap between sweeps
 reconcile_runs_boot_delay: 5min
 reconcile_runs_timeout_seconds: 1800     # one pass's bound
 reconcile_runs_stale_after_seconds: 14400
