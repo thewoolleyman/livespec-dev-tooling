@@ -489,7 +489,7 @@ echo "== L. the gated repository's github.com identity reaches the pod =="
 # global config is scrubbed so a host-level `url.<base>.insteadOf` cannot
 # rewrite the remote this case exists to read.
 repo_origin="${SCRATCH}/repo-origin"
-make_repo "${repo_origin}" "ghcr.io/thewoolleyman/livespec-python:v1.64.2"
+make_repo "${repo_origin}" "ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.205.0"
 git_scrubbed() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git "$@"; }
 git_scrubbed init --quiet "${repo_origin}" 2>/dev/null
 git_scrubbed -C "${repo_origin}" remote add origin \
