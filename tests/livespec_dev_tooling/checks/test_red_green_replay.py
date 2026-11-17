@@ -99,6 +99,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -2782,6 +2783,10 @@ def _range_git(*, tmp_path: Path, args: list[str]) -> None:
     )
 
 
+_RANGE_REPO_TEMPLATE: list[Path] = []
+_COMPLETED_PAIR_TEMPLATE: list[Path] = []
+
+
 def _init_range_repo(*, tmp_path: Path) -> None:
     """Init a tmp repo with one base commit and `origin/master` pinned to it.
 
@@ -2790,14 +2795,7 @@ def _init_range_repo(*, tmp_path: Path) -> None:
     only requires the ref to RESOLVE so `origin/master..HEAD`
     enumerates the branch's own commits.
     """
-    _range_git(tmp_path=tmp_path, args=["init", "-q"])
-    _range_git(tmp_path=tmp_path, args=["config", "user.email", "test@example.com"])
-    _range_git(tmp_path=tmp_path, args=["config", "user.name", "Test"])
-    _range_git(tmp_path=tmp_path, args=["config", "commit.gpgsign", "false"])
-    (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
-    _range_git(tmp_path=tmp_path, args=["add", "-A"])
-    _range_git(tmp_path=tmp_path, args=["commit", "-qm", "chore: base"])
-    _range_git(tmp_path=tmp_path, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    shutil.copytree(_RANGE_REPO_TEMPLATE[0], tmp_path, dirs_exist_ok=True)
 
 
 def _commit_all(*, tmp_path: Path, message: str) -> None:
@@ -3087,16 +3085,41 @@ def _init_repo_with_completed_pair_head(*, tmp_path: Path) -> None:
     routing assertions on the trailer SHAPE, not on an incidental
     checksum failure.
     """
-    _range_git(tmp_path=tmp_path, args=["init", "-q"])
-    _range_git(tmp_path=tmp_path, args=["config", "user.email", "test@example.com"])
-    _range_git(tmp_path=tmp_path, args=["config", "user.name", "Test"])
-    _range_git(tmp_path=tmp_path, args=["config", "commit.gpgsign", "false"])
-    (tmp_path / "tests").mkdir()
+    shutil.copytree(_COMPLETED_PAIR_TEMPLATE[0], tmp_path, dirs_exist_ok=True)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _git_repo_templates(*, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Build repeated real-Git fixture histories once, then copy them per test.
+
+    Range and completed-pair tests used to pay for the same `git init`, config,
+    base commit, and pair commit on every case. A copied repository keeps the
+    exact object graph, index, config, and remote-tracking ref; each test still
+    stages, commits, and asks the hook about its own independent Git history.
+    """
+    range_template = tmp_path_factory.mktemp("range-repo")
+    _range_git(tmp_path=range_template, args=["init", "-q"])
+    _range_git(tmp_path=range_template, args=["config", "user.email", "test@example.com"])
+    _range_git(tmp_path=range_template, args=["config", "user.name", "Test"])
+    _range_git(tmp_path=range_template, args=["config", "commit.gpgsign", "false"])
+    (range_template / "base.txt").write_text("base\n", encoding="utf-8")
+    _commit_all(tmp_path=range_template, message="chore: base")
+    _range_git(
+        tmp_path=range_template,
+        args=["update-ref", "refs/remotes/origin/master", "HEAD"],
+    )
+    _RANGE_REPO_TEMPLATE[:] = [range_template]
+
+    completed_pair_template = tmp_path_factory.mktemp("completed-pair-repo")
+    shutil.copytree(range_template, completed_pair_template, dirs_exist_ok=True)
+    (completed_pair_template / "tests").mkdir()
     test_bytes = b"def test_x() -> None:\n    assert True\n"
-    (tmp_path / "tests" / "test_x.py").write_bytes(test_bytes)
+    (completed_pair_template / "tests" / "test_x.py").write_bytes(test_bytes)
     checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
-    (tmp_path / "livespec").mkdir()
-    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    (completed_pair_template / "livespec").mkdir()
+    (completed_pair_template / "livespec" / "foo.py").write_text(
+        "VALUE: int = 1\n", encoding="utf-8"
+    )
     pair_message = (
         "feat: completed feature\n"
         "\n"
@@ -3108,7 +3131,8 @@ def _init_repo_with_completed_pair_head(*, tmp_path: Path) -> None:
         "TDD-Green-Verified-At: 2026-06-11T00:01:00Z\n"
         "TDD-Green-Parent-Reflog: 0000000000000000000000000000000000000000\n"
     )
-    _commit_all(tmp_path=tmp_path, message=pair_message)
+    _commit_all(tmp_path=completed_pair_template, message=pair_message)
+    _COMPLETED_PAIR_TEMPLATE[:] = [completed_pair_template]
 
 
 def _run_msg_hook(
