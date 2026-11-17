@@ -330,6 +330,14 @@ def _gate_findings(*, gate: dict[str, Any]) -> list[str]:
     return findings
 
 
+_PUBLISH_RESULT_ACTION = "./.github/actions/publish-gate-result"
+
+
+def _member_steps(*, job: dict[str, Any]) -> list[dict[str, Any]]:
+    """A job's steps without the always-run result publisher ci-green reads (bk2d73)."""
+    return [step for step in job["steps"] if step.get("uses") != _PUBLISH_RESULT_ACTION]
+
+
 def _job_findings(*, name: str, job: dict[str, Any]) -> list[str]:
     """A job that reads the output needs `incident-ci` and can be skipped by nothing."""
     findings: list[str] = []
@@ -355,7 +363,7 @@ def _single_member_findings(*, name: str, job: dict[str, Any], member: str) -> l
     run_after_failure_if = "${{ !cancelled() && !(" + guard + ") }}"
     findings: list[str] = []
     reports = 0
-    for step in job["steps"]:
+    for step in _member_steps(job=job):
         condition = step.get("if")
         if _does_member_work(step=step):
             accepted = (
@@ -380,9 +388,9 @@ def _single_member_findings(*, name: str, job: dict[str, Any], member: str) -> l
 def _batch_findings(*, job: dict[str, Any]) -> list[str]:
     """The batch reports exactly the deferred members, line by line, and runs the rest."""
     findings: list[str] = []
-    if any("if" in step for step in job["steps"]):
+    if any("if" in step for step in _member_steps(job=job)):
         findings.append(f"job {_BATCH_JOB} conditions a whole step")
-    batch = job["steps"][-1]
+    batch = _member_steps(job=job)[-1]
     if batch.get("env", {}).get("OMITTED_BY_INCIDENT_POLICY") != _BATCH_ENV:
         findings.append(f"job {_BATCH_JOB} reads its omission list from somewhere else")
     run = batch["run"]
