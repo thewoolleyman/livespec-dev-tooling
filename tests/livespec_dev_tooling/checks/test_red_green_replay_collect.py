@@ -5,14 +5,18 @@ commit by the PRESENCE of its trailer keys alone, so a history rewrite that
 bypassed the commit-time hooks could keep the trailers while the tree around
 the recorded test changed under it (work-item livespec-dev-tooling-5be65c).
 Every fixture here is a real git repository whose commits are collected by a
-real child pytest: the property is about what a commit's OWN tree can import,
-which no stand-in for the tree or the child can show.
+real `pytest --collect-only`: the property is about what a commit's OWN tree can
+import, which no stand-in for the tree or the collection can show. Each case runs
+that pytest in this process, isolated as a child would be (see
+`_confine_children`); the one case about a collection that never returns keeps a
+real child process, because only a process can be ended by the bound.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +31,7 @@ from livespec_dev_tooling.checks import _red_green_replay_collect as module
 from livespec_dev_tooling.checks import red_green_replay
 from livespec_dev_tooling.checks._red_green_replay_revert import ForgeProbeUnavailable
 from livespec_dev_tooling.checks._red_green_replay_suite_runner import SuiteBound, SuiteRun
+from tests.livespec_dev_tooling.checks.test_in_process_pytest import in_process_suite_run
 
 _CHECK_ID = "red-green-replay-range-recorded-test-uncollectable"
 _MODULE_PATH = "tests/test_x.py"
@@ -59,51 +64,39 @@ _DROP_NAMES = (*_GIT_ENV_VARS, "COVERAGE_PROCESS_START")
 pytestmark = pytest.mark.no_flake_retry
 
 
-def _fast_collection_run(
-    *, argv: list[str], bound: SuiteBound, cwd: Path | None = None, **_kwargs: object
-) -> SuiteRun:
-    """Collect the deliberately tiny historical fixtures without a child pytest.
-
-    The production collector's child-process and import semantics are covered
-    by its own tests.  These fixtures assert the three collector outcomes used
-    by the range gate: a missing import, no collected test, and success.  A
-    static double retains those assertions while avoiding process startup (and
-    the runner poll interval) for every generated history.
-    """
-    del bound
-    assert cwd is not None
-    test_path = cwd / argv[-1]
-    source = test_path.read_text(encoding="utf-8")
-    if "time.sleep(60)" in source:
-        return SuiteRun(returncode=None, output="", timed_out=True, kill_reason="stalled")
-    if "def test_" not in source:
-        return SuiteRun(returncode=5, output="no tests collected in 0.00s\n", timed_out=False)
-    if "decode_historical_reply" in source and "decode_historical_reply" not in (
-        cwd / "livespec" / "foo.py"
-    ).read_text(encoding="utf-8"):
-        return SuiteRun(
-            returncode=2,
-            output="E   ImportError: cannot import name 'decode_historical_reply'\n",
-            timed_out=False,
-        )
-    return SuiteRun(returncode=0, output="1 test collected in 0.00s\n", timed_out=False)
+@pytest.fixture
+def real_child_pytest() -> None:
+    """Request this fixture to keep the collector's pytest a real child process."""
 
 
 @pytest.fixture(autouse=True)
-def _confine_children(*, monkeypatch: pytest.MonkeyPatch) -> None:
+def _confine_children(*, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep every child on the fixture repo and out of the suite's coverage session.
 
     An ambient `GIT_DIR` (exported while this repository's own commit hook runs
     the suite) would aim the check's git calls at the surrounding repository,
     and `COVERAGE_PROCESS_START` or `COV_CORE_*` would make the collecting
     pytest self-instrument and write data files that race the parallel gate.
+
+    The collection is a real `pytest --collect-only` on the commit's own tree
+    either way. As a child process it costs about 0.25 s of interpreter and
+    pytest start-up per commit collected, which is most of this module's time,
+    so each case runs the same command line through the real `pytest.main` in
+    this process (`in_process_pytest`), isolated as a child would be: the
+    tree as cwd and first on `sys.path`, and every module it imported dropped
+    afterwards, which is what lets one commit's tree not see another's. A case
+    that requests `real_child_pytest` keeps the real process, which a
+    collection that never returns needs in order to be ended by the bound.
     """
     drop = monkeypatch.delenv
     _ = [drop(n) for n in os.environ.copy() if n in _DROP_NAMES or n[:9] == "COV_CORE_"]
-    monkeypatch.setattr(module, "run_suite", _fast_collection_run)
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    if "real_child_pytest" in request.fixturenames:
+        return
     import _red_green_replay_collect as direct_collect
 
-    monkeypatch.setattr(direct_collect, "run_suite", _fast_collection_run)
+    monkeypatch.setattr(module, "run_suite", in_process_suite_run)
+    monkeypatch.setattr(direct_collect, "run_suite", in_process_suite_run)
 
 
 class _History(NamedTuple):
@@ -116,7 +109,7 @@ def _git(*, repo: Path, args: list[str]) -> str:
     return done.stdout.strip()
 
 
-def _init_repo(*, repo: Path, extra_config: str = "") -> None:
+def _build_repo(*, repo: Path, extra_config: str) -> None:
     _git(repo=repo, args=["init", "-q"])
     _git(repo=repo, args=["config", "user.email", "test@example.com"])
     _git(repo=repo, args=["config", "user.name", "Test"])
@@ -125,6 +118,31 @@ def _init_repo(*, repo: Path, extra_config: str = "") -> None:
     _git(repo=repo, args=["add", "-A"])
     _git(repo=repo, args=["commit", "-qm", "chore: base"])
     _git(repo=repo, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+
+
+_BASE_REPO_TEMPLATE: list[Path] = []
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _base_repo_template(*, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Build the base repository once; every fixture repository starts as a copy of it.
+
+    Seven git spawns of identical setup per case were a visible share of this
+    module's time. The copy is a byte-for-byte clone of the repository the
+    sequence below builds, so no case sees a different starting state.
+    """
+    template = tmp_path_factory.mktemp("base-repo")
+    with pytest.MonkeyPatch.context() as patch:
+        _ = [patch.delenv(name, raising=False) for name in _GIT_ENV_VARS]
+        _build_repo(repo=template, extra_config="")
+    _BASE_REPO_TEMPLATE[:] = [template]
+
+
+def _init_repo(*, repo: Path, extra_config: str = "") -> None:
+    if extra_config:
+        _build_repo(repo=repo, extra_config=extra_config)
+        return
+    shutil.copytree(_BASE_REPO_TEMPLATE[0], repo, dirs_exist_ok=True)
 
 
 def _commit(*, repo: Path, files: dict[str, str], message: str) -> str:
@@ -359,6 +377,7 @@ def test_collection_leaves_the_callers_working_tree_and_index_untouched(
     ) == "# edited, unstaged\n"
 
 
+@pytest.mark.usefixtures("real_child_pytest")
 def test_a_collection_that_stalls_fails_the_range_naming_the_bound(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -372,6 +391,11 @@ def test_a_collection_that_stalls_fails_the_range_naming_the_bound(
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LIVESPEC_SUITE_GREEN_STALL_SECONDS", "1")
+    # The runner notices a stall, and then notices the ended group is gone, on
+    # its poll cadence; the one-second default makes this case spend about a
+    # second more than the stall window it is asserting.
+    runner = sys.modules[module.run_suite.__module__]
+    monkeypatch.setattr(runner, "_POLL_SECONDS", 0.05)
 
     returncode, logs = _collect_range(shas=[sha])
 
