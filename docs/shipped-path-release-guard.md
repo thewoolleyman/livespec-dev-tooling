@@ -138,3 +138,5 @@ answer rather than a silent one — every run logs the empty derivation and its
 source string. The guard is armed here for the consumers whose derived sets are
 not empty, and arming it in an inert repository is a deliberate no-op rather than
 an untested green.
+
+See also `docs/release-lane-watch.md`, which reports how the latest release's gate concluded.
