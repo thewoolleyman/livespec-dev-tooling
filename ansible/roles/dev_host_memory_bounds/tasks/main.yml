@@ -127,6 +127,36 @@
 
 # --- install ----------------------------------------------------------------
 
+- name: Create the /tmp mount drop-in directory
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_tmp_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Create the system unit directory
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_system_unit_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
+- name: Create the user unit directory
+  ansible.builtin.file:
+    path: "{{ dev_host_memory_bounds_user_unit_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: dev_host_memory_bounds_state == 'present'
+
 - name: Install the /tmp size cap for the next mount of /tmp
   ansible.builtin.template:
     src: tmp-mount-bounds.conf.j2
