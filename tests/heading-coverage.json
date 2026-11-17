@@ -4244,6 +4244,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a single-entry merge group whose tree equals its pull request head's tree reports ci-green without re-running the suite",
+    "test": "TODO",
+    "reason": "Spec-first (v241): a real test at the integration tier or above (this repository's scenario rows run at the tests.consumer tier) is owed for this heading, driving the merge-group guard's skip decision and the required-leg reader's guard-skip input over a one-entry group with equal trees and over each fail-closed case. The unit tests ship with livespec-dev-tooling#4881; livespec-dev-tooling-ymog6r owns the scenario-tier test.",
+    "work_item": "livespec-dev-tooling-ymog6r"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue",
     "test": "TODO",
     "reason": "Spec-first (v225): a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, running branch_protection_alignment against a recorded organization-owned rulesets answer with no merge_queue rule; the proposal named the unit tier, but this repository's scenario rows run at the consumer tier. livespec-dev-tooling-mvqo6h owns it.",
