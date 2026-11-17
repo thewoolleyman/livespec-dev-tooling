@@ -104,6 +104,9 @@ class _History(NamedTuple):
     shas: list[str]
 
 
+_MEASURED_HISTORY_TEMPLATE: list[_History] = []
+
+
 def _git(*, repo: Path, args: list[str]) -> str:
     done = subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
     return done.stdout.strip()
@@ -169,7 +172,7 @@ def _pair_message(*, red_test: str | None = _MODULE_PATH) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _measured_history(*, repo: Path) -> _History:
+def _build_measured_history(*, repo: Path) -> _History:
     """The measured shape: a pair whose test cannot import on its own tree, then a fix.
 
     The first commit records `tests/test_x.py` but its tree defines only
@@ -191,6 +194,28 @@ def _measured_history(*, repo: Path) -> _History:
         message="refactor: add the name\n\nTDD-Suite-Green-Captured-At: 2026-11-10T00:00:00Z\n",
     )
     return _History(repo=repo, shas=[broken, fixed])
+
+
+def _measured_history(*, repo: Path) -> _History:
+    """Copy the canonical two-commit history each case examines.
+
+    Several cases differ only in what they assert about this same malformed
+    recorded-test history. Copying the real prebuilt repository preserves its
+    commit objects and working tree while avoiding repeated Git setup and two
+    identical commits for every assertion.
+    """
+    template = _MEASURED_HISTORY_TEMPLATE[0]
+    shutil.copytree(template.repo, repo, dirs_exist_ok=True)
+    return _History(repo=repo, shas=template.shas)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _measured_history_template(
+    *, tmp_path_factory: pytest.TempPathFactory, _base_repo_template: None
+) -> None:
+    """Create the real canonical history once for the tests that share it."""
+    template = tmp_path_factory.mktemp("measured-history")
+    _MEASURED_HISTORY_TEMPLATE[:] = [_build_measured_history(repo=template)]
 
 
 def _one_pair(*, repo: Path, red_test: str | None, files: dict[str, str]) -> str:
