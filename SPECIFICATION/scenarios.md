@@ -4,7 +4,7 @@ This file holds acceptance scenarios in Gherkin form. Each Gherkin keyword line 
 
 ## Scenario: livespec consumes the package via uv git source
 
-Given livespec's `pyproject.toml` declares `livespec-dev-tooling` under `[dependency-groups].dev` with `[tool.uv.sources]` pinning a `git = "https://github.com/thewoolleyman/livespec-dev-tooling.git"` and `tag = "vX.Y.Z"`
+Given livespec's `pyproject.toml` declares `livespec-dev-tooling` under `[dependency-groups].dev` with `[tool.uv.sources]` pinning a `git = "https://github.com/livespec-ai/livespec-dev-tooling.git"` and `tag = "vX.Y.Z"`
 
 And livespec's `justfile` references each shared check as `uv run python -m livespec_dev_tooling.checks.<slug>`
 
@@ -28,7 +28,7 @@ And no plugin-local copy of any shared check is required
 
 ## Scenario: a CI workflow consumes the reusable check-matrix
 
-Given a consumer's `.github/workflows/ci.yml` declares `jobs.check-suite.uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@vX.Y.Z`
+Given a consumer's `.github/workflows/ci.yml` declares `jobs.check-suite.uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@vX.Y.Z`
 
 And the workflow input `checks` lists the slugs the consumer wants to run
 
@@ -2214,9 +2214,9 @@ And the full pre-commit aggregate MUST NOT have started any member
 
 ## Scenario: a dev-tooling release bump rewrites the factory-reach image pin with the workflow image pins
 
-Given a repository whose `.github/workflows/ci.yml` pins `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.110.0` under a job's `container:` block
+Given a repository whose `.github/workflows/ci.yml` pins `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.110.0` under a job's `container:` block
 
-And whose `ci-runner/k3s/phase2/factory/factory-reach-image.env` carries `FACTORY_REACH_SANDBOX_IMAGE=ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.110.0`
+And whose `ci-runner/k3s/phase2/factory/factory-reach-image.env` carries `FACTORY_REACH_SANDBOX_IMAGE=ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.110.0`
 
 When a livespec-dev-tooling release v1.134.5 bumps the repository's pins
 
@@ -2226,7 +2226,7 @@ And the bump commit MUST rewrite both lines to `python-v1.134.5`
 
 ## Scenario: a bump PR whose base gains a pin-bearing line at the old tag is refreshed so that line names the target tag
 
-Given a consumer bump PR `chore(deps): bump thewoolleyman/livespec-dev-tooling pin to v2` whose rewrite moved every pin §"Pin autodiscovery rules" discovers for that source on the default branch, as it stood when the PR opened, from v1 to v2
+Given a consumer bump PR `chore(deps): bump livespec-ai/livespec-dev-tooling pin to v2` whose rewrite moved every pin §"Pin autodiscovery rules" discovers for that source on the default branch, as it stood when the PR opened, from v1 to v2
 
 And the default branch then gains a new such pin that names v1
 
@@ -5530,9 +5530,9 @@ Then they MUST fail, naming the `gates-flavor` lane, if that lane's nominal CPU 
 
 ## Scenario: a workflow whose layered fuzz flavor runs no aggregate target passes and its gate runs in the base flavor
 
-Given a consumer whose `.github/workflows/ci.yml` gives five jobs the container image `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0`
+Given a consumer whose `.github/workflows/ci.yml` gives five jobs the container image `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v1.197.0`
 
-And gives one more job, whose only recipe is `just check-fuzz`, the container image `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.197.0`, written below two comment lines inside its `container:` block
+And gives one more job, whose only recipe is `just check-fuzz`, the container image `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-fuzz-v1.197.0`, written below two comment lines inside its `container:` block
 
 And `check-fuzz` is not a target of that consumer's `just check` aggregate
 
@@ -5540,11 +5540,11 @@ When the consumer's single-container-image check runs, and the delegated gate re
 
 Then the check MUST pass
 
-And the gate Job MUST run in `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0`
+And the gate Job MUST run in `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v1.197.0`
 
 ## Scenario: a workflow naming two image versions fails the single-container-image check
 
-Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.174.0` and every other job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.175.0`
+Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.174.0` and every other job `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.175.0`
 
 When the consumer's single-container-image check runs
 
@@ -5552,7 +5552,7 @@ Then it MUST fail, naming both images and each line that declares them
 
 ## Scenario: an image written below comment lines inside a container block is counted by the gate and the check alike
 
-Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.197.0` and gives another job `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.196.0`, written below comment lines inside its `container:` block
+Given a consumer whose `.github/workflows/ci.yml` gives one job `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v1.197.0` and gives another job `ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-v1.196.0`, written below comment lines inside its `container:` block
 
 When the consumer's single-container-image check runs, and the delegated gate renders that consumer's gate Job
 
