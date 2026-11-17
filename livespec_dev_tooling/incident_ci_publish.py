@@ -25,6 +25,7 @@ import http.client
 import ipaddress
 import json
 import os
+import re
 import socket
 import ssl
 import sys
@@ -49,6 +50,12 @@ _AUDIENCE_VARIABLE = "LIVESPEC_INCIDENT_CI_AUDIENCE"
 _TIMEOUT_SECONDS = 120
 _MAX_REPLY = 65536
 _ACCEPTED = frozenset({"published", "retained"})
+# The keys the controller verifies of a published aggregate; the incident-ci job's richer plan
+# projection (attribution, conditional) is for the job's own consumers and is never published.
+_AGGREGATE_KEYS = frozenset(
+    {"status", "head_sha", "scope", "passed", "failed", "missing", "deferred", "context_name"}
+)
+_REASON_GAP = re.compile(r"(?<=:)\s+")
 _FAILURES = (
     OSError,
     ValueError,
@@ -115,6 +122,24 @@ def send_publication(
         return response.status, response.read(_MAX_REPLY + 1)
 
 
+def _controller_aggregate(*, aggregate: dict[str, Any]) -> dict[str, Any]:
+    """The aggregate in the exact shape the controller verifies.
+
+    A deferral reason carries no whitespace on the wire (`incident-policy:not-applicable:
+    <precondition>`), so the gap the entrance prints after the colon is closed here. A
+    malformed row raises, which `publish` reports as a failure to ask the controller.
+    """
+    return {
+        key: (
+            [{**row, "reason": _REASON_GAP.sub("", row["reason"])} for row in value]
+            if key == "deferred"
+            else value
+        )
+        for key, value in aggregate.items()
+        if key in _AGGREGATE_KEYS
+    }
+
+
 def publish(
     *,
     environ: Mapping[str, str],
@@ -130,7 +155,11 @@ def publish(
         if not isinstance(value, dict) or cast("dict[str, Any]", value).get("status") != "passed":
             return 1, "the aggregate did not pass; nothing was published"
         body = json.dumps(
-            {"query": strict_json(text=query, limit=65536), "aggregate": value, "release": release},
+            {
+                "query": strict_json(text=query, limit=65536),
+                "aggregate": _controller_aggregate(aggregate=cast("dict[str, Any]", value)),
+                "release": release,
+            },
             sort_keys=True,
         ).encode()
         connect = environ.get(_CONNECT_VARIABLE, "")
