@@ -58,6 +58,27 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.216.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.215.0...v1.216.0) (2026-11-17)
+
+
+### Features
+
+* **ansible:** converge the managed memory-write guard on the fleet Macs (livespec-dev-tooling-i76rv2) ([338f7fe](https://github.com/livespec-ai/livespec-dev-tooling/commit/338f7feafab1731e74a16b371df5ec86832c7da2))
+* **ci:** ci-green derives the check-run names of a job whose name templates its matrix axes (livespec-dev-tooling-ymog6r) ([0ac6f76](https://github.com/livespec-ai/livespec-dev-tooling/commit/0ac6f765fbe6cfe31f830f43e3478243cb21f292))
+* **ci:** ci-green's required-leg reader accepts a skipped gating leg only under the same run's guard skip (livespec-dev-tooling-ymog6r) ([8e6a0ee](https://github.com/livespec-ai/livespec-dev-tooling/commit/8e6a0eec6aec1ad6a9b7e63997c9774d72d0711d))
+* **ci:** the merge-group guard decides a tree-equality skip from the forge (livespec-dev-tooling-ymog6r) ([440c44a](https://github.com/livespec-ai/livespec-dev-tooling/commit/440c44a672612af895d3df299e576b56d8e41f9f))
+* red ([dafa495](https://github.com/livespec-ai/livespec-dev-tooling/commit/dafa495e0d2dacdf10a0917a281d7bd9363e28c4))
+
+
+### Bug Fixes
+
+* a pytest session nested inside another leaves the flake-retry plugin's state alone (livespec-dev-tooling-qawphe) ([5ce6a9f](https://github.com/livespec-ai/livespec-dev-tooling/commit/5ce6a9f59e9e0afaee040ad879dbd136b92699cf))
+* **gates:** a quiet gate container prints its own process tree (livespec-dev-tooling-yrjatv) ([7f789bb](https://github.com/livespec-ai/livespec-dev-tooling/commit/7f789bb0a92d14fb63a54d0afbe4fa246de202a2))
+* **gates:** the delegated client saves an abandoned gate Job's last log lines before deleting it (livespec-dev-tooling-yrjatv) ([716f8eb](https://github.com/livespec-ai/livespec-dev-tooling/commit/716f8eb064fc0ff7053fb56f194b1c53fe293b37))
+* **gates:** the preStop process tree is bounded by a timeout on ps, and the grace period is stated (livespec-dev-tooling-yrjatv) ([197a4d9](https://github.com/livespec-ai/livespec-dev-tooling/commit/197a4d995a2af98949c26da2ee816967753a19c6))
+* **pytest:** a passing test's tmp_path and tmp_path_factory files are removed so a suite run cannot exhaust a host's /tmp inodes (livespec-dev-tooling-jxhi63) ([38dcac1](https://github.com/livespec-ai/livespec-dev-tooling/commit/38dcac1d5da043c37b9708fd5b6b869a6bd9d7b6))
+* the replay gate admits a rebased expedited commit in a merge group by its verbatim patch-id (livespec-dev-tooling-txon2s) ([18399fc](https://github.com/livespec-ai/livespec-dev-tooling/commit/18399fc153db2761c8f4cd38dce20a8b557eb42c))
+
 ## [1.215.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.214.0...v1.215.0) (2026-11-16)
 
 
