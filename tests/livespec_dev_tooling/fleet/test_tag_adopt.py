@@ -544,6 +544,77 @@ def test_a_clone_with_no_session_start_hook_running_ensure_plugins_is_refused_na
     assert "probe" not in host.kinds()
 
 
+_HOLDING_SUCCESSOR = {
+    "mechanism": (
+        "SessionStart hook `.claude/hooks/ensure_plugins.py` provisions every enabled plugin "
+        "except the orchestrator, which it holds once installed; it moves only through "
+        "`just adopt-orchestrator-build`."
+    ),
+    "documentedIn": "AGENTS.md",
+}
+_SUCCESSOR_HOOK = {
+    "SessionStart": [
+        {
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "python3 hooks/ensure_plugins.py"}],
+        }
+    ]
+}
+
+
+def test_a_clone_declaring_a_documented_successor_that_holds_the_build_adopts_without_the_probe(
+    *, tmp_path: Path
+) -> None:
+    host = _Host(tmp_path=tmp_path)
+    _write(
+        path=host.clone / ".claude" / "settings.json",
+        value={
+            **host.clone_settings,
+            "hooks": _SUCCESSOR_HOOK,
+            "livespecPluginCurrencySuccessor": _HOLDING_SUCCESSOR,
+        },
+    )
+
+    outcome = host.adopt()
+
+    assert outcome.failure == ""
+    assert "probe" not in host.kinds()
+    assert host.clone_record()["gitCommitSha"] == _TAG_COMMIT
+
+
+@pytest.mark.parametrize(
+    "successor",
+    [
+        "junk",
+        {},
+        {"documentedIn": "AGENTS.md"},
+        {"mechanism": _HOLDING_SUCCESSOR["mechanism"]},
+        {"mechanism": _HOLDING_SUCCESSOR["mechanism"], "documentedIn": "   "},
+        {"mechanism": 7, "documentedIn": "AGENTS.md"},
+        {"mechanism": "   ", "documentedIn": "AGENTS.md"},
+        {"mechanism": "updates every enabled plugin each session", "documentedIn": "AGENTS.md"},
+    ],
+)
+def test_a_successor_that_is_undocumented_or_does_not_hold_the_build_is_refused_as_no_hook(
+    *, tmp_path: Path, successor: object
+) -> None:
+    host = _Host(tmp_path=tmp_path)
+    _write(
+        path=host.clone / ".claude" / "settings.json",
+        value={
+            **host.clone_settings,
+            "hooks": _SUCCESSOR_HOOK,
+            "livespecPluginCurrencySuccessor": successor,
+        },
+    )
+
+    outcome = host.adopt()
+
+    assert outcome.failure.startswith(f"{host.clone}: ")
+    assert "SessionStart" in outcome.failure
+    assert "probe" not in host.kinds()
+
+
 def test_a_missing_clone_and_a_clone_not_enabling_the_plugin_are_refused(*, tmp_path: Path) -> None:
     host = _Host(tmp_path=tmp_path)
     missing = tag_adopt(clone=tmp_path / "absent", tag=_TAG, host=host.tag_host())
