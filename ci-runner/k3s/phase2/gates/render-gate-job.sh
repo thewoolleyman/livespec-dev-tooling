@@ -553,7 +553,8 @@ if [ "${repro_image}" != "@@unset@@" ]; then
       echo "FATAL: --image '${repro_image}' is not an image reference" >&2
       exit 2 ;;
   esac
-  if ! printf '%s' "${repro_image}" | grep -Eq '^[a-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$'; then
+  digest_ref_pattern='^[a-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$'
+  if ! [[ "${repro_image}" =~ ${digest_ref_pattern} ]]; then
     echo "FATAL: --image '${repro_image}' is not a reference by digest (name@sha256:<64 hex>)" >&2
     exit 2
   fi

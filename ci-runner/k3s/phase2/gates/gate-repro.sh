@@ -5,7 +5,8 @@
 #
 # Usage (from a livespec-dev-tooling checkout, on a host that can delegate):
 #   just gate-repro <repo-root> [--queue gates-repro-lq] [--interval 300]
-#                               [--out DIR]
+#                               [--out DIR] [--image NAME@sha256:DIGEST]
+#                               [--node poweredge|gmktec|hp|gamingpc-xubuntu]
 #
 # WHAT IT DOES.
 #   1. Submits one gate Job for <repo-root>'s committed tree through the normal
@@ -40,13 +41,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLING_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 RENDERER="${SCRIPT_DIR}/render-gate-job.sh"
 
-repo_root=""; queue="gates-repro-lq"; interval="300"; out=""
+repo_root=""; queue="gates-repro-lq"; interval="300"; out=""; image=""; node=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root) repo_root="$2"; shift 2 ;;
     --queue)     queue="$2"; shift 2 ;;
     --interval)  interval="$2"; shift 2 ;;
     --out)       out="$2"; shift 2 ;;
+    --image)     image="$2"; shift 2 ;;
+    --node)      node="$2"; shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -76,6 +79,8 @@ mkdir -p "${out}"
   echo "tree=${tree}"
   echo "queue=${queue}"
   echo "interval=${interval}"
+  echo "image=${image:-<repository pin>}"
+  echo "node=${node:-<queue flavor>}"
   echo "started=${started}"
 } > "${out}/run.txt"
 echo ":: gate-repro: evidence directory ${out}"
@@ -123,7 +128,8 @@ capture() {
     --python "$(cat "${TOOLING_ROOT}/.python-version")" --with "${TOOLING_ROOT}" \
     python -I -m livespec_dev_tooling.gate_repro \
     --repo-root "${repo_root}" --renderer "${RENDERER}" \
-    --queue "${queue}" --stack-interval "${interval}" ) > "${out}/client.log" 2>&1 &
+    --queue "${queue}" --stack-interval "${interval}" \
+    ${image:+--image "${image}"} ${node:+--node "${node}"} ) > "${out}/client.log" 2>&1 &
 client=$!
 
 # FIRES SLACK SECONDS EARLY: the loop wakes every 10 s and a capture takes time,
