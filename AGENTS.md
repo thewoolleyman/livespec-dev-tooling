@@ -65,6 +65,18 @@ silent, because a throttle raises no error.
 
 The files:
 
+- Read `.ai/reproduce-failures-in-the-container.md` when a factory run, CI job,
+  gate or probe failed and its cause is not already known from evidence, before
+  any retry, relaunch or re-dispatch, before waiting on another factory run, and
+  whenever a failure has recurred in a row for the same reason. Reproduce it in
+  the IDENTICAL image, on the same tree, with the same command. A repro in a
+  plain checkout or another image does not count, and waiting on a factory run
+  is never a debugging step. After the same signature recurs in a row, local
+  debugging is mandatory and nothing is retried until the cause is measured and
+  fixed (maintainer, 2026-11-17: "Everything's containerized for a fucking
+  reason. Leverage it"). That day, driver-claude's `commit_green` was never
+  reproduced and failed twice, git-jsonl was retried three times on a probe
+  token error, and a slow coverage job was re-run instead of measured.
 - Read `.ai/livespec-operation-gotchas.md` before running or editing
   livespec revise/propose-change flows, spec heading coverage, or commit-prefix
   classification logic, before treating a clean filing display as evidence an
