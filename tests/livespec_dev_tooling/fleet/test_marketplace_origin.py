@@ -14,6 +14,8 @@ from livespec_dev_tooling.fleet._marketplace_origin import (
 )
 
 GH = {"source": "github", "repo": "livespec-ai/livespec", "ref": "release"}
+# The owner the fleet moved away from; the clone origins below name it as the stale owner.
+_STALE_OWNER = "thewoolleyman"
 
 
 def _known(**entries: dict[str, object]) -> str:
@@ -44,7 +46,7 @@ def _run(*, known: str, origins: dict[str, str]) -> tuple[OriginReport, list[tup
 def test_stale_https_origin_is_rewritten_to_declared_https() -> None:
     report, sets = _run(
         known=_known(livespec=GH),
-        origins={"/m/livespec": "https://github.com/thewoolleyman/livespec.git"},
+        origins={"/m/livespec": f"https://github.com/{_STALE_OWNER}/livespec.git"},
     )
     assert sets == [("/m/livespec", "https://github.com/livespec-ai/livespec.git")]
     assert report.findings == ()
@@ -54,7 +56,7 @@ def test_stale_https_origin_is_rewritten_to_declared_https() -> None:
 def test_stale_ssh_origin_keeps_ssh_form() -> None:
     _, sets = _run(
         known=_known(livespec=GH),
-        origins={"/m/livespec": "git@github.com:thewoolleyman/livespec.git"},
+        origins={"/m/livespec": f"git@github.com:{_STALE_OWNER}/livespec.git"},
     )
     assert sets == [("/m/livespec", "git@github.com:livespec-ai/livespec.git")]
 
