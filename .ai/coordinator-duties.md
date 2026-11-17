@@ -715,11 +715,14 @@ this doesn't happen again, and get things back on track ASAP. …"
 
 **Stop the line at the second deterministic failure (rule STOP-AT-SECOND).** It binds the coordinator and the
 dispatcher. A deterministic failure class (same node, same signature, same launch build) stops the line at its SECOND
-occurrence, holding new launches in the repositories the class can reach (a placement in a lifted repository takes a
-one-shot `freeze-allowlist` line). A plausibly transient class follows §2. [6tgd2z 2026-11-13T00:19:55Z,
-2026-11-15T06:07:19Z.] A factory target whose default branch does not require its CI aggregate gets a repo hold until
-it does, and `merge-hold:on` is no safeguard until bd-ib-x73d36 ships: hold factory merges with `hold-repo-<repo>`
-(coordinator's readings [6tgd2z 2026-11-15T04:34:31Z]).
+occurrence, holding new launches in the repositories the class can reach (a one-shot placement into a repository under a
+`hold-repo-<repo>` file needs a `canary-hold-repo` plus a `canary-hold-exempt` line; a `freeze-allowlist` line does NOT
+exempt a hold-repo file, measured on overseer-klzawj 2026-11-17 01:01Z by throughput-plans-coordinator). A plausibly
+transient class follows §2. [6tgd2z 2026-11-13T00:19:55Z, 2026-11-15T06:07:19Z.] A factory target whose default branch
+does not require its CI aggregate gets a repo hold until it does, and `merge-hold:on` is no safeguard until bd-ib-x73d36
+ships: hold factory merges with `hold-repo-<repo>` (coordinator's readings [6tgd2z 2026-11-15T04:34:31Z]). A hold file
+names its owner and end on lines that start `OWNER:` and `END CONDITION:` exactly, because `top5` reads only those keys
+and reports lowercase `owner:`/`until:` as MALFORMED (coordinator's reading, 2026-11-17).
 
 **Preserve before any cancel.** No seat cancels, removes or abandons a factory run until its committed tree is on a ref
 on origin, verified with `git ls-remote`; a diff pointer, run id or resume pointer is not a preserved tree.
