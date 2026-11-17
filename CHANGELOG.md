@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.219.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.218.0...v1.219.0) (2026-11-17)
+
+
+### Features
+
+* **observability:** pr-throughput carries merge-queue fields and M3 shows queue wait (livespec-dev-tooling-zl3r37) ([4343c95](https://github.com/livespec-ai/livespec-dev-tooling/commit/4343c9594a2f7ec35c412e420439a20c17be08b4))
+* red ([6c97699](https://github.com/livespec-ai/livespec-dev-tooling/commit/6c976990beb25b1e4b8a87b5b211c644d49d1b22))
+* red ([39b7f68](https://github.com/livespec-ai/livespec-dev-tooling/commit/39b7f68ea9805ea8567e68934ca23c4be579a816))
+
+
+### Bug Fixes
+
+* run the shipped fleet-utilization script unmodified in its test ([d18bc7b](https://github.com/livespec-ai/livespec-dev-tooling/commit/d18bc7b7cac561b413e24da19c95a7b872a9e36a))
+
 ## [1.218.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.217.0...v1.218.0) (2026-11-17)
 
 
