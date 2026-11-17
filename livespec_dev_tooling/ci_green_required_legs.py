@@ -41,7 +41,9 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +75,16 @@ GUARD_JOB = "merge-group-guard"
 # guard output `skip` is true (livespec-dev-tooling-ymog6r, the merge-group tree-equality skip).
 _SKIP_CONDITION = f"needs.{GUARD_JOB}.outputs.skip != 'true'"
 _MATRIX_TARGET_NAME = "${{ matrix.target }}"
+_MATRIX_REF = re.compile(r"\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}")
+_AXIS_LINE = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*):(.*)")
+_QUOTED = re.compile(r"(['\"])(.*)\1")
+_BLOCK_ITEM = re.compile(r"-\s+(.*)")
+_COMMENT = re.compile(r"\s+#.*$")
+_PLAIN_VALUE = re.compile(r"[A-Za-z0-9_./-]+")
+_INTEGER = re.compile(r"0|[1-9][0-9]*")
+# YAML 1.1 words a loader turns into a non-string, so the rendered name is not the text.
+_YAML_WORDS = frozenset({"true", "false", "yes", "no", "on", "off", "y", "n", "null", "~"})
+_UNMODELLED_AXES = frozenset({"include", "exclude"})
 # The workflow's two-space YAML style: job ids at indent 2, job keys at 4.
 _JOB_ID_INDENT = 2
 _JOB_KEY_INDENT = 4
@@ -178,6 +190,82 @@ def _matrix_targets(*, body: tuple[str, ...]) -> tuple[str, ...]:
     )
 
 
+def _axis_value(*, text: str) -> str | None:
+    """One plain scalar axis value as the forge renders it, or None when in doubt."""
+    value = _COMMENT.sub("", text.strip()).strip()
+    quoted = _QUOTED.fullmatch(value)
+    value = quoted.group(2) if quoted else value
+    if not _PLAIN_VALUE.fullmatch(value) or value.lower() in _YAML_WORDS:
+        return None
+    if value[0] in "0123456789+-." and not _INTEGER.fullmatch(value):
+        return None
+    return value
+
+
+def _axis_items(*, inline: str, rest: list[str]) -> list[str] | None:
+    """The raw item texts of one axis, from a flow list or a block list; None if neither."""
+    inline = _COMMENT.sub("", inline.strip()).strip()
+    if inline:
+        if not (inline.startswith("[") and inline.endswith("]")) or rest:
+            return None
+        return inline[1:-1].split(",")
+    # A line that is not a `- item` becomes a value no plain scalar can match.
+    matches = [_BLOCK_ITEM.fullmatch(line.strip()) for line in rest]
+    return [found.group(1) if found else "\0" for found in matches]
+
+
+def _matrix_axes(*, body: tuple[str, ...]) -> dict[str, tuple[str, ...]] | None:
+    """Every matrix axis with its rendered values, or None for any shape not modelled.
+
+    Models only plain axes: a key whose value is a flow or block list of distinct plain
+    scalars. `include:`/`exclude:`, a dynamic matrix, a duplicate key and any other value
+    shape return None, so the caller treats the job's names as underivable.
+    """
+    nested = _matrix_lines(body=body)
+    if not nested:
+        return None
+    key_indent = min(_indent(line=line) for line in nested)
+    groups: list[tuple[str, str, list[str]]] = []
+    for line in nested:
+        found = _AXIS_LINE.fullmatch(line.strip())
+        if _indent(line=line) == key_indent:
+            # A top-level line that is not `key:` gets a key no axis can carry.
+            groups.append((found.group(1) if found else "\0", found.group(2) if found else "", []))
+        else:
+            (groups or [("\0", "", [])])[-1][2].append(line)
+    axes: dict[str, tuple[str, ...]] = {}
+    for key, inline, rest in groups:
+        items = _axis_items(inline=inline, rest=rest)
+        values = None if items is None else [_axis_value(text=item) for item in items]
+        if key in axes or key in _UNMODELLED_AXES or not values or None in values:
+            return None
+        if len(set(values)) != len(values):
+            return None
+        axes[key] = tuple(str(value) for value in values)
+    return axes
+
+
+def _render(*, name: str, values: dict[str, str]) -> str:
+    return _MATRIX_REF.sub(lambda ref: values[ref.group(1)], name)
+
+
+def _templated_names(*, name: str, body: tuple[str, ...]) -> tuple[str, ...]:
+    """The cross product of the axes rendered into `name`; empty unless certain.
+
+    Every axis must be named in the template (an unused axis makes legs that share a
+    name) and no other expression may remain, else the names are not derivable.
+    """
+    axes = _matrix_axes(body=body)
+    used = set(_MATRIX_REF.findall(name))
+    if axes is None or not used or used != set(axes) or "${{" in _MATRIX_REF.sub("", name):
+        return ()
+    names = tuple(
+        _render(name=name, values=dict(zip(axes, combo, strict=True)))
+        for combo in itertools.product(*axes.values())
+    )
+    return names if len(set(names)) == len(names) else ()
+
+
 def _leg_names(*, job: str, body: tuple[str, ...] | None) -> tuple[str, ...]:
     """The job names one needed job's legs report under; empty when underivable."""
     if body is None:
@@ -188,7 +276,7 @@ def _leg_names(*, job: str, body: tuple[str, ...] | None) -> tuple[str, ...]:
     if name is None:
         return (job,)
     if "${{" in name:
-        return ()
+        return _templated_names(name=name, body=body)
     return (name,)
 
 
