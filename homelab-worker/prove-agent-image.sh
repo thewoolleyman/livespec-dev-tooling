@@ -110,8 +110,9 @@ check bwrap "bwrap --version"
 # the adapter was present but "The Claude Agent process exited unexpectedly".
 check claude-cli-runs "c=\$(find / -path '*claude-agent-sdk-linux-*/claude' -type f -print -quit 2>/dev/null); [ -n \"\$c\" ] || { echo 'no claude-agent-sdk native CLI'; exit 1; }; \"\$c\" --version"
 # pyright as the factory's type gate runs it (pyright-python fetching its node
-# package on first use); the same run failed "Cannot find module .../pyright/package.json".
-check pyright-runs "cd /tmp && uvx --from pyright==${PYRIGHT_VERSION:-1.1.391} pyright --version"
+# package on first use); keep this fallback aligned with pyproject.toml's
+# nodejs-wheel-binaries development pin so nodeenv cannot select a prerelease.
+check pyright-runs "cd /tmp && PYRIGHT_PYTHON_NODE_VERSION=24.19.0 uvx --from pyright==${PYRIGHT_VERSION:-1.1.391} pyright --version"
 # Informational, not a check: the kernel's page size, which a Bun-compiled
 # binary such as the Claude CLI does not tolerate above 4 KiB.
 printf 'PROOF-INFO page-size %s\n' "$(kubectl exec --namespace "$ns" agent -- getconf PAGESIZE 2>&1 | tr -d '\r')"

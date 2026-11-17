@@ -17,6 +17,7 @@ Every value here is the stub's own; none is a production value.
 
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -110,6 +111,19 @@ def test_a_native_image_with_every_tool_passes(tmp_path: Path) -> None:
         "pyright-runs",
     ):
         assert f"PROOF {check} PASS" in result.stdout
+
+
+def test_pyright_check_pins_its_nodeenv_fallback_to_the_dev_node_release(
+    tmp_path: Path,
+) -> None:
+    """The proof keeps pyright's fallback Node release aligned with the dev pin."""
+    result, state = _run(tmp_path=tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    pyproject = _SCRIPT.parents[1] / "pyproject.toml"
+    match = re.search(r'"nodejs-wheel-binaries==([^"]+)"', pyproject.read_text(encoding="utf-8"))
+    assert match is not None
+    calls = (state / "calls.log").read_text(encoding="utf-8")
+    assert f"PYRIGHT_PYTHON_NODE_VERSION={match.group(1)} uvx" in calls
 
 
 def test_a_machine_that_does_not_match_the_node_architecture_fails(tmp_path: Path) -> None:
