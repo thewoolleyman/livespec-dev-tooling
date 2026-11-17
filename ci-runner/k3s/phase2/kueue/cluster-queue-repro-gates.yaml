@@ -48,8 +48,8 @@
 # hostname nodeLabel. `just gate-repro --node <node>` renders a required
 # hostname nodeSelector on the Job, and Kueue assigns only the flavor whose
 # nodeLabels agree with it, so the Job is admitted through that node's quota and
-# runs only there. A flavor is ZERO unless armed (hp-xubuntu is armed at one
-# gate unit; poweredge, gmktec and gamingpc stay at zero): arming a node means
+# runs only there. A flavor is ZERO unless armed (hp-xubuntu, poweredge-xubuntu
+# and gmktec-xubuntu are each armed at one gate unit; gamingpc stays at zero): arming a node means
 # raising ITS flavor to one gate unit in a separate pull request, which belongs
 # to plan gate-job-resources' per-node CPU budget (a repro gate is a second
 # 5 cpu / 8Gi claim on a node whose budget does not count it), and reverting
@@ -137,18 +137,30 @@ spec:
               nominalQuota: 0Gi
         - name: gates-repro-poweredge-flavor
           resources:
-            # ZERO: armed per node by a separate, revertable budget change.
+            # ARMED: ONE gate unit (5 cpu / 8Gi, gates-cq's gate-unit
+            # annotations), by the coordinator's and maintainer's ARM RULING
+            # under the per-node CPU budget (plan gate-job-resources,
+            # livespec-dev-tooling-cwrg3v). Basis: the most headroom of the fleet (about 18 cores idle at 07:14Z).
+            # REVERT TRIGGER: BestEffort cpu.pressure avg60 over 30 on two reads
+            # on this node. REVERT PATH: revert the arming pull request, which
+            # restores zero.
             - name: "cpu"
-              nominalQuota: 0
+              nominalQuota: 5
             - name: "memory"
-              nominalQuota: 0Gi
+              nominalQuota: 8Gi
         - name: gates-repro-gmktec-flavor
           resources:
-            # ZERO: armed per node by a separate, revertable budget change.
+            # ARMED: ONE gate unit (5 cpu / 8Gi, gates-cq's gate-unit
+            # annotations), by the coordinator's and maintainer's ARM RULING
+            # under the per-node CPU budget (plan gate-job-resources,
+            # livespec-dev-tooling-cwrg3v). Basis: 66 percent busy at 07:14Z, so the HEADROOM RISK is the largest here.
+            # REVERT TRIGGER: BestEffort cpu.pressure avg60 over 30 on two reads
+            # on this node. REVERT PATH: revert the arming pull request, which
+            # restores zero.
             - name: "cpu"
-              nominalQuota: 0
+              nominalQuota: 5
             - name: "memory"
-              nominalQuota: 0Gi
+              nominalQuota: 8Gi
         - name: gates-repro-hp-flavor
           resources:
             # ARMED: ONE gate unit (5 cpu / 8Gi, gates-cq's gate-unit
