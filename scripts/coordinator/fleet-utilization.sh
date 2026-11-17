@@ -44,9 +44,11 @@ dispatcher's per-tenant wip_cap (wip-act.*), the factory namespace ResourceQuota
 Kueue ClusterQueue flavor quota, and each ARC scale set's maxRunners. For each it prints
 the limit, the use, the waiting work and the idle % of the nodes it covers. A line is
 prefixed FLAGGED when the limit is reached while work waits AND a covered node reads idle
-above STRANDED_IDLE_PCT: a stall of the "cap too low" kind (.ai/coordinator-duties.md
-section 10). A cap or quota that cannot be read prints `UNREAD <name>: <reason>`, never
-silence. `--stranded-only` prints just that section; scripts/coordinator/top5 calls it.
+above STRANDED_IDLE_PCT, or when a pending Kueue ClusterQueue has nonzero quota on only
+one node while a peer node is idle: a stall of the "cap too low" kind
+(.ai/coordinator-duties.md section 10). A cap or quota that cannot be read prints
+`UNREAD <name>: <reason>`, never silence. `--stranded-only` prints just that section;
+scripts/coordinator/top5 calls it.
 
 A FACTORY line (fleet-cap, the per-host cap files, the dispatcher wip_cap lines and the
 factory ResourceQuota) covers only the nodes a factory sandbox pod can be placed on: Ready,
@@ -1152,23 +1154,46 @@ def kueue_rows(node_labels, nodes_by_name):
             f["name"]: {r["name"]: r for r in f.get("resources") or []}
             for f in status.get("flavorsUsage") or []
         }
+        quota_nodes, flavor_nodes_for_queue = set(), set()
         for group in cq["spec"].get("resourceGroups") or []:
             for flavor in group.get("flavors") or []:
                 fname, parts, binds = flavor["name"], [], False
+                covered = flavor_nodes.get(fname, [])
+                flavor_nodes_for_queue.update(covered)
+                has_nonzero_quota = False
                 for res in flavor.get("resources") or []:
                     used = usage.get(fname, {}).get(res["name"], {})
                     total, borrowed = used.get("total", "0"), used.get("borrowed", "0")
                     quota = res.get("nominalQuota")
                     parts.append(f"{res['name']} {total}/{quota}" + (f" (+{borrowed} borrowed)" if borrowed not in ("0", 0) else ""))
-                    if qty(total) is not None and qty(quota) is not None and qty(total) >= qty(quota):
+                    quota_value = qty(quota)
+                    has_nonzero_quota = has_nonzero_quota or (quota_value is not None and quota_value > 0)
+                    if (
+                        quota_value is not None
+                        and quota_value > 0
+                        and qty(total) is not None
+                        and qty(total) >= quota_value
+                    ):
                         binds = True
+                if has_nonzero_quota:
+                    quota_nodes.update(covered)
                 rows.append(
                     stranded_row(
                         f"kueue {name}/{fname}", "nominal", ", ".join(parts), binds, pending,
                         f"{pending} pending workload(s) in the ClusterQueue",
-                        flavor_nodes.get(fname, []), nodes_by_name,
+                        covered, nodes_by_name,
                     )
                 )
+        if pending and len(quota_nodes) == 1:
+            quota_node = next(iter(quota_nodes))
+            peer_nodes = sorted(flavor_nodes_for_queue - quota_nodes)
+            peer_idle, idle_hit = covered_idle(peer_nodes, nodes_by_name)
+            flagged = bool(idle_hit)
+            text = (
+                f"kueue {name} single-node quota: nonzero quota only on {quota_node}; "
+                f"waiting {pending} pending workload(s) in the ClusterQueue; peer nodes {peer_idle}"
+            )
+            rows.append({"name": f"kueue {name} single-node quota", "flagged": flagged, "text": ("FLAGGED " if flagged else "") + text})
     if quiet:
         rows.append({"name": "kueue", "flagged": False, "text": f"kueue: {quiet} other ClusterQueue(s) with no admitted or pending workload"})
     return rows
