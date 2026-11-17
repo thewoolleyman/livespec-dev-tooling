@@ -504,8 +504,24 @@ else
   echo "FATAL: shared CI container-image reader not found beside ${SCRIPT_DIR}" >&2
   exit 1
 fi
-if ! images_text="$(python3 - "${workflow}" "${reader_path}" <<'PY'
+# A consumer that WAIVES `check-ci-single-container-image` in its own
+# `pyproject.toml` (`canonical_check_waivers`, SPECIFICATION/contracts.md
+# "Canonical-check waivers") declares several job images on purpose, for a job
+# that needs a toolchain the others must not carry. The gate Job runs `just
+# check`, so for such a workflow it runs in the image of the workflow's job
+# named `check`; a workflow with no such job, or whose waiver is absent, stays
+# refused below. The waiver is read through the SAME reader the aggregate
+# uses, so the two cannot disagree about what a waiver is.
+if [ -f "${source_root}/livespec_dev_tooling/checks/_canonical_waivers.py" ]; then
+  waivers_path="${source_root}/livespec_dev_tooling/checks/_canonical_waivers.py"
+elif [ -f "${SCRIPT_DIR}/../checks/_canonical_waivers.py" ]; then
+  waivers_path="${SCRIPT_DIR}/../checks/_canonical_waivers.py"
+else
+  waivers_path=""
+fi
+if ! images_text="$(python3 - "${workflow}" "${reader_path}" "${repo_root}/pyproject.toml" "${waivers_path}" <<'PY'
 import importlib.util
+import re
 from pathlib import Path
 import sys
 
@@ -516,7 +532,74 @@ reader = importlib.util.module_from_spec(reader_spec)
 reader_spec.loader.exec_module(reader)
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
-for image in sorted({image for _, image in reader.container_images(source=source)}):
+declared = reader.container_images(source=source)
+images = sorted({image for _, image in declared})
+
+WAIVED_SLUG = "check-ci-single-container-image"
+GATE_JOB = "check"
+
+
+def _waived() -> bool:
+    pyproject, waivers_path = Path(sys.argv[3]), sys.argv[4]
+    if not waivers_path or not pyproject.is_file():
+        return False
+    spec = importlib.util.spec_from_file_location("canonical_waivers", waivers_path)
+    if spec is None or spec.loader is None:
+        return False
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses resolve their own module by name
+    spec.loader.exec_module(module)
+    text = pyproject.read_text(encoding="utf-8", errors="replace")
+    entries = module.declared_waivers(pyproject_text=text).map(lambda found: found.value).value_or([])
+    return isinstance(entries, list) and any(
+        isinstance(entry, dict)
+        and entry.get("slug") == WAIVED_SLUG
+        and isinstance(entry.get("reason"), str)
+        and entry["reason"].strip()
+        for entry in entries
+    )
+
+
+def _gate_job_image() -> str | None:
+    lines = source.splitlines()
+    job_key = re.compile(r"^(?P<indent>[ \t]+)(?P<name>[A-Za-z0-9_-]+):[ \t]*(#.*)?$")
+    jobs_at = next((i for i, line in enumerate(lines) if re.match(r"^jobs:[ \t]*(#.*)?$", line)), None)
+    if jobs_at is None:
+        return None
+    keys = []
+    job_indent = None
+    for i in range(jobs_at + 1, len(lines)):
+        line = lines[i]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith((" ", "\t")):
+            break
+        match = job_key.match(line)
+        if match is None:
+            continue
+        indent = len(match.group("indent"))
+        if job_indent is None:
+            job_indent = indent
+        if indent == job_indent:
+            keys.append((i + 1, match.group("name")))
+    for position, (start, name) in enumerate(keys):
+        if name != GATE_JOB:
+            continue
+        end = keys[position + 1][0] if position + 1 < len(keys) else len(lines) + 1
+        inside = {image for lineno, image in declared if start < lineno < end}
+        return next(iter(inside)) if len(inside) == 1 else None
+    return None
+
+
+if len(images) > 1 and _waived():
+    chosen = _gate_job_image()
+    if chosen is not None:
+        sys.stderr.write(
+            f":: gate: {sys.argv[1]} declares {len(images)} container images and its "
+            f"pyproject waives {WAIVED_SLUG}; the gate runs in the `{GATE_JOB}` job's image {chosen}\n"
+        )
+        images = [chosen]
+for image in images:
     print(image)
 PY
 )"; then
