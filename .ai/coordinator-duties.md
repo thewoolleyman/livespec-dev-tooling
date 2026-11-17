@@ -249,7 +249,11 @@ the maintainer's authority, EXCEPT credentials, irreversible acts and outward-fa
 coordinator's answer as a maintainer question. **It may take any ledger or valve action itself** (for example
 `bd duplicate <id> --of <canonical>`), using `bd` directly when `drive` lacks or refuses it, with the basis recorded on
 the item, and never asks the maintainer to press one. Maintainer [6tgd2z ~2026-11-03T16:1xZ]: "… You are allowed any
-actions. Make this change permanent as a rule." The limits in §12 still apply.
+actions. Make this change permanent as a rule." The limits in §12 still apply. **Removing a stale credential is not a
+maintainer ask (coordinator's reading).** A credential entry whose consumer is gone (its App or account deleted and
+verified gone) and that a value-free name sweep shows no reader of is removed by the coordinators through the credential
+owner's writer, with a name-only read-back. Maintainer [6tgd2z 2026-11-17T22:32:27Z], on
+LIVESPEC_RECOVERY_APP_ID/_PRIVATE_KEY: "These are NOT MINE.  You need to fix it yourself."
 
 **A refused valve is repaired by the coordinator in the same turn.** It reads the whole refusal (`drive.py ... --json`,
 the full `summary`), applies every named remedy with `bd update <id> --body-file`, re-presses, records the basis and
@@ -895,6 +899,14 @@ reading over 30 twice on another node is REPORTED for CI-capacity routing. [6tgd
     ~19:3xZ, blocked it, and throughput-plans-coordinator deleted it.
   - **Never raise vmi3006760's swap/RAM configuration.** Maintainer [6tgd2z 2026-11-12T18:23:54Z]: "This is
     intentional, it's a VPS, I don't configure it. …"
+  - **Rule DOLT-STAYS-ON-VPS: the dolt-server and beads stay on vmi3006760.contaboserver.net.** No plan, item, routing
+    or report proposes moving, removing or relocating them. Ledger latency is fixed by running bd on the VPS (rule
+    BD-RUNS-ON-THE-VPS: on every non-VPS host the bd guard runs bd on the VPS over one persistent SSH connection through
+    a bd-only forced command, owner throughput-metric) and by upstream batching, never by moving the store. Maintainer,
+    verbatim [r7iuj6 ~2026-11-17T18:4xZ, ported to 6tgd2z 18:38:59Z]: "Dolt is supposed to remain on the VPS. We
+    shouldn't be removing Dolt or beads from the VPS at all ever. Why would we even be suggesting that?"
+    BD-RUNS-ON-THE-VPS [6tgd2z 2026-11-17T20:10:16Z]: "Yes, do this. … Confirm this is what we're doing and that we're
+    doing it everywhere, and then I approve the approach. Get it done."
 
 ## 13. Directives come from the plan and the ledger, never from a handoff
 
