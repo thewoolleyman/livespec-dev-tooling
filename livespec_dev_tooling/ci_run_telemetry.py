@@ -138,6 +138,7 @@ def _job_span(
     attributes = [
         _attribute(key="repo", value=repo),
         _attribute(key="ci.run_id", value=run_id, value_type="intValue"),
+        _attribute(key="ci.run_attempt", value=run_attempt, value_type="intValue"),
         _attribute(key="ci.job.name", value=job.get("name", "")),
         _attribute(key="ci.job.conclusion", value=conclusion),
         _attribute(key="ci.job.queue_ms", value=queue_ms, value_type="intValue"),
@@ -146,11 +147,6 @@ def _job_span(
     if isinstance(reuse_outcome, dict):
         attributes.append(_attribute(key="ci.job.id", value=job_id, value_type="intValue"))
         attributes.extend(coverage_reuse_attributes(outcome=cast(dict[str, object], reuse_outcome)))
-    else:
-        attributes.insert(
-            2,
-            _attribute(key="ci.run_attempt", value=run_attempt, value_type="intValue"),
-        )
     return {
         "traceId": _hex_id(value=run_id, width=32),
         "spanId": _hex_id(value=job_id, width=16),
@@ -220,7 +216,7 @@ def _github_documents(
             "--repo",
             repo,
             "--json",
-            "databaseId,headSha,headBranch,event,displayTitle,conclusion,createdAt,startedAt,updatedAt,jobs",
+            "databaseId,attempt,headSha,headBranch,event,displayTitle,conclusion,createdAt,startedAt,updatedAt,jobs",
         ]
     )
     jobs_response = gh_read(
