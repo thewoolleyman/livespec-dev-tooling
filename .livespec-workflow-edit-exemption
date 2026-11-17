@@ -1,2 +1,10 @@
-work_item=livespec-dev-tooling-qpe3zt
-reason=incident-ci reads the PR body through issues/<n> instead of pulls/<n> so a transient too-many-files 422 cannot fail the step; same check, one modified line
+# Workflow-edit exemption: one exemption binds to one reviewed change.
+#
+# The change (stale-base-merge-options seat, throughput-plans-coordinator authorization,
+# 2026-11-17): .github/workflows/release-please.yml's job-level `if:` tests the push's TIP
+# commit (head_commit) only; the org merge queue lands several entries in one ref update, so a
+# release commit that is not the tip is skipped (run 44027854217). The condition now tests every
+# commit of the push (github.event.commits.*.message). One existing `if:` line is MODIFIED, so
+# this is the MAINTAINER tier (approval:workflow-edit): the additive tier admits added lines only.
+work_item=livespec-dev-tooling-6ncqvc
+reason=release-please push runs skipped when the release commit is not the push tip (merge queue batches): one modified if: line now tests every commit of the push; logically additive (admits a superset; the job is idempotent), maintainer tier because a line is modified.
