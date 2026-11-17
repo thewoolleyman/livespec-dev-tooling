@@ -376,7 +376,16 @@ def run_delegated_gate(
     # tree AND whose approval are both wrong should learn both in one push.
     ran = run_host_authority_members(repo_root=repo_root, tree_hash=tree_hash, runner=runner)
     narrate_host_authority_passes(ran=ran)
-    verdict = run_gated_push(request=request, runner=runner, sleeper=sleeper)
+    # A refused authority member means this push is refused whatever the Job says,
+    # so the Job's green must not mint the token that would let the retry of the
+    # same tree skip the members the pushing host judges (livespec-orchestrator-
+    # git-jsonl#1225, 2026-11-17).
+    verdict = run_gated_push(
+        request=request,
+        runner=runner,
+        sleeper=sleeper,
+        mint_token=all(run.returncode == 0 for run in ran),
+    )
     # THE EVENT REPORTS THE GATE'S VERDICT, NOT THE PUSH'S FATE, so it is emitted
     # from the Job's own verdict BEFORE the authority half is joined. A Job-green
     # push that the pushing host then refuses therefore reports `passed`, which
@@ -392,7 +401,10 @@ def run_delegated_gate(
     # refused either way, and the gate's own answer — a red tree, a lost cluster
     # — is the one an operator has to act on first; restating it as an authority
     # refusal would name the wrong cause.
-    if verdict.refuses_push:
+    # A PASSED verdict is joined even when it carries no token: the join is what
+    # names the authority refusal, and it leaves a passed verdict alone when
+    # nothing was refused.
+    if verdict.state != GATE_PASSED:
         return verdict
     return host_authority_decision(verdict=verdict, ran=ran)
 

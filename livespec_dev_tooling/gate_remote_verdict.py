@@ -179,6 +179,7 @@ def run_gated_push(
     request: GateRunRequest,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
+    mint_token: bool = True,
 ) -> GateVerdict:
     """Gate the current HEAD tree on the cluster and decide whether to push.
 
@@ -192,7 +193,9 @@ def run_gated_push(
     gated = run_gate(request=request, runner=runner, sleeper=sleeper)
     if isinstance(gated, Failure):
         return _no_verdict(failure=gated.failure())
-    return _adjudicate(outcome=gated.unwrap(), request=request, runner=runner)
+    return _adjudicate(
+        outcome=gated.unwrap(), request=request, runner=runner, mint_token=mint_token
+    )
 
 
 def _no_verdict(*, failure: GateStepFailed) -> GateVerdict:
@@ -252,7 +255,11 @@ def _decided(
 
 
 def _adjudicate(
-    *, outcome: GateRunOutcome, request: GateRunRequest, runner: GateCommandRunner
+    *,
+    outcome: GateRunOutcome,
+    request: GateRunRequest,
+    runner: GateCommandRunner,
+    mint_token: bool,
 ) -> GateVerdict:
     """Read the terminal condition as the exit code it stands in for."""
     if outcome.terminal_state != _COMPLETE:
@@ -262,6 +269,16 @@ def _adjudicate(
             state=GATE_FAILED,
             detail=_failed_detail(outcome=outcome),
             token_written=False,
+        )
+    if not mint_token:
+        return _passed_without_token(
+            outcome=outcome,
+            request=request,
+            detail=(
+                f"the gate passed on tree {outcome.tree_hash}, but the pushing host refused a "
+                "host-authority member, so no green token was written: the retry of this tree "
+                "must run every member"
+            ),
         )
     return _write_green_token(outcome=outcome, request=request, runner=runner)
 
