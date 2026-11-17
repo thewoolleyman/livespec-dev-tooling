@@ -126,12 +126,17 @@ def exact_tree(*, repo_root: Path, identity: Identity, tree_hash: str) -> bool:
 
 
 def changed_paths(*, repo_root: Path, identity: Identity, scope: FocusedScope) -> set[str]:
+    # Diff from the fork point, not the recorded base tip: a base that advanced
+    # after the branch forked would otherwise list the base's own commits.
+    fork = git_text(
+        repo=repo_root, args=("merge-base", identity.base_sha, identity.head_sha)
+    ).strip()
     # `--no-renames`: a moved file is its old path (now "deleted") AND its new
     # one, the same set the observer's `/arm` admission requires.
     changed = set(
         git_text(
             repo=repo_root,
-            args=("diff", "--no-renames", "--name-only", "-z", identity.base_sha, scope.tree_hash),
+            args=("diff", "--no-renames", "--name-only", "-z", fork, scope.tree_hash),
         ).split("\0")
     ) - {""}
     previous = set(
@@ -142,7 +147,7 @@ def changed_paths(*, repo_root: Path, identity: Identity, scope: FocusedScope) -
                 "--no-renames",
                 "--name-only",
                 "-z",
-                identity.base_sha,
+                fork,
                 identity.head_sha,
             ),
         ).split("\0")
