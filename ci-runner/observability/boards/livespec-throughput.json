@@ -1,6 +1,6 @@
 {
   "name": "livespec throughput",
-  "description": "Throughput of non-docs, non-release pull requests across the livespec fleet, one repository per chart: M1 merged green per hour, M2 lead time, M3 stage split. Created 2026-11-14 07:07Z (livespec-dev-tooling#4616). The M2 and M3 charts show only clean PRs: those held through merge-quiet windows or slowed by the 2026-11-13/14 CI pool stall (pr.disruption), and M2 events under the old start rule (pr.lead_rule, changed 2026-11-14), are left out of the charts and counted in the EXCLUDED table. Floor = frozen 7-day baseline, non-docs and non-release, window 2026-11-06..11-13. Defined as code in livespec-dev-tooling ci-runner/observability/boards/livespec-throughput.json and converged by apply-boards.sh; edit the definition, never this board. Deliverer: plan kubernetes-observability; owner: plan throughput-metric (livespec-dev-tooling-oe7cfw).",
+  "description": "Throughput of non-docs, non-release pull requests across the livespec fleet, one repository per chart: M1 merged green per hour, M2 lead time, M3 stage split, plus a QUEUE WAIT chart (merge-queue enqueue to merge, per repository) at the end of the board. Created 2026-11-14 07:07Z (livespec-dev-tooling#4616). The M2 and M3 charts show only clean PRs: those held through merge-quiet windows or slowed by the 2026-11-13/14 CI pool stall (pr.disruption), and M2 events under the old start rule (pr.lead_rule, changed 2026-11-14), are left out of the charts and counted in the EXCLUDED table. Floor = frozen 7-day baseline, non-docs and non-release, window 2026-11-06..11-13. Defined as code in livespec-dev-tooling ci-runner/observability/boards/livespec-throughput.json and converged by apply-boards.sh; edit the definition, never this board. Deliverer: plan kubernetes-observability; owner: plan throughput-metric (livespec-dev-tooling-oe7cfw).",
   "type": "flexible",
   "layout_generation": "manual",
   "tags": [
@@ -1462,6 +1462,61 @@
             "order": "descending"
           }
         ]
+      }
+    },
+    {
+      "type": "query",
+      "key": "queue-wait",
+      "dataset": "pr-throughput",
+      "query_style": "graph",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 164,
+        "height": 8,
+        "width": 12
+      },
+      "annotation": {
+        "name": "QUEUE WAIT per repository, median and p90 (min) - non-docs PRs merged green, merge queue enqueue to merge",
+        "description": "P50 and P90 of pr.queue_wait_minutes by repository, 6-hour buckets over 7 days: minutes from the last enqueue into the merge queue to its removal at merge. It is the merge-queue part of the PR-CI-green-to-merged stage (pr.stage_ci_green_to_merge_minutes) shown in the M3 charts, kept on its own chart because its scale (tens of minutes) would flatten the M3 stage lines. Only PRs that entered the merge queue carry the field. Emitter: the merged-green reconciler (livespec-dev-tooling-gaetnq; until it converges, the interim pr-throughput writer). Fields derived by livespec_dev_tooling.pr_queue_telemetry (livespec-dev-tooling-zl3r37)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "pr.queue_wait_minutes"
+          },
+          {
+            "op": "P90",
+            "column": "pr.queue_wait_minutes"
+          }
+        ],
+        "filters": [
+          {
+            "column": "pr.merged_green",
+            "op": "=",
+            "value": true
+          },
+          {
+            "column": "pr.docs_only",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.is_release",
+            "op": "=",
+            "value": false
+          },
+          {
+            "column": "pr.queue_wait_minutes",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "repo"
+        ],
+        "limit": 20,
+        "time_range": 604800,
+        "granularity": 21600
       }
     }
   ]
