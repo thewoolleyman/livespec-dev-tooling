@@ -69,6 +69,9 @@
 #      rather than restated here, and requests no more than one gate unit, read
 #      from the gates-cq annotations in ../kueue/cluster-queue-gates.yaml
 #      (livespec-dev-tooling-c3nd2h, livespec-dev-tooling-brggiu).
+#   Z. the operator reproduction route's --image (by digest only) and --node (one
+#      of the four gate nodes, rendered as a hostname nodeSelector; none when not
+#      passed) (livespec-dev-tooling-cwrg3v).
 #   Y. the operator reproduction route's two flags (livespec-dev-tooling-pkmxgu):
 #      --queue names the Job's LocalQueue, which is gates-lq when it is not
 #      passed, and --repro-stack-interval renders the stack diagnostics, which an
@@ -1524,6 +1527,66 @@ GATE_SCRIPT
 else
   fail "a render with --queue gates-repro-lq --repro-stack-interval 300 was refused: $(cat "${SCRATCH}/repro.err")"
 fi
+echo "== Z. the operator reproduction route's --image and --node (livespec-dev-tooling-cwrg3v) =="
+DIGEST="ghcr.io/livespec-ai/livespec-fabro-sandbox@sha256:$(printf 'a%.0s' $(seq 1 64))"
+out_img="${SCRATCH}/repro-img.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+     --image "${DIGEST}" --node hp-xubuntu > "${out_img}" 2>"${SCRATCH}/repro-img.err"; then
+  if grep -qF "image: ${DIGEST}" "${out_img}" && ! grep -qE 'image: [^ ]*[^0-9a-f]$' "${out_img}"; then
+    pass "--image by digest is the image of every container the Job runs"
+  else
+    fail "--image by digest did not replace every container image"
+  fi
+  if python3 - "${out_img}" <<'NODE_CHECK'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    documents = [document for document in yaml.safe_load_all(handle) if document]
+job = next(document for document in documents if document.get("kind") == "Job")
+selector = job["spec"]["template"]["spec"].get("nodeSelector")
+sys.exit(0 if selector == {"kubernetes.io/hostname": "hp-xubuntu"} else 1)
+NODE_CHECK
+  then
+    pass "--node hp-xubuntu is a required hostname nodeSelector on the pod"
+  else
+    fail "--node hp-xubuntu did not render the hostname nodeSelector"
+  fi
+else
+  fail "a render with --image by digest and --node was refused: $(cat "${SCRATCH}/repro-img.err")"
+fi
+if python3 - "${out_a}" <<'NO_NODE_CHECK'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    documents = [document for document in yaml.safe_load_all(handle) if document]
+job = next(document for document in documents if document.get("kind") == "Job")
+sys.exit(1 if "nodeSelector" in job["spec"]["template"]["spec"] else 0)
+NO_NODE_CHECK
+then
+  pass "a render with neither flag carries no nodeSelector"
+else
+  fail "a render with neither flag must carry no nodeSelector"
+fi
+for bad_image in "ghcr.io/x/y:latest" "ghcr.io/x/y@sha256:abc" "-x@sha256:$(printf 'a%.0s' $(seq 1 64))" "a b"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --image "${bad_image}" \
+       > /dev/null 2>&1; then
+    fail "--image '${bad_image}' was rendered rather than refused"
+  else
+    pass "--image '${bad_image}' is refused"
+  fi
+done
+for bad_node in "" "gmktec" "macbook-m4-max-homelab-worker" "hp-xubuntu;x"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --node "${bad_node}" \
+       > /dev/null 2>&1; then
+    fail "--node '${bad_node}' was rendered rather than refused"
+  else
+    pass "--node '${bad_node}' is refused"
+  fi
+done
 for bad_queue in "" "Gates-LQ" "gates lq" "-gates"; do
   if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --queue "${bad_queue}" \
        > /dev/null 2>&1; then

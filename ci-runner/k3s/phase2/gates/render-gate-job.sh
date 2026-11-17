@@ -28,10 +28,13 @@
 #                      [--check-suite 'RECIPE' ...]
 #                      [--pytest-arg ARG ...]
 #                      [--queue LOCALQUEUE] [--repro-stack-interval SECONDS]
+#                      [--image NAME@sha256:DIGEST] [--node NODE]
 #
 # --queue is the LocalQueue the Job's `kueue.x-k8s.io/queue-name` label names,
 # `gates-lq` by default. --repro-stack-interval renders the reproduction
-# diagnostics described at its block below. Both exist for ONE caller, the
+# diagnostics described at its block below. --image runs the gate in the named
+# image BY DIGEST instead of the repository's own pin, and --node pins the Job to
+# one of the four gate nodes (livespec-dev-tooling-cwrg3v). All four exist for ONE caller, the
 # operator reproduction route (`python -m livespec_dev_tooling.gate_repro`,
 # livespec-dev-tooling-pkmxgu), which passes `--queue gates-repro-lq`
 # (../kueue/cluster-queue-repro-gates.yaml). The pre-push and pre-commit clients
@@ -112,7 +115,7 @@ WORKLOAD_ARCH_CONF="${WORKLOAD_ARCH_CONF:-${SCRIPT_DIR}/../workload-arch.conf}"
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
-queue="gates-lq"; repro_stack_interval=""
+queue="gates-lq"; repro_stack_interval=""; repro_image="@@unset@@"; repro_node="@@unset@@"
 check_suite=()
 pytest_argv=()
 private_siblings=()
@@ -149,6 +152,8 @@ while [ $# -gt 0 ]; do
     --pytest-arg)        pytest_argv+=("$2"); shift 2 ;;
     --queue)             queue="$2"; shift 2 ;;
     --repro-stack-interval) repro_stack_interval="$2"; shift 2 ;;
+    --image)             repro_image="$2"; shift 2 ;;
+    --node)              repro_node="$2"; shift 2 ;;
     --private-sibling)   private_siblings+=("$2"); shift 2 ;;
     --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
     --authority-skip-env)     authority_skip_env="$2"; shift 2 ;;
@@ -538,6 +543,22 @@ if [ "${#images[@]}" -gt 1 ]; then
   exit 1
 fi
 image="${images[0]}"
+# The operator reproduction route may run the gate in a DIFFERENT image than the
+# gated repository's own pin (livespec-dev-tooling-cwrg3v): the exact ARC runner
+# or factory sandbox image a failing run used. Only a reference BY DIGEST is
+# accepted, so what runs is the bytes that failed and never a moving tag.
+if [ "${repro_image}" != "@@unset@@" ]; then
+  case "${repro_image}" in
+    *[!A-Za-z0-9._:/@-]* | "" | -*)
+      echo "FATAL: --image '${repro_image}' is not an image reference" >&2
+      exit 2 ;;
+  esac
+  if ! printf '%s' "${repro_image}" | grep -Eq '^[a-z0-9][A-Za-z0-9._/-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$'; then
+    echo "FATAL: --image '${repro_image}' is not a reference by digest (name@sha256:<64 hex>)" >&2
+    exit 2
+  fi
+  image="${repro_image}"
+fi
 
 # --- the gated repository's own check recipes --------------------------------
 # No flag means the caller named no suite, which for the gate client means the
@@ -758,6 +779,22 @@ gate_repro_report() {
 ( set +e; while sleep ${repro_stack_interval}; do gate_repro_report; done ) &"
 fi
 
+# The node the reproduction Job is pinned to (livespec-dev-tooling-cwrg3v): one
+# of the fleet's four gate nodes, as a required `kubernetes.io/hostname`
+# nodeSelector. Kueue only assigns a flavor whose nodeLabels agree with it, so
+# the Job is admitted only through that node's repro flavor and runs only there.
+node_selector_block=""
+if [ "${repro_node}" != "@@unset@@" ]; then
+  case "${repro_node}" in
+    poweredge-xubuntu | gmktec-xubuntu | hp-xubuntu | gamingpc-xubuntu) ;;
+    *)
+      echo "FATAL: --node '${repro_node}' is not one of poweredge-xubuntu, gmktec-xubuntu, hp-xubuntu, gamingpc-xubuntu" >&2
+      exit 2 ;;
+  esac
+  node_selector_block="nodeSelector:
+  kubernetes.io/hostname: ${repro_node}"
+fi
+
 # --- substitution ------------------------------------------------------------
 # `&`, `|` and `\` are the characters sed would reinterpret in a replacement with
 # `|` as the delimiter. URLs and image references carry `/` and `:` freely, which
@@ -825,6 +862,7 @@ substitute LIVESPEC_CORE_URL "${LIVESPEC_CORE_URL}"
 substitute LIVESPEC_CORE_REF "${livespec_core_ref}"
 substitute GATE_RECIPE_NAMES "${quoted_recipe_names}"
 substitute_block GATE_RECIPES "${gate_recipe_lines}"
+substitute_block NODE_SELECTOR "${node_selector_block}"
 # An EMPTY block removes the placeholder's whole line, which is exactly what a
 # repository registering no cross-repo siblings must render.
 [ -f "${FORGE_RETRY}" ] || { echo "FATAL: ${FORGE_RETRY} not found — the gate Job's github.com reads need its forge_retry function" >&2; exit 1; }

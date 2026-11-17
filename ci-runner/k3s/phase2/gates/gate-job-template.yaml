@@ -78,6 +78,9 @@ spec:
       # worst case is about 5 s, far inside this grace period, and cannot extend a gate's kill.
       terminationGracePeriodSeconds: 30
       restartPolicy: Never
+      # Rendered ONLY by the operator reproduction route (--node): a required
+      # hostname nodeSelector, empty for every ordinary gate.
+      @@NODE_SELECTOR@@
       # Requirement 7, half one. R3 tainted gmktec `node-role/ci=pending:NoSchedule`
       # to keep CI RUNNER pods off it until R5 derived its capacity; a gate was
       # deliberately the first workload allowed there, which is why this toleration
