@@ -69,6 +69,39 @@ EXPEDITED_INCIDENT_RESPONSE governs instead.
   an empty commit or close/reopen for a fresh run. Maintainer [6tgd2z 2026-11-03T14:06:47Z]: "Retrying on a 429 …
   should be a no brainer. …"
 
+**Rule REPRODUCE-LOCALLY-FIRST: a failure of unknown cause is reproduced in its own container before anything is
+retried.** It binds both coordinators, the dispatcher and every seat they direct. The how-to is
+`.ai/reproduce-failures-in-the-container.md`. The rule has five points:
+
+1. Reproduce first, in the IDENTICAL image (same tag, same tree, same command).
+2. Nothing is retried, relaunched or re-dispatched before the repro. A flake retry of work already in progress
+   (above) runs only in parallel with it.
+3. A repro outside the failing environment (a plain checkout, the host shell, another image) does not count.
+4. Every routing of a failure carries a REPRO line.
+5. Waiting on a factory run is never a debugging step.
+
+**The REPRO line.** When a coordinator routes any failure to a seat, the message MUST carry a REPRO line. It says
+who reproduces the failure, in which image, pod or host, and with which exact command, and it points the seat at
+`.ai/reproduce-failures-in-the-container.md`. A failure routed without one is a coordinator defect. The seat records
+the measured cause on the work item. Measured 2026-11-17: driver-claude's `commit_green` was never reproduced and
+failed twice, git-jsonl was retried three times on a probe token error, and a slow coverage job was re-run instead
+of measured. Maintainer [6tgd2z 2026-11-17T03:5xZ], to throughput-plans-coordinator: "So are you thrashing and not
+using this clear tool that you have available, where everything is containerized and you can easily reproduce
+problems locally? Are you just waiting on the factory every fucking time something breaks? And retrying it over and
+over rather than specifically and explicitly debugging it locally ?" To legacy-coordinator-agent: "Read what I just
+told the throughput agent about being stupid and not debugging things locally rather than just wasting time waiting
+on factory runs. That's really stupid. Record this as ongoing guidance to debug things [locally]. Act like a mature
+developer ." and "Record this as ongoing permanent guidance for coordinators to tell seats how to debug things . And
+also some other prominent separate AI instruction that says how to reproduce uncertain bugs . Everything's
+containerized for a fucking reason. Leverage it".
+
+**The floor: a repeat in a row means local debugging, always.** Maintainer [6tgd2z 2026-11-17T04:0xZ]: "Anytime
+anything fails in the factory or CI more than twice in a row for the same reason, you should debug it locally,
+always". This floor is mechanical and sits on top of REPRODUCE-LOCALLY-FIRST. When the same failure signature recurs
+in a row in the factory or CI, the failure MUST be debugged locally in the identical container. Nothing is retried
+or relaunched until the cause is measured and fixed, and no flake, transient or infra label exempts it.
+STOP-AT-SECOND (§10) stops new launches; this floor says what the seat does instead, which is debug locally.
+
 **The CI range gate re-runs nothing, so it never backstops a hook bypass (coordinator's reading).** In CI,
 `check-red-green-replay` checks only that TDD trailer keys are present. [6tgd2z 2026-11-10T02:33:23Z]; fix
 livespec-dev-tooling-5be65c.
