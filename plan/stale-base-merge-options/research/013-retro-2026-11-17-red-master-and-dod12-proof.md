@@ -173,3 +173,11 @@ At 20:11Z this seat told both coordinators that a coverage job was a wedge. The 
 - Acceptance row owed under DoD assertion 10: in each repository with a merge queue, an incident-lane PR passes the queue, or the admin-bypass recovery is drilled, with a run id, PR and UTC time.
 - Observed by master-green-external-outage (incident ldizae): the incident focused-evidence selection diffs against the PR base, not the merge-base (owner `r5dbpp`), and `test_red_green_replay.py` takes 63 s against the 59 s focused budget (`nwvaaz`). Each master advance also voids a bound arm.
 - The DoD 12 evidence for the three proved rows is recorded on `livespec-dev-tooling-xowhol`.
+
+## Addendum (2026-11-17, late): two more lessons
+
+1. **DoD 8 was graded on an incomplete read.** Work item `livespec-dev-tooling-3oqn5b` (DoD 8) was closed after reading `known_marketplaces.json`, `installed_plugins.json` and the Codex `config.toml`. It did not read the user-scope `~/.claude/settings.json` `extraKnownMarketplaces`. At about 22:2xZ on 2026-11-17 `thewoolleyman/<repo>` entries were still there on gamingpc-xubuntu, chads-macbook-pro and macbook-air (and on vmi3006760 until a 22:05Z fix), and Claude Code 2.1.326 hides the four marketplaces when that conflict exists. Lesson: a grading read for a host-state assertion must include every file the tool actually resolves from, plus `claude plugin marketplace list` on each host, not only the files the previous seat knew about. legacy-coordinator-agent fixed the hosts by hand at about 22:4xZ. The tooling gap (`ensure-plugins` does not rewrite a marketplace clone whose origin differs from the declared source) is tracked as `livespec-dev-tooling-ie7hyr`.
+
+2. **A carrier PR can be "done" in a handoff while nothing is queued.** `livespec-orchestrator-beads-fabro#5459` (DoD 7 residuals) sat as a draft, not armed, until 22:2xZ. Lesson: after opening a carrier PR, read back `mergeQueueEntry` through GraphQL, not `autoMergeRequest`, which stays null for PRs already in the queue.
+
+Also observed: `livespec-dev-tooling-jwz2ls` (`livespec-dev-tooling#4951`, merged 18:29Z) still read `blocked` until legacy-coordinator-agent pressed `reconcile-merged`.
