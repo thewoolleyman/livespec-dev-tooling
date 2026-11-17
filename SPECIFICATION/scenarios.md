@@ -5924,6 +5924,26 @@ And when the gating job lacks the !cancelled() condition and ci-green carries no
 And when the guard job carries an if: condition, so it does not run on every event, self_hosted_routing fails naming the workflow file and the guard job
 ```
 
+## Scenario: a single-entry merge group whose tree equals its pull request head's tree reports ci-green without re-running the suite
+
+```gherkin
+Given a merge group that contains exactly one merge queue entry
+
+And the tree sha of the group's head commit equals the tree sha of that entry's pull request head commit
+
+And the forge reports every required check run, and ci-green, concluded success for that pull request head commit
+
+When the merge_group CI run starts
+
+Then the guard job runs and outputs skip=true
+
+And the gating jobs are skipped and ci-green concludes success under its unchanged required check name
+
+And when the group's tree differs from the head's tree, or the group holds more than one queue entry, or the base commit moved, or any forge read fails, the guard outputs skip=false and the full job graph runs
+
+And when a gating leg is skipped in a run whose guard did not output skip=true, ci-green fails naming the leg
+```
+
 ## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue
 
 ```gherkin

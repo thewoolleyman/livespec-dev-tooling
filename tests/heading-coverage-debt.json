@@ -1066,6 +1066,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a single-entry merge group whose tree equals its pull request head's tree reports ci-green without re-running the suite",
+    "work_item": "livespec-dev-tooling-ymog6r",
+    "first_seen": "2026-11-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a staged capacity value change commits on schema validation alone",
     "work_item": "livespec-dev-tooling-hmztez",
     "first_seen": "2026-11-04"
