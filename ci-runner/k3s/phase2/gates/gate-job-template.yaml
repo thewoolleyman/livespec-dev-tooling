@@ -235,6 +235,9 @@ spec:
             - |
               set -euo pipefail
               @@GATE_FORGE_RETRY@@
+              # The quiet-container process-tree printer, so an abandoned Job's
+              # saved log lines name the step that hung (livespec-dev-tooling-yrjatv).
+              @@GATE_PROCESS_TREE_WATCHDOG@@
               git init --quiet /livespec-core
               cd /livespec-core
               git remote add origin "@@LIVESPEC_CORE_URL@@"
@@ -744,6 +747,7 @@ spec:
               # the lines below rather than killing the script at the pipe.
               set +e
               : > "${recipe_log}"
+              gate_process_tree_watchdog "${recipe_log}" &
               {
                 set -e
                 @@GATE_RECIPES@@
@@ -785,6 +789,17 @@ spec:
               echo "${red}" >&2
               { printf '%s\n' "${red}" > /dev/termination-log; } 2> /dev/null || true
               exit "${recipe_status}"
+          # One last tree before the kubelet kills the container. Written to the
+          # container's own stdout; best-effort, because a gate must never be
+          # held by its diagnostics. The client saves its log lines BEFORE it
+          # deletes the Job, so this tree lands after that save.
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "{ echo ':: gate: process tree at preStop'; ps -eo pid,ppid,etime,stat,args --forest | cut -c1-200 | head -n 60; } > /proc/1/fd/1 2>&1 || true"
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check
