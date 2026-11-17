@@ -38,7 +38,7 @@ exactly the following schema (values below illustrate structure only):
 {
   "schema": 1,
   "audience": "urn:independently-provisioned-controller",
-  "subject": "repo:owner/repository:pull_request",
+  "subject": "repo:owner@<owner_id>/repository@<repository_id>:pull_request",
   "repository": "owner/repository",
   "repository_id": 123,
   "repository_owner_id": 456,

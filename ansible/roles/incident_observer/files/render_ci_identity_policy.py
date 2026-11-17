@@ -77,7 +77,7 @@ def render_policy(*, args: argparse.Namespace) -> dict[str, Any]:
     return {
         "schema": 1,
         "audience": args.audience,
-        "subject": "repo:" + args.repository + ":pull_request",
+        "subject": _immutable_subject(args=args),
         "repository": args.repository,
         "repository_id": args.repository_id,
         "repository_owner_id": args.owner_id,
@@ -88,6 +88,18 @@ def render_policy(*, args: argparse.Namespace) -> dict[str, Any]:
         "issuer_keys": keys,
         "crypto": {"path": str(crypto), "sha256": hashlib.sha256(crypto.read_bytes()).hexdigest()},
     }
+
+
+def _immutable_subject(*, args: argparse.Namespace) -> str:
+    """The pull_request subject GitHub presents when immutable subjects are on.
+
+    A repository with `use_immutable_subject` presents
+    `repo:<owner>@<owner_id>/<name>@<repository_id>:pull_request`, so the name and its
+    stable id travel together and a renamed or recreated repository cannot squat the
+    subject. Both ids are the role's own inventory values.
+    """
+    owner, _, name = args.repository.partition("/")
+    return f"repo:{owner}@{args.owner_id}/{name}@{args.repository_id}:pull_request"
 
 
 def _issuer_keys(*, jwks: object) -> list[dict[str, str]]:

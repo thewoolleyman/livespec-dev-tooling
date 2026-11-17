@@ -101,7 +101,7 @@ def test_the_rendered_policy_is_the_one_the_controller_loads(
     assert data == {
         "schema": 1,
         "audience": "livespec-incident-observer:fleet/served",
-        "subject": "repo:fleet/served:pull_request",
+        "subject": "repo:fleet@77/served@4242:pull_request",
         "repository": "fleet/served",
         "repository_id": 4242,
         "repository_owner_id": 77,
