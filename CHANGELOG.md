@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.220.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.219.1...v1.220.0) (2026-11-17)
+
+
+### Features
+
+* **ansible:** bd exec allowlist, all verbs, base64 argv, no shell (livespec-dev-tooling-tbhqye) ([08b6e95](https://github.com/livespec-ai/livespec-dev-tooling/commit/08b6e956b269746e158d637b210aa9ec82a4c845))
+* red ([30ca5ad](https://github.com/livespec-ai/livespec-dev-tooling/commit/30ca5ad62a64bfd0b4bcae268e162962d10e2587))
+
+
+### Bug Fixes
+
+* focused-evidence selection diffs from the merge-base of base and head (livespec-dev-tooling-r5dbpp) ([ef7e05b](https://github.com/livespec-ai/livespec-dev-tooling/commit/ef7e05b77a44c417f8f0541f32963259d771e3ea))
+* **incident:** the CI identity policy renders the immutable OIDC subject the forge presents (livespec-dev-tooling-bqnzcm.4) ([e787eb1](https://github.com/livespec-ai/livespec-dev-tooling/commit/e787eb1fa0f99ee8b286c68dbd0694118ec1dca0))
+
 ## [1.219.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.219.0...v1.219.1) (2026-11-17)
 
 
