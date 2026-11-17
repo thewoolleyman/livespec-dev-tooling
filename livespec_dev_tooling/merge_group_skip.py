@@ -140,10 +140,15 @@ def _head_checks_gap(*, forge: Forge, inputs: GroupInputs, pr_head: str, number:
     return None
 
 
+def _entry_head_oid(*, entry: Payload) -> object:
+    head: dict[str, object] | None = entry["headCommit"]
+    return None if head is None else head["oid"]
+
+
 def _entry_gap(*, forge: Forge, inputs: GroupInputs) -> tuple[str | None, Payload]:
     branch = inputs.base_ref.removeprefix("refs/heads/")
     entries = sorted(forge.queue_entries(branch=branch), key=lambda e: int(e["position"]))
-    cut = [i for i, e in enumerate(entries) if e["headCommit"]["oid"] == inputs.head_sha]
+    cut = [i for i, e in enumerate(entries) if _entry_head_oid(entry=e) == inputs.head_sha]
     if cut != [0]:
         return "the group is not exactly the first queue entry", {}
     entry = entries[0]

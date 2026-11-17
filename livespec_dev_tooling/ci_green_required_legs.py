@@ -266,6 +266,21 @@ def _templated_names(*, name: str, body: tuple[str, ...]) -> tuple[str, ...]:
     return names if len(set(names)) == len(names) else ()
 
 
+def _suffixed_names(*, label: str, body: tuple[str, ...]) -> tuple[str, ...]:
+    """A literal-named job's leg names: the label, then each matrix combination in parentheses.
+
+    The forge reports a matrix leg as `<label> (<value>, <value>)`, the values in axis order.
+    A job with no matrix reports the bare label; a matrix this reader does not model is
+    underivable (empty), so the caller fails closed.
+    """
+    if not _matrix_lines(body=body):
+        return (label,)
+    axes = _matrix_axes(body=body)
+    if axes is None:
+        return ()
+    return tuple(f"{label} ({', '.join(combo)})" for combo in itertools.product(*axes.values()))
+
+
 def _leg_names(*, job: str, body: tuple[str, ...] | None) -> tuple[str, ...]:
     """The job names one needed job's legs report under; empty when underivable."""
     if body is None:
@@ -273,11 +288,9 @@ def _leg_names(*, job: str, body: tuple[str, ...] | None) -> tuple[str, ...]:
     name = _job_key(body=body, key="name")
     if name == _MATRIX_TARGET_NAME:
         return _matrix_targets(body=body)
-    if name is None:
-        return (job,)
-    if "${{" in name:
+    if name is not None and "${{" in name:
         return _templated_names(name=name, body=body)
-    return (name,)
+    return _suffixed_names(label=job if name is None else name, body=body)
 
 
 def required_legs(*, ci_yaml_text: str, gate_job: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
