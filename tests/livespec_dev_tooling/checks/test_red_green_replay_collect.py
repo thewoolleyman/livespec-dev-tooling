@@ -11,6 +11,7 @@ which no stand-in for the tree or the child can show.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -105,8 +106,11 @@ def _pair_message(*, red_test: str | None = _MODULE_PATH) -> str:
     lines = ["feat: record a Red+Green pair", ""]
     if red_test is not None:
         lines.append(f"TDD-Red-Test: {red_test}")
+    # The range gate also checks this against the commit's own tree, so it is the
+    # real digest of the one test body every fixture here ships.
+    digest = hashlib.sha256(_TEST.encode("utf-8")).hexdigest()
     lines += [
-        "TDD-Red-Test-File-Checksum: sha256:deadbeef",
+        f"TDD-Red-Test-File-Checksum: sha256:{digest}",
         "TDD-Green-Verified-At: 2026-11-10T00:00:00Z",
     ]
     return "\n".join(lines) + "\n"
@@ -126,7 +130,13 @@ def _measured_history(*, repo: Path) -> _History:
         files={"livespec/foo.py": _OLD_IMPL, _MODULE_PATH: _TEST},
         message=_pair_message(),
     )
-    fixed = _commit(repo=repo, files={"livespec/foo.py": _NEW_IMPL}, message=_pair_message())
+    # A behaviour-preserving follow-up: a second pair would name a test its own diff
+    # never touches, which the recorded-checksum rule refuses on its own.
+    fixed = _commit(
+        repo=repo,
+        files={"livespec/foo.py": _NEW_IMPL},
+        message="refactor: add the name\n\nTDD-Suite-Green-Captured-At: 2026-11-10T00:00:00Z\n",
+    )
     return _History(repo=repo, shas=[broken, fixed])
 
 
@@ -438,3 +448,20 @@ def test_an_exemption_that_could_not_be_evaluated_exempts_nothing(
 
     assert returncode == 1
     assert _failing(logs=logs)[0]["sha"] == history.shas[0]
+
+
+def test_a_refused_commit_with_no_python_in_its_diff_has_no_forge_revert_to_exempt_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recorded-checksum rule refuses it, and the forge-revert probe is never asked."""
+    from livespec_dev_tooling.checks import _red_green_replay_checksum as checksum
+
+    _init_repo(repo=tmp_path)
+    sha = _commit(repo=tmp_path, files={"docs/a.md": "x\n"}, message=_pair_message())
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(checksum, "is_forge_authored_revert", lambda **_kw: 1 / 0)
+
+    (finding,) = checksum.verify_recorded_checksums(shas=[sha], base_ref=_BASE_REF)
+
+    assert (finding["sha"], finding["test_path"]) == (sha, _MODULE_PATH)
+    assert finding["failed_condition"].startswith("absent")

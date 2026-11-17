@@ -98,6 +98,13 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # (cycle 4c LLOC reduction). The leading underscore in the module
 # name marks it as a private helper rather than a check entry
 # point.
+from _red_green_replay_checksum import (  # noqa: E402  — sibling private import
+    CHECK_ID as _CHECKSUM_CHECK_ID,
+)
+from _red_green_replay_checksum import (  # noqa: E402  — sibling private import
+    CHECKSUM_HINT,
+    verify_recorded_checksums,
+)
 from _red_green_replay_collect import collect_recorded_tests  # noqa: E402  — sibling private import
 from _red_green_replay_incident import (  # noqa: E402  — sibling private import
     admitted_by_recorded_incident,
@@ -417,6 +424,18 @@ def _validate_range() -> int:
     shas = _git_stdout_lines(args=["rev-list", "--no-merges", f"{_RANGE_BASE}..HEAD"])
     violating = [sha for sha in shas if _commit_violates(sha=sha)]
     if not violating:
+        mismatched = verify_recorded_checksums(shas=shas, base_ref=_RANGE_BASE)
+        if mismatched:
+            log.error(
+                "commits in origin/master..HEAD record a TDD-Red-Test that is absent from the "
+                "commit's own tree or diff, or whose TDD-Red-Test-File-Checksum does not equal "
+                "that file's sha256 on the commit's own tree",
+                check_id=_CHECKSUM_CHECK_ID,
+                failing_commits=mismatched,
+                hint=CHECKSUM_HINT,
+                protocol=RED_GREEN_REPLAY_PROTOCOL,
+            )
+            return 1
         return collect_recorded_tests(shas=shas, base_ref=_RANGE_BASE, log=log)
     log.error(
         "commits in origin/master..HEAD touch product impl .py without a "
