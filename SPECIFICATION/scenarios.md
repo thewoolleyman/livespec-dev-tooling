@@ -5988,13 +5988,19 @@ And when a gating leg is skipped in a run whose guard did not output skip=true, 
 ## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue
 
 ```gherkin
-Given livespec-dev-tooling is owned by an organization
+Given a repository owned by the organization livespec-ai, such as livespec-runtime
 
 And no active ruleset on its default branch carries a merge_queue rule
 
 When branch_protection_alignment runs with an admin-scoped token
 
 Then it exits 4 with one fail finding whose failure_mode is merge_queue_absent
+
+And the same holds for each of the eleven queue-required livespec-ai repositories named in the contract, with no list of queue-required repositories consulted
+
+And a repository named livespec-website, the one exception, whose default branch is unprotected and carries no ruleset, passes the check: it exits 0 with one informational finding and reports none of merge_queue_absent, protection_absent or enforce_admins_disabled
+
+And a repository that sets configuration to opt out of the queue is still queue-required.
 ```
 
 ## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration
