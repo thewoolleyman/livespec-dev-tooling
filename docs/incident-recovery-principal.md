@@ -27,7 +27,7 @@ The principal reads the credential from `recovery-app.json`, which sits next to
 the protected `controller.json`. The file holds `{"app_id": "<digits>",
 "private_key": "<PEM>"}`, has mode 0600 and is owned by the controller account.
 The incident_observer role writes it at apply, under `no_log`, from
-`LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY`. The credential
+`LIVESPEC_RECOVERY_ORG_APP_ID` and `LIVESPEC_RECOVERY_ORG_APP_PRIVATE_KEY`. The credential
 wrapper projects those two values on the control node. The key is never stored in
 this repository or in an environment variable of the observer or its reader.
 
