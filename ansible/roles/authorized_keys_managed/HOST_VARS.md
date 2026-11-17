@@ -48,9 +48,13 @@ just ansible-apply ansible/dev-host.yml --tags authorized_keys_managed
 Its forced command is then `/usr/local/sbin/authorized-keys-bd-readonly-exec`
 (installed by this role from `files/authorized-keys-bd-readonly-exec.sh`), which
 keeps the blocking tunnel session and additionally accepts a client command only
-if it is exactly `bd show|list|comments` with arguments drawn from a strict
-shape (`--json`, `--all`, `--limit`, `--status` and plain ids and words); any
-other command exits 126. Default is unchanged: an entry without the key keeps the
-forward-only command, no new key or account is added, and revert is removing the
-key from the entry. Awaiting the maintainer's ruling on the key scope; see the
-header of the script for the open design questions.
+if it is exactly `in <repo> bd show|list|comments <args>`. `<repo>` must be an
+exact line of `/etc/authorized-keys-bd-readonly-exec/repos`, written from
+`authorized_keys_managed_bd_readonly_exec_repos`; the tenant is resolved only as
+`/data/projects/<repo>`, never from a client path. Arguments are limited to
+`--json`, `--all`, `--limit`, `--status` and plain ids and words; anything else
+exits 126. Per the maintainer (2026-11-17) the key may read every fleet tenant
+and the output has no size cap, because the cost is latency, not bandwidth.
+Default is unchanged: an entry without the key keeps the forward-only command, no
+new key or account is added, and revert is removing the key from the entry.
+Whether to switch it on at all is still open.

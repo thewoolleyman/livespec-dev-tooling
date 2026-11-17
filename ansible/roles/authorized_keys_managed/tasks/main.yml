@@ -54,6 +54,26 @@
   become: true
   when: authorized_keys_managed_entries | selectattr('bd_readonly_exec', 'defined') | selectattr('bd_readonly_exec') | list | length > 0
 
+- name: Create the wrapper's allowlist directory
+  ansible.builtin.file:
+    path: /etc/authorized-keys-bd-readonly-exec
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: authorized_keys_managed_entries | selectattr('bd_readonly_exec', 'defined') | selectattr('bd_readonly_exec') | list | length > 0
+
+- name: Install the fleet repository allowlist the wrapper resolves tenants from
+  ansible.builtin.copy:
+    dest: /etc/authorized-keys-bd-readonly-exec/repos
+    content: "{{ authorized_keys_managed_bd_readonly_exec_repos | join('\n') }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: authorized_keys_managed_entries | selectattr('bd_readonly_exec', 'defined') | selectattr('bd_readonly_exec') | list | length > 0
+
 - name: Place each declared forward-only key after unmarked keys
   ansible.builtin.blockinfile:
     path: "{{ authorized_keys_managed_path }}"
