@@ -366,6 +366,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declared gate queue routes a repository's full-size gate Jobs and leaves its replay Jobs on the default queue",
+    "work_item": "livespec-dev-tooling-xymcj6",
+    "first_seen": "2026-11-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declared gate queue that names no committed LocalQueue is refused before any gate Job is submitted",
+    "work_item": "livespec-dev-tooling-xymcj6",
+    "first_seen": "2026-11-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a default-branch push routes to the master runner target and a pull request does not",
     "work_item": "livespec-dev-tooling-lzkzwb",
     "first_seen": "2026-11-03"
@@ -842,6 +856,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a recorded share for a class the worker cannot run is ignored",
+    "work_item": "livespec-dev-tooling-dwewrc",
+    "first_seen": "2026-11-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
@@ -1255,6 +1276,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a worker's recorded measured split replaces the equal default",
+    "work_item": "livespec-dev-tooling-dwewrc",
+    "first_seen": "2026-11-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow GitHub cannot parse is refused at every gate",
     "work_item": "livespec-dev-tooling-f3q7r7",
     "first_seen": "2026-11-08"
@@ -1447,6 +1475,13 @@
     "heading": "## Scenario: an incident-ci forge read retries an unusable answer and an unreadable pull-request body fails the selection by name",
     "work_item": "livespec-dev-tooling-levu6j",
     "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an invalid recorded split is refused before any write",
+    "work_item": "livespec-dev-tooling-dwewrc",
+    "first_seen": "2026-11-17"
   },
   {
     "spec_root": "SPECIFICATION",
