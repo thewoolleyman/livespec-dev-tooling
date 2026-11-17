@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.219.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.219.0...v1.219.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ci:** add the master_health_publish entrypoint ci-green's publishing step runs (livespec-dev-tooling-ldizae) ([02fce7a](https://github.com/livespec-ai/livespec-dev-tooling/commit/02fce7ab7fe32de705a24606cdec72ad790d43f2))
+* merge-group skip guard handles queue runs and matrix-suffixed leg names (livespec-dev-tooling-jwz2ls) ([cf7d29e](https://github.com/livespec-ai/livespec-dev-tooling/commit/cf7d29ee732fab1fe3169d511a73e0b8086952e3))
+
 ## [1.219.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.218.0...v1.219.0) (2026-11-17)
 
 
