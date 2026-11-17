@@ -165,6 +165,24 @@ python3 $H successor --operation <OP2> --pr-number <N> --base-sha <BASE> --head-
   about 1.07 s to each reader pass, against a 10 s limit (R1). Spec and code disagree here; the code is what runs.
 - Once `pr-bound`, the chain can never name another PR number (`_incident_carrier.py:145`).
 
+### Step 5b. Record focused evidence for the bound head tree (LEDGER WRITE, required before `/arm`)
+
+`/arm` refuses `incident-focused-evidence-absent` (HTTP 403, nothing stored) unless the item carries a focused-evidence
+record for the PR's exact head tree, recorded UNDER THE CURRENT GENERATION (here generation 2, after the bind). Evidence
+recorded earlier reads as absent. Measured 2026-11-17 on livespec-dev-tooling-wjyc4c. Run it from the attempt worktree
+through the detached runner, using the repository's venv python (bare `python` lacks `coverage`):
+
+```bash
+mise exec -- just gate-start -- env EXPEDITED_INCIDENT_RESPONSE=1 \
+  LIVESPEC_INCIDENT_AUTHORITY_QUERY='<canonical {attempt,generation,item,operation,owner,phase,repository}>' \
+  PYTHONPATH=$PWD /usr/local/bin/with-livespec-env.sh -- <primary>/.venv/bin/python \
+  -m livespec_dev_tooling.incident_focused_evidence_entry --procedure ... --expected ... --observed ... --verdict passed
+```
+
+A `passed` record with no risks needs nothing more; an incomplete or deferred member needs
+`incident_focused_disposition_entry` before `/arm`. The full contract is docs/incident-observer-service.md
+"Focused evidence at `/arm`" and research note 007 steps 1.7 and 1.8. The run took about 12 minutes here.
+
 ### Step 6. Read the current authority and build the arm
 
 ```bash
