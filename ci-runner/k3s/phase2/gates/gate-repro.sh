@@ -8,6 +8,12 @@
 #                               [--out DIR] [--image NAME@sha256:DIGEST]
 #                               [--node poweredge|gmktec|hp|gamingpc-xubuntu]
 #
+# WITHOUT --node the Job carries NO nodeSelector: Kueue admits it through the
+# FIRST repro flavor (gamingpc, poweredge, gmktec, hp, in that order) that has
+# free quota, and the pod runs on that flavor's node. Use --node ONLY to
+# reproduce a failure that belongs to one node; it pins the Job to that node's
+# flavor, so it waits when that flavor's one gate unit is in use.
+#
 # WHAT IT DOES.
 #   1. Submits one gate Job for <repo-root>'s committed tree through the normal
 #      gate client, `python -m livespec_dev_tooling.gate_repro`: the mirror push,
