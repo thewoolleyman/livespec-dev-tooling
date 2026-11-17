@@ -94,6 +94,7 @@ def _run_span(*, repo: str, run_id: int, run: dict[str, object]) -> dict[str, ob
         "attributes": [
             _attribute(key="repo", value=repo),
             _attribute(key="ci.run_id", value=run_id, value_type="intValue"),
+            _attribute(key="ci.run_attempt", value=run.get("attempt", 1), value_type="intValue"),
             _attribute(key="ci.conclusion", value=conclusion),
             _attribute(key="ci.title", value=run.get("displayTitle", "")),
             _attribute(key="git.commit.sha", value=run.get("headSha", "")),
@@ -118,6 +119,7 @@ def _job_span(
     *,
     repo: str,
     run_id: int,
+    run_attempt: object,
     job: dict[str, object],
     created_by_id: dict[int, object],
 ) -> dict[str, object] | None:
@@ -144,6 +146,11 @@ def _job_span(
     if isinstance(reuse_outcome, dict):
         attributes.append(_attribute(key="ci.job.id", value=job_id, value_type="intValue"))
         attributes.extend(coverage_reuse_attributes(outcome=cast(dict[str, object], reuse_outcome)))
+    else:
+        attributes.insert(
+            2,
+            _attribute(key="ci.run_attempt", value=run_attempt, value_type="intValue"),
+        )
     return {
         "traceId": _hex_id(value=run_id, width=32),
         "spanId": _hex_id(value=job_id, width=16),
@@ -169,6 +176,7 @@ def _payload(
             span := _job_span(
                 repo=repo,
                 run_id=run_id,
+                run_attempt=run.get("attempt", 1),
                 job=job,
                 created_by_id=created_by_id,
             )
