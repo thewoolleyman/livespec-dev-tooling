@@ -656,6 +656,13 @@ under `FOR THE MAINTAINER`:
 COMPLETED: <plan-slug (epic-id)> archived <ref>, seat closed <UTC> — acknowledge to clear.
 ```
 
+**Rule DEADLINE-IS-THE-WHOLE-PLAN: a plan deadline is met only when everything in the plan is done, except the
+retrospective.** No report names a single DoD item, row or carrier as "the deadline", none calls a deadline met while
+anything in the plan is not done, and a coordinator adds no criterion of its own to the maintainer's definition. Each
+tick prints the running miss in minutes until the plan is done. Maintainer [6tgd2z 2026-11-17 ~22:3xZ], verbatim: "Done
+means everything in the plan is done except the retro. … If there's anything left in the plan that is not done, then you
+have missed the deadline, and you are failing."
+
 A priority whose owning plan or single owning item is already closed is dropped by the coordinator itself, with no ask.
 Maintainer [6tgd2z 2026-11-05T12:46:55Z]: "sure if they are closed move on.  Wghy ask me?" "Finished", "done" and
 "complete" mean completely closed: a plan whose children are closed but which owes its proof, review or archive keeps
