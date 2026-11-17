@@ -72,6 +72,17 @@ because the approval gate covers it at runtime.
 Privileged golden-master workflows run on their own dedicated gate lane and do
 not read this variable.
 
+## Merge-group tree-equality skip
+
+On a `merge_group` event the `merge-group-guard` job also decides whether the
+group may skip re-running the suite its pull request head already passed
+(`livespec_dev_tooling/merge_group_skip.py`). It skips only when the group holds
+exactly one queue entry, the group head's tree equals the pull request head's
+tree, and the forge reports every required check green for that head commit;
+`ci-green` still runs and reports the same required check names. The step logs
+a `skip=<true|false>` line and a `reason:` line. Setting the repository variable
+`LIVESPEC_MERGE_GROUP_SKIP_DISABLED=true` forces every group to run in full.
+
 ## Failure and recovery semantics
 
 Routing is fixed when a job is created. If self-hosted capacity goes away
