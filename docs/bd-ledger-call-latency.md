@@ -28,7 +28,7 @@ is **query count times network distance**.
 
 | Calling host | Raw ping to VPS (min / avg) | Ledger-path round trip | One `bd show` wall | Dolt round trips per `bd show` | Dominant cause |
 |---|---|---|---|---|---|
-| VPS `vmi3006760` | 0.047 / 0.205 ms (loopback) | 1 to 2 ms (connect plus greeting on 127.0.0.1:3307) | 0.95, 1.02, 0.72 s | 90 writes, 179 reads, 2 connections | not network: 90 round trips at about 0.2 ms are about 0.02 s, so the call is query execution plus startup |
+| VPS `vmi3006760` | 0.047 / 0.205 ms (loopback) | 1 to 2 ms (connect plus greeting on 127.0.0.1:3307) | 0.95, 1.02, 0.72 s | 90 writes, 179 reads, 2 connections | query count (about 0.62 s over 90 queries; network distance is about 0.02 s and the tunnel does not exist on this host) |
 | hetzner-xubuntu | 172 / 255 ms | 171 to 177 ms (`hxi-dolt-tunnel.service`, connect plus greeting) | 11.7 to 13.5 s (six runs) | 90 writes, 205 reads, 2 connections | query count times network distance |
 | CI runner pod (measured at node poweredge-xubuntu) | 29.6 / 37.6 ms | not measured (no bd on the node) | derived 2.7 to 3.4 s (90 x RTT) | 90 (same binary) | query count times network distance |
 | Factory sandbox pod (measured at node gmktec-xubuntu) | 28.2 / 41.8 ms | not measured (no bd on the node) | derived 2.5 to 3.8 s (90 x RTT) | 90 (same binary) | query count times network distance |
@@ -71,10 +71,10 @@ measurement within its spread (0.72 to 1.14 s).
 | Unit | bd calls | Ledger time added on hetzner-xubuntu (about 11.5 s per call) | On a node (about 3 s per call, derived) |
 |---|---|---|---|
 | One CI run of this repository | 0 (no workflow or CI script calls `bd`) | 0 | 0 |
-| One factory run | not measured per run. Per orchestrator read primitive (hetzner-xubuntu-info research note 024, measured on the VPS): `next` 29 (25 `show`, 4 `list`), `list_work_items` 4 (each a 3.6 MB dump), `context` 4, `list_plans` 0 | `next` about 29 x 11.5 s = 5.6 min; `list_work_items` about 46 s | `next` about 29 x 3 s = 1.5 min |
+| One factory run | DERIVED, one run: about 39 (upper bound 51). Run `01M7NCTPVMNXCJE458PBHQN34Y`, item `hxi-wsrrso`, green, run window 2026-11-17 18:38:09 to 19:51:19 UTC (dispatch record 18:38:19 to 19:59:04). Method: 0 `bd` calls reached the ledger from the sandbox side (67 stages and all 155 agent Bash calls in `fabro dump`; the 2 attempted `bd comments` were refused by the credential launcher before `bd` ran); 39 host-side calls by the dispatcher loop for that item (show 21, comments 11, update 7) read from the `bd-guard` Honeycomb spans (`bd.argv` containing the item id) over 18:30 to 20:10; 51 if operator and session calls that name the item are counted too (show 25, comments 17, update 8, create 1). Calls whose argv lacks the item id (for example preflight `list` and `config`) are not counted. | about 39 x 11.5 s = 7.5 min if run from hetzner-xubuntu; the dispatcher runs on the VPS, so its actual cost is about 39 x 0.84 s = 33 s | about 39 x 3 s = 2 min |
 | One coordinator-seat turn | 0.66 direct `bd` CLI calls per user turn over 110 seat transcripts (3,840 calls in 5,838 turns; up to 3.7 per turn in the heaviest sessions). Excludes the `bd` calls inside plan and drive operations, which each make many. | about 7.6 s per turn, up to about 43 s | about 2 s per turn |
 
-The dispatcher makes 1,323 `bd` calls per dry run on the VPS (measured by
+Fleet-wide, the `bd-guard` spans recorded 68,599 `bd` calls in 24 hours (2026-11-16/17), 16,591 of them from `/data/projects/livespec-orchestrator-beads-fabro`; the spans carry no run id, so this is a rate, not a per-run figure. The dispatcher makes 1,323 `bd` calls per dry run on the VPS (measured by
 `legacy-dispatcher-agent`), about 22 minutes at 1.0 s each if run from a
 distant host.
 
