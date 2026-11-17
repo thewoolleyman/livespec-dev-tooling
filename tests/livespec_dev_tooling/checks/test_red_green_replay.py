@@ -110,6 +110,7 @@ import structlog.testing
 from returns.io import IOFailure
 
 from livespec_dev_tooling.checks import _red_green_replay_collect
+from livespec_dev_tooling.checks._red_green_replay_suite_runner import SuiteBound, SuiteRun
 from livespec_dev_tooling.checks._red_green_replay_trailers import GitCommandFailed
 from livespec_dev_tooling.config import (
     Config,
@@ -122,6 +123,7 @@ from tests.livespec_dev_tooling.checks.config_parse_rendering import (
 )
 
 __all__: list[str] = []
+pytestmark = pytest.mark.no_flake_retry
 
 
 def _prefix_role(*, prefixes: tuple[str, ...]) -> PrefixRole:
@@ -240,6 +242,47 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
+def _fast_local_suite_run(*, argv: list[str], bound: SuiteBound) -> SuiteRun:
+    """Model the tiny fixture suites without spawning their own pytest process.
+
+    The hook's suite runner is separately exercised with real processes in its
+    own module.  Here every fixture test is deliberately minimal: a suite has
+    no tests, passes, or contains an explicit ``assert False``.  Preserving
+    those three outcomes keeps this module's routing and trailer assertions
+    while avoiding pytest startup and the runner's one-second poll cadence for
+    every call to the hook under test.
+    """
+    del bound
+    root = Path.cwd()
+    requested = [Path(arg) for arg in argv if arg.endswith(".py")]
+    test_paths = [path if path.is_absolute() else root / path for path in requested]
+    if not test_paths:
+        test_paths = list((root / "tests").rglob("test_*.py")) if (root / "tests").exists() else []
+    sources = [path.read_text(encoding="utf-8") for path in test_paths if path.is_file()]
+    test_count = sum(source.count("def test_") for source in sources)
+    if test_count == 0:
+        return SuiteRun(returncode=5, output="no tests ran in 0.00s\n", timed_out=False)
+    if any("assert False" in source for source in sources):
+        return SuiteRun(returncode=1, output="1 failed in 0.00s\n", timed_out=False)
+    return SuiteRun(returncode=0, output=f"{test_count} passed in 0.00s\n", timed_out=False)
+
+
+def _fast_replay_test(*, pytest_argv: list[str], **_kwargs: object) -> object:
+    """Return the Red/Green fixture test result without starting pytest again."""
+    import _red_green_replay_modes as modes
+
+    test_path = next(Path(arg) for arg in pytest_argv if arg.endswith(".py"))
+    source = test_path.read_text(encoding="utf-8")
+    failed = "assert False" in source
+    output = "AssertionError\n" if failed else ""
+    return modes._ReplayTestRun(  # noqa: SLF001 - the test double targets this private seam.
+        returncode=1 if failed else 0,
+        output=output,
+        output_checksum=f"sha256:{hashlib.sha256(output.encode('utf-8')).hexdigest()}",
+        trailers=(),
+    )
+
+
 def _run_check(
     *,
     tmp_path: Path,
@@ -277,6 +320,13 @@ def _run_check(
     `_scrub_git_env`).
     """
     monkeypatch.chdir(tmp_path)
+    # This imported sibling owns the callable captured by the suite outcome
+    # seam. Patch that module, rather than the runner module it imports from.
+    import _red_green_replay_modes as modes
+    import _red_green_replay_suite as suite
+
+    monkeypatch.setattr(modes, "_run_replay_test", _fast_replay_test)
+    monkeypatch.setattr(suite, "run_suite", _fast_local_suite_run)
     for name in _GIT_ENV_PASSTHROUGH_VARS:
         monkeypatch.delenv(name, raising=False)
     argv = [str(_RED_GREEN_REPLAY)]
