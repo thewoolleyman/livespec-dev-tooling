@@ -162,6 +162,8 @@ def test_the_budgeted_log_read_exports_the_consumer_reuse_outcome(
         "ci.job.name": "check-coverage",
         "ci.job.conclusion": "success",
         "ci.job.queue_ms": "60000",
+        "git.branch": "master",
+        "ci.event": "push",
         "ci.coverage_reuse.repository": _REPOSITORY,
         "ci.coverage_reuse.run_id": "42",
         "ci.coverage_reuse.job_id": "check-coverage",
@@ -314,6 +316,8 @@ def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
             "ci.job.name": "check-python",
             "ci.job.conclusion": "success",
             "ci.job.queue_ms": "60000",
+            "git.branch": "master",
+            "ci.event": "push",
         },
         {
             "repo": _REPOSITORY,
@@ -321,6 +325,8 @@ def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
             "ci.job.name": "check-metadata",
             "ci.job.conclusion": "failure",
             "ci.job.queue_ms": "60000",
+            "git.branch": "master",
+            "ci.event": "push",
         },
     ]
     assert spans[0]["status"] == {"code": 1}
