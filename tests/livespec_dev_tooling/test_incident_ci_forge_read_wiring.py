@@ -39,7 +39,7 @@ _READ_STEPS = (
     ForgeReadStep(
         step_name="Select incident work from an authenticated PR read",
         read_id="incident-ci-pull-request-body-read",
-        path="repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}",
+        path="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}",
     ),
 )
 
