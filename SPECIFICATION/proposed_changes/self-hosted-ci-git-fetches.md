@@ -31,7 +31,7 @@ In SPECIFICATION/scenarios.md, insert the following scenario immediately after "
 
 Given a gating CI job of a fleet repository on the self-hosted pool
 
-And GitHub answers that job's anonymous git fetch of https://github.com/thewoolleyman/livespec-dev-tooling.git with 401
+And GitHub answers that job's anonymous git fetch of https://github.com/livespec-ai/livespec-dev-tooling.git with 401
 
 When git asks for credentials for https://github.com
 
