@@ -148,8 +148,8 @@ The principal the manifest names is the packaged
 It acts on the forge only as the dedicated recovery GitHub App, and it reads that
 App's credential from `/etc/livespec-incident/recovery-app.json` (mode 0600, owned
 by the controller account). The role writes that file at apply, under `no_log`,
-when the control node's wrapper projects both `LIVESPEC_RECOVERY_APP_ID` and
-`LIVESPEC_RECOVERY_APP_PRIVATE_KEY`. When either is missing, the role writes
+when the control node's wrapper projects both `LIVESPEC_RECOVERY_ORG_APP_ID` and
+`LIVESPEC_RECOVERY_ORG_APP_PRIVATE_KEY`. When either is missing, the role writes
 nothing and says so in the run output. The principal then refuses every forge
 operation as `recovery-app-credential-absent`, while `lookup` and `conflict`
 still answer. The observer process reads the same file for its own forge reads
@@ -281,7 +281,7 @@ references to them stay valid.
 4. **Not done — provision the recovery GitHub App (plan note 006, GO-1).**
    Create a GitHub App used only for incident recovery, never the
    factory/publishing bot. Give it `contents: write` on
-   `livespec-ai/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED until this host converts (current seeding route above); retain the variable names `LIVESPEC_RECOVERY_APP_ID` and `LIVESPEC_RECOVERY_APP_PRIVATE_KEY` for the target route. Add a
+   `livespec-ai/livespec-dev-tooling` and install it there. New canonical recovery-App values are BLOCKED until this host converts (current seeding route above); retain the variable names `LIVESPEC_RECOVERY_ORG_APP_ID` and `LIVESPEC_RECOVERY_ORG_APP_PRIVATE_KEY` for the target route. Add a
    master ruleset whose bypass list names only that App, then run the apply
    again. Reason it is maintainer-held: it grants a principal unchecked writes
    to master, and App and ruleset settings are GitHub state and the App's
