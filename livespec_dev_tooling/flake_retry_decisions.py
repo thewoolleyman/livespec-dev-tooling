@@ -300,6 +300,7 @@ def retry_marker_for(  # noqa: PLR0913 — the two caches and the retry policy a
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
     closures: dict[Path, Closure] | None = None,
+    session_checked: bool = False,
     retry_attempts: int = RETRY_ATTEMPTS,
     retry_delay_seconds: int = RETRY_DELAY_SECONDS,
 ) -> dict[str, int] | None:
@@ -308,10 +309,18 @@ def retry_marker_for(  # noqa: PLR0913 — the two caches and the retry policy a
     A test file outside `repo_root` cannot be analysed against the repository's
     change set, so it takes the same conservative path as an unanalysable
     closure: no marker, and it fails at once when it fails.
+
+    `session_checked` says the caller has already put THIS change set through
+    `session_withheld_reason` and it named nothing. The whole-session question is
+    the same for every item, and on a release-please branch it costs a `git diff`,
+    two `git show` reads and four TOML parses, so collection asks it once and the
+    flag spares each item the repeat. It lives only for one collection's call.
     """
     if not test_path.is_relative_to(repo_root):
         return None
-    if _unsafe_change_reason(repo_root=repo_root, change_paths=change_paths) is not None:
+    if not session_checked and _unsafe_change_reason(
+        repo_root=repo_root, change_paths=change_paths
+    ):
         return None
     if (
         retry_withheld_reason_for(
