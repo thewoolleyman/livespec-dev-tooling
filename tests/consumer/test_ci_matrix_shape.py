@@ -94,10 +94,24 @@ _JOB_LEVEL_IF = re.compile(r"^    if:\s*(?P<expression>.+?)\s*$", re.MULTILINE)
 # name. The four jobs that read the `incident-ci` job's `omitted` output carry
 # one of them (work-item livespec-dev-tooling-z3wy33): without it a failed or
 # refused `incident-ci` would skip them, and they must then run in full.
+#
+# The merge-group tree-equality skip (livespec-dev-tooling-ymog6r; maintainer ruling
+# 2026-11-16 on epic livespec-dev-tooling-xowhol) adds the two expressions that end in
+# the guard's skip term. They are admitted by exact text, not by shape, and the term
+# reads only the guard job's `skip` output: true only for a one-entry merge group whose
+# tree equals its pull request head's tree with the head's required checks proven green
+# on the forge, and false on `pull_request`, `push` and every other merge group. So a
+# pull request and a master push still run every matrix entry; ci-green, the one
+# required context, accepts a skipped leg only under the same run's skip=true.
 _RUN_STATUS_ONLY_JOB_IFS = frozenset(
     {
         "${{ !cancelled() }}",
         "${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}",
+        "${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}",
+        (
+            "${{ !cancelled() && needs.check-per-file-coverage.result == 'success'"
+            " && needs.merge-group-guard.outputs.skip != 'true' }}"
+        ),
     }
 )
 
@@ -181,12 +195,17 @@ def test_a_job_level_if_is_admitted_only_when_it_reads_run_status_alone() -> Non
     """The run-status allowance admits nothing that could tell one event from another."""
     blocks = {
         "status-only": "    needs: [incident-ci]\n    if: ${{ !cancelled() }}\n",
+        "guard-skip": "    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}\n",
+        "other-output": "    if: ${{ !cancelled() && needs.merge-group-guard.outputs.trusted == 'true' }}\n",
         "event": "    if: ${{ !cancelled() && github.event_name == 'push' }}\n",
         "variable": "    if: ${{ vars.SKIP_COVERAGE != 'true' }}\n",
         "unconditioned": "    runs-on: ubuntu-latest\n",
     }
     assert _event_capable_job_ifs(blocks=blocks, gating=sorted(blocks)) == {
         "event": ["${{ !cancelled() && github.event_name == 'push' }}"],
+        "other-output": [
+            "${{ !cancelled() && needs.merge-group-guard.outputs.trusted == 'true' }}"
+        ],
         "variable": ["${{ vars.SKIP_COVERAGE != 'true' }}"],
     }
 
