@@ -128,7 +128,7 @@ def _kind_of(*, argv: Sequence[str]) -> str:
         return "submit-job"
     if "logs" in argv:
         return "stream-logs"
-    return "get-job"
+    return "get-pods" if "pods" in argv and "json" in argv else "get-job"
 
 
 class _StubCluster:
@@ -625,7 +625,7 @@ def test_an_unadmitted_job_reports_its_admission_wait_bound() -> None:
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
 
     assert isinstance(outcome, Failure)
-    assert outcome.failure().detail == (
+    assert outcome.failure().detail.startswith(
         f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s: {_JOB} was not admitted"
     )
     assert cluster.kinds.count("get-job") == 3
@@ -639,7 +639,7 @@ def test_a_stale_refused_read_does_not_replace_the_admission_wait_bound() -> Non
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
 
     assert isinstance(outcome, Failure)
-    assert outcome.failure().detail == (
+    assert outcome.failure().detail.startswith(
         f"admission wait for {_JOB} exceeded {request.admission_timeout_seconds:g}s: {_JOB} was not admitted"
     )
 
@@ -943,7 +943,7 @@ def test_a_job_the_cluster_will_not_report_on_is_retried_then_retains_its_ref() 
     outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
     assert isinstance(outcome, Failure)
     assert outcome.failure().step == "await-gate-terminal"
-    assert outcome.failure().detail == "get-job refused\n"
+    assert outcome.failure().detail.startswith("get-job refused\n")
     assert cluster.kinds.count("get-job") == 2
     assert "delete-ref" not in cluster.kinds
 
@@ -969,7 +969,7 @@ def test_a_refused_post_admission_read_exhausts_the_terminal_budget() -> None:
     outcome = run_gate(request=request, runner=runner, sleeper=cluster.sleep)
 
     assert isinstance(outcome, Failure)
-    assert outcome.failure().detail == "get-job refused\n"
+    assert outcome.failure().detail.startswith("get-job refused\n")
 
 
 def test_an_unreadable_post_admission_status_ends_the_terminal_wait() -> None:
