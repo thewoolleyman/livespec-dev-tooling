@@ -1,0 +1,69 @@
+# publish-gate-result composite Action — publishes a gating job's result as a
+# workflow artifact named by job and run attempt, on every outcome.
+#
+# Authority: SPECIFICATION/contracts.md section "Master-green gate and external
+# red", paragraph "What a failed gating job publishes". Owning work item:
+# livespec-dev-tooling-bk2d73.
+#
+# Performs: writes tmp/gate-result/result.json (the external-cause records the
+# job produced, its defect-finding count and its external_only verdict) through
+# `python3 -m livespec_dev_tooling.gate_results write`, then uploads it as the
+# artifact `gate-result-<name>-<run_attempt>`. A job that produced no records
+# writes none and publishes `external_only: false`.
+#
+# A job's steps record an external-cause failure by appending one JSON record
+# `{dependency, kind, evidence}` per line to tmp/gate-result/records.jsonl, and
+# a defect finding by writing the running count to tmp/gate-result/defect-findings.
+#
+# The CALLER's step MUST carry `if: ${{ always() }}` so the result is published
+# whether the job passed, failed or was cancelled, and MUST run after a checkout
+# of the tree (the writer is this library's own module CLI, run from the
+# workspace root). A composite step cannot read the caller's `job` context
+# itself, so the caller passes `job-status: ${{ job.status }}`:
+#
+#   - name: Publish this job's result for ci-green
+#     if: ${{ always() }}
+#     uses: ./.github/actions/publish-gate-result
+#     with:
+#       name: ${{ matrix.target }}
+#       job-status: ${{ job.status }}
+#
+# Inputs:
+#   name — the job's reported name (a matrix job's `${{ matrix.target }}`),
+#     which is the leg name ci-green reads the artifact under.
+#   job-status — the caller's `job.status`.
+
+name: publish-gate-result
+description: Publish this gating job's result (external-cause records, defect findings, external_only) as an artifact named by job and run attempt.
+
+inputs:
+  name:
+    description: The job's reported name; the artifact is named gate-result-<name>-<run_attempt>.
+    required: true
+  job-status:
+    description: The caller's job.status.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write the gate result
+      shell: bash
+      env:
+        GATE_NAME: ${{ inputs.name }}
+        GATE_JOB_STATUS: ${{ inputs.job-status }}
+        GATE_RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        python3 -m livespec_dev_tooling.gate_results write \
+          --name "$GATE_NAME" --attempt "$GATE_RUN_ATTEMPT" --job-status "$GATE_JOB_STATUS" \
+          --records tmp/gate-result/records.jsonl \
+          --defect-findings tmp/gate-result/defect-findings \
+          --out tmp/gate-result/result.json
+
+    - name: Upload the gate result
+      uses: actions/upload-artifact@v4
+      with:
+        name: gate-result-${{ inputs.name }}-${{ github.run_attempt }}
+        path: tmp/gate-result/result.json
+        if-no-files-found: error
+        retention-days: 7

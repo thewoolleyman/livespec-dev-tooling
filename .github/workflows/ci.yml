@@ -395,6 +395,14 @@ jobs:
           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
           just ${{ matrix.target }}
 
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: ${{ matrix.target }}
+          job-status: ${{ job.status }}
+
   # Coverage-pair producer (work-item livespec-dev-tooling-yilyxr.2 extension,
   # unblocking yilyxr.1's CI-side metric): runs the ONE clean suite pass and
   # publishes the repo-root .coverage it produces. The consumer job below
@@ -510,6 +518,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: check-per-file-coverage
+          job-status: ${{ job.status }}
+
   # Coverage-pair consumer. Kept as a single-entry matrix (NOT a plain job)
   # because check-coverage is a tool-backed slug and
   # check-tool-backed-check-completeness requires every tool-backed slug to
@@ -598,6 +614,14 @@ jobs:
           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
           just ${{ matrix.target }}
 
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: ${{ matrix.target }}
+          job-status: ${{ job.status }}
+
   # Batched cheap .py-scanning checks (work-item livespec-dev-tooling-yilyxr.2):
   # one container setup for 24 sub-minute targets that each previously
   # paid it alone as a matrix leg. Failures are COLLECTED, not fail-fast,
@@ -675,6 +699,14 @@ jobs:
             exit 1
           fi
 
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: check-python-batch
+          job-status: ${{ job.status }}
+
   # Central fleet-membership conformance check (livespec v108 §"Fleet
   # membership contract") — its own job (not a matrix entry) so the
   # run lever and the App token are scoped to it alone. The App
@@ -735,6 +767,14 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
         run: just check-fleet-conformance --member-ci
+
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: check-fleet-conformance
+          job-status: ${{ job.status }}
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
   # safety net. check-aggregate-completeness is the wiring-completeness
@@ -866,6 +906,14 @@ jobs:
           LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN || '' }}
         run: just ${{ matrix.target }}
 
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: ${{ matrix.target }}
+          job-status: ${{ job.status }}
+
   # Batched cheap repo-metadata checks (work-item livespec-dev-tooling-yilyxr.2):
   # one container setup for 30 sub-minute targets that each previously paid
   # it alone as a matrix leg. Failures are COLLECTED (matrix fail-fast:false
@@ -988,6 +1036,14 @@ jobs:
             echo "Failed targets:$failed"
             exit 1
           fi
+
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: check-metadata-batch
+          job-status: ${{ job.status }}
 
   # The released incident CI entrance (plan expedited-incident-response-flag,
   # minimum-usable-slice step D; work-item livespec-dev-tooling-yf7gq2).
@@ -1264,6 +1320,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: incident-ci
+          job-status: ${{ job.status }}
+
   # The incident CI publisher (livespec-dev-tooling-bqnzcm.4). Runs ONLY when
   # incident-ci's released aggregate PASSED on an expedited PR (its `aggregate`
   # output is written nowhere else), and posts that aggregate, the retained arm
@@ -1358,6 +1422,7 @@ jobs:
     # this run's jobs; nothing else in the job uses the token.
     permissions:
       actions: read
+      checks: write
       contents: read
     # One jobs-API page and a sub-second parse: bound it so a wedged read
     # fails the gate quickly rather than holding the merge.
@@ -1407,3 +1472,41 @@ jobs:
           jobs_lines="$(python3 -c 'import json, sys; [print(json.dumps({"name": j["name"], "status": j["status"], "conclusion": j["conclusion"]})) for page in json.load(open(sys.argv[1])) for j in page["jobs"]]' "$pages_file")"
           printf '%s\n' "$jobs_lines" > "$jobs_file"
           python3 -m livespec_dev_tooling.ci_green_required_legs --workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file" --guard-skip "$GUARD_SKIP"
+      - name: Checkout (for the master-health publishing steps)
+        # The master-health publishing steps (livespec-dev-tooling-bk2d73) run only on a push to
+        # master, on every outcome, with their own checkout and forge-read steps, so the
+        # required-leg, needs-result, checkout and reader steps above stay as they are. A
+        # failure of any of them fails ci-green. master-health is the LAST publishing step.
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Put the retrying forge call on the path (master-health publishing)
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        uses: ./.github/actions/forge-read
+
+      # Every gating job uploaded its result as gate-result-<name>-<run_attempt> on every
+      # outcome; the publisher below reads, per job, the artifact of the attempt the jobs
+      # read reports as the latest.
+      - name: Download the gating jobs' result artifacts
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gate-result-*
+          path: ${{ runner.temp }}/gate-results
+
+      - name: Publish master-health on the head commit
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pages_file="${RUNNER_TEMP}/master-health-run-jobs-pages.json"
+          payload_file="${RUNNER_TEMP}/master-health-check-run.json"
+          read_failed=()
+          if ! livespec-forge-read master-health-run-jobs-read --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" > "$pages_file"; then
+            echo "::error::ci-green: master-health-run-jobs-read ended without an answer; publishing defect"
+            read_failed=(--read-failed)
+          fi
+          python3 -m livespec_dev_tooling.master_health_publish --workflow .github/workflows/ci.yml --gate-job ci-green --jobs-pages "$pages_file" --results-dir "${RUNNER_TEMP}/gate-results" --head-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --out "$payload_file" "${read_failed[@]}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" --input "$payload_file"

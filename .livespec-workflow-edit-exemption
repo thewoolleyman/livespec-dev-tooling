@@ -1,2 +1,11 @@
-work_item=livespec-dev-tooling-qpe3zt
-reason=incident-ci reads the PR body through issues/<n> instead of pulls/<n> so a transient too-many-files 422 cannot fail the step; same check, one modified line
+# Workflow-edit exemption — one exemption binds to one reviewed change.
+#
+# The change (bk2d73): ci.yml only ADDS lines. Each gating job gains a final
+# always() step that publishes its result through the new publish-gate-result
+# composite Action as an artifact named by job and run attempt; ci-green gains
+# the checks: write permission and four publishing steps
+# (checkout, forge-read, artifact download, master-health publication) that run
+# only on a push to master. The required-leg, needs-result, checkout and reader
+# steps of ci-green are byte-identical. Maintainer tier: no additive attestation.
+work_item=livespec-dev-tooling-bk2d73
+reason=bk2d73: gating jobs upload their result artifact and ci-green publishes master-health on a master push
