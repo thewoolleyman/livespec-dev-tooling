@@ -395,6 +395,16 @@ no factory run, until that plan archives with its Proof of Done verified. Mainta
 do all this.  Make it the top priority to get the expedited plan done." A wedged factory route is also a reason to
 hand-land (coordinator's reading).
 
+**A hand-landed orchestrator PR carries `factory-override` before it is ready (coordinator's reading).** In
+livespec-orchestrator-beads-fabro, the required `check-factory-provenance` refuses any PR not authored by the factory
+GitHub App unless it carries the `factory-override` label with a reason paragraph in its body (or matches a retained
+incident receipt). The check reads the label from the pull_request event payload, so a label added after CI started
+needs ONE close and reopen of the PR; re-running the failed job replays the old payload and fails identically
+(orchestrator `.ai/local-implementation-close-path.md`). Every routing of a hand-land into that repository says so.
+Other fleet repositories do not run the check. Measured 2026-11-17: livespec-orchestrator-beads-fabro#5437, #5438 and
+#5440 each failed once on it, and the coordinator's first remedy (re-run the job) was wrong, corrected by
+stale-base-merge-options.
+
 **The release window is waived for P1 carriers and for releases that unblock a roll or a throughput fix.** The owning
 seat, the coordinator, or throughput-plans-coordinator may dispatch Release Please at once
 (`gh workflow run release-please.yml -R livespec-ai/livespec-dev-tooling`) [bqnzcm 2026-11-05T21:26:06Z; 6tgd2z
