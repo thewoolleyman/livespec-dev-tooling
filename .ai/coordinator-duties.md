@@ -588,9 +588,12 @@ Every tick reports, in this order:
    that tick, never re-printed.
 1.5. METRICS, from the orchestrator repo's `tmp/petri-canary/*-r267.json` dispatch records by file mtime, each with its
    value and trailing-window counts, plus the time of the last green record:
-   - M1 YIELD: green / finished records over a trailing 6 h, plus the 2 h figure. The denominator is the records whose
-     `listed` is not `none`; no-run refusals are reported on their own line by exit code 3, 5 and 1 (without a
-     `listed` field, exits 0, 1 and 4 count as listed, and the tick says it approximated).
+   - M1 YIELD: green / finished records over a trailing 6 h, plus the 2 h figure. The `listed=` run id is on the FIRST
+     LINE of the sibling `*-r267.verdict` file; the `-r267.json` carries no `listed` key. The denominator is the records
+     whose verdict reads `listed=<run id>`; `listed=none` records are no-run refusals, reported on their own line.
+     Never classify by exit code or stderr tail: a listed run that fails at its end exits 3 with the tail
+     "requested work-item(s) not in the ready set", a run-end mislabel (coordinator's reading; measured 2026-11-17,
+     when a tick misread 10 such failed runs as launch refusals and reported M1 5/5 instead of 5/15).
    - M2 DELIVERED: green records per hour over a trailing 6 h.
    - M3 SLOTS: live factory runs against `tmp/petri-canary/fleet-cap`, naming pods that hold quota without a live run.
    Maintainer [6tgd2z 2026-11-04T15:29:44Z]: "pick 3 metrics on factory stability and throughput, report those every
