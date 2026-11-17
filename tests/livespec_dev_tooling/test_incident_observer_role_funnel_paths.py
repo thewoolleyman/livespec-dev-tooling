@@ -142,7 +142,7 @@ def outcomes(tmp_path_factory: pytest.TempPathFactory) -> dict[str, _Outcome]:
         {key: value for key, value in task.items() if key != "become"}
         for task in tasks[names.index(_FIRST) : names.index(_LAST) + 1]
     ]
-    defaults = base.role_yaml(relative="defaults/main.yml")
+    defaults = base.resolve(variables=base.production_variables())
     bin_dir = root / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "tailscale"
@@ -235,10 +235,11 @@ def _publish_argv(*, path: str) -> list[str]:
 
 
 def test_the_committed_defaults_declare_the_callback_and_the_ordinary_action_paths() -> None:
-    defaults = base.role_yaml(relative="defaults/main.yml")
+    defaults = base.resolve(variables=base.production_variables())
 
+    # An empty publisher list publishes no /ci/publish (contracts.md v242, public ingress).
+    assert defaults["incident_observer_ci_publisher_shas"] == []
     assert defaults["incident_observer_funnel_paths"] == [_CALLBACK, _ORDINARY]
-    # /ci/publish is not a ratified public route (contracts.md, public ingress).
     assert _PUBLISH not in defaults["incident_observer_funnel_paths"]
     assert defaults["incident_observer_funnel_https_port"] == 10000
     assert "incident_observer_funnel_path" not in defaults
@@ -319,3 +320,35 @@ def test_an_ungranted_node_publishes_nothing_and_does_not_fail(
     assert outcome.failed is False, outcome.output
     assert outcome.published == []
     assert "cannot be published" in outcome.output
+
+
+_PUBLISHER_SHA = "f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21"
+
+
+def test_a_non_empty_publisher_list_publishes_the_ci_publish_route_at_its_exact_path() -> None:
+    variables = {
+        **base.production_variables(),
+        "incident_observer_ci_publisher_shas": [_PUBLISHER_SHA],
+    }
+    resolved = base.resolve(variables=variables)
+
+    assert resolved["incident_observer_funnel_paths"] == [_CALLBACK, _ORDINARY, _PUBLISH]
+    assert resolved["incident_observer_installation_routes"] == [_CALLBACK, _ORDINARY, _PUBLISH]
+
+
+def test_an_empty_publisher_list_does_not_publish_the_ci_publish_route() -> None:
+    variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": []}
+    resolved = base.resolve(variables=variables)
+
+    assert resolved["incident_observer_funnel_paths"] == [_CALLBACK, _ORDINARY]
+
+
+def test_a_scratch_installation_never_publishes_the_ci_publish_route() -> None:
+    variables = {
+        **base.production_variables(),
+        "incident_observer_ci_publisher_shas": [_PUBLISHER_SHA],
+        "incident_observer_scratch": True,
+    }
+    resolved = base.resolve(variables=variables)
+
+    assert _PUBLISH not in resolved["incident_observer_funnel_paths"]

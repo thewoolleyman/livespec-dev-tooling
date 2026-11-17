@@ -88,7 +88,7 @@ _DERIVED = (
 
 
 def _defaults() -> dict[str, Any]:
-    return base.role_yaml(relative="defaults/main.yml")
+    return base.resolve(variables=base.production_variables())
 
 
 def _inventory(*extra: dict[str, Any]) -> list[dict[str, Any]]:

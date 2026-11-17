@@ -20,6 +20,7 @@ gained the reset-failed note.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -157,7 +158,18 @@ def resolve(*, variables: dict[str, Any]) -> dict[str, Any]:
         key for key, value in resolved.items() if isinstance(value, str) and "{{" in value
     ]
     assert unresolved == [], f"role variables did not resolve: {unresolved}"
-    return resolved
+    return {key: _native_list(value=value) for key, value in resolved.items()}
+
+
+def _native_list(*, value: Any) -> Any:
+    """A rendered list literal as the list Ansible hands a task, any other value unchanged."""
+    if not (isinstance(value, str) and value.startswith("[") and value.endswith("]")):
+        return value
+    try:
+        parsed = ast.literal_eval(value)
+    except (ValueError, SyntaxError):
+        return value
+    return parsed if isinstance(parsed, list) else value
 
 
 def role_yaml(*, relative: str) -> Any:

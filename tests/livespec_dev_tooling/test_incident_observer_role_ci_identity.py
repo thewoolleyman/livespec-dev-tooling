@@ -9,12 +9,17 @@ from a spelled owner.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from tests.livespec_dev_tooling import test_incident_observer_role_production_unchanged as base
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 _SHA = "1" * 40
+_PRODUCTION_PUBLISHER_SHA = "f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21"
+_DEV_HOST_PLAY = Path(__file__).resolve().parents[2] / "ansible" / "dev-host.yml"
 _RENDER_POLICY = "Render this installation's CI identity policy from its inventory entry"
 _INSTALL_POLICY = "Install the CI identity policy, private to the controller account"
 _CI_TASKS = (
@@ -45,27 +50,42 @@ def test_no_approved_publisher_commit_provisions_no_policy() -> None:
     )
 
 
-def test_production_configuration_provisions_no_policy_until_the_publish_route_is_ratified() -> (
+def test_the_role_default_provisions_no_policy_and_the_production_play_lists_the_publisher() -> (
     None
 ):
-    # SPECIFICATION/contracts.md, "Expedited incident execution", public ingress:
-    # /ci/publish is not a ratified public route, so the org move's observer re-key
-    # (livespec-dev-tooling-lcyn5s) converges with no policy. The released
-    # publisher commit is listed again with the ratifying revise.
+    # SPECIFICATION/contracts.md v242, "Expedited incident execution", public
+    # ingress: the role's own default is an empty list; production's approved
+    # commit is the committed play variable in ansible/dev-host.yml.
     variables = base.production_variables()
+    play = yaml.safe_load(_DEV_HOST_PLAY.read_text(encoding="utf-8"))
+    entries = [
+        entry
+        for play_ in play
+        for entry in play_.get("roles", [])
+        if isinstance(entry, dict) and entry.get("role") == "incident_observer"
+    ]
 
     assert variables["incident_observer_ci_publisher_shas"] == []
     assert "--ci-identity-policy" not in _argv(variables=variables)
+    assert len(entries) == 1
+    assert entries[0]["vars"]["incident_observer_ci_publisher_shas"] == [_PRODUCTION_PUBLISHER_SHA]
 
 
-def test_a_listed_publisher_still_publishes_only_the_ratified_public_routes() -> None:
-    # Provisioning a policy never widens public ingress: the ratified clause
-    # publishes /callback and /ordinary-action, "and only those".
+def test_a_listed_publisher_publishes_the_ci_publish_route_beside_the_two_routes() -> None:
+    # contracts.md v242: /ci/publish is the one further public route, published
+    # if and only if the installation's publisher list is non-empty.
     variables = {**base.production_variables(), "incident_observer_ci_publisher_shas": [_SHA]}
     resolved = base.resolve(variables=variables)
 
-    assert resolved["incident_observer_funnel_paths"] == ["/callback", "/ordinary-action"]
-    assert resolved["incident_observer_installation_routes"] == ["/callback", "/ordinary-action"]
+    assert resolved["incident_observer_funnel_paths"] == [
+        "/callback",
+        "/ordinary-action",
+        "/ci/publish",
+    ]
+    assert (
+        resolved["incident_observer_installation_routes"]
+        == resolved["incident_observer_funnel_paths"]
+    )
 
 
 def test_an_approved_publisher_commit_binds_the_policy_into_the_manifest() -> None:

@@ -153,9 +153,9 @@
       - incident_observer_reference_repo == 'https://github.com/' ~ incident_observer_repository ~ '.git'
       - >-
         incident_observer_funnel_paths
-        == ['/' ~ incident_observer_installation_name ~ '/callback',
-            '/' ~ incident_observer_installation_name ~ '/ordinary-action']
-      - incident_observer_funnel_targets == ['/callback', '/ordinary-action']
+        == incident_observer_installation_routes
+           | map('regex_replace', '^', '/' ~ incident_observer_installation_name) | list
+      - incident_observer_funnel_targets == incident_observer_installation_routes
     fail_msg: >-
       every installation path, unit name, port, repository, job list and public
       route is fixed by incident_observer_installation_name and its inventory

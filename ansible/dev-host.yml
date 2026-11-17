@@ -117,6 +117,12 @@
     # this host's tailscale_serve_mappings. Both run under the credential
     # wrapper; see roles/incident_observer/README.md.
     - role: incident_observer
+      vars:
+        # The publisher workflow's commit on master that production approves
+        # (livespec-dev-tooling-bqnzcm.4). Non-empty provisions the CI identity
+        # policy and publishes POST /ci/publish on the funnel port.
+        incident_observer_ci_publisher_shas:
+          - f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21
       tags: [incident_observer]
     - role: tailscale_serve
       tags: [tailscale_serve]
