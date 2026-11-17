@@ -110,7 +110,6 @@ import structlog.testing
 from returns.io import IOFailure
 
 from livespec_dev_tooling.checks import _red_green_replay_collect
-from livespec_dev_tooling.checks._red_green_replay_suite_runner import SuiteBound, SuiteRun
 from livespec_dev_tooling.checks._red_green_replay_trailers import GitCommandFailed
 from livespec_dev_tooling.config import (
     Config,
@@ -120,6 +119,10 @@ from livespec_dev_tooling.config import (
 )
 from tests.livespec_dev_tooling.checks.config_parse_rendering import (
     assert_main_renders_the_parse_failure,
+)
+from tests.livespec_dev_tooling.checks.test_in_process_pytest import (
+    in_process_subprocess,
+    in_process_suite_run,
 )
 
 __all__: list[str] = []
@@ -204,6 +207,47 @@ def _scrubbed_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not _is_scrubbed(key=k)}
 
 
+@pytest.fixture
+def real_child_pytest() -> None:
+    """Request this fixture to keep the check's nested pytest a real child process."""
+
+
+@pytest.fixture(autouse=True)
+def _nested_pytest_cost(*, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the check's nested pytest for real, without paying an interpreter start per call.
+
+    The Red, Green and suite-green legs each run a REAL pytest against a fixture
+    suite of one or two trivial tests. As a child process that cost about 4.6 s
+    per suite-green call on the dev host class (eighteen xdist workers forked and
+    joined for a one-test suite) and still about 0.3 s with no workers, almost
+    all of it importing pytest. A hundred cases spent a minute on interpreter
+    starts.
+
+    Every case now runs the same command line through the real `pytest.main` in
+    this process (`in_process_pytest`), so collection, assertion rewriting,
+    failures, exit codes and output are pytest's own. Worker count is the check's
+    `LIVESPEC_TEST_PARALLELISM` override (its selection is covered by the suite
+    argv tests) and `PYTEST_PLUGINS` keeps xdist registered so the check's `-n`
+    argument still parses.
+
+    The real-process path stays covered: a case that requests
+    `real_child_pytest` leaves the check's own subprocess seams untouched, and
+    `test_red_green_replay_suite_runner.py` exercises the runner itself.
+    This fixture runs after the conftest that clears the caller's gate-shaping
+    variables, so these values are the test's own and never the caller's.
+    """
+    monkeypatch.setenv("LIVESPEC_TEST_PARALLELISM", "0")
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    monkeypatch.setenv("PYTEST_PLUGINS", "xdist.plugin")
+    if "real_child_pytest" in request.fixturenames:
+        return
+    import _red_green_replay_modes as modes
+    import _red_green_replay_suite as suite
+
+    monkeypatch.setattr(modes, "subprocess", in_process_subprocess)
+    monkeypatch.setattr(suite, "run_suite", in_process_suite_run)
+
+
 @pytest.fixture(autouse=True)
 def _declare_livespec_tmp_path_impl_tree(*, request: pytest.FixtureRequest) -> None:
     if "tmp_path" not in request.fixturenames:
@@ -240,47 +284,6 @@ class _CheckRun(NamedTuple):
     returncode: int
     stdout: str
     stderr: str
-
-
-def _fast_local_suite_run(*, argv: list[str], bound: SuiteBound) -> SuiteRun:
-    """Model the tiny fixture suites without spawning their own pytest process.
-
-    The hook's suite runner is separately exercised with real processes in its
-    own module.  Here every fixture test is deliberately minimal: a suite has
-    no tests, passes, or contains an explicit ``assert False``.  Preserving
-    those three outcomes keeps this module's routing and trailer assertions
-    while avoiding pytest startup and the runner's one-second poll cadence for
-    every call to the hook under test.
-    """
-    del bound
-    root = Path.cwd()
-    requested = [Path(arg) for arg in argv if arg.endswith(".py")]
-    test_paths = [path if path.is_absolute() else root / path for path in requested]
-    if not test_paths:
-        test_paths = list((root / "tests").rglob("test_*.py")) if (root / "tests").exists() else []
-    sources = [path.read_text(encoding="utf-8") for path in test_paths if path.is_file()]
-    test_count = sum(source.count("def test_") for source in sources)
-    if test_count == 0:
-        return SuiteRun(returncode=5, output="no tests ran in 0.00s\n", timed_out=False)
-    if any("assert False" in source for source in sources):
-        return SuiteRun(returncode=1, output="1 failed in 0.00s\n", timed_out=False)
-    return SuiteRun(returncode=0, output=f"{test_count} passed in 0.00s\n", timed_out=False)
-
-
-def _fast_replay_test(*, pytest_argv: list[str], **_kwargs: object) -> object:
-    """Return the Red/Green fixture test result without starting pytest again."""
-    import _red_green_replay_modes as modes
-
-    test_path = next(Path(arg) for arg in pytest_argv if arg.endswith(".py"))
-    source = test_path.read_text(encoding="utf-8")
-    failed = "assert False" in source
-    output = "AssertionError\n" if failed else ""
-    return modes._ReplayTestRun(  # noqa: SLF001 - the test double targets this private seam.
-        returncode=1 if failed else 0,
-        output=output,
-        output_checksum=f"sha256:{hashlib.sha256(output.encode('utf-8')).hexdigest()}",
-        trailers=(),
-    )
 
 
 def _run_check(
@@ -320,13 +323,6 @@ def _run_check(
     `_scrub_git_env`).
     """
     monkeypatch.chdir(tmp_path)
-    # This imported sibling owns the callable captured by the suite outcome
-    # seam. Patch that module, rather than the runner module it imports from.
-    import _red_green_replay_modes as modes
-    import _red_green_replay_suite as suite
-
-    monkeypatch.setattr(modes, "_run_replay_test", _fast_replay_test)
-    monkeypatch.setattr(suite, "run_suite", _fast_local_suite_run)
     for name in _GIT_ENV_PASSTHROUGH_VARS:
         monkeypatch.delenv(name, raising=False)
     argv = [str(_RED_GREEN_REPLAY)]
@@ -1852,6 +1848,7 @@ def test_any_subject_staging_impl_without_red_takes_suite_green_leg(
     )
 
 
+@pytest.mark.usefixtures("real_child_pytest")
 def test_impl_staged_without_red_and_failing_suite_rejects_suite_red(
     *,
     tmp_path: Path,
@@ -3292,7 +3289,10 @@ def test_unreadable_merge_marker_refuses_without_selecting_a_leg(
 
 
 def test_red_green_cycles_route_correctly_in_sequence(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Routing stays correct across pair → follow-up → follow-up → Red → Green.
 
