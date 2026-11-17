@@ -29,6 +29,7 @@ from livespec_dev_tooling.fleet._context import (
 __all__: list[str] = [
     "CLAUDE_SETTINGS",
     "assert_claude_plugin_currency",
+    "currency_successor_mechanism",
 ]
 
 
@@ -51,20 +52,22 @@ def _settings_payload(*, settings_text: str) -> dict[str, object] | None:
     return cast("dict[str, object]", parsed)
 
 
-def _has_documented_currency_successor(*, settings: dict[str, object]) -> bool:
-    """True when settings explicitly document the successor currency mechanism."""
+def currency_successor_mechanism(*, settings: dict[str, object]) -> str:
+    """The stripped mechanism of a documented currency successor, or '' when none is documented."""
     successor = settings.get("livespecPluginCurrencySuccessor")
     if not isinstance(successor, dict):
-        return False
+        return ""
     successor_map = cast("dict[str, object]", successor)
     mechanism = successor_map.get("mechanism")
     documented_in = successor_map.get("documentedIn")
-    return (
-        isinstance(mechanism, str)
-        and bool(mechanism.strip())
-        and isinstance(documented_in, str)
-        and bool(documented_in.strip())
-    )
+    if not isinstance(mechanism, str) or not isinstance(documented_in, str):
+        return ""
+    return mechanism.strip() if documented_in.strip() else ""
+
+
+def _has_documented_currency_successor(*, settings: dict[str, object]) -> bool:
+    """True when settings explicitly document the successor currency mechanism."""
+    return bool(currency_successor_mechanism(settings=settings))
 
 
 def _session_start_commands(*, settings: dict[str, object]) -> tuple[str, ...]:

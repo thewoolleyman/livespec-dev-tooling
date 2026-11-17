@@ -26,6 +26,7 @@ from livespec_dev_tooling.fleet._local_context import CommandRunner, command_ans
 from livespec_dev_tooling.fleet._orchestrator_hold import ORCHESTRATOR_PLUGIN
 from livespec_dev_tooling.fleet._plugin_build_currency_reads import governed_pins
 from livespec_dev_tooling.fleet._plugin_settings import marketplace_of
+from livespec_dev_tooling.fleet._rows_claude_plugin import currency_successor_mechanism
 
 __all__: list[str] = [
     "HOLD_PROBE_MODULE",
@@ -55,6 +56,7 @@ _FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
 _COMMIT_PREFIX = re.compile(r"[0-9a-f]{7,39}")
 _TAG_SHAPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
 _ENSURE_PLUGINS = re.compile(r"\bjust\s+ensure-plugins(?![\w-])")
+_HOLDS_BUILD = re.compile(r"\b(?:hold|holds|holding|held)\b", re.IGNORECASE)
 _ACCEPTED_COMPARISONS = frozenset({"identical", "ahead"})
 
 
@@ -129,11 +131,23 @@ def _session_start_commands(*, settings: dict[str, object]) -> tuple[str, ...]:
     return tuple(commands)
 
 
+def _successor_holds_build(*, settings: dict[str, object]) -> bool:
+    """Whether a documented currency successor in the settings holds the orchestrator build."""
+    mechanism = currency_successor_mechanism(settings=settings)
+    return _HOLDS_BUILD.search(mechanism) is not None
+
+
+def _clone_settings(*, clone: Path) -> dict[str, object]:
+    return json_object(text=(clone / ".claude" / "settings.json").read_text(encoding="utf-8"))
+
+
 def session_hook_refusal(*, clone: Path) -> str:
-    """Why the clone's next session start would not run `just ensure-plugins`, or ''."""
-    settings = json_object(text=(clone / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    """Why the clone's next session start would not hold the build, or ''."""
+    settings = _clone_settings(clone=clone)
     commands = _session_start_commands(settings=settings)
     if any(_ENSURE_PLUGINS.search(command) for command in commands):
+        return ""
+    if _successor_holds_build(settings=settings):
         return ""
     return (
         f"{clone}: its committed .claude/settings.json carries no SessionStart hook "
@@ -143,6 +157,8 @@ def session_hook_refusal(*, clone: Path) -> str:
 
 def hold_probe_refusal(*, clone: Path, run: CommandRunner) -> str:
     """Why the package the clone's `just ensure-plugins` runs fails the hold probe, or ''."""
+    if _successor_holds_build(settings=_clone_settings(clone=clone)):
+        return ""
     probe = command_answer(
         outcome=run(args=["uv", "run", "--no-sync", "python", "-m", HOLD_PROBE_MODULE], cwd=clone)
     )
