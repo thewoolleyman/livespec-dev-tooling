@@ -115,8 +115,11 @@ def test_the_budgeted_log_read_exports_the_consumer_reuse_outcome(
         ]
     )
 
+    requested: list[list[str]] = []
+
     def _read(*, args: list[str], **kwargs: object) -> GhRead:
-        _ = args, kwargs
+        _ = kwargs
+        requested.append(args)
         return next(responses)
 
     posted: list[dict[str, Any]] = []
@@ -154,11 +157,14 @@ def test_the_budgeted_log_read_exports_the_consumer_reuse_outcome(
         == 0
     )
 
+    run_view_fields = requested[0][requested[0].index("--json") + 1].split(",")
+    assert "attempt" in run_view_fields
     spans = posted[0]["resourceSpans"][0]["scopeSpans"][0]["spans"]
     coverage_span = next(span for span in spans if span["name"] == "ci.job.check-coverage")
     assert _span_attributes(span=coverage_span) == {
         "repo": _REPOSITORY,
         "ci.run_id": "42",
+        "ci.run_attempt": "2",
         "ci.job.id": "104",
         "ci.job.name": "check-coverage",
         "ci.job.conclusion": "success",
