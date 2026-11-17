@@ -255,6 +255,26 @@ authorized_keys_managed_entries:
   - name: hetzner-xubuntu-dolt-tunnel
     public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 hetzner-xubuntu dolt-tunnel
     permitopen: 127.0.0.1:3307
+# DRAFT (livespec-dev-tooling-tbhqye, route A): the fleet tenants a
+# bd_exec key may read (maintainer 2026-11-17: "it can read everything").
+# Inert until an entry sets `bd_exec: true`, which is NOT set. Verify each
+# name exists under /data/projects on the VPS before enabling.
+authorized_keys_managed_bd_exec_repos:
+  - dolt-server
+  - hetzner-xubuntu-info
+  - homelab
+  - livespec
+  - livespec-console-beads-fabro
+  - livespec-dev-tooling
+  - livespec-driver-claude
+  - livespec-driver-codex
+  - livespec-driver-pi
+  - livespec-orchestrator-beads-fabro
+  - livespec-orchestrator-git-jsonl
+  - livespec-overseer
+  - livespec-runtime
+  - livespec-website
+  - openbrain
 # Retired by key blob (type + base64), never by its options or comment: the
 # hand-placed `homelab-debug-tunnel` entry (permitlisten 127.0.0.1:2223), the
 # landing for homelab's archived nixos-era hardware-capture debug-tunnel.sh.

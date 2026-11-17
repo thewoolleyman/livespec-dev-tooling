@@ -8,3 +8,6 @@ authorized_keys_managed_group: ""
 authorized_keys_managed_path: ""
 authorized_keys_managed_entries: []
 authorized_keys_managed_retired_keys: []
+# Repository directory names (under /data/projects) a bd_exec key may
+# read, one tenant each. The wrapper accepts only an exact name from this list.
+authorized_keys_managed_bd_exec_repos: []

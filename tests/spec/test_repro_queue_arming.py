@@ -1,8 +1,8 @@
-"""The reproduction queue's quotas are whole gate units, at most one per node.
+"""The reproduction queue's quotas are disarmed or one gate of one to two units.
 
 `cluster-queue-repro-gates.yaml` holds one flavor per gate node. A repro gate is
 a claim on a node the per-node CPU budget must count, so no flavor may carry a
-partial gate unit or more than one concurrent repro gate. The unit is read from
+partial gate unit or room for two concurrent repro gates. The unit is read from
 the gates-cq annotations and no quota literal is asserted
 (livespec-dev-tooling-cwrg3v).
 """
@@ -57,13 +57,20 @@ def _repro_quotas() -> dict[str, tuple[int, int]]:
     return quotas
 
 
-def test_every_repro_flavor_holds_zero_or_exactly_one_gate_unit() -> None:
-    """A repro flavor is disarmed (zero) or one whole unit, never partial or two."""
-    unit = _unit()
-    off_unit = {
-        name: quota for name, quota in _repro_quotas().items() if quota not in {(0, 0), unit}
+def test_every_repro_flavor_is_disarmed_or_admits_one_gate_of_at_most_two_units() -> None:
+    """A repro flavor is zero, or holds one gate: at least one unit, at most two units.
+
+    The bounds are derived from the gates-cq unit, so a repository declaring a larger
+    gate_cpu can be admitted without the test pinning any committed quota value.
+    """
+    unit_cpu, unit_memory = _unit()
+    off_shape = {
+        name: (cpu, memory)
+        for name, (cpu, memory) in _repro_quotas().items()
+        if (cpu, memory) != (0, 0)
+        and not (unit_cpu <= cpu <= 2 * unit_cpu and unit_memory <= memory <= 2 * unit_memory)
     }
-    assert not off_unit, (unit, off_unit)
+    assert not off_shape, (unit_cpu, unit_memory, off_shape)
 
 
 def test_every_repro_flavor_is_pinned_to_its_node_by_hostname() -> None:

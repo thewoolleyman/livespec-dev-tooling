@@ -41,3 +41,28 @@ runs for it.
 just ansible-drift ansible/dev-host.yml --tags authorized_keys_managed
 just ansible-apply ansible/dev-host.yml --tags authorized_keys_managed
 ```
+
+## Opt-in `bd` exec (`bd_exec`)
+
+`livespec-dev-tooling-tbhqye`, route A: run the real `bd` on the VPS so one call
+is one SSH round trip instead of about 90 Dolt round trips. An entry may set
+`bd_exec: true`. Its forced command is then
+`/usr/local/sbin/authorized-keys-bd-exec` (installed from
+`files/authorized-keys-bd-exec.sh`). The connection's own session still blocks as
+before; a client command is accepted only as
+`in <repo> bd <base64 of the NUL-separated bd argv>`.
+
+- `<repo>` must be an exact line of `/etc/authorized-keys-bd-exec/repos`, written
+  from `authorized_keys_managed_bd_exec_repos`; the tenant is only
+  `/data/projects/<repo>`, never a client path.
+- The argv is decoded to an array and exec'd with no shell, under the credential
+  wrapper, so spaces, quotes and `$(...)` in a title stay one inert argument.
+- Reads and writes are both allowed (the tunnel already forwards full read/write
+  SQL). Verbs and flags that touch the VPS filesystem or the database connection
+  (`init`, `sql`, `--db`, `--file`, `--dolt-*`, ...) exit 126, as does anything
+  else. Every allowlisted tenant is reachable and output has no cap.
+- Default is unchanged: an entry without the key keeps the forward-only command;
+  no new key or account is added; revert is removing the key from the entry.
+
+The calling side (the guard, and the tunnel unit running as an SSH ControlMaster)
+lives with the host's provisioning; see the design comment on the work item.

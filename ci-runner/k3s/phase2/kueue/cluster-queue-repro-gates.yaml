@@ -163,8 +163,13 @@ spec:
               nominalQuota: 8Gi
         - name: gates-repro-hp-flavor
           resources:
-            # ARMED: ONE gate unit (5 cpu / 8Gi, gates-cq's gate-unit
-            # annotations) on hp-xubuntu, by the coordinator's ARM RULING under
+            # ARMED: ONE gate on hp-xubuntu at 10 cpu / 8Gi, raised from one
+            # 5 cpu gate unit because livespec-orchestrator-beads-fabro declares
+            # gate_cpu = 10 and its repro Job (gate-livespec-orchestrator-beads-
+            # fabro-2tcx8) was never admitted against the 5 cpu quota (admission
+            # wait exceeded 1800s, 2026-11-17). It is the only repository
+            # declaring gate_cpu above 5 (the others declare 2 to 4). Armed
+            # originally on hp-xubuntu, by the coordinator's ARM RULING under
             # the per-node CPU budget (plan gate-job-resources,
             # livespec-dev-tooling-cwrg3v). Basis: hp read 21 percent CPU at
             # 04:38Z after the CI cut, last in the ARC runner node preference.
@@ -172,7 +177,7 @@ spec:
             # reads, or hp CI job durations rising while a repro runs. REVERT
             # PATH: revert this pull request, which restores zero.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 10
             - name: "memory"
               nominalQuota: 8Gi
 ---
