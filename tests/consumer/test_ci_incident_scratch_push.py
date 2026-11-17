@@ -53,6 +53,12 @@ _REF_READ = re.compile(
 _EXPORT_JOB = "export-telemetry"
 _EXPORT_STEP = "Export CI run telemetry to Honeycomb (closed-loop verified)"
 _EXPORT_GUARD = "${{ github.ref == 'refs/heads/master' }}"
+# ci-green's master-health publishing steps (livespec-dev-tooling-bk2d73) publish a check run
+# on master's head only; a scratch push must not publish one, so they read the ref too.
+_PUBLISH_JOB = "ci-green"
+_PUBLISH_GUARD = (
+    "${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
+)
 # The one admitted top-level ref read: the B' master-push concurrency block (constraints.md
 # "CI matrix shape", v182; livespec-dev-tooling-qzw2gf), pinned whole. Its only ref read is the
 # equality with refs/heads/master, so a master push joins the shared group while an
@@ -134,7 +140,7 @@ def _ref_reads(*, workflow: dict[Any, Any]) -> list[str]:
                 name == _EXPORT_JOB
                 and step.get("name") == _EXPORT_STEP
                 and step.get("if") == _EXPORT_GUARD
-            )
+            ) or (name == _PUBLISH_JOB and step.get("if") == _PUBLISH_GUARD)
             if not admitted and _REF_READ.search(str(step)):
                 reads.append(label)
     return reads

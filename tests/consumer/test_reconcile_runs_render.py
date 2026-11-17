@@ -116,6 +116,9 @@ def _scenario_vars(*, root: Path, enabled: bool) -> dict[str, object]:
         "reconcile_runs_template_dir": str(_FIXTURES / "input"),
         "reconcile_runs_plugin_root": str(root / "plugin"),
         "reconcile_runs_staleness_on_failure": "fixture-alert@%n.service",
+        # The fixtures own their input: the golden drop-ins below are rendered from THIS
+        # interval, so changing the role default (an operator dial) never changes them.
+        "reconcile_runs_interval": "10min",
         "reconcile_runs_tenants": [
             {"name": "alpha", "unit": "reconcile-runs", "repo": str(alpha)},
             {"name": "beta", "repo": str(beta), "enabled": False},
