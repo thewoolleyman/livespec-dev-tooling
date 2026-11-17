@@ -41,3 +41,16 @@ runs for it.
 just ansible-drift ansible/dev-host.yml --tags authorized_keys_managed
 just ansible-apply ansible/dev-host.yml --tags authorized_keys_managed
 ```
+
+## DRAFT: opt-in read-only `bd` exec (`bd_readonly_exec`) — not applied
+
+`livespec-dev-tooling-tbhqye` route A. An entry may set `bd_readonly_exec: true`.
+Its forced command is then `/usr/local/sbin/authorized-keys-bd-readonly-exec`
+(installed by this role from `files/authorized-keys-bd-readonly-exec.sh`), which
+keeps the blocking tunnel session and additionally accepts a client command only
+if it is exactly `bd show|list|comments` with arguments drawn from a strict
+shape (`--json`, `--all`, `--limit`, `--status` and plain ids and words); any
+other command exits 126. Default is unchanged: an entry without the key keeps the
+forward-only command, no new key or account is added, and revert is removing the
+key from the entry. Awaiting the maintainer's ruling on the key scope; see the
+header of the script for the open design questions.
