@@ -71,8 +71,21 @@ def test_a_pull_request_without_a_block_names_the_missing_block_and_the_body_it_
 
 
 def test_a_merge_group_run_names_the_missing_block_and_that_it_read_no_pull_request(
-    tmp_path: Path, observer: Mock, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    observer: Mock,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # A merge_group event is located through the merge queue, which this test does not
+    # exercise: stub the locator to the one outcome it asserts. `raising=False` keeps the
+    # test valid on a tree where the locator does not exist yet.
+    no_block = Mock(
+        return_value=(
+            "no livespec-incident-ci block was read: a merge_group event carries no"
+            " pull_request body"
+        )
+    )
+    monkeypatch.setattr(module, "locate_queued_pull_request", no_block, raising=False)
     merge_group = {"head_ref": "refs/heads/gh-readonly-queue/master/pr-7-" + "a" * 40}
     environ = _environ(
         tmp_path=tmp_path, event_name="merge_group", payload={"merge_group": merge_group}
