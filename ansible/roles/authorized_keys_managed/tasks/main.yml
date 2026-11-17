@@ -40,39 +40,39 @@
     label: "{{ item }}"
 
 # DRAFT (livespec-dev-tooling-tbhqye, route A; not applied): an entry may opt in
-# to a read-only `bd` exec allowlist with `bd_readonly_exec: true`. The key then
+# to a read-only `bd` exec allowlist with `bd_exec: true`. The key then
 # runs this committed wrapper as its forced command: the tunnel session still
 # blocks as before, and a client command is accepted only if it is exactly a
 # read-only bd call. Entries that do not set it keep the unchanged command.
 - name: Install the read-only bd exec allowlist wrapper when an entry opts in
   ansible.builtin.copy:
-    src: authorized-keys-bd-readonly-exec.sh
-    dest: /usr/local/sbin/authorized-keys-bd-readonly-exec
+    src: authorized-keys-bd-exec.sh
+    dest: /usr/local/sbin/authorized-keys-bd-exec
     owner: root
     group: root
     mode: "0755"
   become: true
-  when: authorized_keys_managed_entries | selectattr('bd_readonly_exec', 'defined') | selectattr('bd_readonly_exec') | list | length > 0
+  when: authorized_keys_managed_entries | selectattr('bd_exec', 'defined') | selectattr('bd_exec') | list | length > 0
 
 - name: Create the wrapper's allowlist directory
   ansible.builtin.file:
-    path: /etc/authorized-keys-bd-readonly-exec
+    path: /etc/authorized-keys-bd-exec
     state: directory
     owner: root
     group: root
     mode: "0755"
   become: true
-  when: authorized_keys_managed_entries | selectattr('bd_readonly_exec', 'defined') | selectattr('bd_readonly_exec') | list | length > 0
+  when: authorized_keys_managed_entries | selectattr('bd_exec', 'defined') | selectattr('bd_exec') | list | length > 0
 
 - name: Install the fleet repository allowlist the wrapper resolves tenants from
   ansible.builtin.copy:
-    dest: /etc/authorized-keys-bd-readonly-exec/repos
-    content: "{{ authorized_keys_managed_bd_readonly_exec_repos | join('\n') }}\n"
+    dest: /etc/authorized-keys-bd-exec/repos
+    content: "{{ authorized_keys_managed_bd_exec_repos | join('\n') }}\n"
     owner: root
     group: root
     mode: "0644"
   become: true
-  when: authorized_keys_managed_entries | selectattr('bd_readonly_exec', 'defined') | selectattr('bd_readonly_exec') | list | length > 0
+  when: authorized_keys_managed_entries | selectattr('bd_exec', 'defined') | selectattr('bd_exec') | list | length > 0
 
 - name: Place each declared forward-only key after unmarked keys
   ansible.builtin.blockinfile:
@@ -84,7 +84,7 @@
     marker: "# {mark} ANSIBLE MANAGED authorized_keys_managed: {{ item.name }}"
     block: >-
       restrict,port-forwarding,permitopen="{{ item.permitopen }}",permitlisten="invalid.invalid:1",command="{{
-      '/usr/local/sbin/authorized-keys-bd-readonly-exec' if (item.bd_readonly_exec | default(false))
+      '/usr/local/sbin/authorized-keys-bd-exec' if (item.bd_exec | default(false))
       else '/usr/bin/setpriv --pdeathsig KILL /usr/bin/sleep infinity' }}" {{ item.public_key }}
   become: true
   loop: "{{ authorized_keys_managed_entries }}"
