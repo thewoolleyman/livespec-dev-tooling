@@ -4400,5 +4400,13 @@
     "test": "TODO",
     "reason": "Spec-first (merge-group-incident-admission, v240): a real test at the tests.consumer tier is owed for this heading, asserting the replay gate attributing each commit of a batched merge group to its own pull request by queue-entry. livespec-dev-tooling-txon2s owns it.",
     "work_item": "livespec-dev-tooling-txon2s"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the funnel publishes the CI publication route only for an installation whose publisher list is non-empty",
+    "test": "TODO",
+    "reason": "Spec-first (ci-publish-public-route, v242): a real test at the tests.consumer tier is owed for this heading, asserting the observer role publishing an installation's /ci/publish route on the funnel port only when its approved incident CI publisher commit list is non-empty. livespec-dev-tooling-bqnzcm.4 owns it.",
+    "work_item": "livespec-dev-tooling-bqnzcm.4"
   }
 ]

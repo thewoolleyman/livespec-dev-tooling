@@ -6130,3 +6130,17 @@ When check-red-green-replay runs on the merge_group event
 Then each commit is attributed to the one entry whose range contains it
 And each commit is judged against its own pull request's livespec-incident-ci block
 ```
+
+## Scenario: the funnel publishes the CI publication route only for an installation whose publisher list is non-empty
+
+```gherkin
+Scenario: the funnel publishes the CI publication route only for an installation whose publisher list is non-empty
+  Given a production installation whose list of approved incident CI publisher commits is empty
+  When the observer role is applied
+  Then the funnel port does not publish that installation's CI publication route
+  And the installation's controller answers a publication with identity-not-provisioned
+  Given the same installation after one publisher commit that is on its default branch is listed
+  When the observer role is applied again
+  Then the funnel port publishes that installation's CI publication route at its own path and no other path
+  And a publication authenticated by the forge-issued identity token for a job running that commit is verified against the installation's policy
+```
