@@ -229,6 +229,19 @@ fabro_server_instances:
     # Revert to 16 with the quota if poweredge saturates (idle < ~5% AND
     # BestEffort CI-slice cpu.pressure avg60 > ~30).
     max_concurrent_runs: 20
+    # The personal fleet App 3668528 on purpose (livespec-dev-tooling-kn5n3a):
+    # this is the instance's DEFAULT App, which a run uses unless its
+    # repository config selects another pair. It serves the repositories
+    # thewoolleyman still owns, and its vault key below reads the unsuffixed
+    # GITHUB_PRIVATE_KEY because that is the name the bare credential wrapper
+    # projects for this App. A livespec-ai repository moves to the org App
+    # 5761962 by naming the ORG_GITHUB_APP_ID pair in its
+    # dispatcher.factories.petri.github_app, never by changing this default:
+    # the role creates a vault entry only when the name is absent and never
+    # overwrites one, so repointing from_controller_env changes nothing on a
+    # live vault, and a default App id that disagrees with the vault key breaks
+    # every run on the instance. Whether a run against this default entry
+    # publishes on a livespec-ai repository is UNTESTED; do not rely on it.
     github_app_id: "3668528"
     otel_dropin: present
     # The registered-provider carrier, proven on the canary instance below
@@ -536,6 +549,8 @@ fabro_server_instances:
     # two run together; Docker rust runs on either also share this host's
     # sandbox slice.
     max_concurrent_runs: 16
+    # Personal fleet App 3668528 on purpose, as the default App; see the
+    # fleet instance's github_app_id comment (livespec-dev-tooling-kn5n3a).
     github_app_id: "3668528"
     otel_dropin: present
     binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
@@ -816,6 +831,8 @@ fabro_server_instances:
     # fail-open overflow re-admits a one-node arm64 group whenever it is full, so
     # it never bounds that group (gmktec-factory-placement review, 2026-11-09).
     max_concurrent_runs: 1
+    # Personal fleet App 3668528 on purpose, as the default App; see the
+    # fleet instance's github_app_id comment (livespec-dev-tooling-kn5n3a).
     github_app_id: "3668528"
     otel_dropin: present
     binary_path: /home/cwoolley/.fabro-homelab-worker-arm64/bin/fabro

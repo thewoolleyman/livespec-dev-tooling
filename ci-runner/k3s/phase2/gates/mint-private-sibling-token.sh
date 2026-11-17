@@ -88,6 +88,21 @@ done
 [ "${#private_names[@]}" -gt 0 ] || { printf '%s\n' '{"private_siblings":[]}'; exit 0; }
 
 # --- MINT: one installation token, scoped to exactly those siblings ----------
+# WHICH APP, AND WHY IT IS DELIBERATELY THE PERSONAL ONE. The two names below
+# are the UNSUFFIXED pair, which the bare `with-livespec-env.sh` projects as the
+# personal fleet App 3668528. That is intentional (livespec-dev-tooling-kn5n3a):
+# `gate_remote_delegate` runs this script under the bare wrapper, not under a
+# repository's `.livespec.jsonc` credential_wrapper, so the org remap onto
+# GITHUB_APP_ID_ORG / GITHUB_PRIVATE_KEY_ORG never applies here. The private
+# siblings it mints for (dolt-server, livespec-tdd-proof, openbrain, measured
+# 2026-11-17 with HTTP 200 and a token) are still owned by thewoolleyman, where
+# App 3668528 is installed; the org App 5761962's one installation is on the
+# livespec-ai organization, so moving this script to the org pair would refuse
+# every such push as a missing verdict.
+# WHEN TO MOVE IT: once a private sibling moves into livespec-ai, the mint needs
+# the org App for that sibling. The move changes this script, the
+# `_APP_CREDENTIAL_NAMES` pin in tests/livespec_dev_tooling/
+# test_gates_token_secret_rbac.py and the minter's tests together.
 : "${GITHUB_APP_ID:?FATAL: GITHUB_APP_ID is not projected; run under with-livespec-env.sh}"
 : "${GITHUB_PRIVATE_KEY:?FATAL: GITHUB_PRIVATE_KEY is not projected; run under with-livespec-env.sh}"
 

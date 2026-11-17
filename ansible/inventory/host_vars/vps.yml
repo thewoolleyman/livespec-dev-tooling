@@ -75,6 +75,9 @@ fabro_server_instances:
     cli_target_url: http://127.0.0.1:32276
     # vps sets this explicitly in its live, hand-maintained settings.toml.
     max_concurrent_runs: 10
+    # Personal fleet App 3668528 on purpose, as the default App, matching
+    # gmktec-xubuntu.yml's fleet instance; see its github_app_id comment
+    # (livespec-dev-tooling-kn5n3a). Parked, so nothing runs against it.
     github_app_id: "3668528"
     # DECIDED 2026-11-05 (plan ci-pool-provisioning-leftovers): vps declares
     # what gmktec declares, so this instance gets the OTLP drop-in too. It was
