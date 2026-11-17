@@ -42,19 +42,27 @@ just ansible-drift ansible/dev-host.yml --tags authorized_keys_managed
 just ansible-apply ansible/dev-host.yml --tags authorized_keys_managed
 ```
 
-## DRAFT: opt-in read-only `bd` exec (`bd_readonly_exec`) — not applied
+## Opt-in `bd` exec (`bd_exec`)
 
-`livespec-dev-tooling-tbhqye` route A. An entry may set `bd_readonly_exec: true`.
-Its forced command is then `/usr/local/sbin/authorized-keys-bd-readonly-exec`
-(installed by this role from `files/authorized-keys-bd-readonly-exec.sh`), which
-keeps the blocking tunnel session and additionally accepts a client command only
-if it is exactly `in <repo> bd show|list|comments <args>`. `<repo>` must be an
-exact line of `/etc/authorized-keys-bd-readonly-exec/repos`, written from
-`authorized_keys_managed_bd_readonly_exec_repos`; the tenant is resolved only as
-`/data/projects/<repo>`, never from a client path. Arguments are limited to
-`--json`, `--all`, `--limit`, `--status` and plain ids and words; anything else
-exits 126. Per the maintainer (2026-11-17) the key may read every fleet tenant
-and the output has no size cap, because the cost is latency, not bandwidth.
-Default is unchanged: an entry without the key keeps the forward-only command, no
-new key or account is added, and revert is removing the key from the entry.
-Whether to switch it on at all is still open.
+`livespec-dev-tooling-tbhqye`, route A: run the real `bd` on the VPS so one call
+is one SSH round trip instead of about 90 Dolt round trips. An entry may set
+`bd_exec: true`. Its forced command is then
+`/usr/local/sbin/authorized-keys-bd-exec` (installed from
+`files/authorized-keys-bd-exec.sh`). The connection's own session still blocks as
+before; a client command is accepted only as
+`in <repo> bd <base64 of the NUL-separated bd argv>`.
+
+- `<repo>` must be an exact line of `/etc/authorized-keys-bd-exec/repos`, written
+  from `authorized_keys_managed_bd_exec_repos`; the tenant is only
+  `/data/projects/<repo>`, never a client path.
+- The argv is decoded to an array and exec'd with no shell, under the credential
+  wrapper, so spaces, quotes and `$(...)` in a title stay one inert argument.
+- Reads and writes are both allowed (the tunnel already forwards full read/write
+  SQL). Verbs and flags that touch the VPS filesystem or the database connection
+  (`init`, `sql`, `--db`, `--file`, `--dolt-*`, ...) exit 126, as does anything
+  else. Every allowlisted tenant is reachable and output has no cap.
+- Default is unchanged: an entry without the key keeps the forward-only command;
+  no new key or account is added; revert is removing the key from the entry.
+
+The calling side (the guard, and the tunnel unit running as an SSH ControlMaster)
+lives with the host's provisioning; see the design comment on the work item.

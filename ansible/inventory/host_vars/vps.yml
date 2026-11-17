@@ -256,10 +256,10 @@ authorized_keys_managed_entries:
     public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 hetzner-xubuntu dolt-tunnel
     permitopen: 127.0.0.1:3307
 # DRAFT (livespec-dev-tooling-tbhqye, route A): the fleet tenants a
-# bd_readonly_exec key may read (maintainer 2026-11-17: "it can read everything").
-# Inert until an entry sets `bd_readonly_exec: true`, which is NOT set. Verify each
+# bd_exec key may read (maintainer 2026-11-17: "it can read everything").
+# Inert until an entry sets `bd_exec: true`, which is NOT set. Verify each
 # name exists under /data/projects on the VPS before enabling.
-authorized_keys_managed_bd_readonly_exec_repos:
+authorized_keys_managed_bd_exec_repos:
   - dolt-server
   - hetzner-xubuntu-info
   - homelab
