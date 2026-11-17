@@ -32,9 +32,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Event
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -98,6 +99,15 @@ _STATUSES = {"published": "202 Accepted", "retained": "202 Accepted", "conflict"
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 
+def _journal(*, reason: str, detail: str | None) -> None:
+    """One journal line for a refused publication: a reason code, never a secret.
+
+    The attachment detail is one of the attachment's own fixed reason strings.
+    """
+    suffix = "" if detail is None else f" (attachment: {detail})"
+    _ = sys.stderr.write(f"ci-publish refused: {reason}{suffix}\n")
+
+
 def aggregate_digest(*, aggregate: dict[str, Any]) -> str:
     """Domain-separated digest of the canonical aggregate JSON."""
     raw = json.dumps(aggregate, sort_keys=True, separators=(",", ":")).encode()
@@ -120,15 +130,20 @@ def publication_reply(
 ) -> Iterable[bytes]:
     """Serve one publication: 202 when its published record is held, 409 on a conflict."""
     result = _reply(status="refused", reason=INVALID)
+    publication = CiPublication(installation=service.installation, wake=service.pr_run_retained)
     try:
         payload = identity_json(raw=_read_request(environ=environ) or b"")
-        publication = CiPublication(installation=service.installation, wake=service.pr_run_retained)
         result = publication.execute(
             authorization=str(environ.get("HTTP_AUTHORIZATION", "")), payload=payload
         )
     except (OSError, ValueError, IncidentJsonRefusalError, TypeError, RecursionError):
         pass
     status = result["status"]
+    if status == "refused":
+        _journal(
+            reason=str(result.get("reason")),
+            detail=publication.detail[0] if publication.detail else None,
+        )
     return json_reply(
         start_response=start_response,
         status=_STATUSES.get(status, "403 Forbidden"),
@@ -142,6 +157,7 @@ class CiPublication:
 
     installation: ControllerInstallation
     wake: Event
+    detail: list[str] = field(default_factory=list)
 
     def execute(self, *, authorization: str, payload: dict[str, Any]) -> dict[str, Any]:
         policy = getattr(self.installation, "ci_identity_policy", None)
@@ -166,6 +182,7 @@ class CiPublication:
         )
         try:
             if receipt["status"] != "attached":
+                self.detail.append(str(receipt.get("reason")))
                 return _reply(status="refused", reason=self._unattached(query=query))
             return self._retain(query=query, payload=payload, receipt=receipt)
         except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError):
