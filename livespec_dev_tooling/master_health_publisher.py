@@ -13,7 +13,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-__all__ = ["publish_master_health"]
+__all__: list[str] = ["publish_master_health"]
 
 _SUCCESSFUL_RESULTS = frozenset({"success", "skipped"})
 
