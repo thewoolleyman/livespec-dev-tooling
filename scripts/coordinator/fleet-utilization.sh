@@ -1516,7 +1516,7 @@ def render(nodes, cluster, factory, unticketed, stranded, overcommit, flags):
     ns_all = sorted({ns for v in cluster["pods"].values() for ns in v})
     out(f"FLEET UTILIZATION {datetime.datetime.now(datetime.UTC):%Y-%m-%dT%H:%M:%SZ}")
     out(
-        f"{'node':20}{'cores':>6}{"load(1/5/15)":>22}{'PSI10':>7}{'PSI60':>7}"
+        f"{'node':20}{'cores':>6}{'load(1/5/15)':>22}{'PSI10':>7}{'PSI60':>7}"
         f"{'idle%':>7}{'memGiB':>8}{'swapGiB':>8}  live pods(by ns)"
     )
     for n in nodes:
@@ -1526,7 +1526,7 @@ def render(nodes, cluster, factory, unticketed, stranded, overcommit, flags):
         pods = cluster["pods"].get(n["name"], {})
         pod_s = " ".join(f"{k}={v}" for k, v in sorted(pods.items())) or "-"
         out(
-            f"{n['name']:20}{n['cores']:>6}{n["load"]:>22}{n['psi_some_avg10']:>7}"
+            f"{n['name']:20}{n['cores']:>6}{n['load']:>22}{n['psi_some_avg10']:>7}"
             f"{n['psi_some_avg60']:>7}{n['idle_pct'] if n['idle_pct'] is not None else '?':>7}"
             f"{n['mem_avail_gib']:>8}{n['swap_used_gib']:>8}  {pod_s}"
         )
