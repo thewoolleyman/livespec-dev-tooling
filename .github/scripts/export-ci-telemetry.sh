@@ -80,6 +80,11 @@ run_span="$(jq -c \
    ],
    status:{code:$code}}' <<<"$run_json")"
 
+# Job spans carry the run's branch and event so a job-level query can split by
+# ci.event (livespec-dev-tooling-z6u3vy); the values are the run span's own.
+run_branch="$(jq -r '.headBranch // ""' <<<"$run_json")"
+run_event="$(jq -r '.event // ""' <<<"$run_json")"
+
 job_spans="[]"
 while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
   [ -n "$jstart_iso" ] && [ "$jstart_iso" != "null" ] || continue
@@ -102,6 +107,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
     --arg name "ci.job.$jname" --arg start "$jstart" --arg end "$jend" \
     --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson run_attempt "$run_attempt" \
     --arg jname "$jname" --arg jconcl "$jconcl" --argjson code "$jcode" \
+    --arg branch "$run_branch" --arg event "$run_event" \
     --argjson jqueue "$jqueue_ms" '
     {traceId:$trace, spanId:$span, parentSpanId:$parent, name:$name, kind:1,
      startTimeUnixNano:$start, endTimeUnixNano:$end,
@@ -111,6 +117,8 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
        {key:"ci.run_attempt",value:{intValue:($run_attempt|tostring)}},
        {key:"ci.job.name",value:{stringValue:$jname}},
        {key:"ci.job.conclusion",value:{stringValue:$jconcl}},
+       {key:"git.branch",value:{stringValue:$branch}},
+       {key:"ci.event",value:{stringValue:$event}},
        {key:"ci.job.queue_ms",value:{intValue:($jqueue|tostring)}}
      ],
      status:{code:$code}}')"
