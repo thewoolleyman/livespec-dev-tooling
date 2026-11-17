@@ -8,6 +8,7 @@ than granting a retry on incomplete evidence.
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -56,6 +57,15 @@ _SESSION_WITHHELD: list[str] = []
 _WITHHELD_BY_NODEID: dict[str, str] = {}
 _WORKER_WITHHELD_KEY = "livespec_flake_retry_withheld"
 _LIVE_SESSIONS: list[object] = []
+
+
+def _opts_out_of_retry(*, item: pytest.Item) -> bool:
+    """Return whether a real pytest item (or a lightweight test double) opts out."""
+    marker_lookup = cast(
+        Callable[[str], object | None] | None,
+        getattr(item, "get_closest_marker", None),
+    )
+    return marker_lookup is not None and marker_lookup("no_flake_retry") is not None
 
 
 def retry_marker_for(
@@ -211,6 +221,8 @@ class _CollectionHook:
         _FAILED_NODEIDS.clear()
         _SESSION_WITHHELD.clear()
         _WITHHELD_BY_NODEID.clear()
+        if items and all(_opts_out_of_retry(item=item) for item in items):
+            return
         withheld = mark_untouched_tests(
             root=Path(str(session.config.rootpath)),
             items=items,

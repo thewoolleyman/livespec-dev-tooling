@@ -692,7 +692,11 @@ def test_the_collection_hook_marks_only_untouched_tests(
     markers: dict[str, list[object]] = {"test_safe.py": [], "test_changed.py": []}
 
     def item(name: str) -> object:
-        return SimpleNamespace(path=tmp_path / name, add_marker=markers[name].append)
+        return SimpleNamespace(
+            path=tmp_path / name,
+            add_marker=markers[name].append,
+            get_closest_marker=lambda _name: None,
+        )
 
     session = SimpleNamespace(config=SimpleNamespace(rootpath=tmp_path))
     plugin.pytest_collection_modifyitems(
@@ -718,11 +722,39 @@ def test_the_collection_hook_marks_nothing_without_the_rerunfailures_plugin(
     plugin.pytest_collection_modifyitems(
         SimpleNamespace(config=SimpleNamespace(rootpath=tmp_path)),
         config,
-        [SimpleNamespace(path=tmp_path / "test_safe.py", add_marker=added.append)],
+        [
+            SimpleNamespace(
+                path=tmp_path / "test_safe.py",
+                add_marker=added.append,
+                get_closest_marker=lambda _name: None,
+            )
+        ],
     )
 
     assert added == []
     config.pluginmanager.hasplugin.assert_called_once_with("rerunfailures")
+
+
+def test_the_collection_hook_skips_an_explicitly_opted_out_focused_suite(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deterministic focused tests avoid unrelated flake-retry graph analysis."""
+    plugin = importlib.import_module("livespec_dev_tooling.flake_retry")
+    monkeypatch.setattr(
+        plugin,
+        "mark_untouched_tests",
+        lambda **_kwargs: pytest.fail("focused suite must not run retry analysis"),
+    )
+    item = SimpleNamespace(
+        path=tmp_path / "test_fast.py",
+        get_closest_marker=lambda name: object() if name == "no_flake_retry" else None,
+    )
+
+    plugin.pytest_collection_modifyitems(
+        SimpleNamespace(config=SimpleNamespace(rootpath=tmp_path)),
+        _config_with_rerunfailures(active=True),
+        [item],
+    )
 
 
 def test_the_collection_hook_marks_nothing_when_the_change_set_is_unknown(
