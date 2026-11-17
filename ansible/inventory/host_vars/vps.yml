@@ -255,6 +255,10 @@ authorized_keys_managed_entries:
   - name: hetzner-xubuntu-dolt-tunnel
     public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBcvdQPDguJ+Yq79xWTm4ZqBcm8J1MsZLsr/ah3IAo9 hetzner-xubuntu dolt-tunnel
     permitopen: 127.0.0.1:3307
+    # Route A (livespec-dev-tooling-tbhqye): the forced command becomes the bd exec
+    # wrapper (blocks for the tunnel session, accepts only `in <repo> bd <b64 argv>`
+    # for the allowlisted tenants below). Revert: delete this line and re-apply.
+    bd_exec: true
 # DRAFT (livespec-dev-tooling-tbhqye, route A): the fleet tenants a
 # bd_exec key may read (maintainer 2026-11-17: "it can read everything").
 # Inert until an entry sets `bd_exec: true`, which is NOT set. Verify each
