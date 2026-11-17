@@ -65,6 +65,7 @@ def retry_marker_for(
     change_paths: set[Path],
     memo: dict[Path, _ModuleFacts | None] | None = None,
     closures: dict[Path, Closure] | None = None,
+    session_checked: bool = False,
 ) -> dict[str, int] | None:
     """Forward the hook's live retry-policy overrides to the extracted decision."""
     return _retry_marker_for(
@@ -73,6 +74,7 @@ def retry_marker_for(
         change_paths=change_paths,
         memo=memo,
         closures=closures,
+        session_checked=session_checked,
         retry_attempts=RETRY_ATTEMPTS,
         retry_delay_seconds=RETRY_DELAY_SECONDS,
     )
@@ -123,7 +125,12 @@ def mark_untouched_tests(
                 withheld_by_nodeid[nodeid] = retry_withheld
             continue
         marker = retry_marker_for(
-            repo_root=root, test_path=test_path, change_paths=paths, memo=memo, closures=closures
+            repo_root=root,
+            test_path=test_path,
+            change_paths=paths,
+            memo=memo,
+            closures=closures,
+            session_checked=True,
         )
         if marker is not None:
             item.add_marker(pytest.mark.flaky(**marker))
