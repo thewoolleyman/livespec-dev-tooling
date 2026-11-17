@@ -56,6 +56,37 @@ _GIT_ENV_VARS = (
     "GIT_PREFIX",
 )
 _DROP_NAMES = (*_GIT_ENV_VARS, "COVERAGE_PROCESS_START")
+pytestmark = pytest.mark.no_flake_retry
+
+
+def _fast_collection_run(
+    *, argv: list[str], bound: SuiteBound, cwd: Path | None = None, **_kwargs: object
+) -> SuiteRun:
+    """Collect the deliberately tiny historical fixtures without a child pytest.
+
+    The production collector's child-process and import semantics are covered
+    by its own tests.  These fixtures assert the three collector outcomes used
+    by the range gate: a missing import, no collected test, and success.  A
+    static double retains those assertions while avoiding process startup (and
+    the runner poll interval) for every generated history.
+    """
+    del bound
+    assert cwd is not None
+    test_path = cwd / argv[-1]
+    source = test_path.read_text(encoding="utf-8")
+    if "time.sleep(60)" in source:
+        return SuiteRun(returncode=None, output="", timed_out=True, kill_reason="stalled")
+    if "def test_" not in source:
+        return SuiteRun(returncode=5, output="no tests collected in 0.00s\n", timed_out=False)
+    if "decode_historical_reply" in source and "decode_historical_reply" not in (
+        cwd / "livespec" / "foo.py"
+    ).read_text(encoding="utf-8"):
+        return SuiteRun(
+            returncode=2,
+            output="E   ImportError: cannot import name 'decode_historical_reply'\n",
+            timed_out=False,
+        )
+    return SuiteRun(returncode=0, output="1 test collected in 0.00s\n", timed_out=False)
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +100,10 @@ def _confine_children(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     drop = monkeypatch.delenv
     _ = [drop(n) for n in os.environ.copy() if n in _DROP_NAMES or n[:9] == "COV_CORE_"]
+    monkeypatch.setattr(module, "run_suite", _fast_collection_run)
+    import _red_green_replay_collect as direct_collect
+
+    monkeypatch.setattr(direct_collect, "run_suite", _fast_collection_run)
 
 
 class _History(NamedTuple):
