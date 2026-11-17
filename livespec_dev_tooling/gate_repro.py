@@ -21,6 +21,13 @@ Two things differ from a pre-push gate, and both are render flags:
   pod's log carries the process tree and each live Python process's latest stack
   every N seconds without a `kubectl exec`, which the gates credential lacks.
 
+Two optional parameters name WHERE and WHAT it reproduces on (livespec-dev-tooling-cwrg3v):
+`--image NAME@sha256:DIGEST` runs the Job in that exact ARC runner or factory
+sandbox image instead of the repository's pin, and `--node <node>` pins it to
+poweredge, gmktec, hp or gamingpc, through that node's flavor on the repro
+queue. Both are render flags the renderer validates; nothing is pushed from
+the pod, which holds no credential and mounts no ServiceAccount token.
+
 AND ONE THING IS LEFT OUT ON PURPOSE: the green token. A pre-push gate that
 passes writes one into the checkout, and a later push of that tree may spend it.
 A reproduction is a measurement of a node, so this reports how the Job ended and
@@ -106,9 +113,23 @@ class ReproOutcome:
     detail: str
 
 
-def repro_render_argv(*, queue: str, stack_interval_seconds: int) -> tuple[str, ...]:
-    """The two renderer flags that make a gate Job a reproduction Job."""
-    return ("--queue", queue, "--repro-stack-interval", str(stack_interval_seconds))
+def repro_render_argv(
+    *,
+    queue: str,
+    stack_interval_seconds: int,
+    image: str | None = None,
+    node: str | None = None,
+) -> tuple[str, ...]:
+    """The renderer flags that make a gate Job a reproduction Job.
+
+    `--image` (a reference by digest) and `--node` (one gate node) are rendered
+    only when the operator names them; the renderer refuses a tag or an unknown
+    node, so this does not re-validate either (livespec-dev-tooling-cwrg3v).
+    """
+    base = ("--queue", queue, "--repro-stack-interval", str(stack_interval_seconds))
+    image_flags = ("--image", image) if image is not None else ()
+    node_flags = ("--node", node) if node is not None else ()
+    return (*base, *image_flags, *node_flags)
 
 
 def _ended(*, outcome: GateRunOutcome) -> ReproOutcome:
@@ -129,12 +150,14 @@ def _unended(*, failure: GateStepFailed) -> ReproOutcome:
     )
 
 
-def run_repro_gate(
+def run_repro_gate(  # noqa: PLR0913 — every keyword is an independent input of the one reproduction Job.
     *,
     repo_root: Path,
     renderer: Path,
     queue: str,
     stack_interval_seconds: int,
+    image: str | None = None,
+    node: str | None = None,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
 ) -> ReproOutcome:
@@ -152,7 +175,12 @@ def run_repro_gate(
         runner=runner,
         resources=(
             *declared,
-            *repro_render_argv(queue=queue, stack_interval_seconds=stack_interval_seconds),
+            *repro_render_argv(
+                queue=queue,
+                stack_interval_seconds=stack_interval_seconds,
+                image=image,
+                node=node,
+            ),
         ),
     )
     if isinstance(built, Failure):
@@ -181,12 +209,16 @@ def main(
     _ = parser.add_argument("--renderer", type=Path, required=True)
     _ = parser.add_argument("--queue", default=REPRO_QUEUE)
     _ = parser.add_argument("--stack-interval", type=int, default=REPRO_STACK_INTERVAL_SECONDS)
+    _ = parser.add_argument("--image", default=None)
+    _ = parser.add_argument("--node", default=None)
     parsed = parser.parse_args(argv)
     outcome = run_repro_gate(
         repo_root=parsed.repo_root,
         renderer=parsed.renderer,
         queue=parsed.queue,
         stack_interval_seconds=parsed.stack_interval,
+        image=parsed.image,
+        node=parsed.node,
         runner=runner,
         sleeper=sleeper,
     )
