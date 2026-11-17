@@ -2,7 +2,7 @@
 # AutoscalingRunnerSet pattern this design introduces, narrowing phase
 # 1's original account-root `githubConfigUrl` (the since-retired
 # ../../arc/values.yaml, livespec-s43svm.28:
-# "https://github.com/thewoolleyman") to exactly the repo scope this
+# "https://github.com/<account>", account thewoolleyman) to exactly the repo scope this
 # fleet REQUIRES, not merely prefers.
 #
 # CORRECTNESS, not just design preference: `thewoolleyman` is a

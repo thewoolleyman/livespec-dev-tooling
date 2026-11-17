@@ -270,7 +270,8 @@ migration, and it landed on the per-repository scale sets under
 `arc/values-host-unique.yaml` (and, before its retirement, `arc/values.yaml`) sets
 `githubConfigUrl` to `https://github.com/livespec-ai/livespec-dev-tooling`
 — a specific REPOSITORY, not the account-root form
-`https://github.com/thewoolleyman`. This was discovered live during
+`https://github.com/<account>`, here the personal account `thewoolleyman`.
+This was discovered live during
 `livespec-s43svm.14`: the account-root form routes ARC's controller to
 GitHub's ORGANIZATION-level self-hosted-runner registration endpoint
 (`POST /orgs/{org}/actions/runners/registration-token`), which returned
