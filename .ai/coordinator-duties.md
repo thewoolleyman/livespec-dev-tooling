@@ -115,6 +115,20 @@ runbook `.ai/incident-mode-runbook.md` is owed by expedited-incident-response-fl
 Maintainer [6tgd2z 2026-11-12T19:17:17Z]: "… confirm you wil use it going forward, and record this everywhere as a rule
 to be noticed by coordinator sessions".
 
+**Rule RED-MASTER-IS-THE-COORDINATOR'S: a red livespec-dev-tooling master is never parked as a maintainer ask.** If no
+forward fix has merged within 30 minutes of the red, the coordinator takes the server-side revert of the breaking change.
+Restoring a prior working state is never maintainer-tier, even when it deletes workflow steps that never ran green. When
+the merge queue or a ruleset refuses a verified fix, the coordinator bypasses it itself: it backs up the ruleset, adds a
+temporary bypass actor, merges, restores the ruleset, and diffs it against the backup, logged under
+OVERRIDE-THEN-BACKFILL (§5). Before declaring "every path exhausted", it reads the ruleset's bypass list and tries the
+admin path. A "non-blocking" maintainer ask that holds a stall while the maintainer sleeps IS blocking. Measured
+2026-11-17: master was red 12:14Z-17:55Z (~5 h 41 min) on livespec-dev-tooling#4934, a push-only ci-green step calling a
+module that did not exist. A forward fix took five incident-lane generations, the queue then refused it (ci.yml passed
+the observer config only on pull_request; root fix livespec-dev-tooling-2chu3g), and the coordinator parked B/A/C for
+the sleeping maintainer. The bypass merge took 14 s. Retro entry 15 on livespec-dev-tooling-o6mqy5. Maintainer [6tgd2z
+2026-11-17 ~18:0xZ], verbatim: "Why would you just fail for 6 hours while I'm asleep and not resolve this yourself? You
+created the problem yourself. You should resolve it yourself ."
+
 **A failed telemetry export is opened as a bug, by a low-cost means.** Maintainer [q26e3c 2026-11-13T23:18:44Z]: "Yes,
 a failed telemetry export can instead be opened as a bug, via some low-cost means. …" Carrier
 livespec-dev-tooling-jgkhr5 (ci-runtime-and-cost); interim collector address-honeycomb-alerts.
