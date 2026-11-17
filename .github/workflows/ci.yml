@@ -1149,7 +1149,7 @@ jobs:
             # A body that could not be read is never armed, never a block and
             # never "selected nothing": the step fails naming the read, and
             # writes no `block` output, so the entrance does not run.
-            if ! pull="$(livespec-forge-read incident-ci-pull-request-body-read "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"; then
+            if ! pull="$(livespec-forge-read incident-ci-pull-request-body-read "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}")"; then
               echo "::error::incident-ci: incident-ci-pull-request-body-read ended without an answer; nothing was selected and no block output was written"
               exit 1
             fi
