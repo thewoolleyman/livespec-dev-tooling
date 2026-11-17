@@ -47,6 +47,11 @@ from livespec_dev_tooling.fleet._ensure_plugin_registry import (  # noqa: E402
     registry_repair_paths,
 )
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
+from livespec_dev_tooling.fleet._marketplace_origin import (  # noqa: E402
+    git_origin,
+    git_set_origin,
+    repair_marketplace_origins,
+)
 from livespec_dev_tooling.fleet._orchestrator_hold import (  # noqa: E402
     ORCHESTRATOR_PLUGIN,
     STATE_HELD,
@@ -275,6 +280,15 @@ def main() -> int:  # pragma: no cover
         _ = sys.stderr.write(f"ensure_plugins: {finding}\n")
     if precondition:
         return 3
+    origin_report = repair_marketplace_origins(
+        known_text=_read_marketplace_registry() or "{}",
+        read_origin=git_origin,
+        set_origin=git_set_origin,
+    )
+    for notice in origin_report.notices:
+        _ = sys.stdout.write(f"ensure_plugins: {notice}\n")
+    for finding in origin_report.findings:
+        _ = sys.stderr.write(f"ensure_plugins: {finding}\n")
     current, registered = _startup_currency(
         settings_text=settings_text,
         project_root=str(root),
@@ -293,7 +307,7 @@ def main() -> int:  # pragma: no cover
         _ = sys.stdout.write(f"ensure_plugins: {notice}\n")
     for finding in report.findings:
         _ = sys.stderr.write(f"ensure_plugins: {finding}\n")
-    return 4 if report.findings else 0
+    return 4 if report.findings or origin_report.findings else 0
 
 
 if __name__ == "__main__":
