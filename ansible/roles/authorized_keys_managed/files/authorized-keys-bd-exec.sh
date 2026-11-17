@@ -61,21 +61,36 @@ verb="${args[0]}"
 case "$verb" in
   show|list|comments|comment|update|create|close|reopen|delete|dep|search|label|tag|children|count|history|ready|duplicate|duplicates|note|assign|priority|link|query|stale|status|statuses|types|graph|epic|supersede|todo|q|state|set-state|lint|promote|find-duplicates|version) ;;
   config)
-    # Only `config get` and `config list`: `config set/unset` would rewrite the
-    # VPS checkout's own .beads configuration.
-    case "${args[1]:-}" in get|list) ;; *) deny "config only get or list" ;; esac
+    # Only `config get <key>` for a key that does not look like a secret.
+    # `config set/unset` would rewrite the VPS checkout's own .beads
+    # configuration, and `config list` could print stored secrets.
+    [ "${args[1]:-}" = "get" ] && [ "${#args[@]}" -eq 3 ] || deny "config only get <key>"
+    ck=$(printf '%s' "${args[2]}" | tr 'A-Z' 'a-z')
+    case "$ck" in
+      *pass*|*token*|*secret*|*key*|*credential*|*auth*) deny "config key looks like a secret" ;;
+    esac
     ;;
   *) deny "verb is not allowlisted" ;;
 esac
 
-# FLAG DENYLIST, case-insensitive: anything that names a host path, a directory,
-# the database connection, a credentials file, or the shared database.
+# FLAG DENYLIST, case-insensitive, by PATTERN: anything that can name a host
+# path, a file, a directory, a URL, a credentials file, the database connection
+# or the shared database, in long form, attached short form (-fX) or a short
+# cluster (-vf), and any `@file` value. A call the server denies runs LOCALLY on
+# the client, which carries the identical rule (bd-guard/bd-remote.sh).
 for a in "${args[@]}"; do
   l=$(printf '%s' "$a" | tr 'A-Z' 'a-z')
   case "$l" in
-    --db|--db=*|--database|--database=*|--dolt-*|--host|--host=*|--port|--port=*|--global|--profile|--profile=*|--directory|--directory=*|-c|-c=*|--file|--file=*|--body-file|--body-file=*|--design-file|--design-file=*|--description-file|--description-file=*|-f|--path|--path=*|--dir|--dir=*|--config|--config=*|--output|--output=*|-o|--jsonl|--jsonl=*|--credentials-file|--credentials-file=*)
-      deny "flag names a host path, directory or connection" ;;
+    --db|--db=*|--database*|--dolt-*|--host*|--port*|--global|--profile*|--config*|--credentials*|--graph*|--from-*|--*file*|--*path*|--*dir*|--*output*|--*url*|--*jsonl*)
+      deny "flag names a host path, file, directory, URL or connection" ;;
+    --*) ;;
+    -f|-c|-o) deny "short flag names a path or directory" ;;
+    -[a-z0-9]?*)
+      # an attached or clustered single-dash argument (-fX, -vf): refuse when it
+      # contains f, c or o after the dash, since any of them may carry a path
+      case "${l#-}" in *[fco]*) deny "short flag cluster may carry a path" ;; esac ;;
   esac
+  case "$l" in @*|*=@*) deny "@file value" ;; esac
 done
 
 cd "$PROJECTS/$repo"
