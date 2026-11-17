@@ -92,6 +92,7 @@ from returns.result import Failure  # noqa: E402  — vendor-path-aware.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling import canonical_checks  # noqa: E402
+from livespec_dev_tooling.checks._canonical_waivers import consumer_waiver_verdict  # noqa: E402
 from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
     TargetsArrayUnterminated,
 )
@@ -385,6 +386,14 @@ def main() -> int:
         return 0
 
     ci_yaml_text = ci_yaml.read_text(encoding="utf-8")
+    canonical_slugs = _slugs_from_env()
+    waived = tuple(
+        waiver.slug
+        for waiver in consumer_waiver_verdict(
+            root=Path.cwd(), canonical=canonical_slugs, selected=()
+        ).honoured
+    )
+    slugs = tuple(slug for slug in canonical_slugs if slug not in waived)
     result = _reconcile(
         ci_yaml_text=ci_yaml_text,
         justfile_text=justfile.read_text(encoding="utf-8"),
@@ -393,7 +402,7 @@ def main() -> int:
             if (inventory := Path.cwd() / _INVENTORY_NAME).is_file()
             else None
         ),
-        canonical_slugs=_slugs_from_env(),
+        canonical_slugs=slugs,
         world_gates=unsafe_perform_io(canonical_checks.world_gate_check_slugs().unwrap()),
         renames=unsafe_perform_io(canonical_checks.canonical_check_renames().unwrap()),
     )
