@@ -420,7 +420,14 @@ jobs:
 
           revert_number=$(jq -r '.number // empty' revert.json)
           if [ -n "${revert_number}" ]; then
-            revert_head=$(gh api "repos/${REPO}/pulls/${revert_number}" --jq '.head.sha')
+            revert_head=$(gh api graphql -f query='
+              query($owner: String!, $name: String!, $number: Int!) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) { headRefOid }
+                }
+              }' -f owner="${REPO%%/*}" -f name="${REPO##*/}" -F number="${revert_number}" \
+              --jq '.data.repository.pullRequest.headRefOid // empty')
+            test -n "${revert_head}"
             revert_checks="repos/${REPO}/commits/${revert_head}/check-runs?per_page=100"
             revert_conclusion=$(gh api "${revert_checks}" --jq '
               [ .check_runs[] | .conclusion ]
@@ -435,7 +442,7 @@ jobs:
             # the `Fix-Forward: #N` lines are read, and only to know WHICH fix
             # pull requests to record the state of.
             reverted=$(jq -r '.reverts_pull_request' revert.json)
-            culprit_opener=$(gh api "repos/${REPO}/pulls/${reverted}" --jq '.user.login')
+            culprit_opener=$(gh api "repos/${REPO}/issues/${reverted}" --jq '.user.login')
             gh api "repos/${REPO}/issues/${revert_number}/comments?per_page=100" --jq '
               [ .[] | { author: .user.login, body: .body,
                         posted_at: (.created_at | fromdateiso8601) } ]' > claims.json
@@ -677,7 +684,14 @@ jobs:
               # `.py` ends with a human rather than with a merge.
               test "$(jq -r '.auto_merge_held' step.json)" = "true"
               culprit=$(jq -r '.culprit_pull_request' step.json)
-              pr_node=$(gh api "repos/${REPO}/pulls/${culprit}" --jq '.node_id')
+              pr_node=$(gh api graphql -f query='
+                query($owner: String!, $name: String!, $number: Int!) {
+                  repository(owner: $owner, name: $name) {
+                    pullRequest(number: $number) { id }
+                  }
+                }' -f owner="${REPO%%/*}" -f name="${REPO##*/}" -F number="${culprit}" \
+                --jq '.data.repository.pullRequest.id // empty')
+              test -n "${pr_node}"
               revert_number=$(gh api graphql -f query='
                 mutation($pr: ID!, $title: String!, $body: String!) {
                   revertPullRequest(input: {pullRequestId: $pr, title: $title, body: $body}) {
