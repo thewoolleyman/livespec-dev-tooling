@@ -124,19 +124,8 @@ def _stranded_capacity_read(tmp_path: Path) -> subprocess.CompletedProcess[str]:
             ]
         },
     )
-    # Keep the fixture focused on stranded-capacity behavior.  The committed script's
-    # full-output renderer has unrelated malformed f-strings; --stranded-only never
-    # reaches that code path, but Python must still compile it before the target path runs.
-    runnable = tmp_path / "fleet-utilization.sh"
-    source = _UTILIZATION.read_text(encoding="utf-8")
-    _ = runnable.write_text(
-        source.replace('{"load(1/5/15)":>22}', "{'load(1/5/15)':>22}").replace(
-            'n["load"]', "n['load']"
-        ),
-        encoding="utf-8",
-    )
     return subprocess.run(
-        ["bash", str(runnable), "--stranded-only"],
+        ["bash", str(_UTILIZATION), "--stranded-only"],
         capture_output=True,
         check=False,
         env=os.environ
