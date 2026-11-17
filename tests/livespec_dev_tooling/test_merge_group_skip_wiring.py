@@ -138,3 +138,10 @@ def test_an_unskippable_leg_that_never_ran_still_fails_a_skipped_run() -> None:
         ci_yaml_text=_text(), gate_job="ci-green", run_jobs=without_incident, guard_skip=True
     )
     assert [gap.leg for gap in found] == ["incident-ci"]
+
+
+def test_the_skip_step_logs_the_module_output_prefixed_before_the_decision() -> None:
+    run = _skip_step()["run"]
+    log = "printf '%s\\n' \"$out\" | sed 's/^/merge_group_skip: /' || true"
+    assert log in run
+    assert run.index(log) < run.index("grep -qx 'skip=true'")

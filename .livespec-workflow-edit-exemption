@@ -1,10 +1,4 @@
-# Workflow-edit exemption — one exemption binds to one reviewed change.
-#
-# The change: the merge-group tree-equality skip in ci.yml (plan stale-base-merge-options,
-# epic livespec-dev-tooling-xowhol; maintainer ruling 2026-11-16). The guard job gains a
-# `skip` output decided by livespec_dev_tooling.merge_group_skip from the forge; seven
-# gating jobs' job-level `if:` gains `&& needs.merge-group-guard.outputs.skip != 'true'`;
-# ci-green lists the guard as a signal-only need and passes its skip output to the
-# required-leg reader. This modifies existing workflow lines, so it is the maintainer tier.
 work_item=livespec-dev-tooling-ymog6r
-reason=A one-entry merge group whose tree equals its pull request head's tree, with the head's required check runs all success on the forge, reports the same required checks without re-running the suite; any doubt runs the full graph.
+reason=log the merge_group_skip decision and reason, prefixed, in the guard job log so an inert or refused skip is diagnosable
+change=additive
+ci_runtime=no-significant-increase

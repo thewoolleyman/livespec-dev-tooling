@@ -293,6 +293,7 @@ jobs:
               fi
               out="$(PYTHONPATH="$pythonpath" python3 -m livespec_dev_tooling.merge_group_skip || true)"
               printf '%s\n' "$out"
+              printf '%s\n' "$out" | sed 's/^/merge_group_skip: /' || true
               if printf '%s\n' "$out" | grep -qx 'skip=true'; then
                 skip=true
               fi
