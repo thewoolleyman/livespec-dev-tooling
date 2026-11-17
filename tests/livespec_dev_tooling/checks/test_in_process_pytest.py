@@ -38,6 +38,16 @@ from livespec_dev_tooling.checks._red_green_replay_suite_runner import SuiteBoun
 __all__: list[str] = ["in_process_subprocess", "in_process_suite_run", "run_in_process"]
 
 
+def test_source_is_within_root_respects_path_boundaries(*, tmp_path: Path) -> None:
+    root = tmp_path / "fixture"
+    root.mkdir()
+
+    helper = globals().get("_source_is_within_root")
+    assert callable(helper)
+    assert helper(source=str(root / "package" / "module.py"), root=root)
+    assert not helper(source=str(tmp_path / "fixture-old" / "module.py"), root=root)
+
+
 def _pytest_arguments(*, argv: Sequence[str]) -> list[str] | None:
     """Return the pytest arguments of `argv`, or None when it is not a pytest command."""
     command = [str(part) for part in argv]
@@ -48,13 +58,25 @@ def _pytest_arguments(*, argv: Sequence[str]) -> list[str] | None:
     return None
 
 
+def _source_is_within_root(*, source: str, root: Path) -> bool:
+    """Return whether a module source belongs to `root`, respecting path boundaries.
+
+    Nested pytest runs usually import just a small fixture tree, but cleanup
+    examines every currently loaded module.  Resolving a `Path` for each one is
+    measurable across the replay suite; string-prefix matching is equivalent
+    once the root's trailing separator makes sibling names unambiguous.
+    """
+    root_text = os.fspath(root.resolve())
+    return source == root_text or source.startswith(root_text + os.sep)
+
+
 def _imported_from(*, roots: Sequence[Path]) -> list[str]:
     """Name the loaded modules whose source sits under any of `roots`."""
     return [
         name
         for name, loaded in list(sys.modules.items())
         if any(
-            Path(source).is_relative_to(root)
+            _source_is_within_root(source=source, root=root)
             for source in [getattr(loaded, "__file__", None)]
             if source
             for root in roots
