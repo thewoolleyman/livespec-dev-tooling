@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_dev_tooling.checks._red_green_replay_merge_group import locate_queued_pull_request
 from livespec_dev_tooling.incident_ci_authority import (
     CiAuthorityBoundary,
     ObserverTokenError,
@@ -85,9 +86,9 @@ def _unmet(
         identity.head_sha,
     ):
         return "the block names a different pull request, base or head"
-    trailer = "Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: " + identity.incident_item_id
-    if trailer not in message.splitlines():
-        return "the commit has no audited trailer naming the incident"
+    trailer = _trailer_unmet(message=message, identity=identity)
+    if trailer is not None:
+        return trailer
     try:
         ancestor = run_git(
             repo=Path.cwd(),
@@ -98,27 +99,33 @@ def _unmet(
         return str(error)
     if ancestor.returncode != 0:
         return "the commit is not in the recorded head's history"
-    if not environ.get(_URL) or not environ.get(_TOKEN):
-        return "the observer URL or query token is not configured"
-    return None
+    return _unconfigured(environ=environ)
+
+
+def _trailer_unmet(*, message: str, identity: OperationIdentity) -> str | None:
+    trailer = "Factory-Override: EXPEDITED_INCIDENT_RESPONSE flag: " + identity.incident_item_id
+    if trailer in message.splitlines():
+        return None
+    return "the commit has no audited trailer naming the incident"
+
+
+def _unconfigured(*, environ: Mapping[str, str]) -> str | None:
+    if environ.get(_URL) and environ.get(_TOKEN):
+        return None
+    return "the observer URL or query token is not configured"
 
 
 def _no_block(*, sha: str, event: str | None) -> bool:
-    """No block was found: name it on the two events that carry one, with the source read.
+    """No block was found: name it on a pull_request event, with the source read.
 
     Scenario "incident commit provenance remains verifiable on normal master": the
     replay gate prints a line naming the missing block and the source it read, and
-    keeps the commit convicted. Any other event is not an incident pull request run,
-    so it stays silent (livespec-dev-tooling-yfrepg).
+    keeps the commit convicted. A merge_group event never reaches here: it is judged by
+    queue attribution (livespec-dev-tooling-txon2s), and any other event is not an
+    incident pull request run, so it stays silent (livespec-dev-tooling-yfrepg).
     """
     if event == "pull_request":
         return _refuse(sha=sha, reason="no livespec-incident-ci block in the pull_request body")
-    if event == "merge_group":
-        reason = (
-            "no livespec-incident-ci block was read: "
-            "a merge_group event carries no pull_request body"
-        )
-        return _refuse(sha=sha, reason=reason)
     return False
 
 
@@ -126,6 +133,8 @@ def admitted_by_recorded_incident(
     *, sha: str, message: str, environ: Mapping[str, str] = os.environ
 ) -> bool:
     """Whether the canonical chain records this PR head, with `sha` in its history."""
+    if environ.get("GITHUB_EVENT_NAME") == "merge_group":
+        return _admitted_in_merge_group(sha=sha, message=message, environ=environ)
     pull_request = _pull_request(environ=environ)
     body = pull_request.get("body")
     block = incident_block(body=body) if isinstance(body, str) else None
@@ -145,6 +154,28 @@ def admitted_by_recorded_incident(
     )
     if unmet is not None:
         return _refuse(sha=sha, reason=unmet)
+    return _recorded(sha=sha, authority=authority, identity=identity, environ=environ)
+
+
+def _admitted_in_merge_group(*, sha: str, message: str, environ: Mapping[str, str]) -> bool:
+    """Admit a rebased copy the queue attributed to one pull request, by the same chain."""
+    located = locate_queued_pull_request(sha=sha, environ=environ)
+    if isinstance(located, str):
+        return _refuse(sha=sha, reason=located)
+    unmet = _trailer_unmet(message=message, identity=located.identity) or _unconfigured(
+        environ=environ
+    )
+    if unmet is not None:
+        return _refuse(sha=sha, reason=unmet)
+    return _recorded(
+        sha=sha, authority=located.authority, identity=located.identity, environ=environ
+    )
+
+
+def _recorded(
+    *, sha: str, authority: CiAuthority, identity: OperationIdentity, environ: Mapping[str, str]
+) -> bool:
+    """Whether the observer's chain records the identity's head, asked through its query route."""
     try:
         tree_sha = git_text(repo=Path.cwd(), args=["rev-parse", identity.head_sha + "^{tree}"])
     except IncidentGitError as error:
