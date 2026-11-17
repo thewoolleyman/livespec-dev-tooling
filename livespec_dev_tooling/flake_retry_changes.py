@@ -68,13 +68,19 @@ def _default_branch_ref(*, repo_root: Path) -> str | None:
 
 
 def _deepen_if_parent_missing(*, repo_root: Path, head: str) -> None:
-    """Fetch the parent when it is absent, keeping a failure for the withheld reason."""
-    if (
-        _run_git(root=repo_root, args=["rev-parse", "--verify", "--quiet", "HEAD^"]) is None
-        and _run_git(root=repo_root, args=["fetch", "--quiet", "--deepen=1", "origin", head])
-        is None
-    ):
-        _FAILED_FETCH[:] = _LAST_FAILURE
+    """Fetch the parent when it is absent, keeping a failure for the withheld reason.
+
+    `--deepen=1` exits 0 and deepens nothing when `head` is no longer the tip of any ref the
+    origin advertises (a pull request's merge ref that GitHub recomputed since the checkout), so
+    a parent still missing after it is fetched again with `--depth=2`, which does reach it
+    (livespec-dev-tooling-7tqp32).
+    """
+    for depth_flag in ("--deepen=1", "--depth=2"):
+        if _run_git(root=repo_root, args=["rev-parse", "--verify", "--quiet", "HEAD^"]) is not None:
+            return
+        if _run_git(root=repo_root, args=["fetch", "--quiet", depth_flag, "origin", head]) is None:
+            _FAILED_FETCH[:] = _LAST_FAILURE
+            return
 
 
 def _fetch_parent(*, repo_root: Path, head: str) -> None:
