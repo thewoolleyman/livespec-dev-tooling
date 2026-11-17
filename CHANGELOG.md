@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.217.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.216.0...v1.217.0) (2026-11-17)
+
+
+### Features
+
+* **ci-runner:** hp-xubuntu is armed with one repro gate unit on the repro queue (livespec-dev-tooling-cwrg3v) ([06ca49f](https://github.com/livespec-ai/livespec-dev-tooling/commit/06ca49f778d65a4c57281c1a649bc4bb4e936eef))
+* **ci-runner:** the gate renderer takes --image by digest and --node, and the repro queue holds a flavor per gate node (livespec-dev-tooling-cwrg3v) ([79c96f7](https://github.com/livespec-ai/livespec-dev-tooling/commit/79c96f7802813cb9106bc41017c5719c48e55876))
+* **gates:** gate-repro names the image by digest and the node the repro Job runs on (livespec-dev-tooling-cwrg3v) ([2d1d0b2](https://github.com/livespec-ai/livespec-dev-tooling/commit/2d1d0b24bd4158f0889cf544488db54dc04dd940))
+
+
+### Bug Fixes
+
+* **gates:** the renderer honours a waiver of check-ci-single-container-image and runs the gate in the check job's image ([2fa6080](https://github.com/livespec-ai/livespec-dev-tooling/commit/2fa60803d83b4c53975fd0840d3d56b96d014f32))
+* head sha, node id and opener reads use GraphQL and issues/&lt;n&gt;, not pulls/&lt;n&gt; (livespec-dev-tooling-23yaqm) ([175c35b](https://github.com/livespec-ai/livespec-dev-tooling/commit/175c35b9fac0bcd2ea692df7de55c25a7af0850a))
+
 ## [1.216.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.215.0...v1.216.0) (2026-11-17)
 
 
