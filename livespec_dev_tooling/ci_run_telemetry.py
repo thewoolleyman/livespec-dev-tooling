@@ -118,6 +118,7 @@ def _job_span(
     *,
     repo: str,
     run_id: int,
+    run: dict[str, object],
     job: dict[str, object],
     created_by_id: dict[int, object],
 ) -> dict[str, object] | None:
@@ -139,6 +140,8 @@ def _job_span(
         _attribute(key="ci.job.name", value=job.get("name", "")),
         _attribute(key="ci.job.conclusion", value=conclusion),
         _attribute(key="ci.job.queue_ms", value=queue_ms, value_type="intValue"),
+        _attribute(key="git.branch", value=run.get("headBranch", "")),
+        _attribute(key="ci.event", value=run.get("event", "")),
     ]
     reuse_outcome = job.get("coverageReuseOutcome")
     if isinstance(reuse_outcome, dict):
@@ -169,6 +172,7 @@ def _payload(
             span := _job_span(
                 repo=repo,
                 run_id=run_id,
+                run=run,
                 job=job,
                 created_by_id=created_by_id,
             )
