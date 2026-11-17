@@ -1,4 +1,5 @@
 # justfile — livespec-dev-tooling dev-tooling task runner.
+# DoD 12 equal-tree proof marker (livespec-dev-tooling-xowhol): comment-only, no behaviour.
 #
 # Authority: livespec/SPECIFICATION/non-functional-requirements.md
 #   §"Enforcement-suite invocation" — `just` is the canonical entry
