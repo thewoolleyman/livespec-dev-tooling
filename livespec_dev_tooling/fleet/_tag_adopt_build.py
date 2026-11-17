@@ -67,6 +67,8 @@ __all__: list[str] = [
 STAGING_DIRNAME = ".livespec-orchestrator-adopt"
 _MARKERS = (".in_use", ".orphaned_at")
 _SHORT = 12
+_TAIL = 400
+_LABELS = ("marketplace add", "git init", "install")
 
 
 class EnvCommandRunner(Protocol):
@@ -135,6 +137,33 @@ def _failed(*, outcome: CommandOutcome, what: str) -> str:
     return ""
 
 
+def _tail(*, text: str) -> str:
+    """The last `_TAIL` characters of one captured output stream."""
+    return text[-_TAIL:]
+
+
+def _evidence(*, outcome: CommandOutcome, label: str) -> str:
+    """One finished builder step's label, exit code and bounded output tails.
+
+    Only a step that RAN reaches here: a step that did not run returns its own failure first.
+    """
+    answer = cast("CommandResult", command_answer(outcome=outcome))
+    stdout = _tail(text=answer.stdout)
+    stderr = _tail(text=answer.stderr)
+    return f"{label} exit {answer.returncode} [stdout tail: {stdout}] [stderr tail: {stderr}]"
+
+
+def _registry_evidence(*, registry_text: str | None) -> str:
+    """Whether the throwaway registry existed and how many records it held for any projectPath."""
+    plugins = json_object(text=registry_text).get("plugins")
+    by_plugin = cast("dict[str, object]", plugins) if isinstance(plugins, dict) else {}
+    records = by_plugin.get(ORCHESTRATOR_PLUGIN)
+    entries = cast("list[object]", records) if isinstance(records, list) else []
+    held = sum(isinstance(entry, dict) and "projectPath" in entry for entry in entries)
+    state = "absent" if registry_text is None else "present"
+    return f"registry file {state}; {held} records with a projectPath"
+
+
 def build_plugin(
     *, home: Path, tag: str, tag_commit: str, base_env: Mapping[str, str], run: EnvCommandRunner
 ) -> BuiltPlugin:
@@ -165,10 +194,13 @@ def build_plugin(
             "builder install",
         ),
     )
-    for args, cwd, what in steps:
-        failure = _failed(outcome=run(args=args, cwd=cwd, env=env), what=what)
+    evidence: list[str] = []
+    for (args, cwd, what), label in zip(steps, _LABELS, strict=True):
+        outcome = run(args=args, cwd=cwd, env=env)
+        failure = _failed(outcome=outcome, what=what)
         if failure:
             return BuiltPlugin(install_path=home, failure=f"{failure}; nothing was moved")
+        evidence.append(_evidence(outcome=outcome, label=label))
     registry_path = home / ".claude" / "plugins" / "installed_plugins.json"
     registry_text = registry_path.read_text(encoding="utf-8") if registry_path.is_file() else None
     built = served_build_identifier(
@@ -183,7 +215,9 @@ def build_plugin(
     if built.sha != tag_commit or not isinstance(install_path, str):
         found = built.sha or built.unresolved
         failure = (
-            f"the builder installed {found}, not the tag's commit {tag_commit}; nothing was moved"
+            f"the builder installed {found}, not the tag's commit {tag_commit}; nothing was moved."
+            f" builder steps: {'; '.join(evidence)}."
+            f" {_registry_evidence(registry_text=registry_text)}"
         )
         return BuiltPlugin(install_path=home, failure=failure)
     return BuiltPlugin(install_path=Path(install_path), failure="")
