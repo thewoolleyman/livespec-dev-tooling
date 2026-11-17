@@ -57,6 +57,16 @@ normal factory run execute it inside the factory's own sandbox. Dispatch that ru
 (`.ai/fabro-dispatch-diagnosis.md`). That run is the repro, not a retry of the failed item. **Never route around a
 guard refusal, and never respell a refused command.** Report the refusal as a missing lane.
 
+**Interim route for a failure that occurs only in the GitHub Actions job environment** (the ARC runner image,
+`actions/checkout`, the uid-1000 steps). The lane for it is a named flavor of livespec-dev-tooling-cwrg3v, owned by
+gate-job-resources and started when FOCUS-TWO-LEVERS ends (ruling by legacy-coordinator-agent, 2026-11-17). Until it
+exists, reproduce such a failure by a labelled diagnostic re-run of the job itself, and read that run's log. Label the
+re-run as a diagnostic, name the failure signature it targets, and take the evidence from its log. A blind retry is
+not a repro: it reads only the pass or fail verdict and teaches nothing about the cause. First read the failed job's
+own log, and compare the jobs that failed with the jobs that did not (by shard, runner and step) before any re-run.
+That comparison found on 2026-11-17 that bd-ib-qawphe's failures sat in only some shards, which cleared the
+workflow's shared setup steps.
+
 ## Find the exact image and tree
 
 **Factory run (petri or candidate).** The image comes from the factory's catalog, not from the workflow's pin,
