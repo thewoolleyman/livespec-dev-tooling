@@ -22,9 +22,12 @@
 # (SPECIFICATION/contracts.md, "Expedited incident execution", public ingress;
 # .ai/tailnet-posture.md), so a GitHub-hosted runner can never reach it. The job
 # therefore runs where the caller's `incident-ci` job runs, passed in as the
-# `runner-labels` input: the caller supplies the same merge-group-trust-guarded
-# expression over CI_INCIDENT_RUNNER_LABELS that its own incident-ci job uses,
-# so a pull request from a fork is never routed to self-hosted capacity. The
+# `runner-labels` input: a JSON-array string the caller resolves through the
+# same merge-group-trust guard and CI_INCIDENT_RUNNER_LABELS variable chain as
+# its incident-ci job's runs-on, with an untrusted fallback of
+# '["ubuntu-latest"]' (fromJSON cannot parse incident-ci's bare
+# 'ubuntu-latest'), so a pull request from a fork is never routed to
+# self-hosted capacity. The
 # input DEFAULTS to GitHub-hosted, so a consumer that passes nothing keeps the
 # hosted shape every shipped reusable workflow has
 # (tests/consumer/test_ci_matrix_shape.py). It dials the controller exactly as

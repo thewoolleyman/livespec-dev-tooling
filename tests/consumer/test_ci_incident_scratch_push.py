@@ -378,6 +378,10 @@ def test_incident_ci_selects_incident_work_only_on_a_pull_request() -> None:
     assert job["outputs"] == {
         "omitted": "${{ steps.entrance.outputs.omitted }}",
         "guard_skip": "${{ needs.merge-group-guard.outputs.skip }}",
+        # Read only by the incident-ci-publish job (livespec-dev-tooling-bqnzcm.4).
+        "release": "${{ steps.released.outputs.tag }}",
+        "aggregate": "${{ steps.entrance.outputs.aggregate }}",
+        "query": "${{ steps.query.outputs.query }}",
     }
     assert steps["entrance"]["if"] == "steps.select.outputs.block == 'present'"
     select = str(steps["select"]["run"])
