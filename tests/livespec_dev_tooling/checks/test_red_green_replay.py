@@ -2926,7 +2926,7 @@ def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(
         "feat: add a feature\n"
         "\n"
         "TDD-Red-Test: tests/test_foo.py\n"
-        "TDD-Red-Test-File-Checksum: sha256:deadbeef\n"
+        "TDD-Red-Test-File-Checksum: sha256:19d5c3ae266564ace077b3f8f75ea5bc4b0c1b75a4ccbe41cc46e72b288c6fd6\n"
         "TDD-Green-Verified-At: 2026-06-02T00:00:00Z\n"
     )
     _commit_all(tmp_path=tmp_path, message=message)
