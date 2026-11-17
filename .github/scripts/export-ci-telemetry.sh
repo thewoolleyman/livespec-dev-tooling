@@ -36,7 +36,7 @@ hex32() { printf '%032x' "$1"; }            # 16-byte trace id
 hex16() { printf '%016x' "$1"; }            # 8-byte span id
 
 run_json="$(gh run view "$RUN_ID" --repo "$REPO" \
-  --json databaseId,headSha,headBranch,event,displayTitle,conclusion,createdAt,startedAt,updatedAt,jobs)"
+  --json databaseId,attempt,headSha,headBranch,event,displayTitle,conclusion,createdAt,startedAt,updatedAt,jobs)"
 
 # Per-job queue time (work-item livespec-dev-tooling-yilyxr.3): `gh run view`'s
 # jobs projection carries startedAt but NOT created_at, so the wait-for-runner
@@ -51,6 +51,7 @@ run_span_id="$(hex16 "$RUN_ID")"
 run_start="$(iso_to_nanos "$(jq -r '.startedAt // .createdAt' <<<"$run_json")")"
 run_end="$(iso_to_nanos "$(jq -r '.updatedAt' <<<"$run_json")")"
 run_concl="$(jq -r '.conclusion // ""' <<<"$run_json")"
+run_attempt="$(jq -r '.attempt // 1' <<<"$run_json")"
 run_code=2; [ "$run_concl" = "success" ] && run_code=1
 
 # `$run_json` carries the whole `jobs` array and MUST reach jq on stdin, never
@@ -64,12 +65,13 @@ run_code=2; [ "$run_concl" = "success" ] && run_code=1
 run_span="$(jq -c \
   --arg trace "$trace_id" --arg span "$run_span_id" \
   --arg start "$run_start" --arg end "$run_end" \
-  --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson code "$run_code" '
+  --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson run_attempt "$run_attempt" --argjson code "$run_code" '
   {traceId:$trace, spanId:$span, name:"ci.run", kind:1,
    startTimeUnixNano:$start, endTimeUnixNano:$end,
    attributes:[
      {key:"repo",value:{stringValue:$repo}},
      {key:"ci.run_id",value:{intValue:($run_id|tostring)}},
+     {key:"ci.run_attempt",value:{intValue:($run_attempt|tostring)}},
      {key:"ci.conclusion",value:{stringValue:(.conclusion // "")}},
      {key:"ci.title",value:{stringValue:(.displayTitle // "")}},
      {key:"git.commit.sha",value:{stringValue:(.headSha // "")}},
@@ -98,7 +100,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
   span="$(jq -nc \
     --arg trace "$trace_id" --arg span "$jspan_id" --arg parent "$run_span_id" \
     --arg name "ci.job.$jname" --arg start "$jstart" --arg end "$jend" \
-    --arg repo "$REPO" --argjson run_id "$RUN_ID" \
+    --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson run_attempt "$run_attempt" \
     --arg jname "$jname" --arg jconcl "$jconcl" --argjson code "$jcode" \
     --argjson jqueue "$jqueue_ms" '
     {traceId:$trace, spanId:$span, parentSpanId:$parent, name:$name, kind:1,
@@ -106,6 +108,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
      attributes:[
        {key:"repo",value:{stringValue:$repo}},
        {key:"ci.run_id",value:{intValue:($run_id|tostring)}},
+       {key:"ci.run_attempt",value:{intValue:($run_attempt|tostring)}},
        {key:"ci.job.name",value:{stringValue:$jname}},
        {key:"ci.job.conclusion",value:{stringValue:$jconcl}},
        {key:"ci.job.queue_ms",value:{intValue:($jqueue|tostring)}}

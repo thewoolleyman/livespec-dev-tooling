@@ -22,6 +22,7 @@ _RUN_ID = 42
 _REPOSITORY = "livespec-ai/livespec-dev-tooling"
 _RUN = {
     "databaseId": _RUN_ID,
+    "attempt": 2,
     "headSha": "a" * 40,
     "headBranch": "master",
     "event": "push",
@@ -301,6 +302,7 @@ def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
     assert _span_attributes(span=spans[0]) == {
         "repo": _REPOSITORY,
         "ci.run_id": "42",
+        "ci.run_attempt": "2",
         "ci.conclusion": "success",
         "ci.title": "publish telemetry",
         "git.commit.sha": "a" * 40,
@@ -311,6 +313,7 @@ def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
         {
             "repo": _REPOSITORY,
             "ci.run_id": "42",
+            "ci.run_attempt": "2",
             "ci.job.name": "check-python",
             "ci.job.conclusion": "success",
             "ci.job.queue_ms": "60000",
@@ -318,6 +321,7 @@ def test_recorded_github_documents_emit_the_shell_exporters_run_and_job_spans(
         {
             "repo": _REPOSITORY,
             "ci.run_id": "42",
+            "ci.run_attempt": "2",
             "ci.job.name": "check-metadata",
             "ci.job.conclusion": "failure",
             "ci.job.queue_ms": "60000",
