@@ -31,4 +31,12 @@ fi
   printf '        requiredDuringSchedulingIgnoredDuringExecution:\n          nodeSelectorTerms:\n'
   printf '            - matchExpressions:\n                - key: kubernetes.io/arch\n                  operator: In\n                  values:\n'
   printf '%s\n' "$arches" | tr ',' '\n' | sed 's/^/                    - /'
+  # A SOFT fill order: faster nodes first (runner-node-preference.conf). A
+  # preference, never a requirement, so capacity and the arch rule above are
+  # unchanged. An absent or empty file renders no preference.
+  pref="${RUNNER_NODE_PREFERENCE_CONF:-$here/runner-node-preference.conf}"
+  if [ -f "$pref" ] && awk '$0 !~ /^[[:space:]]*(#|$)/ { found = 1 } END { exit !found }' "$pref"; then
+    printf '        preferredDuringSchedulingIgnoredDuringExecution:\n'
+    awk '$0 !~ /^[[:space:]]*(#|$)/ { printf "          - weight: %d\n            preference:\n              matchExpressions:\n                - key: kubernetes.io/hostname\n                  operator: In\n                  values:\n                    - %s\n", $2, $1 }' "$pref"
+  fi
 } >"$dst"

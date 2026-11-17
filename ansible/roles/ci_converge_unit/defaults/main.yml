@@ -114,6 +114,11 @@ ci_converge_unit_files:
   - src: workload-arch.conf
     dest: workload-arch.conf
     mode: "0644"
+  # The soft fill order the renderer above adds to every runner pod: faster
+  # nodes first (livespec-dev-tooling-ukoeah, lever 2).
+  - src: arc/runner-node-preference.conf
+    dest: arc/runner-node-preference.conf
+    mode: "0644"
   - src: arc/hook-pod-template.yaml
     dest: arc/hook-pod-template.yaml
     mode: "0644"
