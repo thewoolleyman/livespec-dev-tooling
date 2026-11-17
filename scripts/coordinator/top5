@@ -21,7 +21,7 @@ its typed next_action, the age of its last ledger move (STALE past 60 minutes) a
 newest epic comment, so an ask from a seat that cannot SendMessage (a Mac or Codex
 seat) is seen every tick (rule P3).
 
-TOP mirrors the priorities-record (scope events 2026-11-14T18:24:20Z and 18:37:20Z), and a KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
+TOP mirrors the priorities-record (scope events 2026-11-14T18:24:20Z and 18:37:20Z, and 2026-11-17T07:5xZ (DROP no-local-agent-memory)), and a KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
 `bd show` and `bd comments`, through each tenant's credential wrapper, and local reads
 of the launch hold files.
@@ -60,7 +60,6 @@ import sys
 TOP = [
     ("1a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab bootstrap-credentials-and-onboarding)", "hxi-vxsmdv"),
     ("1b central-credential-service (livespec-overseer; hetzner-xubuntu, workspace livespec-overseer, tab central-credential-service)", "overseer-iyfjbo"),
-    ("1c no-local-agent-memory (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab no-local-agent-memory)", "hxi-7ituzy"),
     ("2 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
     ("3 stale-base-merge-options (GitHub org move to livespec-ai plus merge queue; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-xowhol"),
     ("KEPT throughput-plans-coordinator (owns every factory throughput problem; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-r7iuj6"),
