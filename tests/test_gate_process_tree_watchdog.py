@@ -106,3 +106,5 @@ def test_the_rendered_manifest_starts_the_watchdog_and_prints_a_last_tree_before
     assert 'gate_process_tree_watchdog "${recipe_log}" &' in done.stdout
     assert "@@" not in done.stdout
     assert "preStop:" in done.stdout
+    assert "timeout 5 ps -eo" in done.stdout, "the preStop tree must be bounded by a timeout on ps"
+    assert "terminationGracePeriodSeconds: 30" in done.stdout, "the grace period must be stated"
