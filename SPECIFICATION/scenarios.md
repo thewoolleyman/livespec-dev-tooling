@@ -4491,6 +4491,47 @@ And a class the worker is not enrolled in MUST receive no share, its share being
 And the CI share MUST be expressed in churn slots by the fleet's churn-slot sizing rule
 
 
+## Scenario: a worker's recorded measured split replaces the equal default
+
+Given a joined worker enrolled in the CI, gate and factory classes, whose Node names its host in the host label
+
+And that host's declaration records a measured split with a reason, giving the factory class a zero share and dividing less than the whole of the rest between CI and gate
+
+When enrollment derives its per-class capacity
+
+Then the CI and gate classes MUST each receive their recorded share of the allocatable CPU, rounded down, with the CI share expressed in churn slots by the fleet's churn-slot sizing rule and the gate share in whole gates
+
+And the unallocated remainder MUST NOT be given to any class
+
+And the factory class MUST NOT be enrolled on that worker, its enrollment removed as when the worker leaves a workload class
+
+And the enrollment output MUST name the factory class, its zero share and the recorded reason
+
+And the cohort churn-slot quota and the gate queue's worker flavor MUST be reconciled to the worker's derived capacity in the same enrollment
+
+
+## Scenario: a recorded share for a class the worker cannot run is ignored
+
+Given a joined arm64 worker whose host declaration records a share for a class whose images do not publish arm64
+
+When enrollment derives its per-class capacity
+
+Then that share MUST be ignored and named in the enrollment output
+
+And the shares of the enrolled classes MUST NOT be rescaled
+
+
+## Scenario: an invalid recorded split is refused before any write
+
+Given a joined worker whose host declaration records a split whose shares sum to more than one hundred percent, that names a class other than CI, gate or factory, that omits a class the worker is enrolled in, that gives a share that is not a whole percentage, or that records no reason
+
+When enrollment runs
+
+Then enrollment MUST refuse, naming the declaration and the offending entry
+
+And no node label, extended-resource capacity or queue quota MUST have been written
+
+
 ## Scenario: CI overflows onto a container worker only when fleet capacity is full
 
 Given an enrolled arm64 container worker with derived churn slots
@@ -6144,3 +6185,19 @@ Scenario: the funnel publishes the CI publication route only for an installation
   Then the funnel port publishes that installation's CI publication route at its own path and no other path
   And a publication authenticated by the forge-issued identity token for a job running that commit is verified against the installation's policy
 ```
+
+## Scenario: a declared gate queue routes a repository's full-size gate Jobs and leaves its replay Jobs on the default queue
+
+Given a consuming repository that declares `gate_queue = "gates-wide-lq"` and `gate_cpu = 10` under `[tool.livespec_dev_tooling]`
+And the committed `cluster-queue-gates.yaml` binds `gates-wide-lq` to a ClusterQueue with a flavor holding at least 10 cpu
+When the gate client submits that repository's pre-push gate Job and a Red-leg replay Job
+Then the pre-push gate Job MUST carry the `kueue.x-k8s.io/queue-name` label `gates-wide-lq`
+And the Red-leg replay Job MUST carry the `kueue.x-k8s.io/queue-name` label `gates-lq`
+
+## Scenario: a declared gate queue that names no committed LocalQueue is refused before any gate Job is submitted
+
+Given a consuming repository that declares `gate_queue = "gates-missing-lq"`
+And the committed `cluster-queue-gates.yaml` declares no LocalQueue named `gates-missing-lq`
+When the gate client prepares a delegated push
+Then it MUST refuse the push, naming `gate_queue` and `gates-missing-lq`
+And it MUST NOT submit any gate Job
