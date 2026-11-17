@@ -253,6 +253,10 @@ ci_converge_unit_files:
   - src: gates/forge-retry.sh
     dest: gates/forge-retry.sh
     mode: "0644"
+  # Inlined by the renderer beside forge_retry (livespec-dev-tooling-yrjatv).
+  - src: gates/gate-process-tree-watchdog.sh
+    dest: gates/gate-process-tree-watchdog.sh
+    mode: "0644"
   # The `factory` namespace's artifacts, applied as a DIRECTORY by the boot
   # converge's step 10e (livespec-dev-tooling-f5e6vl). Both files must be here:
   # the step applies the whole directory, so an installed tree carrying only one

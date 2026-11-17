@@ -102,6 +102,8 @@ TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 # (fetch-livespec-core and the sibling clones). It ships beside this script,
 # in the repository and in the wheel alike, and is inlined into the manifest.
 FORGE_RETRY="${GATE_FORGE_RETRY_SH:-${SCRIPT_DIR}/forge-retry.sh}"
+# The quiet-container process-tree printer, inlined beside forge_retry.
+PROCESS_TREE_WATCHDOG="${GATE_PROCESS_TREE_WATCHDOG_SH:-${SCRIPT_DIR}/gate-process-tree-watchdog.sh}"
 # The one declared per-class architecture list (livespec-dev-tooling-ko26ez.6).
 # In this repository it sits one level above gates/; the wheel force-includes it
 # at the same relative place beside the packaged renderer.
@@ -829,6 +831,8 @@ substitute_block GATE_RECIPES "${gate_recipe_lines}"
 # The function only, without its file-header comments: both placeholders sit in
 # scripts whose own comments already say why the retry is there.
 substitute_block GATE_FORGE_RETRY "$(grep -v '^#' "${FORGE_RETRY}")"
+[ -f "${PROCESS_TREE_WATCHDOG}" ] || { echo "FATAL: ${PROCESS_TREE_WATCHDOG} not found — the gate Job prints its process tree through it" >&2; exit 1; }
+substitute_block GATE_PROCESS_TREE_WATCHDOG "$(grep -v '^#' "${PROCESS_TREE_WATCHDOG}")"
 substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
 # EMPTY for a repository whose authority members this run could not establish,
 # which removes the placeholder's whole line: such a Job runs the members it runs
