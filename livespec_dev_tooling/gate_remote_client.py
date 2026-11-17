@@ -84,6 +84,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling._gate_abandoned_job_record import abandon_gate_job, with_record_path
 from livespec_dev_tooling._gate_member_report import parse_member_report
 from livespec_dev_tooling._gate_remote_failed_pod import FailedPod, read_failed_pod
 from livespec_dev_tooling._gate_wait_interrupt import (
@@ -157,7 +158,6 @@ _PUSH_STEP = "push-gate-ref"
 _SUBMIT_STEP = "submit-gate-job"
 _STREAM_STEP = "stream-gate-logs"
 _DELETE_STEP = "delete-gate-ref"
-_DELETE_ABANDONED_JOB_STEP = "delete-abandoned-gate-job"
 
 # The two Job conditions that mean the gate is OVER. Kubernetes reports every
 # condition it has ever set, negative ones included, so the type alone does not
@@ -367,13 +367,10 @@ def _delete_gate_ref(*, request: GateRunRequest, runner: GateCommandRunner) -> S
 
 def _delete_abandoned_gate_job(
     *, request: GateRunRequest, runner: GateCommandRunner, job_name: str
-) -> StepOutcome:
-    """Delete the known Job when the client stops waiting for its verdict."""
-    argv = [*_kubectl(request=request), "delete", "job", job_name]
-    return require_success(
-        step=_DELETE_ABANDONED_JOB_STEP,
-        argv=argv,
-        outcome=runner(argv=argv, cwd=request.repo_root),
+) -> tuple[StepOutcome, Path]:
+    """Save the Job's last log lines, then delete it; return both results (yrjatv)."""
+    return abandon_gate_job(
+        request=request, runner=runner, job_name=job_name, kubectl=_kubectl(request=request)
     )
 
 
@@ -442,12 +439,19 @@ def _gate_a_pushed_tree(
             job_payload=submitted.unwrap().stdout,
         )
         if isinstance(delivered, Failure):
-            deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+            deleted, saved = _delete_abandoned_gate_job(
+                request=request, runner=runner, job_name=job_name
+            )
             report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
-            return Failure(delivered.failure()), False
+            return Failure(with_record_path(failure=delivered.failure(), path=saved)), False
+
+    interrupted_record: list[Path] = []
 
     def cleanup_interrupted_wait() -> None:
-        deleted_job = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+        deleted_job, saved_record = _delete_abandoned_gate_job(
+            request=request, runner=runner, job_name=job_name
+        )
+        interrupted_record.append(saved_record)
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted_job)
         deleted_refs = _delete_gate_ref(request=request, runner=runner)
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted_refs)
@@ -461,14 +465,21 @@ def _gate_a_pushed_tree(
             ),
         )
     except GateWaitInterruptedError as interrupted:
-        return Failure(interrupted_wait_failure(interrupted=interrupted)), False
+        return Failure(
+            with_record_path(
+                failure=interrupted_wait_failure(interrupted=interrupted),
+                path=interrupted_record[-1],
+            )
+        ), False
     if isinstance(terminal, Failure):
-        deleted = _delete_abandoned_gate_job(request=request, runner=runner, job_name=job_name)
+        deleted, saved = _delete_abandoned_gate_job(
+            request=request, runner=runner, job_name=job_name
+        )
         report_gate_cleanup_failure(job_name=job_name, outcome=deleted)
         # A delete acknowledgement does not prove the Job has ceased using its
         # mirror input, so the existing mirror sweep remains the collector for
         # this no-verdict path.
-        return Failure(terminal.failure()), False
+        return Failure(with_record_path(failure=terminal.failure(), path=saved)), False
     ended = terminal.unwrap()
     # Read only when there is a failure to explain. That is a decision about
     # whether to spend an API call, NOT an adjudication: the pod's readings are
