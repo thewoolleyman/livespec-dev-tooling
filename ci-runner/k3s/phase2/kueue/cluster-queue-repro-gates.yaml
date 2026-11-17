@@ -43,6 +43,20 @@
 # `cluster-queue-gates.yaml` in both the C and UTF-8 collations, while the
 # first-draft name `cluster-queue-gates-repro.yaml` sorted BEFORE it in both.
 #
+# PER-NODE FLAVORS (livespec-dev-tooling-cwrg3v). This queue now holds one
+# flavor per gate node (gamingpc, poweredge, gmktec, hp), each pinned by its
+# hostname nodeLabel. `just gate-repro --node <node>` renders a required
+# hostname nodeSelector on the Job, and Kueue assigns only the flavor whose
+# nodeLabels agree with it, so the Job is admitted through that node's quota and
+# runs only there. EVERY quota is ZERO as committed: arming a node means
+# raising ITS flavor to one gate unit in a separate pull request, which belongs
+# to plan gate-job-resources' per-node CPU budget (a repro gate is a second
+# 5 cpu / 8Gi claim on a node whose budget does not count it), and reverting
+# that pull request disarms it. READERS of these values, checked before this
+# change: the ci_pool lane test, the gate-unit test, the lane-order reconciler
+# and converge-worker-queues.sh all read cluster-queue-gates.yaml only, so none
+# sees this file's flavors.
+#
 # RETIRE this file once ddy5xu has named and fixed the hung step and
 # gates-gamingpc-flavor has its 5 / 8Gi back: then an ordinary gate reaches
 # gamingpc and a separate lane has nothing left to reproduce.
@@ -54,6 +68,33 @@ metadata:
 spec:
   nodeLabels:
     kubernetes.io/hostname: gamingpc-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-repro-poweredge-flavor
+spec:
+  nodeLabels:
+    kubernetes.io/hostname: poweredge-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-repro-gmktec-flavor
+spec:
+  nodeLabels:
+    kubernetes.io/hostname: gmktec-xubuntu
+  topologyName: gates-hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-repro-hp-flavor
+spec:
+  nodeLabels:
+    kubernetes.io/hostname: hp-xubuntu
   topologyName: gates-hostname
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
@@ -89,6 +130,27 @@ spec:
             # count. No seat still needs the reproduction route; its code is
             # retired by a follow-up work item under the same plan. Until then
             # `just gate-repro` cannot admit, by design.
+            - name: "cpu"
+              nominalQuota: 0
+            - name: "memory"
+              nominalQuota: 0Gi
+        - name: gates-repro-poweredge-flavor
+          resources:
+            # ZERO: armed per node by a separate, revertable budget change.
+            - name: "cpu"
+              nominalQuota: 0
+            - name: "memory"
+              nominalQuota: 0Gi
+        - name: gates-repro-gmktec-flavor
+          resources:
+            # ZERO: armed per node by a separate, revertable budget change.
+            - name: "cpu"
+              nominalQuota: 0
+            - name: "memory"
+              nominalQuota: 0Gi
+        - name: gates-repro-hp-flavor
+          resources:
+            # ZERO: armed per node by a separate, revertable budget change.
             - name: "cpu"
               nominalQuota: 0
             - name: "memory"
