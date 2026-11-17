@@ -98,3 +98,5 @@ tracked on the owning carrier and is deliberately NOT part of this slice: a
 watcher that only reds its own cron job reproduces the very defect this plan
 exists to remove, because Signal 1 reads only the workflow named `CI` and Signal
 9 reads release lanes, so neither would see it.
+
+See also `docs/incident-release-recovery.md` for how an incident release is recovered in consuming repositories.
