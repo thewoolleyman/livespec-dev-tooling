@@ -1356,9 +1356,9 @@ jobs:
       runner-labels: ${{ needs.merge-group-guard.outputs.trusted == 'true' && (github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || '["ubuntu-latest"]' }}
 
   # Closed-loop CI-telemetry export — mirrors the reference landed in
-  # livespec CORE (PR #477, commit b1e875d). Runs only on master pushes
-  # (never PRs, so it adds no PR-feedback latency; the merge_group arm went
-  # away with that trigger — no merge queue is configured).
+  # livespec CORE (PR #477, commit b1e875d). Runs only on master pushes and
+  # merge_group runs (never PRs, so it adds no PR-feedback latency); the
+  # merge_group arm exports the queue's ci.run spans (livespec-dev-tooling-pixkgb).
   # `needs:` lists EVERY top-level job above so the export runs after the
   # whole matrix; `gh run view` then reads ALL jobs that ran in the run
   # (including each reusable-workflow job) and emits one `ci.run` root span
@@ -1369,7 +1369,7 @@ jobs:
   export-telemetry:
     name: export-telemetry
     needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch, incident-ci]
-    if: ${{ !cancelled() && github.event_name == 'push' }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -1379,10 +1379,10 @@ jobs:
         uses: actions/checkout@v5
 
       # The job runs on every push, so a push to an incident-scratch/** branch
-      # keeps master's job set; only this export is master-only, so a drill
-      # run never enters the github-ci dataset as master CI (7w757z).
+      # keeps master's job set; only this export is master-or-merge-group, so a
+      # drill run never enters the github-ci dataset as master CI (7w757z).
       - name: Export CI run telemetry to Honeycomb (closed-loop verified)
-        if: ${{ github.ref == 'refs/heads/master' }}
+        if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'merge_group' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

@@ -52,7 +52,7 @@ _REF_READ = re.compile(
 # The single admitted ref read: export-telemetry's Honeycomb export step.
 _EXPORT_JOB = "export-telemetry"
 _EXPORT_STEP = "Export CI run telemetry to Honeycomb (closed-loop verified)"
-_EXPORT_GUARD = "${{ github.ref == 'refs/heads/master' }}"
+_EXPORT_GUARD = "${{ github.ref == 'refs/heads/master' || github.event_name == 'merge_group' }}"
 # ci-green's master-health publishing steps (livespec-dev-tooling-bk2d73) publish a check run
 # on master's head only; a scratch push must not publish one, so they read the ref too.
 _PUBLISH_JOB = "ci-green"
@@ -179,11 +179,11 @@ jobs:
     steps:
       - run: just check
   export-telemetry:
-    if: ${{ !cancelled() && github.event_name == 'push' }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     steps:
       - name: Export CI run telemetry to Honeycomb (closed-loop verified)
-        if: ${{ github.ref == 'refs/heads/master' }}
+        if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'merge_group' }}
         run: bash export.sh
 """
 
@@ -343,13 +343,16 @@ def test_the_honeycomb_export_is_master_only_inside_a_job_every_push_runs() -> N
 @pytest.mark.parametrize(
     ("before", "after"),
     [
-        ("        if: ${{ github.ref == 'refs/heads/master' }}\n", ""),
         (
-            "        if: ${{ github.ref == 'refs/heads/master' }}\n",
+            "        if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'merge_group' }}\n",
+            "",
+        ),
+        (
+            "        if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'merge_group' }}\n",
             "        if: ${{ github.event_name == 'push' }}\n",
         ),
         (
-            "    if: ${{ !cancelled() && github.event_name == 'push' }}\n",
+            "    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}\n",
             "    if: ${{ !cancelled() && github.ref == 'refs/heads/master' }}\n",
         ),
         ("  export-telemetry:\n", "  telemetry:\n"),
@@ -362,7 +365,7 @@ def test_the_honeycomb_export_is_master_only_inside_a_job_every_push_runs() -> N
             (
                 "        run: bash export.sh\n"
                 "      - name: Export CI run telemetry to Honeycomb (closed-loop verified)\n"
-                "        if: ${{ github.ref == 'refs/heads/master' }}\n"
+                "        if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'merge_group' }}\n"
                 "        run: bash export.sh\n"
             ),
         ),
