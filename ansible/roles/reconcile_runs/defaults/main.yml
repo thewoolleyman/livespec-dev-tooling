@@ -51,7 +51,7 @@ reconcile_runs_unit_group: root
 reconcile_runs_timer_unit: reconcile-runs
 reconcile_runs_sweep_unit: reconcile-runs-sweep
 reconcile_runs_boot_delay: 5min
-reconcile_runs_interval: 10min
+reconcile_runs_interval: 2min
 
 # Each tenant pass is bounded. A failed pass is retried by the NEXT SWEEP, one
 # interval after this sweep ends, not by Restart=: the orchestrator's unit text
