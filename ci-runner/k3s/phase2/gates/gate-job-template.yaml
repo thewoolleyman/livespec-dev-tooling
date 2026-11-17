@@ -73,6 +73,10 @@ spec:
         app.kubernetes.io/part-of: livespec-ci-gates
         livespec.gate/repo: @@REPO@@
     spec:
+      # The kubelet's default grace period, stated so the preStop budget below is checked
+      # against it: the preStop hook is bounded by `timeout 5` on ps (no network), so its
+      # worst case is about 5 s, far inside this grace period, and cannot extend a gate's kill.
+      terminationGracePeriodSeconds: 30
       restartPolicy: Never
       # Requirement 7, half one. R3 tainted gmktec `node-role/ci=pending:NoSchedule`
       # to keep CI RUNNER pods off it until R5 derived its capacity; a gate was
@@ -799,7 +803,7 @@ spec:
                 command:
                   - /bin/sh
                   - -c
-                  - "{ echo ':: gate: process tree at preStop'; ps -eo pid,ppid,etime,stat,args --forest | cut -c1-200 | head -n 60; } > /proc/1/fd/1 2>&1 || true"
+                  - "{ echo ':: gate: process tree at preStop'; timeout 5 ps -eo pid,ppid,etime,stat,args --forest | cut -c1-200 | head -n 60; } > /proc/1/fd/1 2>&1 || true"
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check
