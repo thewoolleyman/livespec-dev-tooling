@@ -39,6 +39,20 @@ What skipping this cost on 2026-11-17: driver-claude's `commit_green` failure wa
 twice. git-jsonl was retried three times on a probe token error. A slow coverage job was re-run instead of
 measured.
 
+## Route by failure class
+
+| Failure class | Lawful repro route |
+|---|---|
+| Gate image (a delegated pre-commit or pre-push gate Job) | `mise exec -- just gate-repro <repo_root> …` (`justfile:457`, `ci-runner/k3s/phase2/gates/gate-repro.sh`). It runs the gate client and a rendered Job on queue `gates-repro-lq`. It runs only on gamingpc-xubuntu and only with the GATE image. |
+| ARC runner image (a CI job) or factory SANDBOX image (a factory node) | A local container on the dev VPS `vmi3006760.contaboserver.net`, which has docker 28.2.2 and puts the user in the `docker` group. Use `docker run --rm` with the EXACT image reference and digest the failing run used, and clone the preserved tree INSIDE the container. Never write to a host bind-mount. See Step 2. |
+| Node-specific performance (a job that is slow on one node only) | Measure the real run on that node: `sar` history for the job's disk, Honeycomb per-pod `k8s.pod.cpu.usage`, and the kubelet journal (`.ai/deleted-gate-pod-diagnosis.md`, `.ai/ci-node-capacity-reads.md`). A new pod elsewhere does not reproduce it. |
+
+**There is no committed per-node k3s lane for the ARC or sandbox images.** `fleet_host_guard` refuses a hand probe
+pod such as `ssh <node> sudo k3s kubectl apply -f -`. Nobody may respell a command to get around that guard. A
+committed repro lane per node, or an image parameter on `gate-repro`, is build work that is still owed. It is
+routed to gate-job-resources. Until it lands, the local container above is the lawful route. **Never route around
+a guard refusal.** Report it as a missing lane.
+
 ## Step 1: find the exact image and tree
 
 **Factory run (petri or candidate).** The image comes from the factory's catalog, not from the workflow's pin,
@@ -85,16 +99,20 @@ it up the same way, at the gated tree.
 
 ## Step 2: run the failing command in that image
 
-**On the dev host with docker** (vmi3006760 has docker 28 and podman). Put this in a scratchpad script and run
-it with `bash <file>`. The tree is mounted read-only and cloned inside the container. The push URL is disabled,
-and no secret is passed in. Checked on 2026-11-17: `check-format` on a preserve ref in `python-v1.183.1` took
-17 s from start to finish.
+**On the dev host with docker** (`vmi3006760.contaboserver.net` has docker 28.2.2 and podman). Put this in a
+scratchpad script and run it with `bash <file>`. The tree is mounted read-only and cloned inside the container.
+The push URL is disabled, and no secret is passed in. Checked on 2026-11-17: `check-format` on a preserve ref in
+`python-v1.183.1` took 17 s from start to finish.
+
+Run the image by digest. A run record names only the tag, so resolve the digest with
+`docker buildx imagetools inspect <image:tag> --format '{{json .Manifest.Digest}}'`. If the failing pod's
+`imageID` is on record (pod status or the kubelet journal), that digest wins.
 
 ```bash
 set -euo pipefail
 repo=livespec-dev-tooling
 src=refs/heads/needs-human/<dispatch-id>   # or a PR branch ref, or a full commit sha
-img=ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.188.1
+img=ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.188.1@sha256:<digest>
 cmd='mise exec -- just check-format'       # the exact failing command
 dir=$(mktemp -d)
 gh repo clone "livespec-ai/${repo}" "${dir}/src" -- -q --reference-if-able "$HOME/workspace/${repo}" --dissociate
@@ -115,11 +133,11 @@ docker run --rm --cpus 6 --memory 8g -v "${dir}/src":/src:ro \
 - Use braces in `"+${src}:refs/…"`. In zsh, `$src:r` is a history modifier and mangles the refspec
   (`.ai/livespec-operation-gotchas.md`).
 
-**On the cluster**, when the failure depends on the node (the cache tier, CPU contention, the pod network), run
-`mise exec -- just gate-repro <repo-root>` (`ci-runner/k3s/phase2/gates/gate-repro.sh`). It submits ONE gate Job
-for the committed tree through the normal gate client, onto queue `gates-repro-lq` in namespace `gates`, and it
-keeps the Job's logs under `tmp/gate-repro/`. Never hand-create a pod or Job (`kubectl run`, `create` or
-`apply`): `fleet_host_guard` refuses it, and the gates credential cannot delete pods (`gates-rbac.yaml`), so a
+**On the cluster, gate failures only.** Run `mise exec -- just gate-repro <repo-root>`
+(`ci-runner/k3s/phase2/gates/gate-repro.sh`). It submits ONE gate Job for the committed tree through the normal
+gate client, onto queue `gates-repro-lq` in namespace `gates` (gamingpc-xubuntu), and it keeps the Job's logs
+under `tmp/gate-repro/`. Never hand-create a pod or Job (`kubectl run`, `create` or `apply`, directly or over
+`ssh`): `fleet_host_guard` refuses it, and the gates credential cannot delete pods (`gates-rbac.yaml`), so a
 `kubectl run --rm` pod would leak. Namespace `factory` belongs to the sandbox driver. Never create anything there.
 
 **Stay read-only.** The repro never pushes, never writes config, secrets or the ledger, never runs a credential
