@@ -57,11 +57,19 @@ def _repro_quotas() -> dict[str, tuple[int, int]]:
     return quotas
 
 
-def test_every_repro_flavor_holds_zero_or_exactly_one_gate_unit() -> None:
-    """A repro flavor is disarmed (zero) or one whole unit, never partial or two."""
+# The one declared gate size above the default unit: livespec-orchestrator-beads-fabro
+# declares gate_cpu = 10 / gate_memory = 8Gi, so a repro of it needs one flavor that
+# admits that size (its Job was never admitted against 5 cpu, 2026-11-17).
+_LARGE_DECLARED_GATE = (10, 8)
+
+
+def test_every_repro_flavor_holds_zero_one_gate_unit_or_the_large_declared_gate() -> None:
+    """A repro flavor is disarmed (zero), one whole unit, or the one large declared gate."""
     unit = _unit()
     off_unit = {
-        name: quota for name, quota in _repro_quotas().items() if quota not in {(0, 0), unit}
+        name: quota
+        for name, quota in _repro_quotas().items()
+        if quota not in {(0, 0), unit, _LARGE_DECLARED_GATE}
     }
     assert not off_unit, (unit, off_unit)
 
