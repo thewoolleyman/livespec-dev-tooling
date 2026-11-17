@@ -8,12 +8,16 @@ than granting a retry on incomplete evidence.
 from __future__ import annotations
 
 import ast
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from livespec_dev_tooling.flake_retry_announcement import (
+    announce,
+    retry_summary,
+    write_retry_records,
+)
 from livespec_dev_tooling.flake_retry_changes import change_paths, withheld_reason
 from livespec_dev_tooling.flake_retry_decisions import (
     RETRY_ATTEMPTS,
@@ -25,18 +29,10 @@ from livespec_dev_tooling.flake_retry_decisions import (
     retry_marker_for as _retry_marker_for,
 )
 from livespec_dev_tooling.flake_retry_finalizers import preserve_finalizers
-from livespec_dev_tooling.flake_retry_records import (
-    RetryResult,
-    failure_from,
-    records_json,
-)
-from livespec_dev_tooling.flake_retry_records import (
-    summary as records_summary,
-)
+from livespec_dev_tooling.flake_retry_records import RetryResult, failure_from
+from livespec_dev_tooling.flake_retry_sessions import enter_session, is_nested, leave_session
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from _pytest.terminal import TerminalReporter
 
     from livespec_dev_tooling.flake_retry_decisions import Closure, _ModuleFacts
@@ -59,6 +55,7 @@ _FAILED_NODEIDS: set[str] = set()
 _SESSION_WITHHELD: list[str] = []
 _WITHHELD_BY_NODEID: dict[str, str] = {}
 _WORKER_WITHHELD_KEY = "livespec_flake_retry_withheld"
+_LIVE_SESSIONS: list[object] = []
 
 
 def retry_marker_for(
@@ -160,22 +157,6 @@ def record_report(*, report: pytest.TestReport) -> None:
         )
 
 
-def write_retry_records(*, repo_root: Path, results: Iterable[RetryResult]) -> Path:
-    """Write one JSON line for each retried node id beneath the repository tmp tree."""
-    output = repo_root / "tmp" / "flake-retries" / "retries.jsonl"
-    _ = output.parent.mkdir(parents=True, exist_ok=True)
-    _ = output.write_text(
-        records_json(results=results),
-        encoding="utf-8",
-    )
-    return output
-
-
-def retry_summary(*, results: Iterable[RetryResult]) -> str:
-    """Render the loud terminal block required for every retry decision."""
-    return records_summary(results=results)
-
-
 def announce_retries(
     *,
     terminalreporter: TerminalReporter,
@@ -184,30 +165,13 @@ def announce_retries(
     withheld_by_nodeid: dict[str, str] | None = None,
 ) -> None:
     """Persist and announce retry evidence without changing pytest's final verdict."""
-    annotate = os.environ.get("GITHUB_ACTIONS") == "true"
-    if withheld is not None:
-        _ = terminalreporter.write_sep("=", "FLAKE-RETRY-WITHHELD")
-        _ = terminalreporter.write_line(f"no failing test is retried this session: {withheld}")
-        if annotate:
-            _ = terminalreporter.write_line(f"::warning::FLAKE-RETRY-WITHHELD {withheld}")
-    if withheld_by_nodeid:
-        _ = terminalreporter.write_sep("=", "FLAKE-RETRY-WITHHELD")
-        for nodeid, reason in sorted(withheld_by_nodeid.items()):
-            _ = terminalreporter.write_line(f"{nodeid}: {reason}")
-            if annotate:
-                _ = terminalreporter.write_line(
-                    f"::warning::FLAKE-RETRY-WITHHELD {nodeid}: {reason}"
-                )
-    results = list(_RESULTS.values())
-    if not results:
-        return
-    _ = write_retry_records(repo_root=root, results=results)
-    _ = terminalreporter.write_sep("=", "FLAKE-RETRIED")
-    for line in retry_summary(results=results).splitlines()[1:]:
-        _ = terminalreporter.write_line(line)
-    if annotate:
-        for result in results:
-            _ = terminalreporter.write_line(f"::warning::FLAKE-RETRIED {result.nodeid}")
+    announce(
+        terminalreporter=terminalreporter,
+        root=root,
+        results=list(_RESULTS.values()),
+        withheld=withheld,
+        withheld_by_nodeid=withheld_by_nodeid,
+    )
 
 
 def _workeroutput(*, holder: object) -> dict[str, object] | None:
@@ -235,6 +199,8 @@ class _CollectionHook:
     def __call__(
         self, session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
     ) -> None:
+        if is_nested(config=config):
+            return
         _FAILED_NODEIDS.clear()
         _SESSION_WITHHELD.clear()
         _WITHHELD_BY_NODEID.clear()
@@ -254,10 +220,19 @@ class _ConfigureHook:
         preserve_finalizers(config=config)
 
 
+class _SessionStartHook:
+    def __call__(self, session: pytest.Session) -> None:
+        """Flag a session that starts while another is live in this process as nested."""
+        enter_session(config=session.config, live=_LIVE_SESSIONS)
+
+
 class _SessionFinishHook:
     def __call__(self, session: pytest.Session, exitstatus: int) -> None:
         """Send a worker's withholding reason to xdist's controller."""
         del exitstatus
+        leave_session(config=session.config, live=_LIVE_SESSIONS)
+        if is_nested(config=session.config):
+            return
         workeroutput = _workeroutput(holder=session.config)
         if workeroutput is not None and (_SESSION_WITHHELD or _failed_withholding_reasons()):
             workeroutput[_WORKER_WITHHELD_KEY] = {
@@ -291,6 +266,8 @@ class _NodeDownHook:
 
 class _ReportHook:
     def __call__(self, report: pytest.TestReport) -> None:
+        if len(_LIVE_SESSIONS) > 1:
+            return
         record_report(report=report)
         if report.when == "call" and report.outcome == "failed":
             _FAILED_NODEIDS.add(report.nodeid)
@@ -301,6 +278,8 @@ class _SummaryHook:
         self, terminalreporter: TerminalReporter, exitstatus: int, config: pytest.Config
     ) -> None:
         del exitstatus
+        if is_nested(config=config):
+            return
         announce_retries(
             terminalreporter=terminalreporter,
             root=Path(str(config.rootpath)),
@@ -311,6 +290,7 @@ class _SummaryHook:
 
 pytest_collection_modifyitems = _CollectionHook().__call__
 pytest_configure = _ConfigureHook().__call__
+pytest_sessionstart = _SessionStartHook().__call__
 pytest_sessionfinish = _SessionFinishHook().__call__
 pytest_testnodedown = _NodeDownHook().__call__
 pytest_runtest_logreport = _ReportHook().__call__
