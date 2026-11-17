@@ -1059,6 +1059,12 @@ jobs:
       # The merge-group guard's skip output, relayed so ci-green (which needs this job) can hand it
       # to the required-leg reader without joining the incident leaf universe itself.
       guard_skip: ${{ needs.merge-group-guard.outputs.skip }}
+      # Read ONLY by the incident-ci-publish job below (livespec-dev-tooling-bqnzcm.4):
+      # the released tag this job ran, the PASSED aggregate's single JSON line, and
+      # the six-field retained arm query. None of them can make any job omit work.
+      release: ${{ steps.released.outputs.tag }}
+      aggregate: ${{ steps.entrance.outputs.aggregate }}
+      query: ${{ steps.query.outputs.query }}
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -1225,6 +1231,29 @@ jobs:
           # the coverage or spec policy reason. Nothing else writes `omitted`.
           omitted="$(printf '%s' "$aggregate" | "$RELEASED_PYTHON" -I -c 'import json, sys; print(json.dumps(sorted(d["name"] for d in json.load(sys.stdin)["deferred"] if d["reason"] in ("incident-policy:coverage", "incident-policy:spec"))))')"
           echo "omitted=${omitted}" >> "$GITHUB_OUTPUT"
+          # The PASSED aggregate, for the incident-ci-publish job only. It is one
+          # JSON line; a line break would split the output, so it is refused.
+          case "$aggregate" in
+            *$'\n'*) echo "::error::released aggregate is not a single JSON line; nothing is published"; exit 1 ;;
+          esac
+          echo "aggregate=${aggregate}" >> "$GITHUB_OUTPUT"
+
+      # Expedited PRs whose released aggregate PASSED only (the entrance wrote
+      # `aggregate`). The released publisher's `query` operation re-reads the PR
+      # through the authenticated forge read and writes the six-field retained arm
+      # query to the `query` output, which incident-ci-publish posts with the
+      # aggregate. A query it cannot read fails this job naming the cause: an
+      # expedited run whose omissions cannot be published is unaccounted work.
+      - name: Read the retained arm query for publication
+        id: query
+        if: steps.entrance.outputs.aggregate != ''
+        shell: bash
+        env:
+          RELEASED_PYTHON: ${{ steps.released.outputs.python }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          "$RELEASED_PYTHON" -I -m livespec_dev_tooling.incident_ci_publish query
 
       - name: Publish the incident CI outcome records
         if: ${{ always() && steps.select.outputs.block == 'present' }}
@@ -1234,6 +1263,33 @@ jobs:
           path: tmp/incident-ci
           if-no-files-found: ignore
           retention-days: 7
+
+  # The incident CI publisher (livespec-dev-tooling-bqnzcm.4). Runs ONLY when
+  # incident-ci's released aggregate PASSED on an expedited PR (its `aggregate`
+  # output is written nowhere else), and posts that aggregate, the retained arm
+  # query and the release tag to the controller's tailnet-only /ci/publish under
+  # this job's forge-issued OIDC identity. It is called at a full master commit
+  # SHA, never a branch, tag or local path, so the (job_workflow_ref,
+  # job_workflow_sha) pair the controller's CI identity policy pins cannot be
+  # changed by a pull request. NOT a gating job: it is outside ci-green's needs,
+  # so nothing that runs on a non-incident PR or a push changes.
+  #
+  # runner-labels is a JSON-ARRAY STRING, because the publisher reads it with
+  # fromJSON: the same merge-group-trust guard and variable chain as incident-ci's
+  # runs-on, with the untrusted fallback spelled '["ubuntu-latest"]' rather than
+  # incident-ci's bare 'ubuntu-latest', which fromJSON cannot parse.
+  incident-ci-publish:
+    name: incident-ci-publish
+    needs: [merge-group-guard, incident-ci]
+    if: ${{ !cancelled() && needs.incident-ci.outputs.aggregate != '' }}
+    permissions:
+      id-token: write
+    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-incident-ci-publish.yml@f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21
+    with:
+      release: ${{ needs.incident-ci.outputs.release }}
+      aggregate: ${{ needs.incident-ci.outputs.aggregate }}
+      query: ${{ needs.incident-ci.outputs.query }}
+      runner-labels: ${{ needs.merge-group-guard.outputs.trusted == 'true' && (github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || '["ubuntu-latest"]' }}
 
   # Closed-loop CI-telemetry export — mirrors the reference landed in
   # livespec CORE (PR #477, commit b1e875d). Runs only on master pushes

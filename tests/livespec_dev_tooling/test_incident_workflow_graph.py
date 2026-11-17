@@ -111,8 +111,16 @@ def test_an_empty_jobs_mapping_declares_no_job() -> None:
 
 
 def test_the_repository_own_workflow_resolves_to_a_closed_graph() -> None:
-    source = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_bytes()
-    graph = derive_graph(source=source)
+    root = Path(__file__).resolve().parents[2]
+    source = (root / ".github/workflows/ci.yml").read_bytes()
+    # The called incident CI publisher is this repository's own workflow pinned to a
+    # full commit SHA; the reader answers its path from the working tree, because
+    # the graph's shape does not depend on which commit a checkout can resolve.
+    graph = derive_graph(
+        source=source,
+        repository="livespec-ai/livespec-dev-tooling",
+        read_called=lambda path, _sha: (root / path).read_bytes(),
+    )
     assert isinstance(graph, tuple)
     declared = {job.name for job in graph}
     assert {"check-types", "check-lint", "check-coverage", "incident-ci", "ci-green"} <= declared

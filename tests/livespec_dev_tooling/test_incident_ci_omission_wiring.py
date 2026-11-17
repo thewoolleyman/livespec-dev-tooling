@@ -93,7 +93,15 @@ _REQUIRED = frozenset(
 )
 # merge-group-guard is the guarded merge_group shape's first job (org merge-queue
 # cutover, livespec-dev-tooling-xowhol): it is not required and holds no member.
-_ALL_JOBS = _REQUIRED | {"export-telemetry", _GATE_JOB, "merge-group-guard"}
+# incident-ci-publish is the non-gating incident CI publisher (livespec-dev-tooling-bqnzcm.4): it
+# reads incident-ci's `aggregate`, `query` and `release` outputs, never `omitted`, and is outside
+# ci-green's needs.
+_ALL_JOBS = _REQUIRED | {
+    "export-telemetry",
+    _GATE_JOB,
+    "merge-group-guard",
+    "incident-ci-publish",
+}
 
 # The members each job may omit: exactly what the released controller defers
 # for the coverage or spec policy reason. `test_the_guarded_members_are_...`
@@ -262,15 +270,20 @@ def _writer_findings(*, jobs: dict[str, Any]) -> list[str]:
     incident = jobs[_INCIDENT_JOB]
     # The second output only relays the merge-group guard's `skip` verdict to ci-green
     # (livespec-dev-tooling-ymog6r); it names no step of this job and carries no omission.
+    # The remaining three outputs are read only by the incident-ci-publish job
+    # (livespec-dev-tooling-bqnzcm.4) and none of them can make a job omit work.
     if incident.get("outputs") != {
         "omitted": "${{ steps.entrance.outputs.omitted }}",
         "guard_skip": "${{ needs.merge-group-guard.outputs.skip }}",
+        "release": "${{ steps.released.outputs.tag }}",
+        "aggregate": "${{ steps.entrance.outputs.aggregate }}",
+        "query": "${{ steps.query.outputs.query }}",
     }:
         findings.append(f"job {_INCIDENT_JOB} does not publish exactly the entrance step's output")
     writers = [
         (name, step.get("id"))
         for name, job in jobs.items()
-        for step in job["steps"]
+        for step in job.get("steps", [])
         if "omitted=" in step.get("run", "")
     ]
     if writers != [(_INCIDENT_JOB, "entrance")]:

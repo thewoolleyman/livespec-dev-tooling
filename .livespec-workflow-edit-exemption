@@ -1,9 +1,15 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: the REST pull-request reads that compute diff stats (and so answer a transient
-# 422 "too many files changed" right after a force-push) become GraphQL reads of headRefOid
-# and id, and the reverted pull request's opener login moves to issues/<n>. It rewrites
-# existing run: lines in incident-label-ci.yml and reusable-master-health-reconcile.yml, so
-# it is the maintainer tier.
-work_item=livespec-dev-tooling-23yaqm
-reason=Reading a pull request's head sha and node id through GraphQL and its opener login through the issues endpoint returns the same values without the REST diff computation, so a transient too-many-files 422 cannot fail the incident label restart or the master-health reconciler.
+# The change (bqnzcm.4 PR 2): ci.yml's incident-ci job also exports its released
+# tag, its PASSED aggregate line and the retained arm query (a new step running
+# the released publisher's `query` operation, only after the aggregate passed),
+# and a new non-gating incident-ci-publish job calls
+# reusable-incident-ci-publish.yml at master f08e94d9e (the commit the observer
+# policy approves) with those values and a JSON-array runner-labels string. The publisher header's runner-labels wording
+# is corrected to describe what the caller passes. Nothing runs less: the new
+# job and step run only for an expedited PR whose aggregate passed, and ci-green's
+# needs are unchanged. Covered by bqnzcm.4's approval:workflow-edit, applied by
+# legacy-coordinator-agent 01:1xZ 2026-11-16 under coordinator-duties §12 for
+# route (A), whose PR 2 shape is recorded on the item.
+work_item=livespec-dev-tooling-bqnzcm.4
+reason=bqnzcm.4 PR 2: call the pinned incident CI publisher from ci.yml so an expedited PR's passed aggregate is published to the controller
