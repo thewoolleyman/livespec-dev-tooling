@@ -209,16 +209,22 @@ def run_cluster_gate(*, repo_root: Path, command: tuple[str, ...]) -> ClusterGat
         tree_hash=tree_hash,
         capture_output=False,
     )
-    verdict = run_gated_push(request=request, runner=default_gate_command_runner)
+    # The authority half is read BEFORE the Job, as the pre-push client does, so a
+    # refused member withholds the green token: the Job's green must not mint the
+    # token a retry of the same tree would match to skip the members this host
+    # judges (livespec-orchestrator-git-jsonl#1225, livespec-dev-tooling-l7puic).
+    ran = run_host_authority_members(
+        repo_root=repo_root,
+        tree_hash=tree_hash,
+        runner=default_gate_command_runner,
+    )
+    verdict = run_gated_push(
+        request=request,
+        runner=default_gate_command_runner,
+        mint_token=all(run.returncode == 0 for run in ran),
+    )
     if verdict.state == GATE_PASSED:
-        verdict = host_authority_decision(
-            verdict=verdict,
-            ran=run_host_authority_members(
-                repo_root=repo_root,
-                tree_hash=tree_hash,
-                runner=default_gate_command_runner,
-            ),
-        )
+        verdict = host_authority_decision(verdict=verdict, ran=ran)
     status = 0 if verdict.state == GATE_PASSED else 75 if verdict.state == GATE_NO_VERDICT else 1
     return ClusterGateResult(
         exit_status=status,
