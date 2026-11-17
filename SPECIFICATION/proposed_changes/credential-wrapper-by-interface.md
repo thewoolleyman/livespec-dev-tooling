@@ -16,7 +16,7 @@ The fleet-member reconcile mode says secrets are pushed from the `1Password-wrap
 
 ### Motivation
 
-livespec v249 (thewoolleyman/livespec#3252, non-functional-requirements.md fleet-secrets section) makes AWS Systems Manager Parameter Store the single canonical source for fleet secrets, including the GitHub App credentials this mode projects, makes the livespec 1Password Environment a temporary downstream copy, and keeps `/usr/local/bin/with-livespec-env.sh` and its calling convention for callers while only its backend changes at each host's conversion. No host has converted, so the contract names the interface and the canonical owner rather than a backend. Plan epic overseer-iyfjbo, change-plan entry T04. The dependent diagnostic change (entry N07) is held in a separate draft PR until this proposal is revised.
+livespec v249 (livespec-ai/livespec#3252, non-functional-requirements.md fleet-secrets section) makes AWS Systems Manager Parameter Store the single canonical source for fleet secrets, including the GitHub App credentials this mode projects, makes the livespec 1Password Environment a temporary downstream copy, and keeps `/usr/local/bin/with-livespec-env.sh` and its calling convention for callers while only its backend changes at each host's conversion. No host has converted, so the contract names the interface and the canonical owner rather than a backend. Plan epic overseer-iyfjbo, change-plan entry T04. The dependent diagnostic change (entry N07) is held in a separate draft PR until this proposal is revised.
 
 ### Proposed Changes
 
@@ -60,7 +60,7 @@ The Ledger reach rule says the tenant credential comes through `the 1Password en
 
 ### Motivation
 
-livespec v249 (thewoolleyman/livespec#3252) keeps `/usr/local/bin/with-livespec-env.sh` and its calling convention while its backend becomes homelab's shared-credentials launcher at each host's conversion. The 1Password and Keychain wording describes one backend that is being replaced; the interface sentence stays true before and after conversion. Plan epic overseer-iyfjbo, change-plan entry T05.
+livespec v249 (livespec-ai/livespec#3252) keeps `/usr/local/bin/with-livespec-env.sh` and its calling convention while its backend becomes homelab's shared-credentials launcher at each host's conversion. The 1Password and Keychain wording describes one backend that is being replaced; the interface sentence stays true before and after conversion. Plan epic overseer-iyfjbo, change-plan entry T05.
 
 ### Proposed Changes
 
