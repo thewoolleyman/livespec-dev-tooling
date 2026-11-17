@@ -375,7 +375,10 @@ def test_incident_ci_selects_incident_work_only_on_a_pull_request() -> None:
     """A push of any branch selects nothing, so `omitted` stays empty and both flags stay absent."""
     job = _jobs(workflow=_real())["incident-ci"]
     steps = {str(step.get("id")): step for step in _steps(job=job) if "id" in step}
-    assert job["outputs"] == {"omitted": "${{ steps.entrance.outputs.omitted }}"}
+    assert job["outputs"] == {
+        "omitted": "${{ steps.entrance.outputs.omitted }}",
+        "guard_skip": "${{ needs.merge-group-guard.outputs.skip }}",
+    }
     assert steps["entrance"]["if"] == "steps.select.outputs.block == 'present'"
     select = str(steps["select"]["run"])
     assert 'if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then' in select

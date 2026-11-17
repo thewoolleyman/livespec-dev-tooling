@@ -134,9 +134,17 @@ _RUNS_AFTER_FAILURE = (
     "check-per-file-coverage",
     "Publish the flake-retry records for the host-side reader",
 )
+# The last two carry the merge-group tree-equality skip term (livespec-dev-tooling-ymog6r):
+# the guard job's `skip` output is true only for a proven tree-equal one-entry merge group,
+# so a skipped job there moves no omission and reads no incident-omitted member.
+_SKIP_TERM = "needs.merge-group-guard.outputs.skip != 'true'"
 _RUN_STATUS_ONLY = (
     "${{ !cancelled() }}",
     "${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}",
+    "${{ !cancelled() && " + _SKIP_TERM + " }}",
+    "${{ !cancelled() && needs.check-per-file-coverage.result == 'success' && "
+    + _SKIP_TERM
+    + " }}",
 )
 
 # The entrance step's tail: the released aggregate must pass before the write.
@@ -252,7 +260,12 @@ def _writer_findings(*, jobs: dict[str, Any]) -> list[str]:
     """`omitted` has one writer, after the released aggregate passed, with the right list."""
     findings: list[str] = []
     incident = jobs[_INCIDENT_JOB]
-    if incident.get("outputs") != {"omitted": "${{ steps.entrance.outputs.omitted }}"}:
+    # The second output only relays the merge-group guard's `skip` verdict to ci-green
+    # (livespec-dev-tooling-ymog6r); it names no step of this job and carries no omission.
+    if incident.get("outputs") != {
+        "omitted": "${{ steps.entrance.outputs.omitted }}",
+        "guard_skip": "${{ needs.merge-group-guard.outputs.skip }}",
+    }:
         findings.append(f"job {_INCIDENT_JOB} does not publish exactly the entrance step's output")
     writers = [
         (name, step.get("id"))
@@ -501,13 +514,14 @@ _GUARD_OF_MATRIX_TARGET = _GUARD.format(member="matrix.target")
             f"{_GATE_JOB} does not repeat the released omission list",
         ),
         (
-            "    needs: [merge-group-guard, incident-ci]\n    if: ${{ !cancelled() }}\n"
+            "    needs: [merge-group-guard, incident-ci]\n    if: " + _RUN_STATUS_ONLY[2] + "\n"
             "    # The same single variable",
-            "    needs: [merge-group-guard]\n    if: ${{ !cancelled() }}\n    # The same single variable",
+            "    needs: [merge-group-guard]\n    if: " + _RUN_STATUS_ONLY[2] + "\n"
+            "    # The same single variable",
             f"job check-metadata does not read the {_INCIDENT_JOB} job's output",
         ),
         (
-            f"    if: {_RUN_STATUS_ONLY[1]}\n",
+            f"    if: {_RUN_STATUS_ONLY[3]}\n",
             "    if: ${{ needs.incident-ci.outputs.omitted == '[]' }}\n",
             "job check-coverage can be skipped, or is conditioned on more than run status",
         ),

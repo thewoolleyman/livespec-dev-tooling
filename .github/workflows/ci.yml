@@ -175,10 +175,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read
+      checks: read
       contents: read
       pull-requests: read
     outputs:
       trusted: ${{ steps.guard.outputs.trusted }}
+      skip: ${{ steps.skip.outputs.skip || 'false' }}
     steps:
       - name: Resolve the merge group's pull requests against the allowlist
         id: guard
@@ -255,6 +258,50 @@ jobs:
           fi
           echo "trusted=true" >> "$GITHUB_OUTPUT"
 
+      # THE TREE-EQUALITY SKIP (livespec-dev-tooling-ymog6r; plan stale-base-merge-options,
+      # epic livespec-dev-tooling-xowhol, maintainer ruling 2026-11-16). `skip` is true ONLY
+      # for a one-entry merge group whose head tree equals its pull request head's tree, on
+      # a base the head contains, whose head's required Actions check runs ALL read success
+      # on the forge and whose head ci-green reported no incident-omitted set; every other
+      # case, any error included, is false and the whole job graph runs. The decision code
+      # is read from the group's BASE commit (master), never from the enqueued tree, so a
+      # pull request cannot change how its own group is judged; until a base carries the
+      # module the step answers false. The step is best-effort (`continue-on-error`) and event-guarded
+      # in the SHELL, as the allowlist step above is, so the guard job has no event-conditioned
+      # step and never fails because of it. The kill switch is the repository
+      # variable LIVESPEC_MERGE_GROUP_SKIP_DISABLED=true, which forces skip=false.
+      - name: Decide the tree-equality skip from the forge (merge_group only)
+        id: skip
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MG_BASE_REF: ${{ github.event.merge_group.base_ref }}
+          LIVESPEC_MERGE_GROUP_SKIP_DISABLED: ${{ vars.LIVESPEC_MERGE_GROUP_SKIP_DISABLED }}
+        run: |
+          skip=false
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            base_dir="${RUNNER_TEMP}/skip-base"
+            mkdir -p "$base_dir"
+            if gh api "repos/${GITHUB_REPOSITORY}/tarball/${MG_BASE_SHA}" | tar -xz --strip-components=1 -C "$base_dir" --wildcards '*/livespec_dev_tooling/*'; then
+              pythonpath="$base_dir"
+              if ! python3 -c 'import typing_extensions' 2>/dev/null; then
+                if python3 -m pip install --quiet --disable-pip-version-check --target "${RUNNER_TEMP}/skip-deps" 'typing_extensions==4.15.0'; then
+                  pythonpath="${pythonpath}:${RUNNER_TEMP}/skip-deps"
+                fi
+              fi
+              out="$(PYTHONPATH="$pythonpath" python3 -m livespec_dev_tooling.merge_group_skip || true)"
+              printf '%s\n' "$out"
+              if printf '%s\n' "$out" | grep -qx 'skip=true'; then
+                skip=true
+              fi
+            else
+              echo "::warning::merge-group-guard: the base commit's decision code was unreadable; running the full suite"
+            fi
+          fi
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
+
   check-python:
     timeout-minutes: 90  # 7-day max 63 min on a starved node (livespec-dev-tooling-u6jztk)
     name: ${{ matrix.target }}
@@ -266,7 +313,7 @@ jobs:
     # livespec-dev-tooling-ko26ez.7) while jobs whose images are amd64-only
     # keep CI_RUNNER_LABELS. Unset, it routes exactly as before.
     needs: [merge-group-guard]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_PYTHON_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
@@ -361,7 +408,7 @@ jobs:
     # this job running IN FULL when incident-ci failed or refused: only its
     # passed aggregate can omit work here.
     needs: [merge-group-guard, incident-ci]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
@@ -478,7 +525,7 @@ jobs:
     # keeps this job running IN FULL when incident-ci failed or refused, and
     # the producer term keeps today's rule: no consumer without a producer.
     needs: [merge-group-guard, check-per-file-coverage, incident-ci]
-    if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' }}
+    if: ${{ !cancelled() && needs.check-per-file-coverage.result == 'success' && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
@@ -562,7 +609,7 @@ jobs:
     timeout-minutes: 90  # 7-day max 38 min (livespec-dev-tooling-u6jztk)
     name: check-python-batch
     needs: [merge-group-guard]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
@@ -643,6 +690,7 @@ jobs:
   check-fleet-conformance:
     name: check-fleet-conformance
     needs: [merge-group-guard]
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -722,7 +770,7 @@ jobs:
     # this job running IN FULL when incident-ci failed or refused: only its
     # passed aggregate can omit work here.
     needs: [merge-group-guard, incident-ci]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     # The same single variable routes every ordinary gating target.
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
@@ -834,7 +882,7 @@ jobs:
     # this job running IN FULL when incident-ci failed or refused: only its
     # passed aggregate can omit work here.
     needs: [merge-group-guard, incident-ci]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
     container:
       image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
@@ -1007,6 +1055,9 @@ jobs:
     # last lines of the entrance step for the one place it is written.
     outputs:
       omitted: ${{ steps.entrance.outputs.omitted }}
+      # The merge-group guard's skip output, relayed so ci-green (which needs this job) can hand it
+      # to the required-leg reader without joining the incident leaf universe itself.
+      guard_skip: ${{ needs.merge-group-guard.outputs.skip }}
     env:
       LIVESPEC_CI_LANE: ${{ contains(vars.CI_INCIDENT_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
@@ -1288,6 +1339,7 @@ jobs:
       - name: Every required leg was created and concluded success
         env:
           GH_TOKEN: ${{ github.token }}
+          GUARD_SKIP: ${{ needs.incident-ci.outputs.guard_skip }}
         run: |
           jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"
           pages_file="${RUNNER_TEMP}/ci-green-run-jobs-pages.json"
@@ -1297,4 +1349,4 @@ jobs:
           fi
           jobs_lines="$(python3 -c 'import json, sys; [print(json.dumps({"name": j["name"], "status": j["status"], "conclusion": j["conclusion"]})) for page in json.load(open(sys.argv[1])) for j in page["jobs"]]' "$pages_file")"
           printf '%s\n' "$jobs_lines" > "$jobs_file"
-          python3 -m livespec_dev_tooling.ci_green_required_legs --workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file"
+          python3 -m livespec_dev_tooling.ci_green_required_legs --workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file" --guard-skip "$GUARD_SKIP"

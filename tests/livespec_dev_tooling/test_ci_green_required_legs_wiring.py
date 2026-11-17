@@ -66,7 +66,8 @@ _PROJECTION = (
 )
 _READER_LINE = (
     "python3 -m livespec_dev_tooling.ci_green_required_legs "
-    '--workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file"'
+    '--workflow .github/workflows/ci.yml --gate-job ci-green --jobs "$jobs_file" '
+    '--guard-skip "$GUARD_SKIP"'
 )
 _READER_STEP_HEADER = "      - name: Every required leg was created and concluded success\n"
 _UNREADABLE_BRANCH = (
@@ -82,6 +83,7 @@ _READER_STEP = (
     _READER_STEP_HEADER
     + "        env:\n"
     + "          GH_TOKEN: ${{ github.token }}\n"
+    + "          GUARD_SKIP: ${{ needs.incident-ci.outputs.guard_skip }}\n"
     + "        run: |\n"
     + '          jobs_file="${RUNNER_TEMP}/ci-green-run-jobs.jsonl"\n'
     + '          pages_file="${RUNNER_TEMP}/ci-green-run-jobs-pages.json"\n'
@@ -127,7 +129,11 @@ def _replayed_verdict(*, jobs: Path) -> int:
         if line.strip().startswith(_READER)
     ]
     # The step runs from the checkout root; the replay runs from anywhere.
-    resolved = {"$jobs_file": str(jobs), ".github/workflows/ci.yml": str(_CI_YML)}
+    resolved = {
+        "$jobs_file": str(jobs),
+        "$GUARD_SKIP": "false",
+        ".github/workflows/ci.yml": str(_CI_YML),
+    }
     argv = [resolved.get(token, token) for line in lines for token in shlex.split(line)[3:]]
     return main(argv=argv) if lines else 0
 
