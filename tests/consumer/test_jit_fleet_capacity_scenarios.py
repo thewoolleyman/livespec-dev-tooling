@@ -65,6 +65,7 @@ _CI_RUNNER = _REPO_ROOT / "ci-runner"
 _PHASE2 = _CI_RUNNER / "k3s" / "phase2"
 _ARC_DIR = _PHASE2 / "arc"
 _KUEUE_DIR = _PHASE2 / "kueue"
+_PROFILES_DIR = _CI_RUNNER / "k3s" / "phase0-bare-metal" / "profiles"
 # The container-worker queues (kueue/worker/) carry a quota DERIVED at converge
 # time from the enrolled workers' churn-slot capacity (SPECIFICATION/
 # non-functional-requirements.md, "Homelab worker nodes"), so no committed
@@ -106,18 +107,6 @@ _CHURN_SLOT = "ci-runner.io/churn-slot"
 _PHYSICAL_CAP = 482
 _CEILING_MULTIPLE = 2
 _CEILING_FLOOR = 6
-# The ceilings DERIVATION.md "Recorded exceptions to the rule" moves off
-# `max(2 x nominalQuota, 6)`, keyed by ClusterQueue — the same table
-# tests/spec/test_jit_admission_budget.py holds to its DERIVATION.md rows. An
-# exception may waive the rule, never the borrowing clause: it must still sit
-# ABOVE the floor it bounds.
-_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {
-    "fabro-cq": 2,
-    "livespec-orchestrator-master-cq": 4,
-    "livespec-dev-tooling-cq": 20,
-    "livespec-orchestrator-beads-fabro-cq": 14,
-}
-
 _DOC_SEPARATOR = re.compile(r"^---$", re.MULTILINE)
 _KIND = re.compile(r"^kind:\s*(?P<kind>\S+)$", re.MULTILINE)
 _NAME = re.compile(r"^  name:\s*(?P<name>\S+)", re.MULTILINE)
@@ -129,6 +118,13 @@ _MAX_RUNNERS = re.compile(r"^\s*maxRunners:\s*(?P<max>\d+)\s*$", re.MULTILINE)
 _MIN_RUNNERS = re.compile(r"^\s*minRunners:\s*(?P<min>\d+)\s*$", re.MULTILINE)
 _QUEUE_NAME = re.compile(r"^\s*kueue\.x-k8s\.io/queue-name:\s*(?P<lq>\S+)\s*$", re.MULTILINE)
 _SLOT_QUANTITY = re.compile(rf'^{re.escape(_CHURN_SLOT)}:\s*"?(?P<slots>\d+)"?$')
+_ADMISSION_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(?P<capacity>\d+)\s*$", re.MULTILINE)
+_EXCEPTION_ROW = re.compile(
+    r"^\| `(?P<repo>[^`]+)` \| (?P<quota>\d+) \| (?P<rule>\d+) \| "
+    r"\*\*(?P<max>\d+)\*\* \| \d{4}-\d{2}-\d{2} \|",
+    re.MULTILINE,
+)
+_EXCEPTIONS_HEADING = "### Recorded exceptions to the rule"
 
 # The synthetic counter-examples the control arms feed back through the readers.
 _CONTROL_QUEUE_DOCUMENT = """
@@ -231,6 +227,31 @@ def _routed_scale_sets() -> dict[str, tuple[str, int, str]]:
     return routed
 
 
+def _recorded_ceiling_exceptions() -> dict[str, tuple[int, int, int]]:
+    """The per-queue exception ceilings DERIVATION.md records."""
+    derivation = (_KUEUE_DIR / "DERIVATION.md").read_text(encoding="utf-8")
+    assert _EXCEPTIONS_HEADING in derivation
+    section = derivation.split(_EXCEPTIONS_HEADING, 1)[1].split("\n#", 1)[0]
+    exceptions: dict[str, tuple[int, int, int]] = {}
+    for row in _EXCEPTION_ROW.finditer(section):
+        queue = f"{row.group('repo')}-cq"
+        assert queue not in exceptions, f"duplicate recorded ceiling exception for {queue}"
+        exceptions[queue] = tuple(int(row.group(name)) for name in ("quota", "rule", "max"))
+    return exceptions
+
+
+def _pool_capacity() -> int:
+    """The total churn-slot capacity the committed node profiles declare."""
+    capacities = [
+        int(match.group("capacity"))
+        for profile in sorted(_PROFILES_DIR.glob("*.env"))
+        for match in [_ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))]
+        if match is not None
+    ]
+    assert capacities, "at least one pool profile must declare ADMISSION_CAPACITY_C"
+    return sum(capacities)
+
+
 def _borrowing_limited(*, members: dict[str, tuple[int, str | None]]) -> list[str]:
     """Each cohort member that narrows Kueue's default, unlimited within-cohort borrowing."""
     return sorted(
@@ -265,9 +286,22 @@ def _ceilings_without_borrow_headroom(
             f"{name} must route to a cohort member before its logical ceiling can be bounded; "
             f"local_queue={local_queue} targets={targets}"
         )
-        expected = _RECORDED_CEILING_EXCEPTIONS.get(
-            cluster_queue, max(_CEILING_MULTIPLE * floor, _CEILING_FLOOR)
-        )
+        exception = _recorded_ceiling_exceptions().get(cluster_queue)
+        expected = max(_CEILING_MULTIPLE * floor, _CEILING_FLOOR)
+        if exception is not None:
+            recorded_quota, recorded_rule, recorded_ceiling = exception
+            expected = recorded_ceiling
+            if ceiling != expected or ceiling <= floor:
+                wrong.append(f"{name}: maxRunners={ceiling} floor={floor} expected={expected}")
+                continue
+            rule_value = max(_CEILING_MULTIPLE * floor, _CEILING_FLOOR)
+            if recorded_quota != floor or recorded_rule != rule_value:
+                wrong.append(
+                    f"{name}: DERIVATION quota={recorded_quota} rule={recorded_rule} "
+                    f"manifest quota={floor} rule={rule_value}"
+                )
+                continue
+            continue
         if ceiling == expected and ceiling > floor:
             continue
         wrong.append(f"{name}: maxRunners={ceiling} floor={floor} expected={expected}")
@@ -405,12 +439,14 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
 
     outside = _scale_sets_outside_the_finite_slot(values=values)
     borrowable = sum(quota for quota, _ in members.values())
-    assert not outside and 0 < borrowable <= _PHYSICAL_CAP, (
+    capacity = _pool_capacity()
+    assert not outside and borrowable == capacity and 0 < borrowable <= _PHYSICAL_CAP, (
         f"borrowing is bounded by the cohort's summed fair shares, and that bound is "
         f"enforced by the node's finite `{_CHURN_SLOT}` — Kueue's own Admitted condition is "
         f"necessary but NOT sufficient, measured six admitted onto four slots. A scale set "
         f"that does not request AND limit exactly one slot is invisible to the only real "
-        f"gate on the {_PHYSICAL_CAP}-runner cap; outside={outside} borrowable={borrowable}"
+        f"gate on the {_PHYSICAL_CAP}-runner cap; outside={outside} borrowable={borrowable} "
+        f"declared_capacity={capacity}"
     )
 
     control_members = _cohort_members(documents=[_CONTROL_QUEUE_DOCUMENT])
@@ -431,6 +467,19 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
     ) == [
         "control.yaml: maxRunners=2 floor=2 expected=2"
     ], "a recorded exception must still convict a ceiling that leaves no borrowing headroom"
+    exception_queue, (recorded_quota, recorded_rule, recorded_ceiling) = next(
+        (queue, row) for queue, row in _recorded_ceiling_exceptions().items() if row[2] > row[0] + 1
+    )
+    assert _ceilings_without_borrow_headroom(
+        routed={"control.yaml": ("exception-lq", recorded_ceiling, _CONTROL_VALUES)},
+        targets={"exception-lq": exception_queue},
+        members={exception_queue: (recorded_quota + 1, None)},
+    ) == [
+        f"control.yaml: DERIVATION quota={recorded_quota} "
+        f"rule={recorded_rule} "
+        f"manifest quota={recorded_quota + 1} "
+        f"rule={max(_CEILING_MULTIPLE * (recorded_quota + 1), _CEILING_FLOOR)}"
+    ], "a recorded exception must still convict a DERIVATION quota that drifts from its manifest"
     assert _scale_sets_outside_the_finite_slot(values={"control.yaml": _CONTROL_VALUES}) == [
         "control.yaml: requests=None limits=None"
     ], "the finite-slot reader must still convict a scale set that requests no slot"
