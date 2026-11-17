@@ -68,6 +68,7 @@ from returns.result import Failure, Success  # noqa: E402  — vendor-path-aware
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.canonical_checks import canonical_check_renames  # noqa: E402
+from livespec_dev_tooling.checks._canonical_waivers import consumer_waiver_verdict  # noqa: E402
 from livespec_dev_tooling.cross_repo._canonical_reconcile_parse import (  # noqa: E402
     check_recipe_bounds,
     insert_missing_targets,
@@ -354,7 +355,14 @@ def main() -> int:
         _emit_notice(message="no justfile found; skipping canonical check wiring reconcile")
         return 0
 
-    slugs = _slugs_from_env()
+    canonical_slugs = _slugs_from_env()
+    waived = tuple(
+        waiver.slug
+        for waiver in consumer_waiver_verdict(
+            root=Path.cwd(), canonical=canonical_slugs, selected=()
+        ).honoured
+    )
+    slugs = tuple(slug for slug in canonical_slugs if slug not in waived)
     justfile_text = justfile.read_text(encoding="utf-8")
     inventory = Path.cwd() / _INVENTORY_NAME
     inventory_text = inventory.read_text(encoding="utf-8") if inventory.is_file() else None
