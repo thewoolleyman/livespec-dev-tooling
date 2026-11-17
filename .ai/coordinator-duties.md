@@ -395,15 +395,20 @@ no factory run, until that plan archives with its Proof of Done verified. Mainta
 do all this.  Make it the top priority to get the expedited plan done." A wedged factory route is also a reason to
 hand-land (coordinator's reading).
 
-**A hand-landed orchestrator PR carries `factory-override` before it is ready (coordinator's reading).** In
-livespec-orchestrator-beads-fabro, the required `check-factory-provenance` refuses any PR not authored by the factory
-GitHub App unless it carries the `factory-override` label with a reason paragraph in its body (or matches a retained
-incident receipt). The check reads the label from the pull_request event payload, so a label added after CI started
-needs ONE close and reopen of the PR; re-running the failed job replays the old payload and fails identically
-(orchestrator `.ai/local-implementation-close-path.md`). Every routing of a hand-land into that repository says so.
-Other fleet repositories do not run the check. Measured 2026-11-17: livespec-orchestrator-beads-fabro#5437, #5438 and
-#5440 each failed once on it, and the coordinator's first remedy (re-run the job) was wrong, corrected by
-stale-base-merge-options.
+**A hand-landed orchestrator PR that touches product Python carries `factory-override` before it is ready (coordinator's
+reading).** In livespec-orchestrator-beads-fabro, the required `check-factory-provenance` is FILE-SCOPED: it judges only
+changed `.py` files under the product prefixes the repository declares in `pyproject.toml` `[tool.livespec_dev_tooling]`
+(`source_trees` plus `source_tree_prefixes`; today `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/`,
+`.claude-plugin/scripts/bin/`, `dev-tooling/checks/`, `.claude/hooks/` and `.claude-plugin/hooks/`). A PR with such a
+file must be authored by the factory GitHub App or carry the `factory-override` label with a reason paragraph in its
+body (or match a retained incident receipt); a PR with none passes with a vacuous result. The check reads the label from
+the pull_request event payload, so a label added after CI started needs ONE close and reopen of the PR; re-running the
+failed job replays the old payload and fails identically (orchestrator `.ai/local-implementation-close-path.md`). Every
+routing of a product-Python hand-land into that repository says so; adding the label to any other hand PR is harmless.
+Other fleet repositories do not run the check. Measured 2026-11-17: #5437, #5438 and #5440 (product `.py`) each failed
+once on it, while #5450-#5453, #5456 (a workflow file) and #5457 (docs) passed with no label; the coordinator's first
+remedy (re-run the job) was wrong, corrected by stale-base-merge-options. Code basis: orchestrator
+`factory_provenance_check.py` and `_factory_bypass_product_paths.py` at a804cf0e3.
 
 **The release window is waived for P1 carriers and for releases that unblock a roll or a throughput fix.** The owning
 seat, the coordinator, or throughput-plans-coordinator may dispatch Release Please at once
