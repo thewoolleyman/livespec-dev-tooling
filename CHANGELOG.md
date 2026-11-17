@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.218.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.217.0...v1.218.0) (2026-11-17)
+
+
+### Features
+
+* **ci:** the master-health publisher states green, external or defect (livespec-dev-tooling-arfnpo) ([618d2c4](https://github.com/livespec-ai/livespec-dev-tooling/commit/618d2c44d03fd34e4d267921fcf7a40faa5a69c1))
+* red ([f7950d6](https://github.com/livespec-ai/livespec-dev-tooling/commit/f7950d649689c0fc82f6f4a2a1924c8af390bf92))
+
+
+### Bug Fixes
+
+* **ci:** incident-ci reads the PR body through issues/&lt;n&gt; so a transient too-many-files 422 cannot fail the step (livespec-dev-tooling-qpe3zt) ([5ea38a5](https://github.com/livespec-ai/livespec-dev-tooling/commit/5ea38a57a1b83c01ceff8c3f2ca6de13952e6434))
+* **fleet:** the orchestrator adopt honours a documented currency successor that holds the build ([82ab324](https://github.com/livespec-ai/livespec-dev-tooling/commit/82ab324b112f078b8f6336dccc1f640b409f132a))
+* **gates:** a detached run refused for host authority leaves no green token behind (livespec-dev-tooling-l7puic) ([ca6b6e3](https://github.com/livespec-ai/livespec-dev-tooling/commit/ca6b6e39685b2ab6dc4194871c8e07ae1bc62ef6))
+* **incident:** the CI publisher sends the controller only the aggregate keys and reason characters it verifies (livespec-dev-tooling-uoumll) ([597ec33](https://github.com/livespec-ai/livespec-dev-tooling/commit/597ec33d36153e98ab9bfdd6f45efa254e1ab232))
+* the flake-retry plugin asks the release-metadata question once per session, not once per item (livespec-dev-tooling-pl6b2t) ([8362b86](https://github.com/livespec-ai/livespec-dev-tooling/commit/8362b86351251fcbdbac12d60779bc2e68923a72))
+
 ## [1.217.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.216.0...v1.217.0) (2026-11-17)
 
 
