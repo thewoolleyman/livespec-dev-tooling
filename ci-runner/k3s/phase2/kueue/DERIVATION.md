@@ -1496,7 +1496,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 6 | 12 | **20** | 2026-11-16 |
-| `livespec-orchestrator-beads-fabro` | 4 | 8 | **14** | 2026-11-16 |
+| `livespec-orchestrator-beads-fabro` | 5 | 10 | **14** | 2026-11-18 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -2644,3 +2644,19 @@ The budget document's averages at 6 slots already sum to about 30 of 32 (runners
 **Revert trigger and read.** Roll back to 7 if BestEffort `full` avg60 crosses 30, or if livespec-dev-tooling or livespec-orchestrator-beads-fabro CI queue wait rises with no throughput gain. Revisit 9 only after a clean read at load. The 22:00Z read: gmktec idle and BestEffort avg60, and the pending CI workloads for dev-tooling and orchestrator against the 21:01Z baseline (10 and 10).
 
 **Revert.** Set gmktec 7 (or 9 after a clean read), the orchestrator quota to match the capacity, and the exception row to its rule value.
+
+## gamingpc 4: cohort 32 (2026-11-18)
+
+**Why.** throughput-plans-coordinator ruled GO on option A of gate-job-resources' measured proposal (plan ukoeah, under 6e5pyj), recorded here because the caps are derived in this file. Over 15:03Z-19:30Z on 2026-11-18 poweredge, the slowest node, ran 31.5% of runner pods although the scheduler's soft preference ranks it last (nodeAffinity weights 100/60/40/20 on the custom ci-runner-scheduler). `ci-runner.io/churn-slot` is an extended resource, so a node with no free slot is filtered before scoring: poweredge takes overflow only once the faster nodes' slots are full. gamingpc turns its slots over 4.1 times per 10 minutes, the fastest of the four (gmktec 2.8 per slot, hp 2.5, poweredge 1.15).
+
+**Measured before figures (cap 3).** Orchestrator shard job, median / p90 / n minutes: gamingpc 3.9 / 6.1 / 27, gmktec 4.9 / 7.5 / 61, hp 7.7 / 9.5 / 23, poweredge 8.8 / 11.7 / 55. Dev-tooling full coverage step: gamingpc 15.7 / 15.9 (n=3, small), gmktec 16.2 / 19.0, poweredge 30.8 / 32.0. Shard queue wait median 0.4, p90 3.4 min (n=175). Fleet M1 7.38 per hour at 21:51Z. The earlier "slots in use" figures undercounted (28% of jobs mapped to a node) and are not relied on.
+
+**The change.** gamingpc-xubuntu `ADMISSION_CAPACITY_C` 3 -> 4, so the pool's declared capacity is poweredge 17 + gmktec 8 + hp 3 + gamingpc 4 = 32. livespec-orchestrator-beads-fabro-cq 4 -> 5 takes the unit, because it runs the shard work this move speeds up, so the quotas sum to 32. The orchestrator's `maxRunners` stays 14 (recorded exception; quota 5 / rule 10). gmktec stays at 8: it is a factory-pod node, and is a later step. gamingpc keeps its 25% reserve for local sessions inside the cap (wsjl7j).
+
+**Order of apply.** Capacity first, then quota, never above the applied capacity: `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit gamingpc-xubuntu`, read back on the node (the extended resource `ci-runner.io/churn-slot` reads 4), then `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`, converging the quotas to 32. Take a gamingpc BestEffort `cpu.pressure` avg60 reading before the apply (none exists for the baseline window).
+
+**Revert triggers (any one).** gamingpc orchestrator shard p90 above 6.1 x 1.25 = 7.6 min; gamingpc node CPU-pressure (BestEffort) avg60 above 30 on two reads; dev-tooling full coverage step median on gamingpc above 18 min; a local-session complaint on gamingpc.
+
+**Measured read.** +2 h after the apply, rerun the same steps on the same node over a window of similar load (work step `just coverage-shard N 4` for orchestrator shards, `just check-per-file-coverage` for dev-tooling), and compare per-slot turnover, not raw pod counts, since four slots raise raw counts by design. This is also the owed 3-to-4 read on plan ci-runtime-and-cost.
+
+**Revert.** Restore gamingpc 3 and orchestrator 4, then apply in reverse: `ci_converge_unit` first (quotas back to 31), then `node_extended_resource --limit gamingpc-xubuntu`.

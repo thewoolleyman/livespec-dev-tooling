@@ -212,16 +212,16 @@ def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_tota
         for profile in sorted(_PROFILES.glob("*.env"))
     }
     assert capacities == {
-        "gamingpc-xubuntu": 3,
+        "gamingpc-xubuntu": 4,
         "gmktec-xubuntu": 8,
         "hp-xubuntu": 3,
         "poweredge-xubuntu": 17,
     }, (
-        f"the stranded-capacity split is poweredge 17, gmktec 8, hp 3 and gamingpc 3 "
-        f'(DERIVATION.md "gmktec 8: cohort 31 (2026-11-16)"); got {capacities}'
+        f"the stranded-capacity split is poweredge 17, gmktec 8, hp 3 and gamingpc 4 "
+        f'(DERIVATION.md "gamingpc 4: cohort 32 (2026-11-18)"); got {capacities}'
     )
-    assert sum(capacities.values()) == 31 == _cohort_quota_total(), (
-        f"the profiles must sum to 31 and equal the summed cohort quotas; "
+    assert sum(capacities.values()) == 32 == _cohort_quota_total(), (
+        f"the profiles must sum to 32 and equal the summed cohort quotas; "
         f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
     )
     derivation = _DERIVATION.read_text(encoding="utf-8")
