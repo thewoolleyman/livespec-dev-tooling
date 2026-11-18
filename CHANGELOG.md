@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.220.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.220.0...v1.220.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* a refused POST /ci/publish writes one journal line naming its reason (livespec-dev-tooling-q6uucs) ([aa2f57e](https://github.com/livespec-ai/livespec-dev-tooling/commit/aa2f57e6622b7f01ab670a88df8f7a22f285ec19))
+
 ## [1.220.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.219.1...v1.220.0) (2026-11-17)
 
 
