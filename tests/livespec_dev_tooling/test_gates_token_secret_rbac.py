@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -79,6 +81,15 @@ def _declared_yaml() -> str:
         line
         for line in _RBAC.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().startswith("#")
+    )
+
+
+def _role_binding() -> dict[str, object]:
+    """The first declared RoleBinding, before the factory identity is selected by name."""
+    return next(
+        document
+        for document in yaml.safe_load_all(_RBAC.read_text(encoding="utf-8"))
+        if document and document["kind"] == "RoleBinding"
     )
 
 
@@ -152,6 +163,13 @@ def test_factory_gate_submission_has_an_independent_bound_service_account() -> N
         "ServiceAccount, Role, RoleBinding, and ServiceAccount-token Secret "
         "for factory sandboxes"
     )
+
+
+def test_the_factory_binding_points_to_the_factory_role() -> None:
+    """The factory binding must not receive the VPS gate-submitter Role."""
+    binding = _role_binding()
+
+    assert binding["roleRef"]["name"] == "gate-submitter-factory"
 
 
 def test_the_rbac_manifest_declares_no_secret_holding_a_github_credential() -> None:
