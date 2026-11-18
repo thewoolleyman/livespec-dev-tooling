@@ -1,0 +1,111 @@
+---
+# breakage_pass -- one service and one timer per watched repository, each running
+# the orchestrator's `dispatcher.py breakage-pass` under the repository's
+# committed credential wrapper. See HOST_VARS.md.
+
+- name: Refuse an incomplete breakage pass configuration
+  ansible.builtin.assert:
+    that:
+      - breakage_pass_plugin_root | string | length > 0
+      - breakage_pass_runner_bin | string | length > 0
+      - breakage_pass_state_dir | string | length > 0
+      - breakage_pass_interval_minutes | int > 0
+      - breakage_pass_interval_minutes | int + (breakage_pass_timeout_seconds | int / 60) <= 30
+      - breakage_pass_repos | selectattr('name', 'undefined') | list | length == 0
+      - breakage_pass_repos | selectattr('repo', 'undefined') | list | length == 0
+    fail_msg: >-
+      The breakage pass needs a plugin root, a runner path, a state directory,
+      and a repository list whose entries carry a name and a repo. The interval
+      plus the pass timeout must stay within 30 minutes, the schedule the
+      Definition of Done sets.
+    success_msg: breakage pass configuration is complete
+
+- name: Refuse a plugin root under a versioned plugin cache
+  ansible.builtin.assert:
+    that:
+      - "'/.claude/plugins/cache/' not in breakage_pass_plugin_root"
+      - not breakage_pass_plugin_root.startswith('/tmp')
+      - not breakage_pass_state_dir.startswith('/tmp')
+      - not breakage_pass_runner_bin.startswith('/tmp')
+    fail_msg: >-
+      The plugin root, the runner and the state directory must be stable paths.
+      A plugin-cache path names one build and a /tmp path does not survive a
+      reboot.
+    success_msg: every breakage pass path is stable
+
+- name: Check that the tenant credential wrapper is installed
+  ansible.builtin.stat:
+    path: "{{ breakage_pass_tenant_wrap_bin }}"
+  register: breakage_pass_tenant_wrap
+  become: true
+  check_mode: false
+
+- name: Refuse to install without the tenant credential wrapper
+  ansible.builtin.assert:
+    that: breakage_pass_tenant_wrap.stat.exists and breakage_pass_tenant_wrap.stat.executable
+    fail_msg: >-
+      {{ breakage_pass_tenant_wrap_bin }} is not an executable file. Converge
+      role reconcile_runs first; a pass files ledger items and must run under the
+      repository's committed credential wrapper, never a bare family wrapper.
+    success_msg: the tenant credential wrapper is installed
+
+- name: Create the breakage pass state directory
+  ansible.builtin.file:
+    path: "{{ breakage_pass_state_dir }}"
+    state: directory
+    owner: "{{ breakage_pass_user }}"
+    group: "{{ breakage_pass_group }}"
+    mode: "0750"
+  become: true
+
+- name: Install the breakage pass runner
+  ansible.builtin.copy:
+    src: livespec-breakage-pass
+    dest: "{{ breakage_pass_runner_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the breakage pass service units
+  ansible.builtin.template:
+    src: breakage-pass.service.j2
+    dest: "{{ breakage_pass_unit_dir }}/livespec-breakage-pass-{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ breakage_pass_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install the breakage pass timer units
+  ansible.builtin.template:
+    src: breakage-pass.timer.j2
+    dest: "{{ breakage_pass_unit_dir }}/livespec-breakage-pass-{{ item.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ breakage_pass_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Reload systemd so the breakage pass units are known
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: breakage_pass_manage_systemd | bool
+
+- name: Set the breakage pass timers to the hold
+  # enabled true starts every timer; false leaves each installed, disabled and
+  # stopped, so a converge on a host that has not been cleared starts nothing.
+  ansible.builtin.systemd_service:
+    name: "livespec-breakage-pass-{{ item.name }}.timer"
+    enabled: "{{ breakage_pass_enabled | bool }}"
+    state: "{{ 'started' if breakage_pass_enabled | bool else 'stopped' }}"
+  become: true
+  when: breakage_pass_manage_systemd | bool
+  loop: "{{ breakage_pass_repos }}"
+  loop_control:
+    label: "{{ item.name }}"

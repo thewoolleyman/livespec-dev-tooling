@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# One breakage pass over {{ item.name }} (role breakage_pass). Its verdict lines
+# and the closing breakage-pass-result line go to the journal.
+[Unit]
+Description=Run the livespec breakage pass over {{ item.name }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ breakage_pass_user }}
+Group={{ breakage_pass_group }}
+WorkingDirectory={{ item.repo }}
+Environment=TW_REPO={{ item.repo }}
+Environment=TW_FAMILY_WRAPPER={{ breakage_pass_family_wrapper }}
+ExecStart={{ breakage_pass_tenant_wrap_bin }} -- {{ breakage_pass_runner_bin }} {{ item.name }} {{ item.repo }} {{ breakage_pass_plugin_root }} {{ breakage_pass_python }} {{ breakage_pass_state_dir }}
+TimeoutStartSec={{ breakage_pass_timeout_seconds }}

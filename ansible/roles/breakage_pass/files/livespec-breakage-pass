@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run one breakage pass and journal its outcome (role breakage_pass).
+#
+# usage: livespec-breakage-pass <name> <repo> <plugin_root> <python> <state_dir>
+#
+# `dispatcher.py breakage-pass` prints one verdict line per watched workflow, and
+# nothing at all when the repository watches none. This script adds one line per
+# pass either way, so the journal shows that the pass ran and how it ended:
+#
+#   breakage-pass-result repo=<name> rc=<n>
+#
+# A pass that exits 0 refreshes <state_dir>/<name>.last-success. The pass's own
+# exit status is this script's exit status.
+set -u
+name=$1
+repo=$2
+plugin_root=$3
+python=$4
+state_dir=$5
+
+"$python" "$plugin_root/scripts/bin/dispatcher.py" breakage-pass --repo "$repo"
+rc=$?
+printf 'breakage-pass-result repo=%s rc=%d\n' "$name" "$rc"
+if [ "$rc" -eq 0 ]; then
+    touch "$state_dir/$name.last-success"
+fi
+exit "$rc"

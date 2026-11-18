@@ -1,0 +1,51 @@
+---
+# breakage_pass -- the host timer that runs `dispatcher.py breakage-pass` against
+# each watched repository and journals its verdict lines (work item
+# livespec-orchestrator-beads-fabro bd-ib-voazyv, slice S3 of plan
+# ci-runtime-and-cost). See HOST_VARS.md.
+
+# The hold. With false the role installs every unit and leaves every timer
+# disabled and inactive, so a merge or an apply never starts a pass by itself.
+# This is the only switch that starts a timer.
+breakage_pass_enabled: false
+
+# The repositories whose watched workflows (`dispatcher.breakage_workflows` in
+# their committed .livespec.jsonc) the pass reads. One service and one timer per
+# entry. Each entry:
+#   name   slug; names the units and the success marker
+#   repo   the repository's primary checkout on this host
+breakage_pass_repos: []
+
+# The pass is the orchestrator's. The role runs it from the orchestrator's own
+# checkout on this host, never from a versioned plugin-cache path: a cache path
+# names one build and goes stale on the next plugin update
+# (.ai/stale-plugin-build-path.md).
+breakage_pass_orchestrator_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+breakage_pass_plugin_root: "{{ breakage_pass_orchestrator_checkout }}/.claude-plugin"
+breakage_pass_python: /usr/bin/python3
+
+# The run-time credential-wrapper resolver, installed by role reconcile_runs. A
+# pass files ledger items, so it runs under the tenant's committed
+# credential_wrapper exactly as a reconcile-runs pass does.
+breakage_pass_tenant_wrap_bin: /usr/local/libexec/livespec-tenant-wrap.sh
+breakage_pass_family_wrapper: /usr/local/bin/with-livespec-env.sh
+
+breakage_pass_user: ubuntu
+breakage_pass_group: ubuntu
+
+# The runner script and the per-repository success markers live outside /tmp: a
+# reboot empties it (the 2026-11-13 reboot, work item bd-ib-voazyv).
+breakage_pass_runner_bin: /usr/local/libexec/livespec-breakage-pass
+breakage_pass_state_dir: /var/lib/livespec/breakage-pass
+
+breakage_pass_unit_dir: /etc/systemd/system
+# The DoD asks for a pass at least every 30 minutes. OnUnitInactiveSec counts
+# from the end of the previous pass, so the gap between starts is this interval
+# plus that pass's runtime; the timeout below keeps the sum under 30 minutes.
+breakage_pass_boot_delay: 3min
+breakage_pass_interval_minutes: 15
+breakage_pass_timeout_seconds: 600
+
+# Test seam: false renders every file and skips the systemd calls. Hosts keep the
+# default.
+breakage_pass_manage_systemd: true
