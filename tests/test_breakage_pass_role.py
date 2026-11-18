@@ -21,6 +21,8 @@ _ANSIBLE = _REPO_ROOT / "ansible"
 _ROLE = _ANSIBLE / "roles" / "breakage_pass"
 _RUNNER = _ROLE / "files" / "livespec-breakage-pass"
 _CACHE_SEGMENT = "/.claude/plugins/cache/"
+_SHARED = "/home/ubuntu/workspace/livespec-orchestrator-beads-fabro"
+_DEDICATED = "/home/ubuntu/.local/share/breakage-pass/livespec-orchestrator-beads-fabro"
 
 
 _BRANCH = "master"
@@ -319,7 +321,7 @@ def test_the_dev_host_playbook_carries_the_role_and_the_host_variables_enable_it
 
     assert re.search(r"- role: breakage_pass\n\s+tags: \[breakage_pass\]", playbook)
     assert re.search(r"^breakage_pass_enabled: true$", host_vars, re.MULTILINE)
-    assert "/home/ubuntu/workspace/livespec-orchestrator-beads-fabro" in host_vars
+    assert _DEDICATED in host_vars
 
 
 def test_the_service_hands_the_runner_the_orchestrator_checkout_and_branch() -> None:
@@ -343,3 +345,55 @@ def test_the_role_refuses_a_missing_checkout_or_branch_and_the_docs_name_the_acc
     assert "COMMITTED IS NOT CONVERGED" in docs
     assert "merge-base --is-ancestor" in docs
     assert "exit 70" in docs
+
+
+def test_the_default_clone_is_dedicated_and_never_the_shared_workspace_checkout() -> None:
+    defaults = _defaults()
+
+    assert defaults["breakage_pass_orchestrator_checkout"] == _DEDICATED
+    assert defaults["breakage_pass_shared_checkout"] == _SHARED
+    assert (
+        defaults["breakage_pass_orchestrator_checkout"] != defaults["breakage_pass_shared_checkout"]
+    )
+    assert not str(defaults["breakage_pass_orchestrator_checkout"]).startswith("/tmp")
+    assert defaults["breakage_pass_orchestrator_origin_url"] == ""
+    assert (
+        defaults["breakage_pass_beads_metadata_source"]
+        == "{{ breakage_pass_shared_checkout }}/.beads/metadata.json"
+    )
+
+
+def test_the_dev_host_reads_the_orchestrator_from_the_dedicated_clone_not_the_shared_tree() -> None:
+    host_vars = yaml.safe_load(
+        (_ANSIBLE / "inventory" / "host_vars" / "vps.yml").read_text(encoding="utf-8")
+    )
+
+    assert host_vars["breakage_pass_orchestrator_checkout"] == _DEDICATED
+    repos = {entry["name"]: entry["repo"] for entry in host_vars["breakage_pass_repos"]}
+    assert repos["livespec-orchestrator-beads-fabro"] == _DEDICATED
+    assert _SHARED not in repos.values()
+    # With the orchestrator's repo equal to the checkout, the runner syncs it once.
+    assert not any(entry["repo"].startswith(_SHARED) for entry in host_vars["breakage_pass_repos"])
+
+
+def test_the_role_creates_the_clone_provisions_metadata_and_refuses_the_shared_tree() -> None:
+    tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+
+    assert "Clone the orchestrator for the breakage pass" in tasks
+    assert 'creates: "{{ breakage_pass_orchestrator_checkout }}/.git"' in tasks
+    assert 'GIT_TERMINAL_PROMPT: "0"' in tasks
+    assert "force: false" in tasks
+    assert "Refuse a dedicated clone that is, holds or sits inside the shared checkout" in tasks
+    assert "bd init" in tasks  # named only in the refusal text: never run
+    assert "git, -C" in tasks
+    assert "ansible_check_mode" in tasks
+
+
+def test_the_docs_name_the_dedicated_clone_and_its_acceptance_readback() -> None:
+    docs = (_ROLE / "HOST_VARS.md").read_text(encoding="utf-8")
+
+    assert "DEDICATED clone" in docs
+    assert f"C={_DEDICATED}" in docs
+    assert "5b2161340be4e875050b6866805967e8bfaeec52" in docs
+    assert "b1f671938a9745962d6046e2c1bed5621fa66908" in docs
+    assert "bd init" in docs

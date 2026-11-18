@@ -3,15 +3,19 @@
 #
 # usage: livespec-breakage-pass <name> <repo> <plugin_root> <python> <state_dir> <checkout> <branch>
 #
-# The pass reads two checkouts on this host: the orchestrator's own (<checkout>,
-# the dispatcher it runs) and the watched repository's (<repo>, the committed
-# .livespec.jsonc it reads). Nothing else advances either of them, so a merged fix
-# is not a running fix: COMMITTED IS NOT CONVERGED. Before each pass this script
-# fetches origin/<branch> in each and fast-forwards it, FAILING CLOSED. It refuses
-# (exit 70, no success marker) when the checkout is not a git checkout, is on a
-# branch other than <branch> (a detached HEAD is the usual state), has modified
-# tracked files, cannot fetch, holds commits origin/<branch> lacks, or cannot
-# fast-forward. A pass never runs on a stale or foreign reader.
+# The pass reads two trees on this host: the orchestrator's (<checkout>, the
+# dispatcher it runs) and the watched repository's (<repo>, the committed
+# .livespec.jsonc it reads). For the orchestrator itself they are one DEDICATED
+# clone that this script alone advances. It is never the shared workspace checkout
+# the factory's dispatcher launches from: a fast-forward under a running launcher is
+# unsafe, so that tree is neither synced nor run from. A merged fix is not a running
+# fix: COMMITTED IS NOT CONVERGED. Before each pass this script fetches origin/<branch>
+# in each tree (once, when <repo> is <checkout>) and fast-forwards it, FAILING CLOSED.
+# It refuses (exit 70, no success marker) when the tree is not a git checkout, is on a
+# branch other than <branch> (a fresh clone is on it, a detached HEAD is also fine),
+# has modified tracked files (untracked and ignored files do not count), cannot fetch,
+# holds commits origin/<branch> lacks, or cannot fast-forward. A pass never runs on a
+# stale or foreign reader.
 #
 # One line per synced checkout:
 #   breakage-pass-sync repo=<name> path=<path> head=<sha> origin=<sha> action=<current|advanced>
