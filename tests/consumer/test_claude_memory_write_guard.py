@@ -326,14 +326,15 @@ def test_the_mac_playbook_checks_preconditions_before_it_converges_anything() ->
     assert precondition["tasks"][1]["become"] is True
 
 
-def test_only_the_two_memory_guard_playbooks_select_the_mac_group() -> None:
+def test_only_the_known_playbooks_select_the_mac_group() -> None:
     playbooks = (_REPO_ROOT / "ansible").glob("*.yml")
     selecting = sorted(
         path.name
         for path in playbooks
         if "interactive_claude_macs" in path.read_text(encoding="utf-8")
     )
-    assert selecting == ["claude-memory-guard-macs.yml"]
+    # The second is the authorized_keys login-key playbook (livespec-dev-tooling-gs3hp5).
+    assert selecting == ["authorized-keys-macs.yml", "claude-memory-guard-macs.yml"]
 
 
 def test_the_vendored_hook_imports_and_runs_on_python_3_9() -> None:

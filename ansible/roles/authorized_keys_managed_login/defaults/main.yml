@@ -1,0 +1,9 @@
+---
+# A host that applies this role MUST declare the account, group and path in
+# group_vars or host_vars: with any of them empty, the role's first task refuses
+# before changing anything.
+authorized_keys_managed_login_user: ""
+authorized_keys_managed_login_group: ""
+authorized_keys_managed_login_path: ""
+# Each entry: {name, public_key} and optionally state: absent (removes its block).
+authorized_keys_managed_login_entries: []

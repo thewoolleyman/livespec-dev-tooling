@@ -864,6 +864,7 @@ subprocess_spawn_allowlist = [
     # against a temporary account fixture using the exact ansible-core pin that
     # the drift recipe uses; the child process is the behaviour under test.
     "tests/consumer/test_authorized_keys_managed.py",
+    "tests/consumer/test_authorized_keys_managed_login.py",
     # Incident transport requires a fresh interpreter for vendor bootstrap and
     # real child environment propagation. These properties cannot be observed
     # in pytest's already-imported process; the exact test file scrubs coverage
