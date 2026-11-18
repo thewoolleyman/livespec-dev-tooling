@@ -225,3 +225,42 @@ def test_empty_account_vars_refuse_before_changing_anything(*, tmp_path: Path) -
     assert result.returncode != 0
     assert "must be declared" in result.stdout + result.stderr
     assert path.read_text(encoding="utf-8") == _UNRELATED
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    ["", "ssh-ed25519", "notakey AAAAC3Nza", "ssh-ed25519 not*base64!", "x y"],
+)
+@pytest.mark.parametrize("check", [False, True])
+def test_a_malformed_public_key_refuses_and_leaves_the_file_unchanged(
+    *, tmp_path: Path, bad_key: str, check: bool
+) -> None:
+    """A key that is not a type plus a base64 body never reaches the adopt regexp."""
+    original = _UNRELATED + "\n"
+    path = _authorized_keys(root=tmp_path, text=original)
+    entry = {"name": "bad", "public_key": bad_key}
+
+    result = _run(root=tmp_path, path=path, entries=[entry], check=check)
+
+    assert result.returncode != 0
+    assert "not a key type followed by a base64 body" in result.stdout + result.stderr
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_placing_the_block_before_adopting_keeps_one_copy_and_is_repeatable(
+    *, tmp_path: Path
+) -> None:
+    """A hand-placed line in the middle is replaced by the block; a repeat apply changes nothing."""
+    hand = _PUBLIC_KEY + " hand placed\n"
+    original = (
+        _UNRELATED.splitlines(keepends=True)[0] + hand + _UNRELATED.splitlines(keepends=True)[1]
+    )
+    path = _authorized_keys(root=tmp_path, text=original)
+    entry = _entry()
+
+    assert _changed(result=_run(root=tmp_path, path=path, entries=[entry], check=False)) > 0
+
+    final = path.read_text(encoding="utf-8")
+    assert final == _UNRELATED + _expected_block(entry=entry)
+    assert final.count(_KEY_BLOB) == 1
+    assert _changed(result=_run(root=tmp_path, path=path, entries=[entry], check=False)) == 0
