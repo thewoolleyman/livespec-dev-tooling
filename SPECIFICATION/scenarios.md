@@ -5613,6 +5613,80 @@ Then it MUST emit the run's `ci.run` and `ci.job.<name>` spans by running that m
 
 And the member's repository MUST carry no copy of the exporter's span-building logic
 
+## Scenario: a rebase-merged pull request whose covering master run succeeded is emitted once as merged green
+
+Given a repository's default-branch history in which one pull request landed three commits by rebase-merge
+
+And the `CI` push run on that pull request's merge head was cancelled, and the `CI` push run on the next first-parent commit concluded `SUCCESS`
+
+When the merged-green reconciler runs a pass over that repository
+
+Then it MUST send exactly one `pr.merged` event for that pull request to `pr-throughput`
+
+And that event MUST carry `pr.docs_only` false, `pr.is_release` false, `pr.own_run_conclusion` `CANCELLED`, `ci.covering_conclusion` `SUCCESS`, `pr.merged_green` true, `pr.merged_green_own_run` false and `emitter` `merged-green-reconciler`
+
+And a second pass from the watermark the first pass wrote MUST send no event for that pull request
+
+## Scenario: a pull request whose covering master run failed is emitted as not merged green
+
+Given a merged pull request whose covering default-branch `CI` push run concluded `FAILURE`
+
+When the merged-green reconciler runs a pass over that repository
+
+Then it MUST send that pull request's `pr.merged` event with `ci.covering_conclusion` `FAILURE` and `pr.merged_green` false
+
+## Scenario: a merged pull request with no master verdict yet is held until its verdict lands
+
+Given a merged pull request with no default-branch `CI` push run at or after its merge head that has reached a verdict
+
+When the merged-green reconciler runs a pass over that repository
+
+Then it MUST send no event for that pull request
+
+And the repository's watermark MUST stay at or before that pull request's `mergedAt`
+
+## Scenario: a merged pull request that never gets a master verdict is emitted as unverified after 24 hours
+
+Given a merged pull request whose repository has no default-branch `CI` push run at or after its merge head that has reached a verdict
+
+And its `mergedAt` is more than 24 hours before the pass
+
+When the merged-green reconciler runs a pass over that repository
+
+Then it MUST send that pull request's `pr.merged` event once, with `ci.covering_conclusion` `NO_VERDICT` and `pr.merged_green` false
+
+And the pass's `merged-green.pass` event MUST count it as sent unverified
+
+## Scenario: a docs-only pull request is emitted but left out of the throughput headline
+
+Given a merged pull request whose every changed path ends in `.md`, and whose covering default-branch `CI` push run concluded `SUCCESS`
+
+When the merged-green reconciler runs a pass over that repository
+
+Then it MUST send that pull request's `pr.merged` event with `pr.merged_green` true and `pr.docs_only` true
+
+And the board's first panel MUST NOT count that event
+
+## Scenario: a merged pull request with no successful pull-request CI run carries no stage that needs one
+
+Given a merged-green pull request whose final head has no successful `CI` pull_request run
+
+When the merged-green reconciler runs a pass over that repository
+
+Then its `pr.merged` event MUST carry `pr.lead_time_minutes`, `pr.stage_start_to_open_minutes` and `pr.stage_merge_to_green_minutes`
+
+And it MUST NOT carry `pr.pr_ci_green_at`, `pr.stage_open_to_ci_green_minutes` or `pr.stage_ci_green_to_merge_minutes`
+
+## Scenario: a merged-green reconciler pass reports its GraphQL cost and makes no REST request
+
+Given recorded GitHub GraphQL responses for one pass over a repository, each carrying `rateLimit.cost`
+
+When the merged-green reconciler runs that pass
+
+Then it MUST send one `merged-green.pass` event carrying the sum of those costs and the number of `pr.merged` events it sent
+
+And no request of the pass MAY go to a GitHub REST path
+
 ## Scenario: a check runner reclaims the coverage directory a killed runner left behind
 
 Given a coverage-namespace directory under the system temp directory whose recorded creator process is no longer running

@@ -93,6 +93,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Merged-green throughput telemetry",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Radar admission function",
     "work_item": "livespec-dev-tooling-hvfc6c",
     "first_seen": "2026-11-04"
@@ -464,6 +471,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a docs-only pull request is emitted but left out of the throughput headline",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires",
     "work_item": "livespec-dev-tooling-r5o5zh",
     "first_seen": "2026-10-24"
@@ -702,9 +716,37 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a merged pull request that never gets a master verdict is emitted as unverified after 24 hours",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a merged pull request with no master verdict yet is held until its verdict lands",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a merged pull request with no successful pull-request CI run carries no stage that needs one",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a merged runner-pool change reaches the live cluster through one committed apply",
     "work_item": "livespec-dev-tooling-h6jsgv",
     "first_seen": "2026-11-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a merged-green reconciler pass reports its GraphQL cost and makes no REST request",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -821,6 +863,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pull request whose covering master run failed is emitted as not merged green",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
     "work_item": "livespec-dev-tooling-22wpdk",
     "first_seen": "2026-11-02"
@@ -845,6 +894,13 @@
     "heading": "## Scenario: a re-run test's record reaches the host-side reader as a CI artifact",
     "work_item": "livespec-dev-tooling-ljea46",
     "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a rebase-merged pull request whose covering master run succeeded is emitted once as merged green",
+    "work_item": "livespec-dev-tooling-gaetnq",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",
