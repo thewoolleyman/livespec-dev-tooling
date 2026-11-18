@@ -149,7 +149,9 @@ def _run_converge_scale_set_step(
     helm_stub = "\n".join(
         [
             "#!/bin/bash",
-            'release="$3"; values="$8"',
+            '[ "$1" = history ] && exit 1',
+            'release="$3"; values=""',
+            'for ((i = 1; i <= $#; i++)); do [ "${!i}" = -f ] && { j=$((i + 1)); values="${!j}"; break; }; done',
             f'echo "$release $(<"$values")" >> {calls}',
             "",
         ]
@@ -161,12 +163,14 @@ def _run_converge_scale_set_step(
     ):
         _ = path.write_text(text, encoding="utf-8")
         path.chmod(0o755)
+    chart = tmp_path / "chart.tgz"
+    _ = chart.write_bytes(b"chart")
     program = "\n".join(
         [
             "set -euo pipefail",
             f'ARC_DIR="{arc}"',
             "RUNNERS_NAMESPACE=arc-runners",
-            "ARC_SCALE_SET_CHART=chart.tgz",
+            f"ARC_SCALE_SET_CHART={chart}",
             "log() { :; }",
             # Step 5b's decision, which step 7 reads: whether any node can host a listener.
             f"arc_listeners_placeable={'true' if listeners_placeable else 'false'}",
