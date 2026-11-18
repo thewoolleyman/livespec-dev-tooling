@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.223.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.222.0...v1.223.0) (2026-11-18)
+
+
+### Features
+
+* **incident:** the incident-merge principal decides from the incident authority chain alone (livespec-dev-tooling-u3nbm3) ([fed666d](https://github.com/livespec-ai/livespec-dev-tooling/commit/fed666dcccb3daaa375c2e33f1b7257de17d2051))
+* red ([0a22a96](https://github.com/livespec-ai/livespec-dev-tooling/commit/0a22a9673a40d2523f8ae9e17d6ca0137baf9218))
+* red ([ebc247b](https://github.com/livespec-ai/livespec-dev-tooling/commit/ebc247bd5dfddc86539a367c19b5e7903ec84ea7))
+
 ## [1.222.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.221.0...v1.222.0) (2026-11-18)
 
 
