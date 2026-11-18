@@ -251,6 +251,10 @@ reconcile_runs_staleness_on_failure: host-unit-alert@%n.service
 # the timer. The orchestrator is the first repository; it prints a verdict line
 # only for workflows it declares in dispatcher.breakage_workflows.
 breakage_pass_enabled: true
+# A repository with no successful pass for an hour alerts through role
+# host_unit_alert's unit-failure path, once per stale episode (the same route as
+# reconcile_runs_staleness_on_failure above).
+breakage_pass_staleness_on_failure: host-unit-alert@%n.service
 breakage_pass_repos:
   - name: livespec-orchestrator-beads-fabro
     repo: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Check breakage pass success-marker ages every {{ breakage_pass_staleness_interval }}
+
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec={{ breakage_pass_staleness_interval }}
+Persistent=true
+Unit={{ breakage_pass_staleness_unit }}.service
+
+[Install]
+WantedBy=timers.target

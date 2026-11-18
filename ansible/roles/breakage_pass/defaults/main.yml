@@ -39,12 +39,32 @@ breakage_pass_runner_bin: /usr/local/libexec/livespec-breakage-pass
 breakage_pass_state_dir: /var/lib/livespec/breakage-pass
 
 breakage_pass_unit_dir: /etc/systemd/system
+breakage_pass_unit_owner: root
+breakage_pass_unit_group: root
 # The DoD asks for a pass at least every 30 minutes. OnUnitInactiveSec counts
 # from the end of the previous pass, so the gap between starts is this interval
 # plus that pass's runtime; the timeout below keeps the sum under 30 minutes.
 breakage_pass_boot_delay: 3min
 breakage_pass_interval_minutes: 15
 breakage_pass_timeout_seconds: 600
+# A pass that overruns its bound gets this long to stop before systemd kills it,
+# so the worst gap between two starts is interval + timeout + stop = 26.5 minutes.
+breakage_pass_stop_timeout_seconds: 90
+
+# Dead-man. Each successful pass touches <state_dir>/<name>.last-success; the
+# staleness unit fails, naming the repository and the age, once a marker is older
+# than the bound. It runs role reconcile_runs's staleness check against this
+# role's markers, so that role must be converged first. The bound is two worst
+# gaps plus a margin.
+breakage_pass_stale_after_seconds: 3600
+breakage_pass_staleness_interval: 5min
+breakage_pass_staleness_unit: livespec-breakage-pass-staleness
+breakage_pass_staleness_bin: /usr/local/libexec/livespec-reconcile-runs-staleness
+# The staleness unit's OnFailure= target; empty adds none. The check raises one
+# alert per stale episode, then again after the re-alert bound.
+breakage_pass_staleness_on_failure: ""
+breakage_pass_staleness_alert_state: "{{ breakage_pass_state_dir }}/.staleness-alerted"
+breakage_pass_staleness_realert_seconds: 86400
 
 # Test seam: false renders every file and skips the systemd calls. Hosts keep the
 # default.
