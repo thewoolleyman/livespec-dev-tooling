@@ -523,7 +523,9 @@ def test_the_unit_is_hardened_and_the_registry_is_a_declared_host_fact_never_a_g
                 "PrivateTmp=yes",
             )
         ),
-        "ReadWritePaths" not in unit,
+        [line for line in unit.splitlines() if line.startswith("ReadWritePaths")]
+        == ["ReadWritePaths=-/root/.config/op"],
+        "Environment=OPENV_KEEP_PRIVILEGES=1" in unit.splitlines(),
         "--registry /declared/by/host_vars/installed_plugins.json" in unit,
         ".claude" not in template_text,
         defaults["incident_observer_merge_registry"] == "",

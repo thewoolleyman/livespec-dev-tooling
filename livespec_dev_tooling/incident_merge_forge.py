@@ -10,16 +10,24 @@ it must read at merge time live on the forge, and this module reads them
   `expedited-incident-response` label. NECESSARY, NEVER SUFFICIENT: the
   incident authority chain is the sole authority for the merge.
 - `required_checks_verdict` — whether EVERY context of the default branch's
-  EFFECTIVE required-check set (the set `branch_protection_alignment` grades,
-  read by the shared `checks._effective_required_checks`) concluded `success`
-  on the exact head SHA. A ruleset bypass also skips `required_status_checks`,
+  RULESET-required check set (read by the shared `checks._effective_required_checks`)
+  concluded `success` on the exact head SHA. A ruleset bypass also skips `required_status_checks`,
   so this verification is the principal's own and is never left to the forge.
+
+EVERY READ FITS THE MERGE APP'S GRANT (Contents read, Pull requests read and write, Checks
+read, Commit statuses read, Metadata read). Measured live with the App's own token
+(2026-11-18, livespec-dev-tooling-o6u7jm): the classic branch-protection read answers 403
+(it needs Administration read) and the Actions runs read needs Actions read, so neither is
+used. The required set is the repository's RULESETS alone (`rules/branches/<branch>`,
+Metadata read); a context required only by classic protection is therefore not verified
+here (master's classic protection lists no contexts). A merge-queue run is told apart by
+its check suite's head branch (`gh-readonly-queue/...`), read from the Checks API.
 
 A context is green only when every piece of evidence for it on that SHA says
 `success`: its latest counted check run, and its latest commit status. A check
-run counts only when its check suite belongs to a GitHub Actions run whose
-event is not `merge_group`; a run that ran only on a `merge_group` event, or
-whose event cannot be shown, never counts. A failing, pending or absent context
+run counts only when its check suite ran on a branch that is not a merge queue's
+(`gh-readonly-queue/`); a run that ran only in a merge queue, or whose suite's branch
+cannot be shown, never counts. A failing, pending or absent context
 is not green, and `NotGreen.contexts` names each one. An empty effective set is
 not green either: a vacuous pass verifies nothing.
 
@@ -35,7 +43,7 @@ from typing import Literal, cast
 from livespec_dev_tooling.checks._effective_required_checks import (
     EffectiveSetUnreadable,
     ForgeReader,
-    read_effective_required_set,
+    read_ruleset_required_set,
 )
 from livespec_dev_tooling.incident_strict_json import IncidentJsonRefusalError, strict_json
 
@@ -52,7 +60,7 @@ __all__: list[str] = [
 ]
 
 INCIDENT_LABEL = "expedited-incident-response"
-_MERGE_GROUP_EVENT = "merge_group"
+_QUEUE_BRANCH_PREFIX = "gh-readonly-queue/"
 # Paginated check-run pages outgrow the strict decoder's 64 KiB default; this
 # still bounds a runaway answer.
 _READ_LIMIT = 8 * 1024 * 1024
@@ -142,18 +150,18 @@ def has_incident_label(*, forge: ForgeReader, repo: str, pr_number: int) -> bool
     )
 
 
-def _suite_events(*, forge: ForgeReader, repo: str, head_sha: str) -> dict[object, object]:
-    """Each GitHub Actions check suite on the head, mapped to the event it ran on."""
-    path = f"repos/{repo}/actions/runs?head_sha={head_sha}&per_page=100"
-    runs = _members(pages=_pages(forge=forge, path=path), key="workflow_runs", path=path)
-    return {run.get("check_suite_id"): run.get("event") for run in runs}
+def _suite_branches(*, forge: ForgeReader, repo: str, head_sha: str) -> dict[object, object]:
+    """Each check suite on the head, mapped to the branch it ran on (Checks read)."""
+    path = f"repos/{repo}/commits/{head_sha}/check-suites?per_page=100"
+    suites = _members(pages=_pages(forge=forge, path=path), key="check_suites", path=path)
+    return {suite.get("id"): suite.get("head_branch") for suite in suites}
 
 
 def _run_states(
     *, forge: ForgeReader, repo: str, head_sha: str
 ) -> tuple[dict[str, str], dict[str, CheckState]]:
     """Per name, the latest counted check run's state, and why an uncounted name is absent."""
-    events = _suite_events(forge=forge, repo=repo, head_sha=head_sha)
+    branches = _suite_branches(forge=forge, repo=repo, head_sha=head_sha)
     path = f"repos/{repo}/commits/{head_sha}/check-runs?per_page=100"
     runs = _members(pages=_pages(forge=forge, path=path), key="check_runs", path=path)
     latest: dict[str, tuple[int, str]] = {}
@@ -164,9 +172,9 @@ def _run_states(
             continue
         suite = run.get("check_suite")
         suite_id = cast("dict[str, object]", suite).get("id") if isinstance(suite, dict) else None
-        event = events.get(suite_id)
-        if event is None or event == _MERGE_GROUP_EVENT:
-            uncounted[name] = "event-unknown" if event is None else "merge-group-only"
+        branch = branches.get(suite_id)
+        if not isinstance(branch, str) or branch.startswith(_QUEUE_BRANCH_PREFIX):
+            uncounted[name] = "event-unknown" if not isinstance(branch, str) else "merge-group-only"
             continue
         state = "pending" if run.get("status") != "completed" else str(run.get("conclusion"))
         if name not in latest or run_id > latest[name][0]:
@@ -207,13 +215,13 @@ def required_checks_verdict(*, forge: ForgeReader, repo: str, head_sha: str) -> 
     Never raises for a forge failure: a set or an answer this run did not read
     whole is `NotGreen` with the reason, and the principal refuses on it.
     """
-    effective = read_effective_required_set(reader=forge, repo=repo)
+    effective = read_ruleset_required_set(reader=forge, repo=repo)
     if isinstance(effective, EffectiveSetUnreadable):
         return NotGreen(head_sha=head_sha, reason=effective.detail)
     if not effective.contexts:
         return NotGreen(
             head_sha=head_sha,
-            reason=f"the effective required-check set of {effective.branch} is empty",
+            reason=f"the ruleset required-check set of {effective.branch} is empty",
         )
     try:
         runs, uncounted = _run_states(forge=forge, repo=repo, head_sha=head_sha)
