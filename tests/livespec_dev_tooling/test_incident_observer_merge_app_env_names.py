@@ -1,9 +1,10 @@
-"""The observer role names the incident-merge App's variables and enables nothing.
+"""The observer role names the incident-merge App's variables and one task reads them.
 
 The role declares the two variable NAMES the credential wrapper projects for the
 incident-merge principal, beside the recovery App's and distinct from them, and they
-are the names `incident_merge_app` reads. No task reads them yet, so declaring them
-writes no credential file and enables no merge. Names only are asserted, never values.
+are the names `incident_merge_app` reads. Exactly one task, the converge's root-only
+credential write, reads them, and it enables no merge by itself. Names only are
+asserted, never values.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ def test_the_merge_app_variables_are_not_the_recovery_apps() -> None:
     assert recovery.isdisjoint({MERGE_APP_ID_ENV, MERGE_APP_KEY_ENV})
 
 
-def test_no_task_or_template_reads_the_merge_app_variables_yet() -> None:
+def test_only_the_converge_credential_task_reads_the_merge_app_variables() -> None:
     readers = [
         path.relative_to(base.ROLE).as_posix()
         for path in sorted(base.ROLE.rglob("*"))
@@ -35,4 +36,4 @@ def test_no_task_or_template_reads_the_merge_app_variables_yet() -> None:
         and path.relative_to(base.ROLE).parts[0] != "defaults"
         and any(name in path.read_text(encoding="utf-8", errors="replace") for name in _NAMES)
     ]
-    assert readers == []
+    assert readers == ["tasks/converge.yml"]
