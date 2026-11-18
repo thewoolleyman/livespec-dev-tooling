@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# Runs the incident-merge runner for ONE expedited repair pull request: the instance
+# name (%i) is the pull request number, so this unit cannot be started without one
+# (`systemctl start livespec-incident-merge@<number>`). It runs as root only because the
+# merge App's credential file is root-owned 0600 and must never be readable by the
+# observer's own account. Installed by livespec-dev-tooling
+# ansible/roles/incident_observer (livespec-dev-tooling-o6u7jm); never hand-edit.
+[Unit]
+Description=Merge expedited incident repair pull request %i as the incident-merge principal
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists={{ incident_observer_merge_app_path }}
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory={{ incident_observer_reference_dir }}
+ExecStart={{ incident_observer_venv }}/bin/python -I -m livespec_dev_tooling.incident_merge_runner --pr %i --project-root {{ incident_observer_reference_dir }} --state-dir {{ incident_observer_state_dir }} --credential {{ incident_observer_merge_app_path }} --registry {{ incident_observer_merge_registry }}
+# Hardened: the runner writes nothing on this host (its ledger comment and forge calls go
+# over the network), so the filesystem is read-only and no path is writable.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes

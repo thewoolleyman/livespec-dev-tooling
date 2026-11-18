@@ -173,6 +173,9 @@ honeycomb_trigger_recipients_check_checkout: /home/ubuntu/workspace/vps-info
 # The account this host's candidates run as; controller.json carries its uid as
 # candidate_uid, which the controller refuses to equal its own.
 incident_observer_candidate_user: ubuntu
+# The Claude plugin registry naming this host's registered canonical incident authority; the
+# incident-merge runner's oneshot unit reads it. The apply refuses when this file is absent.
+incident_observer_merge_registry: /home/ubuntu/.claude/plugins/installed_plugins.json
 
 # --- otel_collector ---
 # The pressure telemetry service posts OTLP directly and reads the collector's

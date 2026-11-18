@@ -554,6 +554,12 @@ supervisor_entry_files = [
     # the tolerated SystemExit main guard, and a typed principal API kept
     # separate from main's CLI exit status.
     "livespec_dev_tooling/incident_recovery_principal_service.py",
+    # The incident-merge runner (livespec-dev-tooling-o6u7jm) is the one process that
+    # merges an expedited repair as the incident-merge App. It owns the stdout contract
+    # (one named line per outcome, exit 0/1/2/3) the oneshot unit's journal reads, so it
+    # needs `no_write_direct` and the tolerated SystemExit main guard; it carries no broad
+    # Exception catch and every host effect stays in the injected bindings.
+    "livespec_dev_tooling/incident_merge_runner.py",
     "livespec_dev_tooling/canonical_checks.py",
     "livespec_dev_tooling/cross_repo/ci_yaml_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/codex_acp_pin_rewrite.py",
