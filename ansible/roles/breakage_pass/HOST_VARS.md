@@ -84,8 +84,8 @@ must exit 0 (substitute the orchestrator's merge commits for the fixes the pass 
 ```bash
 C=/home/ubuntu/workspace/livespec-orchestrator-beads-fabro
 git -C "$C" fetch origin master
-git -C "$C" merge-base --is-ancestor 5b2161340 origin/master    # #5513: breakage items file with manual admission
-git -C "$C" merge-base --is-ancestor <#5518 merge commit> origin/master   # ci.yml is a watched workflow
+git -C "$C" merge-base --is-ancestor 5b2161340be4e875050b6866805967e8bfaeec52 origin/master    # #5513: breakage items file with manual admission
+git -C "$C" merge-base --is-ancestor b1f671938a9745962d6046e2c1bed5621fa66908 origin/master   # #5518: ci.yml is a watched workflow
 ```
 
 The first runner pass then advances the checkout, and its `breakage-pass-sync` line names
