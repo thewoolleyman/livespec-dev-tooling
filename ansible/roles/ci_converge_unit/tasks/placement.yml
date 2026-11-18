@@ -1,0 +1,41 @@
+---
+# Placement-only converge: see the import in main.yml and the defaults'
+# ci_converge_unit_placement_files. Touches only those files and the scale sets.
+
+- name: Create the installed arc directory the placement files live in
+  ansible.builtin.file:
+    path: "{{ ci_converge_unit_lib_dir }}/arc"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Copy the placement files into the installed tree
+  ansible.builtin.copy:
+    src: "{{ ci_converge_unit_phase2_dir }}/{{ item.src }}"
+    dest: "{{ ci_converge_unit_lib_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  become: true
+  loop: "{{ ci_converge_unit_placement_files }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  register: ci_converge_unit_placement_copied
+
+- name: Helm-upgrade the runner scale sets only, after changed placement files
+  # Never under --check: there is no dry form of a helm upgrade. The script's
+  # --scale-sets-only mode applies no manifest and publishes no ConfigMap.
+  ansible.builtin.command:
+    argv:
+      - "{{ ci_converge_unit_lib_dir }}/converge-ci-stack.sh"
+      - --scale-sets-only
+  environment:
+    KUBECONFIG: "{{ ci_converge_unit_kubeconfig }}"
+  register: ci_converge_unit_placement_converged
+  changed_when: true
+  become: true
+  when:
+    - ci_converge_unit_placement_copied.changed
+    - not ansible_check_mode
