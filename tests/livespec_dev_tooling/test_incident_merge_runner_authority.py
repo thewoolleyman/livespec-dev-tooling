@@ -63,6 +63,19 @@ def _world(monkeypatch: pytest.MonkeyPatch, *, merge: Mock) -> None:
     )
 
 
+def _ledger_root(*, directory: Path) -> Path:
+    """A stand-in ledger root the protection rule accepts: 0644 files in 0755 directories."""
+    root = directory / "ledger"
+    (root / ".beads").mkdir(parents=True, mode=0o755, exist_ok=True)
+    root.chmod(0o755)
+    (root / ".beads").chmod(0o755)
+    for name in (".beads/config.yaml", ".beads/metadata.json", ".livespec.jsonc"):
+        target = root / name
+        _ = target.write_text("{}\n")
+        target.chmod(0o644)
+    return root
+
+
 def _go(*, tmp_path: Path, script: Path, run_text: Mock | None = None) -> int:
     return runner.run(
         argv=[
@@ -74,6 +87,8 @@ def _go(*, tmp_path: Path, script: Path, run_text: Mock | None = None) -> int:
             str(tmp_path),
             "--authority-script",
             str(script),
+            "--ledger-root",
+            str(_ledger_root(directory=tmp_path)),
         ],
         owner_uid=0,
         interpreter=_INTERPRETER,

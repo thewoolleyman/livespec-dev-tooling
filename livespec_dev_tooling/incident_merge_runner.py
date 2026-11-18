@@ -55,6 +55,8 @@ __all__: list[str] = ["main", "run"]
 DEFAULT_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 DEFAULT_STATE_DIR = Path("/var/lib/livespec-incident/receipts")
 _MERGED, _REFUSED, _NOT_STARTED, _UNRECORDED = 0, 1, 2, 3
+# The files `bd` and the canonical authority read from the ledger root, relative to it.
+_LEDGER_FILES = (".beads/config.yaml", ".beads/metadata.json", ".livespec.jsonc")
 
 
 def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
@@ -65,6 +67,7 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     _ = parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)
     _ = parser.add_argument("--project-root", type=Path, default=Path.cwd())
     _ = parser.add_argument("--authority-script", required=True, type=Path)
+    _ = parser.add_argument("--ledger-root", type=Path, default=None)
     return parser.parse_args(list(argv))
 
 
@@ -83,6 +86,7 @@ class _Ready:
     identity: ArmIdentity
     command: Sequence[str]
     principal: str
+    ledger_root: Path
 
 
 def _prepare(
@@ -113,11 +117,15 @@ def _prepare(
     command = _authority_command(script=args.authority_script, interpreter=interpreter)
     if isinstance(command, int):
         return command
+    ledger_root = _ledger_root(root=args.ledger_root)
+    if isinstance(ledger_root, int):
+        return ledger_root
     return _Ready(
         forge=forge,
         identity=identity,
         command=command,
         principal=f"incident-merge-app-{credential.app_id}",
+        ledger_root=ledger_root,
     )
 
 
@@ -141,6 +149,33 @@ def _authority_command(*, script: Path, interpreter: Path) -> list[str] | int:
             detail=f"not root-owned and unwritable by group and other: {', '.join(unprotected)}",
         )
     return authority_command(interpreter=interpreter, script=script)
+
+
+def _ledger_root(*, root: Path | None) -> Path | int:
+    """The root-owned ledger tree, only when every file `bd` and the authority read is protected.
+
+    `bd` takes its tenant and Dolt host from the working directory's `.beads` pointer, and the
+    authority takes its store configuration from `--repo`, so a tree an unprivileged account
+    can write would let it choose where root's ledger credential goes.
+    """
+    if root is None:
+        return _not_started(
+            code="incident-merge-runner-no-ledger-root", detail="no --ledger-root was given"
+        )
+    files = [root / name for name in _LEDGER_FILES]
+    absent = [str(path) for path in (root, *files) if not path.exists()]
+    if absent:
+        return _not_started(
+            code="incident-merge-runner-no-ledger-root",
+            detail=f"missing from the ledger root: {', '.join(absent)}",
+        )
+    unprotected = [str(path) for path in (root, *files) if not protected_path(path=path)]
+    if unprotected:
+        return _not_started(
+            code="incident-merge-runner-ledger-root-unprotected",
+            detail=f"not root-owned and unwritable by group and other: {', '.join(unprotected)}",
+        )
+    return root
 
 
 def run(  # noqa: PLR0913 — every host dependency is an injected seam.
@@ -178,7 +213,7 @@ def run(  # noqa: PLR0913 — every host dependency is an injected seam.
             chain=authority_chain_reader(
                 command=ready.command,
                 repository=args.repository,
-                repo=args.project_root,
+                repo=ready.ledger_root,
                 identity=ready.identity,
             ),
             queue=graphql_queue_reader(read=gating),
