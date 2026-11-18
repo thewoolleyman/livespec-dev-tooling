@@ -28,9 +28,6 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.io import IOFailure, IOSuccess  # noqa: E402  — vendor-path-aware import.
 
-from livespec_dev_tooling.fleet._ensure_plugin_registry import (  # noqa: E402
-    project_install_records,
-)
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     BINARY_ABSENT,
     SPAWN_FAILED,
@@ -42,9 +39,6 @@ from livespec_dev_tooling.fleet._local_context import (  # noqa: E402
     command_answer,
 )
 from livespec_dev_tooling.fleet._orchestrator_hold import ORCHESTRATOR_PLUGIN  # noqa: E402
-from livespec_dev_tooling.fleet._plugin_build_currency_reads import (  # noqa: E402
-    served_build_identifier,
-)
 from livespec_dev_tooling.fleet._tag_adopt_checks import (  # noqa: E402
     ORCHESTRATOR_MARKETPLACE,
     ORCHESTRATOR_REPO,
@@ -164,6 +158,49 @@ def _registry_evidence(*, registry_text: str | None) -> str:
     return f"registry file {state}; {held} records with a projectPath"
 
 
+def _builder_install_records(*, registry_text: str | None) -> tuple[dict[str, object], ...]:
+    """Read the orchestrator records from the builder home's private registry."""
+    plugins = json_object(text=registry_text).get("plugins")
+    by_plugin = cast("dict[str, object]", plugins) if isinstance(plugins, dict) else {}
+    entries = by_plugin.get(ORCHESTRATOR_PLUGIN)
+    return tuple(
+        cast("dict[str, object]", entry)
+        for entry in (cast("list[object]", entries) if isinstance(entries, list) else ())
+        if isinstance(entry, dict)
+    )
+
+
+def _record_commit(*, record: Mapping[str, object]) -> str:
+    """The normalized installed commit, or the empty string when the record lacks one."""
+    commit = record.get("gitCommitSha")
+    return commit.strip().lower() if isinstance(commit, str) else ""
+
+
+def _install_path_names_commit(*, install_path: object, commit: str) -> bool:
+    """Whether the cache directory is named for the full tag commit or its cache prefix."""
+    if not isinstance(install_path, str):
+        return False
+    name = Path(install_path).name.lower()
+    return name in {commit.lower(), commit[:_SHORT].lower()}
+
+
+def _builder_install_record(
+    *, registry_text: str | None, tag_commit: str
+) -> dict[str, object] | None:
+    """Find the tagged builder install without relying on its recorded project path."""
+    records = _builder_install_records(registry_text=registry_text)
+    expected = tag_commit.lower()
+    for record in records:
+        if _record_commit(record=record) == expected:
+            return record
+    for record in records:
+        if not _record_commit(record=record) and _install_path_names_commit(
+            install_path=record.get("installPath"), commit=tag_commit
+        ):
+            return record
+    return None
+
+
 def build_plugin(
     *, home: Path, tag: str, tag_commit: str, base_env: Mapping[str, str], run: EnvCommandRunner
 ) -> BuiltPlugin:
@@ -203,17 +240,14 @@ def build_plugin(
         evidence.append(_evidence(outcome=outcome, label=label))
     registry_path = home / ".claude" / "plugins" / "installed_plugins.json"
     registry_text = registry_path.read_text(encoding="utf-8") if registry_path.is_file() else None
-    built = served_build_identifier(
-        registry_text=registry_text, plugin=ORCHESTRATOR_PLUGIN, project_root=str(project)
-    )
-    records = project_install_records(
-        registry=json_object(text=registry_text),
-        plugin=ORCHESTRATOR_PLUGIN,
-        project_root=str(project),
-    )
-    install_path = records[0].get("installPath") if records else None
-    if built.sha != tag_commit or not isinstance(install_path, str):
-        found = built.sha or built.unresolved
+    record = _builder_install_record(registry_text=registry_text, tag_commit=tag_commit)
+    install_path = record.get("installPath") if record is not None else None
+    if not isinstance(install_path, str):
+        records = _builder_install_records(registry_text=registry_text)
+        found = next(
+            (_record_commit(record=entry) for entry in records if _record_commit(record=entry)), ""
+        )
+        found = found or "no install record names the tag's commit"
         failure = (
             f"the builder installed {found}, not the tag's commit {tag_commit}; nothing was moved."
             f" builder steps: {'; '.join(evidence)}."
