@@ -78,6 +78,23 @@
 # root (it writes the probe kubeconfig under /etc/ci-runner).
 set -euo pipefail
 
+# MODES (livespec-dev-tooling-vksuu2). No argument converges the whole stack.
+# `--scale-sets-only` re-renders and `helm upgrade`s the runner scale sets and
+# NOTHING else: it applies no manifest (no gates-rbac.yaml, no Secret, no
+# ServiceAccount or Role, no Kueue or gates object) and publishes no ConfigMap,
+# so a value file that only feeds the scale sets' pod placement
+# (arc/runner-node-preference.conf, workload-arch.conf, arc/render-arch-overlay.sh)
+# can land alone through the ci_converge_unit role's `ci_placement` tag. It
+# decides no number and reads every input from the installed tree. The steps it
+# skips are fenced by `SCALE_SETS_ONLY` guards below, left unindented so the
+# whole-stack text is unchanged.
+SCALE_SETS_ONLY=false
+case "${1:-}" in
+  "") ;;
+  --scale-sets-only) SCALE_SETS_ONLY=true ;;
+  *) echo "usage: $(basename "$0") [--scale-sets-only]" >&2; exit 2 ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Where the applied artifact trees live. Resolved so ONE script works both
@@ -276,6 +293,10 @@ command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH"; exit
 command -v helm >/dev/null || { echo "FATAL: helm not found on PATH"; exit 1; }
 : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
 
+if [ "${SCALE_SETS_ONLY:-false}" = true ]; then
+  log "scale-sets-only: re-render and helm-upgrade the runner scale sets; apply no manifest"
+  kubectl get --raw /readyz >/dev/null || { echo "FATAL: API server did not answer /readyz"; exit 1; }
+else
 # ---------------------------------------------------------------------------
 log "1. Wait for the API server and the k3s node to report Ready"
 # k3s.service being active does not mean the API is serving yet. Poll the
@@ -601,6 +622,8 @@ done
 # churn slots read from the Nodes (livespec-dev-tooling-ko26ez.7).
 "${KUEUE_DIR}/converge-worker-queues.sh"
 
+fi  # end of the steps scale-sets-only skips (1 to 5)
+
 # ---------------------------------------------------------------------------
 log "5b. Assert the ALWAYS-ON label on every registered node whose profile declares it (ARC listeners select on it)"
 # livespec-dev-tooling-crvvxt. Every runner scale set's listener pod carries a
@@ -618,7 +641,9 @@ log "5b. Assert the ALWAYS-ON label on every registered node whose profile decla
 #
 # A WARN, never a failure: a non-zero exit here is the ordinary case of an
 # agent still re-registering, and step 10h is the pass whose verdict counts.
-if [ ! -x "${ALWAYS_ON_LABEL_CONVERGE}" ]; then
+if [ "${SCALE_SETS_ONLY:-false}" = true ]; then
+  :   # scale-sets-only: no label reconcile, only the placeable read below
+elif [ ! -x "${ALWAYS_ON_LABEL_CONVERGE}" ]; then
   echo "WARN: ${ALWAYS_ON_LABEL_CONVERGE} not found or not executable, so no node's ci-runner.io/always-on label is asserted this boot and EVERY ARC listener pod stays Pending (no scale set takes a job) unless a node's own registration carries the label. Re-install the boot tree with the ci_converge_unit Ansible role (just ansible-apply ansible/ci-pool.yml)"
 elif ! CI_ALWAYS_ON_LABEL_WAIT_SECONDS=0 "${ALWAYS_ON_LABEL_CONVERGE}"; then
   echo "WARN: the early converge-always-on-node-labels.sh pass did not reconcile every node (see above) — continuing; step 10h repeats it with the registration wait"
@@ -653,6 +678,7 @@ fi
 
 # ---------------------------------------------------------------------------
 log "6. Install/upgrade the ARC controller (idempotent via helm upgrade --install)"
+if [ "${SCALE_SETS_ONLY:-false}" != true ]; then
 # Inlined from install-arc.sh step 1 rather than invoked, because install-arc.sh
 # is not decomposed into a controller-only entry point and its step 2 applies
 # the SUPERSEDED phase-1 values-host-unique.yaml (see the SCALE_SETS note).
@@ -681,6 +707,8 @@ if ! "${RUNNER_SCHEDULER_DIR}/converge-runner-scheduler.sh"; then
   echo "WARN: converge-runner-scheduler.sh failed (see above) — continuing; runner pods that name ci-runner-scheduler wait until it is re-run"
 fi
 
+fi  # end of the steps scale-sets-only skips (6 and 6b)
+
 # ---------------------------------------------------------------------------
 log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 values files"
 # Asserted ONCE, before the loop: every release installs the SAME chart
@@ -693,7 +721,9 @@ log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 val
 # it: every workflow pod consumes this exact shared definition from
 # arc-runners, while warm-cache applies it into ci-warm-cache below.
 log "7a. Publish the shared PyPI uv wrapper ConfigMap for workflow pods"
-kubectl -n "$RUNNERS_NAMESPACE" apply -f "${WARM_CACHE_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"
+if [ "${SCALE_SETS_ONLY:-false}" != true ]; then
+  kubectl -n "$RUNNERS_NAMESPACE" apply -f "${WARM_CACHE_DIR}/pypi-proxy/pypi-proxy-uv-wrapper.yaml"
+fi
 # 7b. Publish the hook-template revision BEFORE any scale set names it: each
 # values file mounts the placeholder arc-hook-pod-template-@HOOK_REVISION@,
 # rendered below to the immutable, content-addressed revision published here,
@@ -701,8 +731,16 @@ kubectl -n "$RUNNERS_NAMESPACE" apply -f "${WARM_CACHE_DIR}/pypi-proxy/pypi-prox
 # (livespec-dev-tooling-4oeffe). The older revisions are pruned at step 8,
 # AFTER every scale set has moved off them.
 log "7b. Publish the hook-template ConfigMap revision the scale sets will mount"
-"${ARC_DIR}/converge-hook-pod-template.sh" --publish
+if [ "${SCALE_SETS_ONLY:-false}" != true ]; then
+  "${ARC_DIR}/converge-hook-pod-template.sh" --publish
+fi
 hook_revision="$("${ARC_DIR}/converge-hook-pod-template.sh" --name)"
+if [ "${SCALE_SETS_ONLY:-false}" = true ]; then
+  # Publishes nothing: the revision the values mount must already be in the
+  # cluster from an earlier whole-stack converge, or the pods would never start.
+  kubectl -n "$RUNNERS_NAMESPACE" get configmap "$hook_revision" >/dev/null \
+    || { echo "FATAL: hook template ConfigMap ${hook_revision} is not in ${RUNNERS_NAMESPACE}; run the whole-stack converge first (just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit)" >&2; exit 1; }
+fi
 rendered_values_dir="$(mktemp -d)"
 trap 'rm -rf "${rendered_values_dir}"' EXIT
 for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
@@ -727,6 +765,12 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
     -f "$arch_overlay" \
     "$ARC_SCALE_SET_CHART"
 done
+
+if [ "${SCALE_SETS_ONLY:-false}" = true ]; then
+  log "DONE. scale-sets-only: ${#SCALE_SETS[@]} runner scale sets processed; no other object touched."
+  [ "${arc_listeners_placeable}" = true ] || { echo "FATAL: ${arc_listeners_refusal}" >&2; exit 1; }
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 log "7b. Assert every scale-set listener references its scale set's CURRENT EphemeralRunnerSet (self-healing)"

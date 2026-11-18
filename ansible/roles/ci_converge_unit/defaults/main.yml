@@ -108,17 +108,8 @@ ci_converge_unit_files:
   # The per-class architecture list and its renderer: converge-ci-stack.sh
   # step 7 gives every scale set a required arch affinity from them
   # (livespec-dev-tooling-ko26ez.6).
-  - src: arc/render-arch-overlay.sh
-    dest: arc/render-arch-overlay.sh
-    mode: "0755"
-  - src: workload-arch.conf
-    dest: workload-arch.conf
-    mode: "0644"
   # The soft fill order the renderer above adds to every runner pod: faster
   # nodes first (livespec-dev-tooling-ukoeah, lever 2).
-  - src: arc/runner-node-preference.conf
-    dest: arc/runner-node-preference.conf
-    mode: "0644"
   - src: arc/hook-pod-template.yaml
     dest: arc/hook-pod-template.yaml
     mode: "0644"
@@ -289,6 +280,22 @@ ci_converge_unit_files:
   - src: node-status-credential/node-status-patch-rbac.yaml
     dest: node-status-credential/node-status-patch-rbac.yaml
     mode: "0644"
+# The PLACEMENT subset of the installed tree (livespec-dev-tooling-vksuu2): the
+# files that only feed where a runner pod is scheduled. The role's `ci_placement`
+# tag copies exactly these and runs `converge-ci-stack.sh --scale-sets-only`, so a
+# change to one of them lands without re-applying gates-rbac.yaml or any other
+# object. The full apply installs the same list (see the named-members copy), so
+# there is ONE list and one owner per file.
+ci_converge_unit_placement_files:
+  - src: arc/render-arch-overlay.sh
+    dest: arc/render-arch-overlay.sh
+    mode: "0755"
+  - src: workload-arch.conf
+    dest: workload-arch.conf
+    mode: "0644"
+  - src: arc/runner-node-preference.conf
+    dest: arc/runner-node-preference.conf
+    mode: "0644"
 # The two ARC Helm charts the boot converge installs, PULLED HERE at apply time
 # instead of fetched from the upstream OCI registry at boot (2026-10-12, item
 # livespec-dev-tooling-tb2az6).
@@ -328,3 +335,7 @@ ci_converge_unit_converge_poll_seconds: 5
 # The tail the apply includes when the converge fails. Kept bounded so an
 # actionable failure does not flood the operator's Ansible output.
 ci_converge_unit_journal_tail_lines: 40
+
+# The k3s kubeconfig the placement-only converge runs against, the same value the
+# committed unit's Environment= names.
+ci_converge_unit_kubeconfig: /etc/rancher/k3s/k3s.yaml

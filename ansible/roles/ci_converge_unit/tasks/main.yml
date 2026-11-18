@@ -104,7 +104,7 @@
     group: root
     mode: "{{ item.mode }}"
   become: true
-  loop: "{{ ci_converge_unit_files }}"
+  loop: "{{ ci_converge_unit_files + ci_converge_unit_placement_files }}"
   loop_control:
     label: "{{ item.dest }}"
   register: ci_converge_unit_named_members
@@ -374,3 +374,14 @@
           The stack is partly applied; the converge is idempotent, so fix the cause
           and re-run the committed ci-pool apply.
         success_msg: "{{ ci_converge_unit_service }}: success"
+
+# The placement-only path (livespec-dev-tooling-vksuu2). Reached with
+# `--tags ci_placement`: every task above is skipped, so the apply copies only the
+# placement files and runs only `converge-ci-stack.sh --scale-sets-only`, which
+# helm-upgrades the scale sets and applies no manifest (no gates-rbac.yaml, no
+# Secret, ServiceAccount or Role, no Kueue or gates object). In a full apply the
+# named-members copy above has already installed these files, so this path sees
+# them unchanged and does nothing: the full converge covers them.
+- name: Install and converge the placement files alone
+  ansible.builtin.import_tasks: placement.yml
+  tags: [ci_placement]
