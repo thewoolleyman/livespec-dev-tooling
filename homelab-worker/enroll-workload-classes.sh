@@ -33,6 +33,7 @@ prog="enroll-workload-classes"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 conf="${WORKLOAD_ARCH_CONF:-$here/../ci-runner/k3s/phase2/workload-arch.conf}"
 worker_queues="${WORKER_QUEUES_CONVERGE:-$here/../ci-runner/k3s/phase2/kueue/converge-worker-queues.sh}"
+hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$here/hosts}"
 # The fleet sizes one churn slot at about 2.73 CPUs (DERIVATION.md); millicores.
 slot_millicores=2730
 
@@ -77,34 +78,172 @@ lacks() {
   awk -v k="$1" -v n="$2" '$1 == k && $2 == n { $1 = $2 = $3 = ""; sub(/^ +/, ""); print; exit }' "$conf"
 }
 
-# The enrolled classes, decided before any write so each one's share is known.
+# Read declaration data without executing it.  Host declarations use simple
+# quoted or unquoted scalar values for the split and its reason.
+read_declaration_value() {
+  local key="$1" declaration="$2" line
+  declaration_present=0
+  declaration_value=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key"=*)
+        declaration_present=$((declaration_present + 1))
+        declaration_value="${line#"$key"=}"
+        ;;
+    esac
+  done < "$declaration"
+  [ "$declaration_present" -le 1 ] ||
+    die "declaration $declaration records $key more than once"
+  [ "$declaration_present" -eq 1 ] || return 0
+  case "$declaration_value" in
+    \"*\")
+      declaration_value="${declaration_value#\"}"
+      declaration_value="${declaration_value%\"}"
+      ;;
+    \'*\')
+      declaration_value="${declaration_value#\'}"
+      declaration_value="${declaration_value%\'}"
+      ;;
+  esac
+}
+
+# The image-supported classes are decided before any write. A measured zero
+# share subsequently ends a class's enrollment, but validation still requires
+# every image-supported class to appear in the declaration.
 ci=0 gate=0 factory=0
 declares release && ci=1
 declares gate && gate=1
 # Any factory line declaring the node's architecture: an arm64 agent layer is
 # its own line (python-agent-arm64), served by its own Fabro instance.
 declares factory && factory=1
-enrolled=$((ci + gate + factory))
-share=$((millicores / (enrolled > 0 ? enrolled : 1)))
-slots=$((share / slot_millicores))
-[ "$slots" -ge 1 ] || slots=1
+
+# A Node without a host label, and a declaration without a split, retain the
+# equal-share default. Validate a recorded split completely before any write.
+host="$(node_field '{.metadata.labels.homelab-worker\.livespec\.dev/host}')"
+recorded_split=0
+split_reason=""
+ci_share="" gate_share="" factory_share=""
+if [ -n "$host" ]; then
+  case "$host" in
+    *[!a-z0-9-]* | -*) die "Node $node names invalid host declaration '$host'" ;;
+  esac
+  declaration="$hosts_dir/$host.env"
+  [ -f "$declaration" ] ||
+    die "Node $node names host declaration $declaration, which is missing"
+  read_declaration_value WORKER_MEASURED_CLASS_SPLIT "$declaration"
+  split_present="$declaration_present"
+  split_value="$declaration_value"
+  read_declaration_value WORKER_MEASURED_CLASS_SPLIT_REASON "$declaration"
+  reason_present="$declaration_present"
+  split_reason="$declaration_value"
+
+  if [ "$split_present" -eq 1 ]; then
+    [ -n "$split_value" ] ||
+      die "declaration $declaration has offending split entry: it is empty"
+    [ "$reason_present" -eq 1 ] && [ -n "$split_reason" ] ||
+      die "declaration $declaration has a measured split but records no reason"
+
+    total_percentage=0
+    IFS=',' read -r -a split_entries <<< "$split_value"
+    for entry in "${split_entries[@]}"; do
+      case "$entry" in
+        ci=* | gate=* | factory=*)
+          class_name="${entry%%=*}"
+          percentage="${entry#*=}"
+          [[ "$percentage" =~ ^[0-9]+$ ]] ||
+            die "declaration $declaration has offending entry '$entry': share is not a whole percentage"
+          percentage=$((10#$percentage))
+          case "$class_name" in
+            ci)
+              [ -z "$ci_share" ] || die "declaration $declaration has offending entry '$entry': ci is repeated"
+              ci_share="$percentage"
+              ;;
+            gate)
+              [ -z "$gate_share" ] || die "declaration $declaration has offending entry '$entry': gate is repeated"
+              gate_share="$percentage"
+              ;;
+            factory)
+              [ -z "$factory_share" ] || die "declaration $declaration has offending entry '$entry': factory is repeated"
+              factory_share="$percentage"
+              ;;
+          esac
+          total_percentage=$((total_percentage + percentage))
+          ;;
+        *=*)
+          die "declaration $declaration has offending entry '$entry': '${entry%%=*}' is not a known class"
+          ;;
+        *) die "declaration $declaration has offending entry '$entry': expected class=whole-percentage" ;;
+      esac
+    done
+    [ "$total_percentage" -le 100 ] ||
+      die "declaration $declaration has offending split: shares total ${total_percentage}%, above 100%"
+    [ "$ci" -eq 0 ] || [ -n "$ci_share" ] ||
+      die "declaration $declaration has offending split: it omits enrolled class ci"
+    [ "$gate" -eq 0 ] || [ -n "$gate_share" ] ||
+      die "declaration $declaration has offending split: it omits enrolled class gate"
+    [ "$factory" -eq 0 ] || [ -n "$factory_share" ] ||
+      die "declaration $declaration has offending split: it omits enrolled class factory"
+
+    recorded_split=1
+    if [ "$ci" -eq 0 ] && [ -n "$ci_share" ]; then
+      say "CI: recorded ${ci_share}% share ignored: its images do not publish $arch"
+    fi
+    if [ "$gate" -eq 0 ] && [ -n "$gate_share" ]; then
+      say "gate: recorded ${gate_share}% share ignored: its images do not publish $arch"
+    fi
+    if [ "$factory" -eq 0 ] && [ -n "$factory_share" ]; then
+      say "factory: recorded ${factory_share}% share ignored: its images do not publish $arch"
+    fi
+
+    [ "$ci_share" != 0 ] || ci=0
+    [ "$gate_share" != 0 ] || gate=0
+    [ "$factory_share" != 0 ] || factory=0
+  fi
+fi
+
+if [ "$recorded_split" -eq 1 ]; then
+  [ "$ci" -eq 0 ] || ci_capacity=$((millicores * ci_share / 100))
+  [ "$gate" -eq 0 ] || gate_capacity=$((millicores * gate_share / 100))
+  [ "$factory" -eq 0 ] || factory_capacity=$((millicores * factory_share / 100))
+else
+  enrolled=$((ci + gate + factory))
+  equal_share=$((millicores / (enrolled > 0 ? enrolled : 1)))
+  [ "$ci" -eq 0 ] || ci_capacity="$equal_share"
+  [ "$gate" -eq 0 ] || gate_capacity="$equal_share"
+  [ "$factory" -eq 0 ] || factory_capacity="$equal_share"
+fi
+
+if [ "$ci" -eq 1 ]; then
+  slots=$((ci_capacity / slot_millicores))
+  [ "$slots" -ge 1 ] || slots=1
+fi
 
 if [ "$ci" -eq 1 ]; then
   kubectl label node "$node" k3s-role=arc-runner-host --overwrite >/dev/null
   kubectl patch node "$node" --subresource=status --type=merge \
     -p "{\"status\":{\"capacity\":{\"ci-runner.io/churn-slot\":\"$slots\"}}}" >/dev/null
-  say "CI: enrolled with $slots churn slots (share ${share}m of ${millicores}m allocatable CPU across $enrolled enrolled classes)"
+  say "CI: enrolled with $slots churn slots (share ${ci_capacity}m of ${millicores}m allocatable CPU)"
 else
   kubectl label node "$node" k3s-role- >/dev/null 2>&1 || true
-  say "CI: NOT enrolled: no scale set in $(basename "$conf") declares $arch"
+  if [ "$recorded_split" -eq 1 ] && [ "$ci_share" = 0 ]; then
+    kubectl patch node "$node" --subresource=status --type=merge \
+      -p '{"status":{"capacity":{"ci-runner.io/churn-slot":null}}}' >/dev/null
+    say "CI: NOT enrolled: recorded zero share (0%): $split_reason"
+  else
+    say "CI: NOT enrolled: no scale set in $(basename "$conf") declares $arch"
+  fi
 fi
 
 if [ "$gate" -eq 1 ]; then
-  kubectl label node "$node" "homelab-worker.livespec.dev/gate-share-millicores=$share" --overwrite >/dev/null
-  say "gate: enrolled (share ${share}m CPU)"
+  kubectl label node "$node" "homelab-worker.livespec.dev/gate-share-millicores=$gate_capacity" --overwrite >/dev/null
+  say "gate: enrolled (share ${gate_capacity}m CPU)"
 else
   kubectl label node "$node" homelab-worker.livespec.dev/gate-share-millicores- >/dev/null 2>&1 || true
-  say "gate: NOT enrolled: $(lacks gate gate)"
+  if [ "$recorded_split" -eq 1 ] && [ "$gate_share" = 0 ]; then
+    say "gate: NOT enrolled: recorded zero share (0%): $split_reason"
+  else
+    say "gate: NOT enrolled: $(lacks gate gate)"
+  fi
 fi
 
 # The worker queues' quota is the enrolled workers' churn slots and gate shares,
@@ -113,8 +252,12 @@ fi
 
 if [ "$factory" -eq 1 ]; then
   kubectl label node "$node" ci-runner.io/factory=true --overwrite >/dev/null
-  say "factory: enrolled (share ${share}m CPU)"
+  say "factory: enrolled (share ${factory_capacity}m CPU)"
 else
   kubectl label node "$node" ci-runner.io/factory- >/dev/null 2>&1 || true
-  say "factory: NOT enrolled: $(lacks factory python-agent)"
+  if [ "$recorded_split" -eq 1 ] && [ "$factory_share" = 0 ]; then
+    say "factory: NOT enrolled: recorded zero share (0%): $split_reason"
+  else
+    say "factory: NOT enrolled: $(lacks factory python-agent)"
+  fi
 fi

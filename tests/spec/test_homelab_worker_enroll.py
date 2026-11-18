@@ -26,6 +26,7 @@ _STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
 [ -z "$KUBECTL_FAILS" ] || { echo "Connection closed" >&2; exit 255; }
 case "$*" in
+  *"homelab-worker\\.livespec\\.dev/host"*) printf '%s' "$NODE_HOST" ;;
   *"homelab-worker\\.livespec\\.dev/class"*) printf '%s' "$NODE_CLASS" ;;
   *"kubernetes\\.io/arch"*) printf '%s' "$NODE_ARCH" ;;
   *"allocatable.cpu"*) printf '%s' "$NODE_CPU" ;;
@@ -41,6 +42,8 @@ def _run(
     arch: str = "arm64",
     cpu: str = "30",
     node_class: str = "worker",
+    host: str = "",
+    host_declaration: str | None = None,
     kubectl_fails: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
@@ -52,6 +55,10 @@ def _run(
     queues.write_text('#!/bin/bash\nprintf "worker-queues\\n" >> "$STUB_LOG"\n', encoding="utf-8")
     queues.chmod(queues.stat().st_mode | stat.S_IXUSR)
     (tmp_path / "list.conf").write_text(conf, encoding="utf-8")
+    hosts = tmp_path / "hosts"
+    if host_declaration is not None:
+        hosts.mkdir()
+        (hosts / f"{host}.env").write_text(host_declaration, encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
     result = run_under_hang_guard(
@@ -66,6 +73,8 @@ def _run(
             "NODE_ARCH": arch,
             "NODE_CPU": cpu,
             "NODE_CLASS": node_class,
+            "NODE_HOST": host,
+            "HOMELAB_WORKER_HOSTS_DIR": str(hosts),
             "KUBECTL_FAILS": "1" if kubectl_fails else "",
         },
         check=False,
@@ -122,6 +131,36 @@ def test_with_every_class_enrolled_the_churn_slots_are_one_third_of_allocatable_
     assert result.returncode == 0, result.stderr
     [patch] = [c for c in calls if "churn-slot" in c]
     assert f'"ci-runner.io/churn-slot":"{slots}"' in patch
+
+
+def test_a_recorded_measured_split_replaces_equal_capacity_and_removes_a_zero_class(
+    tmp_path: Path,
+) -> None:
+    """A host declaration gives enrolled classes their recorded, unrescaled shares."""
+    reason = "no arm64 factory sandbox lands"
+    declaration = (
+        'WORKER_MEASURED_CLASS_SPLIT="ci=50,gate=50,factory=0"\n'
+        f'WORKER_MEASURED_CLASS_SPLIT_REASON="{reason}"\n'
+    )
+    result, calls = _run(
+        tmp_path=tmp_path,
+        conf=_ARM64_TOO,
+        cpu="24",
+        host="alpha",
+        host_declaration=declaration,
+    )
+
+    assert result.returncode == 0, result.stderr
+    [patch] = [call for call in calls if "churn-slot" in call]
+    assert '"ci-runner.io/churn-slot":"4"' in patch
+    assert (
+        f"kubectl label node {_NODE} "
+        "homelab-worker.livespec.dev/gate-share-millicores=12000 --overwrite"
+    ) in calls
+    assert f"kubectl label node {_NODE} ci-runner.io/factory-" in calls
+    assert "factory: NOT enrolled" in result.stdout
+    assert "0%" in result.stdout
+    assert reason in result.stdout
 
 
 def test_a_node_that_is_not_a_container_worker_is_refused_untouched(tmp_path: Path) -> None:
