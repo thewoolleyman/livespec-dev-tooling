@@ -494,6 +494,7 @@ def _unit() -> str:
         incident_observer_state_dir="/var/lib/livespec-incident/receipts",
         incident_observer_venv="/opt/livespec-incident/venv",
         incident_observer_merge_authority_script="/declared/reader/incident_authority.py",
+        incident_observer_merge_workdir="/declared/merge-workdir",
     )
 
 

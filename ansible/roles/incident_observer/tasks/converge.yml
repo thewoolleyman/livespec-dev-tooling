@@ -415,6 +415,40 @@
     and incident_observer_target_branch | default('', true) | length == 0
     and incident_observer_installation_name is not defined
 
+- name: Create the incident-merge runner's root-owned working directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ incident_observer_merge_workdir }}"
+    - "{{ incident_observer_merge_workdir }}/.beads"
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
+- name: Install the incident-merge runner's root-owned working directory and beads config
+  # The copy comes from the repository checkout the apply runs from (committed, not the
+  # observer-owned reference clone), so root's `bd` resolves its tenant from a file no
+  # non-root account can write.
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../.beads/config.yaml"
+    dest: "{{ incident_observer_merge_workdir }}/.beads/config.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
 - name: Install the incident-merge runner's templated oneshot unit
   # One instance per pull request (`livespec-incident-merge@<number>`); a bare start of
   # the template is refused by systemd. Production apply only, like the observer unit.

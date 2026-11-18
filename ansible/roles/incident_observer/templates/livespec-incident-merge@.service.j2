@@ -14,7 +14,7 @@ AssertPathExists={{ incident_observer_merge_app_path }}
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory={{ incident_observer_reference_dir }}
+WorkingDirectory={{ incident_observer_merge_workdir }}
 ExecStart={{ incident_observer_venv }}/bin/python -I -m livespec_dev_tooling.incident_merge_runner --pr %i --project-root {{ incident_observer_reference_dir }} --state-dir {{ incident_observer_state_dir }} --credential {{ incident_observer_merge_app_path }} --authority-script {{ incident_observer_merge_authority_script }}
 # Hardened. The runner writes nothing of its own: its ledger comment and forge calls go
 # over the network. The credential wrapper (with-livespec-env.sh) is the one thing that runs
