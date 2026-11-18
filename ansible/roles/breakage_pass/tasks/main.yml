@@ -14,6 +14,8 @@
     that:
       - breakage_pass_plugin_root | string | length > 0
       - breakage_pass_runner_bin | string | length > 0
+      - breakage_pass_orchestrator_checkout | string | length > 0
+      - breakage_pass_branch | string | length > 0
       - breakage_pass_state_dir | string | length > 0
       - breakage_pass_interval_minutes | int > 0
       - breakage_pass_interval_minutes | int + ((breakage_pass_timeout_seconds | int + breakage_pass_stop_timeout_seconds | int) / 60) <= 30
@@ -21,7 +23,8 @@
       - breakage_pass_repos | selectattr('repo', 'undefined') | list | length == 0
       - "'staleness' not in (breakage_pass_repos | map(attribute='name') | list)"
     fail_msg: >-
-      The breakage pass needs a plugin root, a runner path, a state directory,
+      The breakage pass needs a plugin root, the orchestrator checkout and its branch,
+      a runner path, a state directory,
       and a repository list whose entries carry a name and a repo. The interval
       plus the pass timeout plus the stop timeout must stay within 30 minutes,
       the schedule the Definition of Done sets.

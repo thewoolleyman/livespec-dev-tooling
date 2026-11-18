@@ -1,7 +1,22 @@
 #!/usr/bin/env bash
 # Run one breakage pass and journal its outcome (role breakage_pass).
 #
-# usage: livespec-breakage-pass <name> <repo> <plugin_root> <python> <state_dir>
+# usage: livespec-breakage-pass <name> <repo> <plugin_root> <python> <state_dir> <checkout> <branch>
+#
+# The pass reads two checkouts on this host: the orchestrator's own (<checkout>,
+# the dispatcher it runs) and the watched repository's (<repo>, the committed
+# .livespec.jsonc it reads). Nothing else advances either of them, so a merged fix
+# is not a running fix: COMMITTED IS NOT CONVERGED. Before each pass this script
+# fetches origin/<branch> in each and fast-forwards it, FAILING CLOSED. It refuses
+# (exit 70, no success marker) when the checkout is not a git checkout, is on a
+# branch other than <branch> (a detached HEAD is the usual state), has modified
+# tracked files, cannot fetch, holds commits origin/<branch> lacks, or cannot
+# fast-forward. A pass never runs on a stale or foreign reader.
+#
+# One line per synced checkout:
+#   breakage-pass-sync repo=<name> path=<path> head=<sha> origin=<sha> action=<current|advanced>
+# or, on a refusal:
+#   breakage-pass-sync-refused repo=<name> path=<path> reason=<reason>
 #
 # `dispatcher.py breakage-pass` prints one verdict line per watched workflow, and
 # nothing at all when the repository watches none. This script adds one line per
@@ -10,13 +25,72 @@
 #   breakage-pass-result repo=<name> rc=<n>
 #
 # A pass that exits 0 refreshes <state_dir>/<name>.last-success. The pass's own
-# exit status is this script's exit status.
+# exit status is this script's exit status, except a refused sync, which is 70.
 set -u
 name=$1
 repo=$2
 plugin_root=$3
 python=$4
 state_dir=$5
+checkout=$6
+branch=$7
+
+export GIT_TERMINAL_PROMPT=0
+
+# sync_checkout <path>: fast-forward <path> to origin/<branch>, or refuse.
+# Prints the journal line; returns non-zero on a refusal.
+sync_checkout() {
+    path=$1
+    refuse() {
+        printf 'breakage-pass-sync-refused repo=%s path=%s reason=%s\n' "$name" "$path" "$1"
+        return 1
+    }
+    git -C "$path" rev-parse --git-dir >/dev/null 2>&1 || { refuse not-a-git-checkout; return 1; }
+    current=$(git -C "$path" symbolic-ref -q --short HEAD || true)
+    if [ -n "$current" ] && [ "$current" != "$branch" ]; then
+        refuse "on-branch-$current"
+        return 1
+    fi
+    if [ -n "$(git -C "$path" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+        refuse modified-tracked-files
+        return 1
+    fi
+    if ! git -C "$path" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null; then
+        refuse fetch-failed
+        return 1
+    fi
+    head=$(git -C "$path" rev-parse HEAD) || { refuse no-head; return 1; }
+    target=$(git -C "$path" rev-parse "refs/remotes/origin/$branch") || { refuse no-origin-ref; return 1; }
+    action=current
+    if [ "$head" != "$target" ]; then
+        if ! git -C "$path" merge-base --is-ancestor "$head" "$target"; then
+            refuse not-fast-forward
+            return 1
+        fi
+        if ! git -C "$path" merge --ff-only --quiet "refs/remotes/origin/$branch" >/dev/null 2>&1; then
+            refuse ff-failed
+            return 1
+        fi
+        head=$(git -C "$path" rev-parse HEAD)
+        if [ "$head" != "$target" ]; then
+            refuse ff-did-not-reach-origin
+            return 1
+        fi
+        action=advanced
+    fi
+    printf 'breakage-pass-sync repo=%s path=%s head=%s origin=%s action=%s\n' \
+        "$name" "$path" "$head" "$target" "$action"
+}
+
+synced=0
+sync_checkout "$checkout" || synced=1
+if [ "$repo" != "$checkout" ] && [ "$synced" -eq 0 ]; then
+    sync_checkout "$repo" || synced=1
+fi
+if [ "$synced" -ne 0 ]; then
+    printf 'breakage-pass-result repo=%s rc=70\n' "$name"
+    exit 70
+fi
 
 "$python" "$plugin_root/scripts/bin/dispatcher.py" breakage-pass --repo "$repo"
 rc=$?

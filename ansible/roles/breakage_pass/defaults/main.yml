@@ -24,6 +24,13 @@ breakage_pass_orchestrator_checkout: /home/ubuntu/workspace/livespec-orchestrato
 breakage_pass_plugin_root: "{{ breakage_pass_orchestrator_checkout }}/.claude-plugin"
 breakage_pass_python: /usr/bin/python3
 
+# Nothing else advances the orchestrator's checkout, so a merged fix is not a
+# running fix (COMMITTED IS NOT CONVERGED). Before each pass the runner fetches
+# origin/<branch> in that checkout and in each watched repository's, and
+# fast-forwards it, refusing (exit 70, no success marker) on a modified tracked
+# file, a different branch, local commits or a failed fast-forward.
+breakage_pass_branch: master
+
 # The run-time credential-wrapper resolver, installed by role reconcile_runs. A
 # pass files ledger items, so it runs under the tenant's committed
 # credential_wrapper exactly as a reconcile-runs pass does.

@@ -55,6 +55,43 @@ A repository is read only for the workflows it declares in
 none prints no verdict line, only the closing result line. The role does not
 declare any workflow for a repository.
 
+## The reader must carry the fix: COMMITTED IS NOT CONVERGED
+
+The pass runs `dispatcher.py` from the orchestrator's own checkout
+(`breakage_pass_orchestrator_checkout`) and reads the watched repository's committed
+`.livespec.jsonc` from its checkout (`repo`). Nothing else advances either one: no unit,
+timer, role or script on the host updates them, and `reconcile-runs.service` runs from
+the same orchestrator checkout. Only a person's or a session's `git pull` does. A merge
+to the orchestrator's master is therefore not a running fix.
+
+So the runner syncs both before every pass: it fetches `origin/<branch>`
+(`breakage_pass_branch`, `master`) and fast-forwards the checkout, and it FAILS CLOSED.
+It refuses with exit 70, journals `breakage-pass-sync-refused ... reason=<reason>` and
+the closing `breakage-pass-result ... rc=70` line, and writes no success marker (so the
+staleness alert fires after an hour), when the path is not a git checkout
+(`not-a-git-checkout`), is on a branch other than the configured one
+(`on-branch-<name>`; a detached HEAD is the usual state), has modified tracked files
+(`modified-tracked-files`; untracked files do not count), cannot fetch (`fetch-failed`),
+holds commits `origin/<branch>` lacks (`not-fast-forward`), or cannot fast-forward
+(`ff-failed`). A pass never runs on a stale or foreign reader. A successful sync journals
+`breakage-pass-sync repo=<name> path=<path> head=<sha> origin=<sha> action=<current|advanced>`.
+
+### Acceptance before the timer is enabled
+
+After the converge and before `breakage_pass_enabled` is true, on the host, both of these
+must exit 0 (substitute the orchestrator's merge commits for the fixes the pass depends on):
+
+```bash
+C=/home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+git -C "$C" fetch origin master
+git -C "$C" merge-base --is-ancestor 5b2161340 origin/master    # #5513: breakage items file with manual admission
+git -C "$C" merge-base --is-ancestor <#5518 merge commit> origin/master   # ci.yml is a watched workflow
+```
+
+The first runner pass then advances the checkout, and its `breakage-pass-sync` line names
+`head` equal to `origin`. Read that line back before trusting the timer, and repeat the
+two `merge-base --is-ancestor` checks against `HEAD` instead of `origin/master`.
+
 ## Apply order: `reconcile_runs` FIRST
 
 `livespec-tenant-wrap.sh` and the staleness check are NOT currently installed on
