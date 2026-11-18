@@ -109,6 +109,7 @@ def _run(
     node: str,
     check: bool = False,
     fetch: str = "slurp",
+    verbosity: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     inventory = root / "inventory.yml"
     inventory.write_text(
@@ -117,7 +118,8 @@ def _run(
         f"    {_NODE}:\n      ansible_connection: local\n      ansible_become: false\n"
         f"    {_DOWN}:\n      ansible_connection: ssh\n      ansible_host: 127.0.0.1\n"
         "      ansible_port: 1\n"
-        "      ansible_ssh_common_args: '-o BatchMode=yes -o ConnectTimeout=3'\n",
+        "      ansible_ssh_common_args: '-o BatchMode=yes -o ConnectTimeout=3'\n"
+        f"  children:\n    cluster_admin_hosts:\n      hosts:\n        {_HOST}:\n",
         encoding="utf-8",
     )
     play = root / "play.yml"
@@ -139,6 +141,8 @@ def _run(
     command = ["uvx", "--from", _ansible_core_pin(), "ansible-playbook"]
     if check:
         command.extend(["--check", "--diff"])
+    if verbosity is not None:
+        command.append(verbosity)
     command.extend(["-i", str(inventory), "-e", json.dumps(variables), str(play)])
     return subprocess.run(
         command,
@@ -273,3 +277,92 @@ def test_a_reachable_node_that_lacks_the_file_leaves_an_existing_file_untouched(
 
     assert _changed(result=result) == 0, result.stdout
     assert installed.read_bytes() == before
+
+
+def test_check_mode_with_diff_and_verbose_output_never_prints_the_credential(
+    tmp_path: Path,
+) -> None:
+    source = _source(root=tmp_path)
+    dest_dir = tmp_path / "home" / ".kube"
+
+    result = _run(
+        root=tmp_path, source=source, dest_dir=dest_dir, node=_NODE, check=True, verbosity="-vvv"
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _SECRET not in result.stdout + result.stderr, "check mode printed the credential"
+    assert not (dest_dir / "config").exists(), "check mode wrote the destination"
+
+
+def test_a_kubeconfig_carrying_a_credential_plugin_is_refused(tmp_path: Path) -> None:
+    hostile = _K3S_YAML.replace(
+        "    client-key-data:",
+        "    exec:\n      command: /bin/sh\n    client-key-data:",
+    )
+    source = _source(root=tmp_path, text=hostile)
+    dest_dir = tmp_path / "home" / ".kube"
+
+    result = _run(root=tmp_path, source=source, dest_dir=dest_dir, node=_NODE)
+
+    assert result.returncode != 0, result.stdout
+    assert not (dest_dir / "config").exists()
+
+
+def test_an_empty_existing_file_is_not_kept_when_the_node_cannot_be_read(tmp_path: Path) -> None:
+    source = _source(root=tmp_path)
+    dest_dir = tmp_path / "home" / ".kube"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "config").write_text("", encoding="utf-8")
+
+    result = _run(root=tmp_path, source=source, dest_dir=dest_dir, node=_DOWN)
+
+    assert result.returncode != 0, result.stdout
+    assert "nothing to keep" in result.stdout + result.stderr
+
+
+def test_a_host_outside_cluster_admin_hosts_is_refused(tmp_path: Path) -> None:
+    source = _source(root=tmp_path)
+    dest_dir = tmp_path / "home" / ".kube"
+    inventory = tmp_path / "inventory.yml"
+    _ = _run(root=tmp_path, source=source, dest_dir=dest_dir, node=_NODE)
+    dest = dest_dir / "config"
+    dest.unlink()
+    inventory.write_text(
+        inventory.read_text(encoding="utf-8").replace(
+            f"        {_HOST}:\n", "        other-host:\n"
+        ),
+        encoding="utf-8",
+    )
+    play = tmp_path / "play.yml"
+
+    result = subprocess.run(
+        [
+            "uvx",
+            "--from",
+            _ansible_core_pin(),
+            "ansible-playbook",
+            "-i",
+            str(inventory),
+            "-e",
+            json.dumps(
+                {
+                    "admin_kubeconfig_remote_host": _NODE,
+                    "admin_kubeconfig_remote_path": str(source),
+                    "admin_kubeconfig_remote_become": False,
+                    "admin_kubeconfig_dir": str(dest_dir),
+                    "admin_kubeconfig_user": pwd.getpwuid(os.getuid()).pw_name,
+                    "admin_kubeconfig_group": grp.getgrgid(os.getgid()).gr_name,
+                }
+            ),
+            str(play),
+        ],
+        cwd=tmp_path,
+        env=_fixture_environment(),
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_SECONDS,
+        check=False,
+    )
+
+    assert result.returncode != 0, result.stdout
+    assert not dest.exists()
