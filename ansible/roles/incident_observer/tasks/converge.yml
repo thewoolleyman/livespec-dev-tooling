@@ -416,16 +416,19 @@
     and incident_observer_installation_name is not defined
 
 - name: Create the incident-merge runner's root-owned working directory
+  # `bd` warns when `.beads` is not 0700, and the tree is read only by root.
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
     owner: root
     group: root
-    mode: "0755"
+    mode: "{{ item.mode }}"
   become: true
   loop:
-    - "{{ incident_observer_merge_workdir }}"
-    - "{{ incident_observer_merge_workdir }}/.beads"
+    - {path: "{{ incident_observer_merge_workdir }}", mode: "0755"}
+    - {path: "{{ incident_observer_merge_workdir }}/.beads", mode: "0700"}
+  loop_control:
+    label: "{{ item.path }}"
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
@@ -442,6 +445,54 @@
     owner: root
     group: root
     mode: "0644"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
+- name: Install the incident-merge runner's root-owned connection block
+  # The canonical authority reads its store configuration from `--repo`: the committed
+  # `.livespec.jsonc` connection block (and the claim-token setting). It carries no `bd_path`,
+  # and the unit pins LIVESPEC_BD_PATH besides.
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../.livespec.jsonc"
+    dest: "{{ incident_observer_merge_workdir }}/.livespec.jsonc"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
+- name: Write the incident-merge runner's root-owned ledger pointer
+  # `bd` resolves its workspace from `.beads/metadata.json`; a tree holding only `config.yaml`
+  # answers `Error: no beads database found` (measured 2026-11-18 from such a directory, and
+  # again populated: the item reads back). The pointer is rendered here from the committed
+  # config exactly as the observer clone's is, with the port kept an integer.
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'database': 'dolt',
+        'backend': 'dolt',
+        'dolt_mode': incident_observer_merge_connection['dolt.mode'],
+        'dolt_server_host': incident_observer_merge_connection['dolt.server-host'],
+        'dolt_server_port': incident_observer_merge_connection['dolt.server-port'] | int,
+        'dolt_server_user': incident_observer_merge_connection['dolt.server-user'],
+        'dolt_database': incident_observer_merge_connection['dolt.database'],
+        'project_id': incident_observer_tenant_project_id,
+      } | to_nice_json(indent=2) }}
+
+    dest: "{{ incident_observer_merge_workdir }}/.beads/metadata.json"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    incident_observer_merge_connection: "{{ lookup('ansible.builtin.file', role_path ~ '/../../../.beads/config.yaml') | from_yaml }}"
   become: true
   when: >-
     not (incident_observer_scratch | bool)
