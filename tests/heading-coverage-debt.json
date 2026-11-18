@@ -1591,9 +1591,30 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment accepts a queue-required ruleset whose bypass actors are the recovery App and the declared incident-merge App",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails a queue-required repository whose incident-merge App is the recovery App",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue",
     "work_item": "livespec-dev-tooling-mvqo6h",
     "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails an incident-merge App whose bypass mode is not pull_request",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1888,6 +1909,20 @@
     "heading": "## Scenario: the incident enablement step records enablement on the independent controller and every vantage reads it",
     "work_item": "livespec-dev-tooling-2xxnku",
     "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident-merge principal merges a green expedited repair outside the merge queue and records it",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident-merge principal refuses an expedited repair whose required check is not green on its head",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",

@@ -6207,3 +6207,65 @@ And the committed `cluster-queue-gates.yaml` declares no LocalQueue named `gates
 When the gate client prepares a delegated push
 Then it MUST refuse the push, naming `gate_queue` and `gates-missing-lq`
 And it MUST NOT submit any gate Job
+
+## Scenario: branch_protection_alignment accepts a queue-required ruleset whose bypass actors are the recovery App and the declared incident-merge App
+
+```gherkin
+Given a queue-required repository whose committed configuration declares recovery_bypass_integration_id and a different incident_merge_integration_id
+
+And the active ruleset on its default branch carries exactly those two Integrations as its bypass actors, with the incident-merge Integration's bypass_mode pull_request
+
+When branch_protection_alignment runs with an admin-scoped token
+
+Then it reports no merge_queue_bypass_path finding
+```
+
+## Scenario: branch_protection_alignment fails a queue-required repository whose incident-merge App is the recovery App
+
+```gherkin
+Given a queue-required repository whose committed incident_merge_integration_id equals its recovery_bypass_integration_id
+
+When branch_protection_alignment runs with an admin-scoped token
+
+Then it exits 4 with one fail finding whose failure_mode is merge_queue_bypass_path
+```
+
+## Scenario: branch_protection_alignment fails an incident-merge App whose bypass mode is not pull_request
+
+```gherkin
+Given a queue-required repository whose committed configuration declares a distinct incident_merge_integration_id
+
+And the active ruleset lists that Integration with bypass_mode always
+
+When branch_protection_alignment runs with an admin-scoped token
+
+Then it exits 4 with one fail finding whose failure_mode is merge_queue_bypass_path
+```
+
+## Scenario: the incident-merge principal merges a green expedited repair outside the merge queue and records it
+
+```gherkin
+Given an incident work item with a genesis record whose current attempt is pr-bound to a labelled pull request at its forge-read base and head
+
+And every context of the effective required-check set concluded success on that head
+
+When the incident-merge principal merges the pull request
+
+Then the pull request is rebase-merged without entering the merge queue
+
+And the incident work item records the acting principal, the merged head, the resulting master SHA, the UTC time and the queue entries that were ahead of it
+```
+
+## Scenario: the incident-merge principal refuses an expedited repair whose required check is not green on its head
+
+```gherkin
+Given an incident work item whose current attempt is pr-bound to a labelled pull request
+
+And one context of the effective required-check set has not concluded success on the pull request's head
+
+When the incident-merge principal is asked to merge the pull request
+
+Then it does not merge
+
+And the incident work item records the refusal naming that required check
+```
