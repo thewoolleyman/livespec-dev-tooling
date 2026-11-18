@@ -22,7 +22,12 @@ host runs.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
 
 __all__: list[str] = []
 
@@ -52,6 +57,29 @@ _FORBIDDEN_SECRETS_VERBS = (
     "watch",
 )
 
+_EXPECTED_SUBMITTER_RULES = [
+    {
+        "apiGroups": ["batch"],
+        "resources": ["jobs"],
+        "verbs": ["create", "delete", "get", "list", "watch"],
+    },
+    {
+        "apiGroups": [""],
+        "resources": ["pods"],
+        "verbs": ["create", "get", "list", "watch"],
+    },
+    {
+        "apiGroups": [""],
+        "resources": ["pods/log"],
+        "verbs": ["get"],
+    },
+    {
+        "apiGroups": [""],
+        "resources": ["secrets"],
+        "verbs": ["create"],
+    },
+]
+
 # A YAML rule's own lines, from its `- apiGroups:` to the next one or the end of
 # the `rules:` block. Sliced by the `- ` marker rather than by a line count so a
 # reordered or reformatted rule is still read whole.
@@ -80,6 +108,78 @@ def _declared_yaml() -> str:
         for line in _RBAC.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().startswith("#")
     )
+
+
+def _documents(path: Path = _RBAC) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+        if document is None:
+            continue
+        assert isinstance(document, dict), f"{path.name} contains a non-mapping YAML document"
+        documents.append(document)
+    return documents
+
+
+def _named_document(documents: list[dict[str, Any]], *, kind: str, name: str) -> dict[str, Any]:
+    matches = [
+        document
+        for document in documents
+        if document.get("kind") == kind
+        and isinstance(document.get("metadata"), dict)
+        and document["metadata"].get("name") == name
+    ]
+    assert len(matches) == 1, f"expected exactly one {kind} named {name}; found {len(matches)}"
+    return matches[0]
+
+
+def _role(path: Path, name: str) -> dict[str, Any]:
+    return _named_document(_documents(path), kind="Role", name=name)
+
+
+def _role_binding(path: Path, name: str) -> dict[str, Any]:
+    return _named_document(_documents(path), kind="RoleBinding", name=name)
+
+
+def _assert_factory_role_scope(path: Path = _RBAC) -> None:
+    vps_role = _role(path, "gate-submitter")
+    factory_role = _role(path, "gate-submitter-factory")
+
+    assert vps_role["rules"] == _EXPECTED_SUBMITTER_RULES
+    assert factory_role["rules"] == vps_role["rules"] == _EXPECTED_SUBMITTER_RULES
+
+
+def _assert_role_binding_isolation(path: Path = _RBAC) -> None:
+    vps_binding = _role_binding(path, "gate-submitter")
+    factory_binding = _role_binding(path, "gate-submitter-factory")
+
+    assert vps_binding["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "gate-submitter",
+    }
+    assert vps_binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "gate-submitter", "namespace": "gates"}
+    ]
+    assert factory_binding["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "gate-submitter-factory",
+    }
+    assert factory_binding["subjects"] == [
+        {
+            "kind": "ServiceAccount",
+            "name": "gate-submitter-factory",
+            "namespace": "gates",
+        }
+    ]
+
+
+def _mutated_manifest(tmp_path: Path, mutation: Callable[[list[dict[str, Any]]], None]) -> Path:
+    documents = _documents()
+    mutation(documents)
+    path = tmp_path / _RBAC.name
+    path.write_text(yaml.safe_dump_all(documents, sort_keys=False), encoding="utf-8")
+    return path
 
 
 def test_the_gate_submitter_may_create_secrets_and_do_nothing_else_with_them() -> None:
@@ -136,22 +236,60 @@ def test_the_gate_submitter_may_delete_jobs_and_nothing_else() -> None:
     assert "only jobs may be deleted" in suite
 
 
-def test_factory_gate_submission_has_an_independent_bound_service_account() -> None:
-    """Factory sandboxes must not share the VPS gate-submitter credential.
+def test_the_factory_role_has_the_exact_gate_submitter_scope() -> None:
+    """The factory receives the same narrow scope as the VPS submitter."""
+    _assert_factory_role_scope()
 
-    The factory reaches the API server over the tailnet, while the existing
-    ``gate-submitter`` identity belongs to the VPS consumer.  The identities
-    must therefore remain separate all the way through their RoleBindings: a
-    factory binding to the VPS ServiceAccount (or the reverse) would make a
-    rotate or revoke of one credential interrupt both consumers.
-    """
-    declared = _declared_yaml()
 
-    assert "name: gate-submitter-factory" in declared, (
-        "gates-rbac.yaml must declare the separate gate-submitter-factory "
-        "ServiceAccount, Role, RoleBinding, and ServiceAccount-token Secret "
-        "for factory sandboxes"
-    )
+def test_factory_and_vps_bindings_keep_their_roles_and_service_accounts_separate() -> None:
+    """Each consumer must remain bound only to its own Role and ServiceAccount."""
+    _assert_role_binding_isolation()
+
+
+def test_factory_role_scope_rejects_a_missing_secrets_rule(tmp_path: Path) -> None:
+    """A factory credential without its per-run Secret write cannot submit a gate."""
+
+    def delete_secrets_rule(documents: list[dict[str, Any]]) -> None:
+        factory_role = _named_document(documents, kind="Role", name="gate-submitter-factory")
+        factory_role["rules"] = [
+            rule for rule in factory_role["rules"] if rule["resources"] != ["secrets"]
+        ]
+
+    mutated = _mutated_manifest(tmp_path, delete_secrets_rule)
+
+    with pytest.raises(AssertionError):
+        _assert_factory_role_scope(mutated)
+
+
+def test_factory_role_scope_rejects_a_widened_verb(tmp_path: Path) -> None:
+    """A factory credential must not gain a Secret read verb."""
+
+    def add_secret_read(documents: list[dict[str, Any]]) -> None:
+        factory_role = _named_document(documents, kind="Role", name="gate-submitter-factory")
+        secrets_rule = next(
+            rule for rule in factory_role["rules"] if rule["resources"] == ["secrets"]
+        )
+        secrets_rule["verbs"].append("get")
+
+    mutated = _mutated_manifest(tmp_path, add_secret_read)
+
+    with pytest.raises(AssertionError):
+        _assert_factory_role_scope(mutated)
+
+
+def test_factory_binding_rejects_the_vps_service_account(tmp_path: Path) -> None:
+    """The VPS identity must never receive the factory Role."""
+
+    def bind_vps_service_account(documents: list[dict[str, Any]]) -> None:
+        factory_binding = _named_document(
+            documents, kind="RoleBinding", name="gate-submitter-factory"
+        )
+        factory_binding["subjects"][0]["name"] = "gate-submitter"
+
+    mutated = _mutated_manifest(tmp_path, bind_vps_service_account)
+
+    with pytest.raises(AssertionError):
+        _assert_role_binding_isolation(mutated)
 
 
 def test_the_rbac_manifest_declares_no_secret_holding_a_github_credential() -> None:
