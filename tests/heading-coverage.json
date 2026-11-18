@@ -4448,5 +4448,45 @@
     "test": "TODO",
     "reason": "Spec-first (v244): a real test at the integration tier or above is owed for this scenario: it runs the gate client's prepare step for a consuming repository declaring gate_queue = \"gates-missing-lq\" against a committed cluster-queue-gates.yaml that declares no such LocalQueue, and asserts the push is refused naming gate_queue and gates-missing-lq and that no gate Job is submitted. livespec-dev-tooling-xymcj6 owns it.",
     "work_item": "livespec-dev-tooling-xymcj6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment accepts a queue-required ruleset whose bypass actors are the recovery App and the declared incident-merge App",
+    "test": "TODO",
+    "reason": "Spec-first (v246): a real test at the integration tier or above is owed for this scenario: it exercises the incident-merge principal's contract against a live ruleset and an incident work item with a pr-bound attempt, for the behaviour this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails a queue-required repository whose incident-merge App is the recovery App",
+    "test": "TODO",
+    "reason": "Spec-first (v246): a real test at the integration tier or above is owed for this scenario: it exercises the incident-merge principal's contract against a live ruleset and an incident work item with a pr-bound attempt, for the behaviour this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails an incident-merge App whose bypass mode is not pull_request",
+    "test": "TODO",
+    "reason": "Spec-first (v246): a real test at the integration tier or above is owed for this scenario: it exercises the incident-merge principal's contract against a live ruleset and an incident work item with a pr-bound attempt, for the behaviour this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident-merge principal merges a green expedited repair outside the merge queue and records it",
+    "test": "TODO",
+    "reason": "Spec-first (v246): a real test at the integration tier or above is owed for this scenario: it exercises the incident-merge principal's contract against a live ruleset and an incident work item with a pr-bound attempt, for the behaviour this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the incident-merge principal refuses an expedited repair whose required check is not green on its head",
+    "test": "TODO",
+    "reason": "Spec-first (v246): a real test at the integration tier or above is owed for this scenario: it exercises the incident-merge principal's contract against a live ruleset and an incident work item with a pr-bound attempt, for the behaviour this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
   }
 ]
