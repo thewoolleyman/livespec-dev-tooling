@@ -234,6 +234,21 @@ def test_reconcile_secrets_missing_env_var_is_finding(*, monkeypatch: pytest.Mon
     assert "with-livespec-env.sh" in outcome.message
 
 
+def test_missing_app_credentials_diagnostic_names_wrapper_without_backend(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The missing-credential diagnostic names the wrapper by interface, not by backend."""
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
+    monkeypatch.delenv("APP_ID", raising=False)
+    monkeypatch.delenv("APP_PRIVATE_KEY", raising=False)
+    outcome = reconcile_secret_names(ctx=make_context(table={}, calls=[]), member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert "with-livespec-env.sh" in outcome.message
+    assert "supplies the required environment" in outcome.message
+    assert "1Password" not in outcome.message
+
+
 def test_reconcile_secrets_failed_push_is_finding(*, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GITHUB_APP_ID", raising=False)
     monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)

@@ -192,7 +192,7 @@ def reconcile_beads_tenant_secret(*, ctx: LocalContext) -> RowOutcome:
     return RowFinding(
         severity="warning",
         message=(
-            "tenant secret BEADS_DOLT_PASSWORD absent: run under the configured 1Password env "
+            "tenant secret BEADS_DOLT_PASSWORD absent: run under the configured credential "
             "wrapper (e.g. with-livespec-env.sh) so the bare tenant password is injected at "
             f"bd-call time — never commit it — see {_PREREQ_DOC}"
         ),
