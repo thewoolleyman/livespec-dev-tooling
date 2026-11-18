@@ -21,6 +21,7 @@ No assertion restates a production value.
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ __all__: list[str] = []
 _ROOT = Path(__file__).resolve().parents[2]
 _PHASE2 = _ROOT / "ci-runner" / "k3s" / "phase2"
 _ARC = _PHASE2 / "arc" / "worker"
+_RUNNER_IMAGE_HELPER = _PHASE2 / "container-hook" / "runner-image.sh"
 _HOSTS = {p.stem for p in (_ROOT / "homelab-worker" / "hosts").glob("*.env")}
 _CLASS_TAINT = "homelab-worker.livespec.dev/class"
 _HOLD_TAINT = "homelab-worker.livespec.dev/admission"
@@ -47,6 +49,45 @@ def _load(path: Path) -> dict[str, Any]:
 
 def test_at_least_one_homelab_worker_runner_set_exists() -> None:
     assert _VALUES
+
+
+def test_runner_pin_agreement_refuses_a_worker_image_version_drift(tmp_path: Path) -> None:
+    """The agreement guard must inspect scale-set values below arc/worker too."""
+    hook_dir = tmp_path / "container-hook"
+    arc_dir = tmp_path / "arc"
+    worker_dir = arc_dir / "worker"
+    hook_dir.mkdir()
+    worker_dir.mkdir(parents=True)
+    shutil.copy2(_RUNNER_IMAGE_HELPER, hook_dir / _RUNNER_IMAGE_HELPER.name)
+    shutil.copy2(_PHASE2 / "arc" / "values-livespec.yaml", arc_dir / "values-livespec.yaml")
+
+    worker = _VALUES[0]
+    source = worker.read_text(encoding="utf-8")
+    drifted = re.sub(
+        r"(image: ghcr\.io/actions/actions-runner:)\d+\.\d+\.\d+",
+        r"\g<1>9.9.9",
+        source,
+        count=1,
+    )
+    assert drifted != source
+    copied_worker = worker_dir / worker.name
+    _ = copied_worker.write_text(drifted, encoding="utf-8")
+
+    result = run_under_hang_guard(
+        [
+            "/bin/bash",
+            "-c",
+            'CONTAINER_HOOK_DIR="$1"; source "$CONTAINER_HOOK_DIR/runner-image.sh"; assert_values_pins_agree',
+            "--",
+            str(hook_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert copied_worker.name in result.stderr
 
 
 @pytest.mark.parametrize("path", _VALUES, ids=lambda p: p.name)

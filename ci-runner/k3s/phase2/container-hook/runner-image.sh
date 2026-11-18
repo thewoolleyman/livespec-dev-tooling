@@ -42,38 +42,45 @@ runner_version_from_ref() {
   printf '%s\n' "${tag}"
 }
 
-# Every ../arc/values-*.yaml states the runner version THREE times: the
+# Every fleet ../arc/values-*.yaml and homelab-worker
+# ../arc/worker/values-*.yaml states the runner version THREE times: the
 # `image:` pin, the hostPath of the fleet-patched container hook, and the
 # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION the hook reads. It cannot be
 # stated once anywhere: ../reconstruct/converge-ci-stack.sh applies each file
 # on its own with `helm upgrade -f <file>` and merges no shared base, so there
 # is nothing for a file to inherit it from. Nothing else in this tree would
 # notice one file left behind at a bump — resolve_runner_image reads the
-# reference file alone. This is that notice: every file must agree with the
-# reference, and each disagreement is named. It compares files against EACH
-# OTHER, never against a caller's --image, so the documented bump order (build
-# the bundle first, then rewrite the values files) still passes.
+# reference file alone. This is that notice: every scale-set values file must
+# agree with the reference, and each disagreement is named. It compares files
+# against EACH OTHER, never against a caller's --image, so the documented bump
+# order (build the bundle first, then rewrite the values files) still passes.
 assert_values_pins_agree() {
-  local arc_dir ref_image ref_version file bad=0
+  local arc_dir ref_image ref_version file file_label bad=0 worker_files=0
+  local -a values_files
   arc_dir="${CONTAINER_HOOK_DIR}/../arc"
   ref_image="$(resolve_runner_image "")" || return 1
   ref_version="$(runner_version_from_ref "${ref_image}")" || return 1
-  for file in "${arc_dir}"/values-*.yaml; do
+  mapfile -d '' values_files < <(find "${arc_dir}" -maxdepth 2 -type f -name 'values-*.yaml' -print0 | sort -z)
+  for file in "${values_files[@]}"; do
     local pinned hook_version env_version
+    file_label="${file#"${arc_dir}/"}"
+    case "${file_label}" in
+      worker/*) worker_files=$((worker_files + 1)) ;;
+    esac
     pinned="$(sed -nE 's#^[[:space:]]*image:[[:space:]]*(ghcr\.io/actions/actions-runner:[^[:space:]]+)[[:space:]]*$#\1#p' "${file}" | head -1)"
     hook_version="$(sed -nE 's#^[[:space:]]*path:[[:space:]]*/usr/local/lib/ci-runner-k3s/hooks/([^/]+)/index\.js[[:space:]]*$#\1#p' "${file}" | head -1)"
     env_version="$(grep -A1 -F 'name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION' "${file}" \
                    | sed -nE 's/^[[:space:]]*value:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' | head -1)"
     if [ "${pinned}" != "${ref_image}" ]; then
-      echo "FATAL: ${file##*/} pins runner image '${pinned:-<none>}', not the reference '${ref_image}'" >&2
+      echo "FATAL: ${file_label} pins runner image '${pinned:-<none>}', not the reference '${ref_image}'" >&2
       bad=1
     fi
     if [ "${hook_version}" != "${ref_version}" ]; then
-      echo "FATAL: ${file##*/} mounts the fleet container hook for runner '${hook_version:-<none>}', not ${ref_version}" >&2
+      echo "FATAL: ${file_label} mounts the fleet container hook for runner '${hook_version:-<none>}', not ${ref_version}" >&2
       bad=1
     fi
     if [ "${env_version}" != "${ref_version}" ]; then
-      echo "FATAL: ${file##*/} declares ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION='${env_version:-<none>}', not ${ref_version}" >&2
+      echo "FATAL: ${file_label} declares ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION='${env_version:-<none>}', not ${ref_version}" >&2
       bad=1
     fi
   done
@@ -81,7 +88,8 @@ assert_values_pins_agree() {
     echo "FATAL: the arc/ values files disagree about the runner version — a bump rewrites EVERY one of them in the same change (README.md \"Runner-image bump procedure\")" >&2
     return 1
   fi
-  printf 'all arc/values-*.yaml pin %s and select the fleet hook for %s\n' "${ref_image}" "${ref_version}"
+  printf 'all %s arc scale-set values files (including %s worker values file(s)) pin %s and select the fleet hook for %s\n' \
+    "${#values_files[@]}" "${worker_files}" "${ref_image}" "${ref_version}"
 }
 
 # ghcr.io/actions/actions-runner:2.336.0@sha256:... -> ghcr.io/actions/actions-runner@sha256:...
