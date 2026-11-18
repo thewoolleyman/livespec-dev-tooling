@@ -13,16 +13,19 @@
       host_vars. Nothing has been changed.
     quiet: true
 
-# ADOPT: remove a hand-placed UNMARKED line for the same key blob so the marked
-# entry replaces it without a duplicate. The regexp is anchored to a line that
-# STARTS with the key type and blob. The managed line starts with the option
-# `no-X11-forwarding`, so it never matches and a second apply is changed=0.
-- name: Adopt a hand-placed unmarked line for each declared key
-  ansible.builtin.lineinfile:
-    path: "{{ authorized_keys_managed_login_path }}"
-    regexp: '^{{ (item.public_key.split()[0:2] | join(" ")) | regex_escape }}( .*)?$'
-    state: absent
-  when: (item.state | default('present')) != 'absent'
+# A malformed key would turn the adopt regexp into a pattern that matches other
+# lines (an empty key matches blank lines, a one-token key every line of that
+# type), so every entry's key shape is checked before anything is changed.
+- name: Require each declared public key to be a key type and a base64 body
+  ansible.builtin.assert:
+    that:
+      - item.public_key.split() | length >= 2
+      - item.public_key.split()[0] is match('^(ssh|ecdsa)-')
+      - item.public_key.split()[1] is match('^[A-Za-z0-9+/=]+$')
+    fail_msg: >-
+      The public_key of entry {{ item.name }} is not a key type followed by a
+      base64 body. Nothing has been changed.
+    quiet: true
   loop: "{{ authorized_keys_managed_login_entries }}"
   loop_control:
     label: "{{ item.name }}"
@@ -37,6 +40,21 @@
     marker: "# {mark} ANSIBLE MANAGED authorized_keys_managed_login: {{ item.name }}"
     block: "no-X11-forwarding {{ item.public_key }}"
     state: "{{ item.state | default('present') }}"
+  loop: "{{ authorized_keys_managed_login_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ADOPT, AFTER the marked block is placed: remove a hand-placed UNMARKED line
+# for the same key blob so the marked entry replaces it without a duplicate. The
+# order matters: a failed placement can never leave the host without the key. The regexp is anchored to a line that
+# STARTS with the key type and blob. The managed line starts with the option
+# `no-X11-forwarding`, so it never matches and a second apply is changed=0.
+- name: Adopt a hand-placed unmarked line for each declared key
+  ansible.builtin.lineinfile:
+    path: "{{ authorized_keys_managed_login_path }}"
+    regexp: '^{{ (item.public_key.split()[0:2] | join(" ")) | regex_escape }}( .*)?$'
+    state: absent
+  when: (item.state | default('present')) != 'absent'
   loop: "{{ authorized_keys_managed_login_entries }}"
   loop_control:
     label: "{{ item.name }}"
