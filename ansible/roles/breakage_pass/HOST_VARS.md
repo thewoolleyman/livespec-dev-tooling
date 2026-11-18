@@ -28,28 +28,46 @@ systemctl list-timers 'livespec-breakage-pass-*'
 
 ## Schedule
 
-`OnUnitInactiveSec` is `breakage_pass_interval_minutes` (15) and the pass is bound
-to `breakage_pass_timeout_seconds` (600), so two starts are never more than 25
-minutes apart. The role refuses an interval plus timeout above 30 minutes.
+`OnUnitInactiveSec` is `breakage_pass_interval_minutes` (15). A pass is bound to
+`breakage_pass_timeout_seconds` (600) and gets `breakage_pass_stop_timeout_seconds`
+(90) to stop, so two starts are never more than 26.5 minutes apart. The role
+refuses an interval plus timeout plus stop timeout above 30 minutes.
+
+## Staleness
+
+`livespec-breakage-pass-staleness.timer` runs every five minutes and reports a
+repository with no successful pass within `breakage_pass_stale_after_seconds`
+(3600). It runs role `reconcile_runs`'s staleness check, so the journal line reads
+`reconcile-runs-stale tenant=<name> age_seconds=<n>`, where `<name>` is a watched
+repository. With `breakage_pass_staleness_on_failure` set (the dev host:
+`host-unit-alert@%n.service`) the unit fails, and so alerts, once per stale
+episode. A new install seeds each marker so a repository is not reported missing
+before its first pass.
 
 ## The hold, and what it does not cover
 
-`breakage_pass_enabled` defaults to false: the units are installed and the timers
-are left disabled and stopped. The host variables enable it; merging does not
-apply it.
+`breakage_pass_enabled` defaults to false, and false is the revert: no breakage
+pass unit is left installed. The host variables enable it; merging does not apply
+it.
 
 A repository is read only for the workflows it declares in
 `.livespec.jsonc` `dispatcher.breakage_workflows`. A repository that declares
 none prints no verdict line, only the closing result line. The role does not
 declare any workflow for a repository.
 
-The role needs `livespec-tenant-wrap.sh`, installed by `reconcile_runs`, and
-refuses to run without it.
+## Apply order: `reconcile_runs` FIRST
+
+`livespec-tenant-wrap.sh` and the staleness check are NOT currently installed on
+the host. Role `reconcile_runs` installs them, and this role refuses to run without
+them. So `reconcile_runs` must be reviewed and applied first, as its own step
+(`just ansible-drift`, then `just ansible-apply`, with its own second look), and
+only then `breakage_pass`. The role also refuses a repository whose checkout,
+`.livespec.jsonc`, `dispatcher.py` or committed credential wrapper is unusable.
 
 ## Apply and revert
 
-Apply through the drift-gated route, then read the first verdict back from the
-journal:
+After `reconcile_runs` is applied, apply through the drift-gated route and read
+the first verdict back from the journal:
 
 ```bash
 just ansible-drift dev-host.yml --tags breakage_pass
@@ -57,5 +75,23 @@ just ansible-apply dev-host.yml --tags breakage_pass
 journalctl -u 'livespec-breakage-pass-*.service' --since '-1h'
 ```
 
-Revert by setting `breakage_pass_enabled: false` and applying again, or by
-`systemctl disable --now livespec-breakage-pass-<name>.timer`.
+### Revert
+
+Set `breakage_pass_enabled: false` and apply, or drop a repository from
+`breakage_pass_repos` and apply. The role stops and disables each breakage pass
+timer it no longer wants, removes every breakage pass unit file (the services, the
+timers and the staleness pair), and reloads systemd. It does this by finding the
+installed `livespec-breakage-pass-*` units, so a repository removed from the list is
+cleaned up too. A second run changes nothing. The revert needs neither
+`reconcile_runs` nor a usable repository.
+
+It does not remove the runner script or the state directory, and it does not stop a
+pass that is already running: that pass ends at its own bound, at most 10 minutes
+plus the 90 s stop timeout. For an immediate stop on the host, as the role would
+do, `systemctl disable --now livespec-breakage-pass-<name>.timer`.
+
+## DoD status
+
+The Definition of Done asks the journal to show each pass's verdict line. That is
+unmet until a repository declares `dispatcher.breakage_workflows` in its committed
+`.livespec.jsonc`; until then a pass prints only the closing result line.

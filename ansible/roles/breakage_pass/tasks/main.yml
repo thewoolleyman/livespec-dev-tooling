@@ -2,6 +2,12 @@
 # breakage_pass -- one service and one timer per watched repository, each running
 # the orchestrator's `dispatcher.py breakage-pass` under the repository's
 # committed credential wrapper. See HOST_VARS.md.
+#
+# breakage_pass_enabled true installs and arms the units for the listed
+# repositories. false is the revert: every breakage pass timer is stopped and
+# disabled and every breakage pass unit file removed, as is any unit of a
+# repository dropped from the list. The runner script and the state directory are
+# left in place.
 
 - name: Refuse an incomplete breakage pass configuration
   ansible.builtin.assert:
@@ -10,14 +16,15 @@
       - breakage_pass_runner_bin | string | length > 0
       - breakage_pass_state_dir | string | length > 0
       - breakage_pass_interval_minutes | int > 0
-      - breakage_pass_interval_minutes | int + (breakage_pass_timeout_seconds | int / 60) <= 30
+      - breakage_pass_interval_minutes | int + ((breakage_pass_timeout_seconds | int + breakage_pass_stop_timeout_seconds | int) / 60) <= 30
       - breakage_pass_repos | selectattr('name', 'undefined') | list | length == 0
       - breakage_pass_repos | selectattr('repo', 'undefined') | list | length == 0
+      - "'staleness' not in (breakage_pass_repos | map(attribute='name') | list)"
     fail_msg: >-
       The breakage pass needs a plugin root, a runner path, a state directory,
       and a repository list whose entries carry a name and a repo. The interval
-      plus the pass timeout must stay within 30 minutes, the schedule the
-      Definition of Done sets.
+      plus the pass timeout plus the stop timeout must stay within 30 minutes,
+      the schedule the Definition of Done sets.
     success_msg: breakage pass configuration is complete
 
 - name: Refuse a plugin root under a versioned plugin cache
@@ -33,79 +40,270 @@
       reboot.
     success_msg: every breakage pass path is stable
 
-- name: Check that the tenant credential wrapper is installed
-  ansible.builtin.stat:
-    path: "{{ breakage_pass_tenant_wrap_bin }}"
-  register: breakage_pass_tenant_wrap
+- name: Install and arm the breakage pass units
+  when: breakage_pass_enabled | bool
+  block:
+    - name: Check that the tenant credential wrapper is installed
+      ansible.builtin.stat:
+        path: "{{ breakage_pass_tenant_wrap_bin }}"
+      register: breakage_pass_tenant_wrap
+      become: true
+      check_mode: false
+
+    - name: Refuse to install without the tenant credential wrapper
+      ansible.builtin.assert:
+        that: breakage_pass_tenant_wrap.stat.exists and breakage_pass_tenant_wrap.stat.executable
+        fail_msg: >-
+          {{ breakage_pass_tenant_wrap_bin }} is not an executable file. Converge
+          role reconcile_runs first; a pass files ledger items and must run under the
+          repository's committed credential wrapper, never a bare family wrapper.
+        success_msg: the tenant credential wrapper is installed
+
+    - name: Check each watched repository's checkout, config and the dispatcher
+      ansible.builtin.stat:
+        path: "{{ item.1 }}"
+      loop: >-
+        {{ breakage_pass_repos | map(attribute='name')
+           | zip(breakage_pass_repos | map(attribute='repo')) | list
+           + breakage_pass_repos | map(attribute='name')
+           | zip(breakage_pass_repos | map(attribute='repo') | map('regex_replace', '$', '/.livespec.jsonc')) | list
+           + [['(dispatcher)', breakage_pass_plugin_root ~ '/scripts/bin/dispatcher.py']] }}
+      loop_control:
+        label: "{{ item.0 }}: {{ item.1 }}"
+      register: breakage_pass_inputs
+      become: true
+      check_mode: false
+
+    - name: Refuse a timer whose inputs are missing
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isdir if item.item.1 in (breakage_pass_repos | map(attribute='repo')) else true
+        fail_msg: >-
+          {{ item.item.0 }}: {{ item.item.1 }} is missing or not usable. A pass whose
+          checkout, .livespec.jsonc or dispatcher.py is absent fails every run.
+          Provision it before converging this role.
+        success_msg: "{{ item.item.0 }}: {{ item.item.1 }} is present"
+      loop: "{{ breakage_pass_inputs.results }}"
+      loop_control:
+        label: "{{ item.item.0 }}: {{ item.item.1 }}"
+
+    # The same script the units run, in its --resolve mode, from role reconcile_runs's
+    # copy of it, so nothing is installed yet. It reads each repository's committed
+    # credential_wrapper exactly as a pass will and refuses one that is malformed.
+    - name: Resolve each repository's committed credential wrapper as its pass will
+      ansible.builtin.script:
+        cmd: "{{ role_path }}/../reconcile_runs/files/livespec-tenant-wrap.sh --resolve"
+        chdir: "{{ item.repo }}"
+      environment:
+        TW_FAMILY_WRAPPER: "{{ breakage_pass_family_wrapper }}"
+        TW_REPO: "{{ item.repo }}"
+      loop: "{{ breakage_pass_repos }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: breakage_pass_wrap_resolved
+      changed_when: false
+      failed_when: false
+      become: true
+      become_user: "{{ breakage_pass_user }}"
+      check_mode: false
+
+    - name: Refuse a repository whose committed credential wrapper a pass could not run
+      ansible.builtin.assert:
+        that: item.rc == 0
+        fail_msg: >-
+          {{ item.item.name }}: {{ (item.stderr | default('') | trim) or (item.stdout | default('') | trim) }}.
+          Every pass of this repository would exit 78 without running. Fix its
+          committed .livespec.jsonc credential_wrapper, or provision the wrapper it
+          names, before converging this role.
+        success_msg: "{{ item.item.name }}: {{ item.stdout_lines | default([]) | join(' ') }}"
+      loop: "{{ breakage_pass_wrap_resolved.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Check that the staleness check is installed
+      ansible.builtin.stat:
+        path: "{{ breakage_pass_staleness_bin }}"
+      register: breakage_pass_staleness_installed
+      become: true
+      check_mode: false
+
+    - name: Refuse to install without the staleness check
+      ansible.builtin.assert:
+        that: breakage_pass_staleness_installed.stat.exists and breakage_pass_staleness_installed.stat.executable
+        fail_msg: >-
+          {{ breakage_pass_staleness_bin }} is not an executable file. Converge role
+          reconcile_runs first; this role reuses its staleness check.
+        success_msg: the staleness check is installed
+
+    - name: Check the staleness unit's OnFailure= alert unit
+      ansible.builtin.stat:
+        path: >-
+          {{ breakage_pass_unit_dir }}/{{ breakage_pass_staleness_on_failure
+             | regex_replace('@.*$', '@') }}.service
+      register: breakage_pass_alert_unit
+      become: true
+      check_mode: false
+      when: breakage_pass_staleness_on_failure | length > 0
+
+    - name: Refuse an OnFailure= target that is not installed
+      ansible.builtin.assert:
+        that: breakage_pass_alert_unit.stat.exists
+        fail_msg: >-
+          breakage_pass_staleness_on_failure names {{ breakage_pass_staleness_on_failure }},
+          but {{ breakage_pass_unit_dir }}/{{ breakage_pass_staleness_on_failure
+          | regex_replace('@.*$', '@') }}.service is not installed. A staleness
+          check whose alert unit is missing fails with nobody told.
+        success_msg: the staleness alert unit is installed
+      when: breakage_pass_staleness_on_failure | length > 0
+
+    - name: Create the breakage pass state directory
+      ansible.builtin.file:
+        path: "{{ breakage_pass_state_dir }}"
+        state: directory
+        owner: "{{ breakage_pass_user }}"
+        group: "{{ breakage_pass_group }}"
+        mode: "0750"
+      become: true
+
+    - name: Install the breakage pass runner
+      ansible.builtin.copy:
+        src: livespec-breakage-pass
+        dest: "{{ breakage_pass_runner_bin }}"
+        owner: "{{ breakage_pass_unit_owner }}"
+        group: "{{ breakage_pass_unit_group }}"
+        mode: "0755"
+      become: true
+
+    - name: Install the breakage pass service units
+      ansible.builtin.template:
+        src: breakage-pass.service.j2
+        dest: "{{ breakage_pass_unit_dir }}/livespec-breakage-pass-{{ item.name }}.service"
+        owner: "{{ breakage_pass_unit_owner }}"
+        group: "{{ breakage_pass_unit_group }}"
+        mode: "0644"
+      become: true
+      loop: "{{ breakage_pass_repos }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Install the breakage pass timer units
+      ansible.builtin.template:
+        src: breakage-pass.timer.j2
+        dest: "{{ breakage_pass_unit_dir }}/livespec-breakage-pass-{{ item.name }}.timer"
+        owner: "{{ breakage_pass_unit_owner }}"
+        group: "{{ breakage_pass_unit_group }}"
+        mode: "0644"
+      become: true
+      loop: "{{ breakage_pass_repos }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Seed each success marker on a new install
+      # So the staleness check never reports a newly installed repository missing
+      # before its first pass. An existing marker is never refreshed.
+      ansible.builtin.command:
+        argv: [touch, "{{ breakage_pass_state_dir }}/{{ item.name }}.last-success"]
+        creates: "{{ breakage_pass_state_dir }}/{{ item.name }}.last-success"
+      become: true
+      become_user: "{{ breakage_pass_user }}"
+      loop: "{{ breakage_pass_repos }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Install the breakage pass staleness units
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ breakage_pass_unit_dir }}/{{ item.dest }}"
+        owner: "{{ breakage_pass_unit_owner }}"
+        group: "{{ breakage_pass_unit_group }}"
+        mode: "0644"
+      become: true
+      loop:
+        - src: breakage-pass-staleness.service.j2
+          dest: "{{ breakage_pass_staleness_unit }}.service"
+        - src: breakage-pass-staleness.timer.j2
+          dest: "{{ breakage_pass_staleness_unit }}.timer"
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Reload systemd so the breakage pass units are known
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      become: true
+      when: breakage_pass_manage_systemd | bool
+
+    - name: Check which breakage pass timer units are installed
+      # Read BEFORE any timer is armed. Under --check the templates above write
+      # nothing, so arming a not-yet-existing timer would fail with systemd's "Could
+      # not find the requested service", a fault the role invented rather than found.
+      ansible.builtin.stat:
+        path: "{{ breakage_pass_unit_dir }}/{{ item }}.timer"
+      loop: "{{ (breakage_pass_repos | map(attribute='name') | map('regex_replace', '^', 'livespec-breakage-pass-') | list) + [breakage_pass_staleness_unit] }}"
+      register: breakage_pass_timer_units
+      become: true
+      check_mode: false
+
+    - name: Set the breakage pass timers to the hold
+      # enabled true starts every timer; false leaves each installed, disabled and
+      # stopped, so a converge on a host that has not been cleared starts nothing.
+      # The staleness timer follows the same switch. It does not remove a unit file
+      # or stop a pass already running, and a repository dropped from
+      # breakage_pass_repos keeps its timer: see HOST_VARS.md "Revert".
+      ansible.builtin.systemd_service:
+        name: "{{ item.item }}.timer"
+        enabled: "{{ breakage_pass_enabled | bool }}"
+        state: "{{ 'started' if breakage_pass_enabled | bool else 'stopped' }}"
+      become: true
+      when: (breakage_pass_manage_systemd | bool) and (not ansible_check_mode or item.stat.exists)
+      loop: "{{ breakage_pass_timer_units.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+# --- Revert ---
+# Runs on every converge. Enabled, it removes only the units of a repository that
+# is no longer listed; disabled, it removes them all. A second run finds nothing.
+
+- name: Find the installed breakage pass units
+  ansible.builtin.find:
+    paths: "{{ breakage_pass_unit_dir }}"
+    patterns:
+      - "livespec-breakage-pass-*.service"
+      - "livespec-breakage-pass-*.timer"
+  register: breakage_pass_installed
   become: true
   check_mode: false
 
-- name: Refuse to install without the tenant credential wrapper
-  ansible.builtin.assert:
-    that: breakage_pass_tenant_wrap.stat.exists and breakage_pass_tenant_wrap.stat.executable
-    fail_msg: >-
-      {{ breakage_pass_tenant_wrap_bin }} is not an executable file. Converge
-      role reconcile_runs first; a pass files ledger items and must run under the
-      repository's committed credential wrapper, never a bare family wrapper.
-    success_msg: the tenant credential wrapper is installed
+- name: Work out which breakage pass units are no longer wanted
+  ansible.builtin.set_fact:
+    breakage_pass_unwanted: >-
+      {{ breakage_pass_installed.files | map(attribute='path') | map('basename')
+         | reject('in', breakage_pass_wanted) | list }}
+  vars:
+    breakage_pass_wanted: >-
+      {{ ((breakage_pass_repos | map(attribute='name') | map('regex_replace', '^', 'livespec-breakage-pass-') | map('regex_replace', '$', '.service') | list)
+          + (breakage_pass_repos | map(attribute='name') | map('regex_replace', '^', 'livespec-breakage-pass-') | map('regex_replace', '$', '.timer') | list)
+          + [breakage_pass_staleness_unit ~ '.service', breakage_pass_staleness_unit ~ '.timer'])
+         if breakage_pass_enabled | bool else [] }}
 
-- name: Create the breakage pass state directory
+- name: Stop and disable the breakage pass timers that are no longer wanted
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  become: true
+  when: (breakage_pass_manage_systemd | bool) and item.endswith('.timer')
+  loop: "{{ breakage_pass_unwanted }}"
+
+- name: Remove the breakage pass unit files that are no longer wanted
   ansible.builtin.file:
-    path: "{{ breakage_pass_state_dir }}"
-    state: directory
-    owner: "{{ breakage_pass_user }}"
-    group: "{{ breakage_pass_group }}"
-    mode: "0750"
+    path: "{{ breakage_pass_unit_dir }}/{{ item }}"
+    state: absent
   become: true
+  loop: "{{ breakage_pass_unwanted }}"
 
-- name: Install the breakage pass runner
-  ansible.builtin.copy:
-    src: livespec-breakage-pass
-    dest: "{{ breakage_pass_runner_bin }}"
-    owner: root
-    group: root
-    mode: "0755"
-  become: true
-
-- name: Install the breakage pass service units
-  ansible.builtin.template:
-    src: breakage-pass.service.j2
-    dest: "{{ breakage_pass_unit_dir }}/livespec-breakage-pass-{{ item.name }}.service"
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  loop: "{{ breakage_pass_repos }}"
-  loop_control:
-    label: "{{ item.name }}"
-
-- name: Install the breakage pass timer units
-  ansible.builtin.template:
-    src: breakage-pass.timer.j2
-    dest: "{{ breakage_pass_unit_dir }}/livespec-breakage-pass-{{ item.name }}.timer"
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  loop: "{{ breakage_pass_repos }}"
-  loop_control:
-    label: "{{ item.name }}"
-
-- name: Reload systemd so the breakage pass units are known
+- name: Reload systemd after removing breakage pass units
   ansible.builtin.systemd_service:
     daemon_reload: true
   become: true
-  when: breakage_pass_manage_systemd | bool
-
-- name: Set the breakage pass timers to the hold
-  # enabled true starts every timer; false leaves each installed, disabled and
-  # stopped, so a converge on a host that has not been cleared starts nothing.
-  ansible.builtin.systemd_service:
-    name: "livespec-breakage-pass-{{ item.name }}.timer"
-    enabled: "{{ breakage_pass_enabled | bool }}"
-    state: "{{ 'started' if breakage_pass_enabled | bool else 'stopped' }}"
-  become: true
-  when: breakage_pass_manage_systemd | bool
-  loop: "{{ breakage_pass_repos }}"
-  loop_control:
-    label: "{{ item.name }}"
+  when: (breakage_pass_manage_systemd | bool) and (breakage_pass_unwanted | length > 0)

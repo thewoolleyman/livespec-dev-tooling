@@ -15,3 +15,4 @@ Environment=TW_REPO={{ item.repo }}
 Environment=TW_FAMILY_WRAPPER={{ breakage_pass_family_wrapper }}
 ExecStart={{ breakage_pass_tenant_wrap_bin }} -- {{ breakage_pass_runner_bin }} {{ item.name }} {{ item.repo }} {{ breakage_pass_plugin_root }} {{ breakage_pass_python }} {{ breakage_pass_state_dir }}
 TimeoutStartSec={{ breakage_pass_timeout_seconds }}
+TimeoutStopSec={{ breakage_pass_stop_timeout_seconds }}
