@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.222.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.221.0...v1.222.0) (2026-11-18)
+
+
+### Features
+
+* **branch-protection:** admit the declared incident-merge App as a pull_request-mode ruleset bypass (livespec-dev-tooling-u3nbm3) ([2c19fbf](https://github.com/livespec-ai/livespec-dev-tooling/commit/2c19fbf75b4eeef6a9e2d5d70e338b55279ae790))
+* **incident:** the incident-merge principal has its own scoped App credential (livespec-dev-tooling-u3nbm3) ([ccc592d](https://github.com/livespec-ai/livespec-dev-tooling/commit/ccc592db52541da2702cffbf369dbaaff9f0ea6a))
+
+
+### Bug Fixes
+
+* **incident-ci:** a regenerated pull request test merge commit no longer refuses a CI run's identity (livespec-dev-tooling-bqnzcm) ([9e9e643](https://github.com/livespec-ai/livespec-dev-tooling/commit/9e9e643ec84ef2da29a8d6969823b5a609d55f66))
+
 ## [1.221.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.220.1...v1.221.0) (2026-11-18)
 
 
