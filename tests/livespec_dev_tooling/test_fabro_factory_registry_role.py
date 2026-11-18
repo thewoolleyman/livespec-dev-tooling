@@ -70,6 +70,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+import yaml
 
 __all__: list[str] = []
 
@@ -859,14 +860,14 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
     # The committed `vps` entry's local connection admits only the control node's
     # machine-id (livespec-dev-tooling-fy6ip4), and this run's controller is a gate
     # sandbox or a dev host, so it presents the control node's declared identity.
-    control_node_id = re.search(
-        r"^\s*control_node_machine_id:\s*([0-9a-f]{32})\s*$",
-        _LEGACY_INVENTORY.read_text(encoding="utf-8"),
-        re.MULTILINE,
-    )
-    assert control_node_id is not None, f"{_LEGACY_INVENTORY} must declare the vps identity"
+    # Read from the vps entry by path: the inventory also declares the control-node
+    # role group's own machine-id, so the first textual match is not the vps's.
+    inventory = yaml.safe_load(_LEGACY_INVENTORY.read_text(encoding="utf-8"))
+    vps_entry = inventory["all"]["children"]["legacy"]["children"]["dev_hosts"]["hosts"]["vps"]
+    control_node_id = vps_entry.get("control_node_machine_id")
+    assert isinstance(control_node_id, str), f"{_LEGACY_INVENTORY} must declare the vps identity"
     identity = tmp_path / "control-node-machine-id"
-    identity.write_text(f"{control_node_id[1]}\n", encoding="utf-8")
+    identity.write_text(f"{control_node_id}\n", encoding="utf-8")
     done = _ansible(
         cwd=_REPO_ROOT,
         argv=[
