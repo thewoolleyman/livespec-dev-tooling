@@ -89,7 +89,9 @@ spec:
               # DERIVATION.md "hp 4 -> 3: cohort 32 (2026-11-16)".
               # 5 -> 4 on 2026-11-16: the unit follows gmktec 9 -> 8, cohort 32 -> 31. See DERIVATION.md
               # "gmktec 8: cohort 31 (2026-11-16)".
-              nominalQuota: 4
+              # 4 -> 5 on 2026-11-18: the unit follows gamingpc 3 -> 4, cohort 31 -> 32. See DERIVATION.md
+              # "gamingpc 4: cohort 32 (2026-11-18)".
+              nominalQuota: 5
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed
