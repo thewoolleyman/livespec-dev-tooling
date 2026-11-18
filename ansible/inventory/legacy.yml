@@ -117,6 +117,20 @@ all:
             ~ ' only on the control node (machine-id ' ~ control_node_machine_id
             ~ '), and this controller has machine-id ' ~ control_node_identity_found
             ~ '. Run plays that select control_node_role from the control node.') }}
+    # THE REMOTE ALIAS OF THE VPS DEV HOST (livespec-dev-tooling bd-ib-voazyv S3). It
+    # lets the control node (hetzner-xubuntu) run ansible/dev-host.yml against the VPS
+    # over ssh, to drift-check and apply the dev-host roles while they move off it.
+    # It is in NO `dev_hosts` group: a play that selects `dev_hosts` still reaches
+    # exactly `vps`, and `dev-host.yml` reaches this alias only when run with
+    # `-e dev_host_group=dev_hosts_remote`, so exactly one of `vps` and `vps-remote`
+    # is selected per controller. Its host_vars and group_vars are symlinks to the
+    # vps's and dev_hosts', so the two never diverge. The account is `ubuntu`, per
+    # the tailscale-admin record (a bare ssh uses the caller's own account).
+    dev_hosts_remote:
+      hosts:
+        vps-remote:
+          ansible_host: vps.perch-rudd.ts.net
+          ansible_user: ubuntu
     legacy:
       children:
         dev_hosts:
