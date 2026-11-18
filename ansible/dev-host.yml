@@ -73,6 +73,11 @@
       tags: [otel_collector]
     - role: pressure_telemetry
       tags: [pressure_telemetry]
+    # The token-spend reporting scripts are committed here and copied from this
+    # checkout on every explicit converge.  Keeping the source with the role
+    # means the vps never receives a hand-edited script.
+    - role: token_spend_report
+      tags: [token_spend_report]
     # The pinned Fabro CLIENT builds a Dispatcher running natively here execs
     # through a committed `dispatcher.factories.<name>.bin`, staged from a
     # digest-verified control-node source and never by hand. See

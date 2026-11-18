@@ -1,0 +1,57 @@
+---
+- name: Refuse an incomplete token-spend report route
+  ansible.builtin.assert:
+    that:
+      - token_spend_report_user | string | length > 0
+      - token_spend_report_group | string | length > 0
+      - token_spend_report_root | string | length > 0
+      - token_spend_report_scripts_dir | string | length > 0
+      - token_spend_report_script_names | length > 0
+    fail_msg: token-spend report account, destination and committed script list must be declared.
+    success_msg: token-spend report route is complete
+
+- name: Create the token-spend script directory
+  ansible.builtin.file:
+    path: "{{ token_spend_report_scripts_dir }}"
+    state: directory
+    owner: "{{ token_spend_report_user }}"
+    group: "{{ token_spend_report_group }}"
+    mode: "0755"
+  become: true
+
+- name: Install committed token-spend scripts
+  # `copy` reads from this role in the checked-out, reviewed repository.  It
+  # deliberately has no remote source and no shell fallback, so a VPS-local
+  # edit cannot become the source of a later apply.
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ token_spend_report_scripts_dir }}/{{ item }}"
+    owner: "{{ token_spend_report_user }}"
+    group: "{{ token_spend_report_group }}"
+    mode: "0755"
+  become: true
+  loop: "{{ token_spend_report_script_names }}"
+  register: token_spend_report_installs
+
+- name: Read back installed token-spend script digests
+  # This is a host read, not a copy result: it proves the bytes visible at the
+  # live destination after the committed apply.
+  ansible.builtin.stat:
+    path: "{{ token_spend_report_scripts_dir }}/{{ item }}"
+    checksum_algorithm: sha256
+  become: true
+  loop: "{{ token_spend_report_script_names }}"
+  register: token_spend_report_readback
+
+- name: Assert installed token-spend bytes equal committed source
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == (lookup('ansible.builtin.file', role_path ~ '/files/' ~ item.item) | hash('sha256'))
+    fail_msg: >-
+      {{ item.item }} on {{ inventory_hostname }} differs from the committed
+      token-spend report source after apply.
+    success_msg: "{{ item.item }} on {{ inventory_hostname }} matches committed source"
+  loop: "{{ token_spend_report_readback.results }}"
+  loop_control:
+    label: "{{ item.item }}"

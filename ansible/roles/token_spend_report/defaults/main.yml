@@ -1,0 +1,17 @@
+---
+# The token-spend collector is user-scoped tooling.  Its source is this role's
+# committed files/ directory; an apply copies those exact bytes to the vps.
+token_spend_report_user: ubuntu
+token_spend_report_group: ubuntu
+token_spend_report_root: /home/ubuntu/token-spend-report
+token_spend_report_scripts_dir: "{{ token_spend_report_root }}/scripts"
+token_spend_report_script_names:
+  - spend_staleness.py
+  - tenant_watch.py
+  - emit_spend.py
+  - emit_factory.py
+  - emit_nodes.py
+  - build_board.py
+  - factory_map.py
+  - attribution.py
+  - hcq.py
