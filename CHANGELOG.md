@@ -58,6 +58,28 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.224.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.223.0...v1.224.0) (2026-11-18)
+
+
+### Features
+
+* add independent factory gate submitter credential ([10d1943](https://github.com/livespec-ai/livespec-dev-tooling/commit/10d194371071cd3447091df85088df1ab868ee6f))
+* **ansible:** the observer converge projects the incident-merge App credential root-only (livespec-dev-tooling-u3nbm3) ([a779727](https://github.com/livespec-ai/livespec-dev-tooling/commit/a779727d1f6aebd6ab7fe5884121edb4c3618664))
+* **ci:** per-file coverage runs as duration-balanced shards that one combine step judges (livespec-dev-tooling-mxjbmi) ([50220c1](https://github.com/livespec-ai/livespec-dev-tooling/commit/50220c1db74cc511be2b4347a15a48118f6b3c9a))
+* **incident:** the incident-merge principal merges a verified expedited repair outside the queue and records every outcome (livespec-dev-tooling-u3nbm3) ([6e44574](https://github.com/livespec-ai/livespec-dev-tooling/commit/6e445740567fc33ef6d87e2cf45f4fdd41cb86b0))
+* **incident:** the incident-merge runner binds the principal's seams and names every refusal (livespec-dev-tooling-o6u7jm) ([1fac00b](https://github.com/livespec-ai/livespec-dev-tooling/commit/1fac00badc6330f42619a8e315108e453414f2b5))
+* red ([e142d3b](https://github.com/livespec-ai/livespec-dev-tooling/commit/e142d3bb76f3d5b5e7c7b3fc4a905bd019967b3e))
+* red ([41a6bdc](https://github.com/livespec-ai/livespec-dev-tooling/commit/41a6bdc8216b66bc49ec7cc3893f3ed36437b4e0))
+* report recent factory deliveries by repository ([55d6746](https://github.com/livespec-ai/livespec-dev-tooling/commit/55d67463605c4d67a5d1056dae4b209ef73ca8f8))
+
+
+### Bug Fixes
+
+* **branch-protection:** a declared incident-merge App id not yet on the ruleset passes, so adoption precedes arming (livespec-dev-tooling-u3nbm3) ([7edb24f](https://github.com/livespec-ai/livespec-dev-tooling/commit/7edb24f9c22d402d1d70b4b0e267bbcb60e3e5e2))
+* **ci-runner:** a placement value file converges alone through the ci_placement tag (livespec-dev-tooling-vksuu2) ([1ee38d7](https://github.com/livespec-ai/livespec-dev-tooling/commit/1ee38d7ccff2f18f966fc71535e0d7bd9154ca10))
+* **ci-runner:** check cohort churn budgets by flavor ([206d9fd](https://github.com/livespec-ai/livespec-dev-tooling/commit/206d9fd15c0fd1ffc09ff81cb926c54a55ebd4b0))
+* **incident:** the incident-merge principal's gating reads fit the App's grant (livespec-dev-tooling-o6u7jm) ([b700046](https://github.com/livespec-ai/livespec-dev-tooling/commit/b7000467380355e1492488b41e820098a12350e6))
+
 ## [1.223.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.222.0...v1.223.0) (2026-11-18)
 
 
