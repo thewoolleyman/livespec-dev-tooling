@@ -256,6 +256,26 @@ check_bootstrap_precedes_check() {
   return 0
 }
 
+check_watchdog_defined_in_gate_container() {
+  # The watchdog function must be DEFINED in the gate container's own script
+  # before the line that calls it: the init container's copy lives in another
+  # shell (livespec-dev-tooling-jurlun).
+  local f="$1" gate def call after
+  gate="$(grep -nE '^        - name: gate$' "$f" | sed -n 1p | cut -d: -f1)"
+  [ -n "${gate}" ] || { echo "    missing: the gate container"; return 1; }
+  def="$(awk -v g="${gate}" 'NR > g && /gate_process_tree_watchdog\(\) *\{/ { print NR; exit }' "$f")"
+  call="$(awk -v g="${gate}" 'NR > g && /^ *gate_process_tree_watchdog "/ { print NR; exit }' "$f")"
+  [ -n "${call}" ] || { echo "    missing: the gate container's watchdog call"; return 1; }
+  [ -n "${def}" ]  || { echo "    the gate container calls gate_process_tree_watchdog but never defines it"; return 1; }
+  [ "${def}" -lt "${call}" ] || { echo "    the definition (line ${def}) does not precede the call (line ${call})"; return 1; }
+  # The backgrounded watchdog must be stopped when the script ends, or it holds
+  # the output pipe open forever and a captured run never returns.
+  after="$(sed -n "$((call + 1)),$((call + 12))p" "$f")"
+  grep -qE "trap .*kill .*gate_watchdog_pid.* EXIT" <<< "${after}" ||
+    { echo "    the watchdog started on line ${call} is never stopped by an EXIT trap"; return 1; }
+  return 0
+}
+
 echo "== A. the image comes from the GATED repository's own workflow =="
 out_a="${SCRATCH}/a.yaml"; out_b="${SCRATCH}/b.yaml"
 if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${out_a}" 2>"${SCRATCH}/a.err" &&
@@ -431,6 +451,11 @@ else
 fi
 
 echo "== J. the repository bootstrap precedes the aggregate =="
+if check_watchdog_defined_in_gate_container "${out_a}" > "${SCRATCH}/watchdog.report" 2>&1; then
+  pass "the gate container defines the process-tree watchdog before it calls it"
+else
+  fail "the gate container's watchdog is not defined before its call: $(cat "${SCRATCH}/watchdog.report")"
+fi
 if check_bootstrap_precedes_check "${out_a}"; then
   pass "worktree pack and commit-refuse hooks install before just check"
 else

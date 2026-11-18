@@ -423,6 +423,12 @@ spec:
               # runs through forge_retry, the same bounded retry the core fetch
               # uses, defined once in forge-retry.sh.
               @@GATE_FORGE_RETRY@@
+              # The quiet-container process-tree printer, defined in THIS container's
+              # script too: the init container above defines its own copy in a separate
+              # shell, so a call below with no definition here fails "command not found"
+              # (backgrounded, so silently) and the watchdog never runs
+              # (livespec-dev-tooling-jurlun).
+              @@GATE_PROCESS_TREE_WATCHDOG@@
               @@GATE_SIBLING_CLONES@@
               # THE MEMBERS THIS JOB MUST NOT RUN, carried under the GATED
               # REPOSITORY'S OWN skip variable (livespec-dev-tooling-mex6ga).
@@ -755,6 +761,12 @@ spec:
               set +e
               : > "${recipe_log}"
               gate_process_tree_watchdog "${recipe_log}" &
+              # Stopped when this script ends, on every exit path: left running it
+              # outlives the script and holds the inherited output pipe open, so
+              # anything that runs this script with captured output waits forever
+              # (the rendered-script consumer scenarios hung a gate Job that way).
+              gate_watchdog_pid=$!
+              trap 'kill "${gate_watchdog_pid}" 2>/dev/null || true' EXIT
               {
                 set -e
                 @@GATE_RECIPES@@
