@@ -439,6 +439,32 @@
     lookup('ansible.builtin.env', incident_observer_recovery_app_id_env) | length == 0
     or lookup('ansible.builtin.env', incident_observer_recovery_app_key_env) | length == 0
 
+- name: Write the incident-merge App credential, root-only, beside the recovery credential
+  # JSON `{"app_id", "private_key"}` like the recovery file, but owned by root at
+  # mode 0600: the observer process and its reader run as incident_observer_user
+  # and must never hold the merge principal's key. Written only on the
+  # production apply and only when the wrapper projects both variables, so an
+  # apply before the App credential is written still converges.
+  ansible.builtin.copy:
+    content: >-
+      {{ {'app_id': lookup('ansible.builtin.env', incident_observer_merge_app_id_env),
+          'private_key': lookup('ansible.builtin.env', incident_observer_merge_app_key_env)}
+         | to_json }}
+    dest: "{{ incident_observer_merge_app_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true
+  when:
+    - >-
+      not (incident_observer_scratch | bool)
+      and incident_observer_scratch_name is not defined
+      and incident_observer_target_branch | default('', true) | length == 0
+      and incident_observer_installation_name is not defined
+    - lookup('ansible.builtin.env', incident_observer_merge_app_id_env) | length > 0
+    - lookup('ansible.builtin.env', incident_observer_merge_app_key_env) | length > 0
+
 - name: Install controller.json from host facts
   ansible.builtin.template:
     src: controller.json.j2
