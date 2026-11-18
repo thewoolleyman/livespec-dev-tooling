@@ -29,6 +29,19 @@ class _Forge:
 
 
 @dataclass
+class _AlertForge(_Forge):
+    """Record the per-episode issue the publisher raises for an expired outage."""
+
+    issues: list[dict[str, Any]] = field(default_factory=list)
+
+    def find_open_issues(self, *, title: str) -> list[dict[str, Any]]:
+        return [issue for issue in self.issues if issue["title"] == title]
+
+    def create_issue(self, *, title: str, labels: list[str]) -> None:
+        self.issues.append({"title": title, "labels": labels})
+
+
+@dataclass
 class _EpisodeForge:
     """In-memory forge responses for master-push episode-clock scenarios."""
 
@@ -120,6 +133,30 @@ def test_publishes_a_non_required_external_master_health_summary() -> None:
                 "title": "master-health: external",
                 "summary": json.dumps(summary, separators=(",", ":"), sort_keys=True),
             },
+        }
+    ]
+
+
+def test_an_expired_external_episode_raises_one_issue_across_repeated_publications() -> None:
+    """The external-red alert is one forge issue, keyed by the episode's first run."""
+    forge = _AlertForge()
+    episode = {"earliest_run_id": 417, "started_at": "2026-11-17T11:00:00Z"}
+
+    for run_id in (418, 419):
+        _ = publish_master_health(
+            forge=forge,
+            head_sha=_HEAD_SHA,
+            run_id=run_id,
+            ci_green_passed=True,
+            jobs=[{"name": "check-python", "result": "failure", "external_only": True}],
+            episode=episode,
+            expired=True,
+        )
+
+    assert forge.issues == [
+        {
+            "title": "master-green: external episode 417",
+            "labels": ["master-green-external-red"],
         }
     ]
 
