@@ -1,0 +1,143 @@
+---
+# admin_kubeconfig — see defaults/main.yml for what this is and is not.
+#
+# THE CREDENTIAL IS A CLUSTER-ADMIN CERTIFICATE. Every task that holds its
+# content carries no_log, and nothing here puts it in an argument vector, a diff
+# or a debug message (SPECIFICATION/constraints.md "No credential in a process's
+# argument vector").
+
+- name: Look for the kubeconfig this host already holds
+  # Read first, so the outage decision below knows whether there is something to keep.
+  ansible.builtin.stat:
+    path: "{{ admin_kubeconfig_dest }}"
+  become: "{{ admin_kubeconfig_become }}"
+  register: admin_kubeconfig_present
+
+- name: Read the control-plane node's admin kubeconfig through the inventory
+  # TWO TRANSPORTS, ONE ANSWER. A host that is a ci_pool member or has a connection
+  # to the control-plane node reads it with slurp delegated there. A host with no
+  # such connection (hetzner-xubuntu) reads it over the session account's own ssh,
+  # next task. Either way a failed read is data, not a failed play: the next tasks
+  # decide what a failure means.
+  ansible.builtin.slurp:
+    src: "{{ admin_kubeconfig_remote_path }}"
+  become: "{{ admin_kubeconfig_remote_become }}"
+  delegate_to: "{{ admin_kubeconfig_remote_host }}"
+  register: admin_kubeconfig_slurped
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  check_mode: false
+  no_log: true
+  when: admin_kubeconfig_fetch == 'slurp'
+
+- name: Read the control-plane node's admin kubeconfig over the session account's ssh
+  # Runs as the account that holds the credential, so its ssh identity and its own
+  # ssh client configuration apply, and it asks for no privilege on the node: k3s
+  # writes the file readable there. The argv names the node and the path, never a
+  # secret; the credential comes back on stdout, which no_log keeps out of the log.
+  ansible.builtin.command:
+    argv: "{{ admin_kubeconfig_ssh_argv + [admin_kubeconfig_remote_host, 'cat', admin_kubeconfig_remote_path] }}"
+  become: false
+  register: admin_kubeconfig_sshed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  when: admin_kubeconfig_fetch == 'ssh'
+
+- name: Settle whether the read produced a credential
+  # ANY failure of the read (a connection that cannot be made, an ssh refusal, a
+  # non-zero cat, a file the node does not have) leaves `ok` false. The decision of
+  # what a failure means is made once, below, from this one fact.
+  ansible.builtin.set_fact:
+    admin_kubeconfig_read_ok: >-
+      {{ (admin_kubeconfig_fetch == 'ssh' and (admin_kubeconfig_sshed.rc | default(1)) == 0)
+         or (admin_kubeconfig_fetch == 'slurp'
+             and not (admin_kubeconfig_slurped.unreachable | default(false))
+             and not (admin_kubeconfig_slurped.failed | default(false))
+             and admin_kubeconfig_slurped.content is defined) }}
+    admin_kubeconfig_fetched_text: >-
+      {{ (admin_kubeconfig_sshed.stdout | default(''))
+         if admin_kubeconfig_fetch == 'ssh'
+         else ((admin_kubeconfig_slurped.content | default('')) | b64decode) }}
+  no_log: true
+
+- name: Require a first install to reach the control-plane node
+  # A host that holds nothing and cannot read the node must fail loudly, never report
+  # success with no credential installed.
+  ansible.builtin.assert:
+    that:
+      - admin_kubeconfig_present.stat.exists or admin_kubeconfig_read_ok | bool
+    fail_msg: >-
+      The control-plane node {{ admin_kubeconfig_remote_host }} could not be read
+      ({{ admin_kubeconfig_fetch }}) and {{ admin_kubeconfig_dest }} does not exist, so
+      there is nothing to keep. Nothing on this host has been changed. Apply again once
+      the node answers.
+
+- name: Keep the kubeconfig this host holds while the control-plane node cannot be read
+  # THE OUTAGE RULE: a control-plane outage must not break a converge on a host that
+  # already holds the file. The file is neither touched nor refreshed.
+  ansible.builtin.debug:
+    msg: >-
+      {{ admin_kubeconfig_remote_host }} could not be read; keeping the existing
+      {{ admin_kubeconfig_dest }} unchanged.
+  when: not (admin_kubeconfig_read_ok | bool)
+
+- name: Install the admin kubeconfig
+  when: admin_kubeconfig_read_ok | bool
+  vars:
+    _admin_kubeconfig_rendered: >-
+      {{ admin_kubeconfig_fetched_text
+         | regex_replace('server:[ \t]*https://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+',
+                         'server: ' ~ admin_kubeconfig_server_url) }}
+  block:
+    - name: Refuse a fetched file that is not an admin kubeconfig
+      # A truthful-looking but wrong answer is worse than a failure: it would
+      # overwrite a working credential with a useless one. The assert runs before
+      # the first write on this host, so a refusal changes nothing.
+      ansible.builtin.assert:
+        that:
+          - "'kind: Config' in admin_kubeconfig_fetched_text"
+          - "'server:' in admin_kubeconfig_fetched_text"
+          - "'client-certificate-data:' in admin_kubeconfig_fetched_text"
+          - "'client-key-data:' in admin_kubeconfig_fetched_text"
+        fail_msg: >-
+          {{ admin_kubeconfig_remote_host }}:{{ admin_kubeconfig_remote_path }} is
+          not a kubeconfig that carries a client certificate and key; refusing to
+          overwrite {{ admin_kubeconfig_dest }}. Nothing on this host has been changed.
+        success_msg: the fetched file is an admin kubeconfig
+      no_log: true
+
+    - name: Refuse a kubeconfig whose server is still a loopback address
+      # A loopback server address would point kubectl at this host, which is the very
+      # failure this role removes. The rewrite must have produced the tailnet address.
+      ansible.builtin.assert:
+        that:
+          - "('server: ' ~ admin_kubeconfig_server_url) in _admin_kubeconfig_rendered"
+        fail_msg: >-
+          the fetched kubeconfig's server address could not be rewritten to
+          {{ admin_kubeconfig_server_url }}; refusing to install it.
+        success_msg: the server address is {{ admin_kubeconfig_server_url }}
+      no_log: true
+
+    - name: Create the credential directory
+      ansible.builtin.file:
+        path: "{{ admin_kubeconfig_dir }}"
+        state: directory
+        owner: "{{ admin_kubeconfig_user }}"
+        group: "{{ admin_kubeconfig_group }}"
+        mode: "0700"
+      become: "{{ admin_kubeconfig_become }}"
+
+    - name: Install the admin kubeconfig
+      # 0600 and the session account's own: it is a cluster-admin certificate, so it is
+      # never group- or world-readable.
+      ansible.builtin.copy:
+        content: "{{ _admin_kubeconfig_rendered }}"
+        dest: "{{ admin_kubeconfig_dest }}"
+        owner: "{{ admin_kubeconfig_user }}"
+        group: "{{ admin_kubeconfig_group }}"
+        mode: "0600"
+      become: "{{ admin_kubeconfig_become }}"
+      no_log: true

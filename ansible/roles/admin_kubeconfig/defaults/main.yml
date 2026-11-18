@@ -1,0 +1,56 @@
+---
+# admin_kubeconfig — a coordinator, dispatcher or converge host's CLUSTER-ADMIN
+# kubeconfig for its session account, so `kubectl get nodes` works there with
+# no ssh to the control-plane node (livespec-dev-tooling-uf2pgj).
+#
+# THE SIBLING OF gates_kubeconfig, NOT A VARIANT OF IT. gates_kubeconfig
+# installs the gate-submitter ServiceAccount token (jobs and pods in the gates
+# namespace, nothing cluster-scoped) for the delegated pre-push gate, and
+# SPECIFICATION/contracts.md names that role. This role installs the
+# control-plane node's own admin credential, which can do anything in the
+# cluster, so it lands in the session account's home at 0600 and never in the
+# shared, group-readable credential directory.
+#
+# NO MACHINE IS NAMED HERE (livespec-dev-tooling-prdxxe, `just
+# check-ansible-hostname-free`): the control-plane node is resolved from the
+# `ci_pool` group by `cluster_role`, and the hosts that take the role are an
+# inventory group.
+
+# The control-plane node whose k3s server renders the admin kubeconfig.
+admin_kubeconfig_remote_host: >-
+  {{ groups['ci_pool'] | map('extract', hostvars)
+     | selectattr('cluster_role', 'defined')
+     | selectattr('cluster_role', 'equalto', 'server')
+     | map(attribute='inventory_hostname') | first }}
+# Where k3s writes it on that node, and how this host reads it.
+#   fetch: slurp  reads it through the inventory, delegated to that node under
+#                 become (the file is read-only to root there). Right for a host
+#                 that has a connection to the node.
+#   fetch: ssh    reads it over the SESSION ACCOUNT'S OWN ssh, as that account, with
+#                 no privilege on the node (it is root:root 0644 there, measured).
+#                 Right for a host with no inventory connection to the node; set
+#                 `admin_kubeconfig_remote_host` to the name its ssh client resolves.
+admin_kubeconfig_fetch: slurp
+admin_kubeconfig_remote_path: /etc/rancher/k3s/k3s.yaml
+admin_kubeconfig_remote_become: true
+admin_kubeconfig_ssh_argv:
+  - ssh
+  - -o
+  - BatchMode=yes
+
+# The account that holds the credential and runs kubectl. Its tailnet ssh key is
+# also what reaches the control-plane node for the read.
+admin_kubeconfig_user: "{{ ansible_user | default('ubuntu') }}"
+admin_kubeconfig_group: "{{ admin_kubeconfig_user }}"
+admin_kubeconfig_dir: "/home/{{ admin_kubeconfig_user }}/.kube"
+admin_kubeconfig_dest: "{{ admin_kubeconfig_dir }}/config"
+# The local write runs as that account itself, so it needs no privilege.
+admin_kubeconfig_become: false
+
+# The address every remote host reaches the API server at. k3s writes the loopback
+# address into k3s.yaml; the role rewrites it to the control-plane node's tailnet
+# name, because that is what resolves from another host.
+admin_kubeconfig_tailnet_domain: perch-rudd.ts.net
+admin_kubeconfig_api_port: 6443
+admin_kubeconfig_server_url: >-
+  https://{{ admin_kubeconfig_remote_host }}.{{ admin_kubeconfig_tailnet_domain }}:{{ admin_kubeconfig_api_port }}
