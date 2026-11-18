@@ -175,6 +175,15 @@ all:
           hosts:
             vps:
             gamingpc-xubuntu:
+        # Hosts whose session account holds a CLUSTER-ADMIN kubeconfig
+        # (ansible/admin-kubeconfig.yml, role admin_kubeconfig,
+        # livespec-dev-tooling-uf2pgj), so kubectl works there with no ssh to the
+        # control-plane node. Add a host only after a second look at the credential
+        # path: the file can do anything in the cluster. hetzner-xubuntu joins when
+        # hetzner-xubuntu-info's hxi_kubeconfig consumes this role and drops its copy.
+        cluster_admin_hosts:
+          hosts:
+            vps:
         # The machines on the maintainer's home LAN, which reach one another
         # by direct OpenSSH as a fallback that does not depend on Tailscale
         # (ansible/lan-ssh-fallback.yml, role lan_ssh_fallback). The control
