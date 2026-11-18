@@ -388,6 +388,11 @@ incident_observer_fetch_interval: 5min
 # are root-owned and not group or other writable, and the apply checks the script first.
 incident_observer_merge_service_path: /etc/systemd/system/livespec-incident-merge@.service
 incident_observer_merge_authority_script: "{{ incident_observer_reader_dir }}/{{ incident_observer_reader_script_relative }}"
+# The root merge unit's working directory: root-owned, holding only a copy of the repository's
+# committed .beads/config.yaml, because `bd` takes its tenant and Dolt host from the working
+# directory's config and the root runner's ledger call carries the tenant password. It is
+# never the observer-owned reference clone.
+incident_observer_merge_workdir: /opt/livespec-incident/merge-workdir
 
 # --- the scratch-branch instance ----------------------------------------------
 # False for production. ansible/incident-observer-scratch.yml sets it, with the
