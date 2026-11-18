@@ -59,10 +59,11 @@
 # gate ref's nonce.
 #
 # THE TOKEN IS NOT A STANDING CREDENTIAL, AND THIS FILE DECLARES NO SECRET FOR
-# IT. The only Secret declared below is the ServiceAccount token this manifest
-# has always carried; the per-run token Secret is created at submit time by the
-# gate client, named per run, and owned by its Job. Neither this file nor the
-# cluster holds a GitHub credential between runs.
+# IT. The only Secrets declared below are the TWO ServiceAccount tokens,
+# `gate-submitter-token` (VPS) and `gate-submitter-factory-token` (factory); the
+# per-run token Secret is created at submit time by the gate client, named per
+# run, and owned by its Job. Neither this file nor the cluster holds a GitHub
+# credential between runs.
 #
 # APPLIED ON EVERY BOOT by the reconstruct-on-boot converge
 # (../reconstruct/converge-ci-stack.sh, step 10b), which applies this manifest and
