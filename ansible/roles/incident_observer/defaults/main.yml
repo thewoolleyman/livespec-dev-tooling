@@ -133,6 +133,16 @@ incident_observer_secret_min_bytes: 32
 incident_observer_recovery_app_path: /etc/livespec-incident/recovery-app.json
 incident_observer_recovery_app_id_env: LIVESPEC_RECOVERY_ORG_APP_ID
 incident_observer_recovery_app_key_env: LIVESPEC_RECOVERY_ORG_APP_PRIVATE_KEY
+# The incident-merge principal's GitHub App credential (livespec-dev-tooling-u3nbm3):
+# an INDEPENDENTLY provisioned App, never the recovery App above and never the
+# factory/publishing bot, that may merge a green expedited repair pull request
+# outside the merge queue (SPECIFICATION/contracts.md, "Incident-merge principal.").
+# These are the NAMES of the two variables the credential wrapper projects on the
+# control node; incident_merge_app.py reads them and refuses any App id but the
+# committed incident_merge_integration_id. Names only: no value lives here, and no
+# task reads them yet, so declaring them projects, writes and enables nothing.
+incident_observer_merge_app_id_env: LIVESPEC_INCIDENT_MERGE_APP_ID
+incident_observer_merge_app_key_env: LIVESPEC_INCIDENT_MERGE_APP_PRIVATE_KEY
 incident_observer_reader_env_path: /etc/livespec-incident/reader.env
 incident_observer_reader_env_var: BEADS_DOLT_PASSWORD
 incident_observer_tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544
