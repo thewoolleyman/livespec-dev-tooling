@@ -26,6 +26,32 @@
 #
 # A pass that exits 0 refreshes <state_dir>/<name>.last-success. The pass's own
 # exit status is this script's exit status, except a refused sync, which is 70.
+#
+# A LIVE DISPATCHER HOLDS THE PASS BACK. The orchestrator checkout is also the
+# dispatcher's launcher tree. A launcher past launch, or a sourced lib (config.sh,
+# launch-lib.sh), may not survive an in-place edit because bash reads a script
+# incrementally, so a fast-forward under a running launcher is not safe. While any
+# dispatch-dual.sh or resume-capped.sh process has that tree as its cwd or script
+# path, this script skips the WHOLE pass: no fetch, no fast-forward, no pass. It
+# does not run read-only on the current HEAD either, because that HEAD may predate a
+# fix the pass depends on (a reader without #5513's manual admission would file
+# auto-admission items). It journals
+#   breakage-pass-skipped repo=<name> reason=dispatcher-live pid=<pid> script=<basename> detail=<why>
+# exits 0, writes NO success marker and does not trip OnFailure=. A skip is
+# therefore visible in the journal, and a skip that lasts past the staleness bound
+# (breakage_pass_stale_after_seconds) is reported by the staleness unit, because the
+# marker stops advancing.
+#
+# Detection reads <proc_root>/<pid>/cmdline and <proc_root>/<pid>/cwd for every
+# process. It never uses pgrep -f, whose own argv would name the pattern it looks
+# for. A process matches when one of its first four argv words is named
+# dispatch-dual.sh or resume-capped.sh AND that script path, or the process cwd, lies
+# under the tree. A word naming a script under another tree with a readable cwd
+# outside this one does not match. A process whose cwd cannot be read and whose
+# script path does not name the tree is treated as live: the script cannot rule the
+# tree out, so it fails closed. A process that vanishes mid-scan, or whose cmdline
+# cannot be read at all, names nothing and does not match. LIVESPEC_BREAKAGE_PROC_ROOT
+# (default /proc) exists only so tests can supply a fake process table.
 set -u
 name=$1
 repo=$2
@@ -36,6 +62,61 @@ checkout=$6
 branch=$7
 
 export GIT_TERMINAL_PROMPT=0
+proc_root=${LIVESPEC_BREAKAGE_PROC_ROOT:-/proc}
+
+# live_dispatcher <tree>: print "<pid> <script> <detail>" for the first dispatcher
+# process on <tree> and return 0, or return 1 when none is live.
+live_dispatcher() {
+    local tree entry pid argv word base script cwd detail
+    tree=$(readlink -f "$1" 2>/dev/null) || tree=$1
+    for entry in "$proc_root"/[0-9]*; do
+        pid=${entry##*/}
+        [ "$pid" = "$$" ] && continue
+        mapfile -d '' -t argv < "$entry/cmdline" 2>/dev/null || continue
+        for word in "${argv[@]:0:4}"; do
+            base=${word##*/}
+            case "$base" in
+                dispatch-dual.sh | resume-capped.sh) ;;
+                *) continue ;;
+            esac
+            cwd=$(readlink "$entry/cwd" 2>/dev/null) || cwd=
+            if [ -z "$cwd" ] && [ ! -e "$entry" ]; then
+                break
+            fi
+            script=$word
+            case "$script" in
+                /*) ;;
+                *) script=${cwd:-.}/$script ;;
+            esac
+            script=$(realpath -m "$script" 2>/dev/null) || script=$word
+            detail=
+            case "$script" in
+                "$tree"/*) detail=script-path ;;
+            esac
+            if [ -z "$detail" ] && [ -n "$cwd" ]; then
+                case "$cwd" in
+                    "$tree" | "$tree"/*) detail=cwd ;;
+                esac
+            fi
+            if [ -z "$detail" ] && [ -z "$cwd" ]; then
+                detail=cwd-unreadable
+            fi
+            if [ -n "$detail" ]; then
+                printf '%s %s %s\n' "$pid" "$base" "$detail"
+                return 0
+            fi
+            break
+        done
+    done
+    return 1
+}
+
+if live=$(live_dispatcher "$checkout"); then
+    read -r live_pid live_script live_detail <<<"$live"
+    printf 'breakage-pass-skipped repo=%s reason=dispatcher-live pid=%s script=%s detail=%s\n' \
+        "$name" "$live_pid" "$live_script" "$live_detail"
+    exit 0
+fi
 
 # sync_checkout <path>: fast-forward <path> to origin/<branch>, or refuse.
 # Prints the journal line; returns non-zero on a refusal.

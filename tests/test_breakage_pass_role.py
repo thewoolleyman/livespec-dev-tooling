@@ -81,8 +81,16 @@ class _World:
         _ = _git(cwd=self.seed, args=["push", "-q", "origin", _BRANCH])
         return _git(cwd=self.seed, args=["rev-parse", "HEAD"])
 
-    def run(self, *, checkout: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run(
+        self,
+        *,
+        checkout: Path | None = None,
+        proc_root: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         path = checkout if checkout is not None else self.checkout
+        env = dict(_GIT_ENV)
+        if proc_root is not None:
+            env["LIVESPEC_BREAKAGE_PROC_ROOT"] = str(proc_root)
         return subprocess.run(
             [
                 "/bin/bash",
@@ -95,7 +103,7 @@ class _World:
                 str(path),
                 _BRANCH,
             ],
-            env=_GIT_ENV,
+            env=env,
             capture_output=True,
             text=True,
             check=False,
@@ -343,3 +351,186 @@ def test_the_role_refuses_a_missing_checkout_or_branch_and_the_docs_name_the_acc
     assert "COMMITTED IS NOT CONVERGED" in docs
     assert "merge-base --is-ancestor" in docs
     assert "exit 70" in docs
+
+
+def _fake_proc(
+    *,
+    root: Path,
+    pid: int,
+    argv: list[str],
+    cwd: Path | None,
+) -> None:
+    """One fake /proc/<pid> entry: a NUL-separated cmdline and an optional cwd link."""
+    entry = root / str(pid)
+    entry.mkdir(parents=True)
+    _ = (entry / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+    if cwd is not None:
+        (entry / "cwd").symlink_to(cwd)
+
+
+def _skipped(*, done: subprocess.CompletedProcess[str], world: _World) -> list[str]:
+    """Assert a skip: exit 0, no success marker, no pass, checkout untouched."""
+    assert done.returncode == 0
+    assert not (world.state / "alpha.last-success").exists()
+    assert "reader ran" not in done.stdout
+    assert "breakage-pass-result" not in done.stdout
+    assert "breakage-pass-sync" not in done.stdout
+    return done.stdout.splitlines()
+
+
+def test_a_live_dispatcher_script_in_the_checkout_skips_the_whole_pass(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    before = _git(cwd=world.checkout, args=["rev-parse", "HEAD"])
+    tip = world.publish(body="print('reader ran again')\n")
+    procs = tmp_path / "proc"
+    _fake_proc(
+        root=procs,
+        pid=4242,
+        argv=["bash", str(world.checkout / "dispatch-dual.sh"), "--tick"],
+        cwd=tmp_path,
+    )
+
+    lines = _skipped(done=world.run(proc_root=procs), world=world)
+
+    assert lines == [
+        "breakage-pass-skipped repo=alpha reason=dispatcher-live pid=4242 "
+        "script=dispatch-dual.sh detail=script-path"
+    ]
+    # No fetch and no fast-forward: origin moved, the checkout did not.
+    assert _git(cwd=world.checkout, args=["rev-parse", "HEAD"]) == before != tip
+
+
+def test_a_live_dispatcher_whose_cwd_is_the_checkout_skips_the_pass(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    sub = world.checkout / "tmp"
+    sub.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    procs = tmp_path / "proc"
+    # The script lives on another tree, but the process works in this one.
+    _fake_proc(
+        root=procs,
+        pid=77,
+        argv=["bash", str(elsewhere / "resume-capped.sh")],
+        cwd=sub,
+    )
+
+    lines = _skipped(done=world.run(proc_root=procs), world=world)
+
+    assert lines == [
+        "breakage-pass-skipped repo=alpha reason=dispatcher-live pid=77 "
+        "script=resume-capped.sh detail=cwd"
+    ]
+
+
+def test_a_skip_leaves_an_earlier_success_marker_untouched(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    marker = world.state / "alpha.last-success"
+    _ = marker.write_text("", encoding="utf-8")
+    os.utime(marker, (1_000_000, 1_000_000))
+    procs = tmp_path / "proc"
+    _fake_proc(
+        root=procs,
+        pid=9,
+        argv=[str(world.checkout / "dispatch-dual.sh")],
+        cwd=None,
+    )
+
+    done = world.run(proc_root=procs)
+
+    assert done.returncode == 0
+    assert "breakage-pass-skipped" in done.stdout
+    assert marker.stat().st_mtime == 1_000_000
+
+
+def test_a_dispatcher_on_another_tree_does_not_hold_the_pass_back(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    procs = tmp_path / "proc"
+    _fake_proc(
+        root=procs,
+        pid=500,
+        argv=["bash", str(elsewhere / "dispatch-dual.sh")],
+        cwd=elsewhere,
+    )
+    # An unrelated process that merely mentions the name later in its argv.
+    _fake_proc(
+        root=procs,
+        pid=501,
+        argv=["vim", "a", "b", "c", str(world.checkout / "dispatch-dual.sh")],
+        cwd=world.checkout,
+    )
+
+    done = world.run(proc_root=procs)
+
+    assert done.returncode == 0
+    assert "breakage-pass-skipped" not in done.stdout
+    assert "reader ran" in done.stdout
+    assert (world.state / "alpha.last-success").exists()
+
+
+def test_a_dispatcher_whose_cwd_cannot_be_read_and_names_no_tree_fails_closed(
+    *, tmp_path: Path
+) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    elsewhere = tmp_path / "elsewhere"
+    procs = tmp_path / "proc"
+    _fake_proc(
+        root=procs,
+        pid=600,
+        argv=["bash", str(elsewhere / "dispatch-dual.sh")],
+        cwd=None,
+    )
+
+    lines = _skipped(done=world.run(proc_root=procs), world=world)
+
+    assert lines == [
+        "breakage-pass-skipped repo=alpha reason=dispatcher-live pid=600 "
+        "script=dispatch-dual.sh detail=cwd-unreadable"
+    ]
+
+
+def test_with_no_dispatcher_live_the_pass_fast_forwards_and_runs_as_before(
+    *, tmp_path: Path
+) -> None:
+    world = _World(tmp_path=tmp_path, body="print('old reader')\n")
+    tip = world.publish(body="print('reader ran')\n")
+    procs = tmp_path / "proc"
+    procs.mkdir()
+
+    done = world.run(proc_root=procs)
+
+    lines = done.stdout.splitlines()
+    assert done.returncode == 0
+    assert f"head={tip} origin={tip} action=advanced" in lines[0]
+    assert "reader ran" in lines[1]
+    assert (world.state / "alpha.last-success").exists()
+
+
+def test_a_real_dispatcher_process_in_the_checkout_skips_the_pass(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    script = world.checkout / "dispatch-dual.sh"
+    _ = script.write_text("#!/bin/bash\nsleep 60\n", encoding="utf-8")
+    script.chmod(0o755)
+    with subprocess.Popen(["/bin/bash", str(script)], cwd=tmp_path) as live:
+        try:
+            done = world.run()
+        finally:
+            live.kill()
+
+    lines = done.stdout.splitlines()
+    assert done.returncode == 0
+    assert lines == [
+        f"breakage-pass-skipped repo=alpha reason=dispatcher-live pid={live.pid} "
+        "script=dispatch-dual.sh detail=script-path"
+    ]
+    assert not (world.state / "alpha.last-success").exists()
+
+
+def test_the_docs_describe_the_live_dispatcher_skip_and_its_staleness_bound() -> None:
+    docs = (_ROLE / "HOST_VARS.md").read_text(encoding="utf-8")
+    assert "breakage-pass-skipped" in docs
+    assert "reason=dispatcher-live" in docs
+    assert "dispatch-dual.sh" in docs
+    assert "resume-capped.sh" in docs
+    assert "breakage_pass_stale_after_seconds" in docs

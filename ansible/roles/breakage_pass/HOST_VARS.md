@@ -76,6 +76,39 @@ holds commits `origin/<branch>` lacks (`not-fast-forward`), or cannot fast-forwa
 (`ff-failed`). A pass never runs on a stale or foreign reader. A successful sync journals
 `breakage-pass-sync repo=<name> path=<path> head=<sha> origin=<sha> action=<current|advanced>`.
 
+### A live dispatcher holds the pass back
+
+The orchestrator checkout is also the dispatcher's launcher tree. A launcher past launch,
+or a sourced lib (`config.sh`, `launch-lib.sh`), may not survive an in-place edit, because
+bash reads a script incrementally. So a fast-forward under a running launcher is unsafe.
+A pre-launch fast-forward is tolerated: `dispatch-dual.sh` detects a changed script and
+re-execs keeping its ticket.
+
+While any `dispatch-dual.sh` or `resume-capped.sh` process has the orchestrator checkout
+as its cwd or its script path, the runner skips the WHOLE pass: no fetch, no
+fast-forward, no pass. It does not run read-only on the current HEAD, because that HEAD
+may predate a fix the pass depends on. It journals
+
+```
+breakage-pass-skipped repo=<name> reason=dispatcher-live pid=<pid> script=<basename> detail=<script-path|cwd|cwd-unreadable>
+```
+
+exits 0, writes no success marker and does not trip `OnFailure=`. The marker stops
+advancing, so a skip that lasts past `breakage_pass_stale_after_seconds` (3600 s, about
+four consecutive skips at the 15 minute interval) is reported by the staleness unit as
+`reconcile-runs-stale`. A dispatcher that runs for hours therefore alerts after an hour.
+That is deliberate: the pass is not running, and the alert says so.
+
+Detection reads `/proc/<pid>/cmdline` and `/proc/<pid>/cwd` for every process; it never
+uses `pgrep -f`, whose own argv would name the pattern. A process matches when one of its
+first four argv words is named `dispatch-dual.sh` or `resume-capped.sh` and that script
+path, or its cwd, lies under the checkout. A process whose cwd cannot be read and whose
+script path does not name the checkout is treated as live (`cwd-unreadable`): the runner
+cannot rule the tree out, so it fails closed. A process that vanishes mid-scan, or whose
+cmdline cannot be read, names nothing and does not match. Only the orchestrator checkout is
+guarded; the watched repository's checkout is not a launcher tree.
+`LIVESPEC_BREAKAGE_PROC_ROOT` (default `/proc`) exists for tests only.
+
 ### Acceptance before the timer is enabled
 
 After the converge and before `breakage_pass_enabled` is true, on the host, both of these
