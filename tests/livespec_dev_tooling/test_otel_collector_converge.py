@@ -142,7 +142,9 @@ def test_one_committed_converge_carries_a_merged_config_to_the_running_service()
     """The play wires the role, and the role installs the merged config itself."""
     assert _TASKS.is_file(), "the otel_collector role has no tasks/main.yml"
 
-    dev_hosts = _PLAY.read_text(encoding="utf-8").split("hosts: dev_hosts", 1)[1]
+    dev_hosts = _PLAY.read_text(encoding="utf-8").split(
+        "hosts: \"{{ dev_host_group | default('dev_hosts') }}\"", 1
+    )[1]
     assert re.search(r"^    - role: otel_collector$", dev_hosts, re.MULTILINE), dev_hosts
     assert re.search(r"^      tags: \[otel_collector\]$", dev_hosts, re.MULTILINE), dev_hosts
 
