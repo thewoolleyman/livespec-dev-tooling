@@ -381,12 +381,13 @@ incident_observer_fetch_service_path: /etc/systemd/system/livespec-incident-refe
 incident_observer_fetch_timer_path: /etc/systemd/system/livespec-incident-reference-fetch.timer
 incident_observer_fetch_interval: 5min
 # The incident-merge principal's runner (livespec-dev-tooling-o6u7jm) is a templated
-# oneshot unit, started once per pull request by its number; the registry is the host's
-# Claude plugin registry that names the registered canonical incident authority. It is a HOST
-# FACT with no default: the host declares it in host_vars and the apply refuses when it is
-# undeclared or the file is absent (a guessed path on a live host is never acceptable).
+# oneshot unit, started once per pull request by its number. It runs as ROOT, so the
+# canonical authority process it executes is the root-owned reader clone this role already
+# installs beside the observer (never a plugin resolved from a candidate-writable registry);
+# the runner refuses by name unless that script, the serving interpreter and every ancestor
+# are root-owned and not group or other writable, and the apply checks the script first.
 incident_observer_merge_service_path: /etc/systemd/system/livespec-incident-merge@.service
-incident_observer_merge_registry: ""
+incident_observer_merge_authority_script: "{{ incident_observer_reader_dir }}/{{ incident_observer_reader_script_relative }}"
 
 # --- the scratch-branch instance ----------------------------------------------
 # False for production. ansible/incident-observer-scratch.yml sets it, with the

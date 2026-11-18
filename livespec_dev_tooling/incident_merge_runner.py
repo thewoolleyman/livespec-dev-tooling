@@ -33,6 +33,7 @@ from livespec_dev_tooling._incident_merge_bindings import (
     LedgerWriteError,
     TextRunner,
     authority_chain_reader,
+    authority_command,
     graphql_queue_reader,
     ledger_recorder,
     read_arm_identity,
@@ -45,14 +46,11 @@ from livespec_dev_tooling._incident_merge_credential import (
 )
 from livespec_dev_tooling.checks._effective_required_checks import ForgeReader
 from livespec_dev_tooling.config import load_config
-from livespec_dev_tooling.flake_retry_filer import registered_plugin_root
-from livespec_dev_tooling.incident_authority_client import registered_authority_command
 from livespec_dev_tooling.incident_merge_app import MergeForge
 from livespec_dev_tooling.incident_merge_principal import Merged, merge_incident_repair
+from livespec_dev_tooling.incident_protected_path import protected_path
 
 __all__: list[str] = ["main", "run"]
-
-# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-o6u7jm
 
 DEFAULT_REPOSITORY = "livespec-ai/livespec-dev-tooling"
 DEFAULT_STATE_DIR = Path("/var/lib/livespec-incident/receipts")
@@ -66,7 +64,7 @@ def _parse(*, argv: Sequence[str]) -> argparse.Namespace:
     _ = parser.add_argument("--credential", type=Path, default=DEFAULT_CREDENTIAL_PATH)
     _ = parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)
     _ = parser.add_argument("--project-root", type=Path, default=Path.cwd())
-    _ = parser.add_argument("--registry", required=True, type=Path)
+    _ = parser.add_argument("--authority-script", required=True, type=Path)
     return parser.parse_args(list(argv))
 
 
@@ -92,6 +90,7 @@ def _prepare(
     args: argparse.Namespace,
     owner_uid: int,
     connect: Callable[..., MergeForge | AppRefusal],
+    interpreter: Path,
 ) -> _Ready | int:
     """Everything that must hold before the principal runs, or the exit status for why not."""
     config = load_config(repo_root=args.project_root)
@@ -111,25 +110,44 @@ def _prepare(
     )
     if isinstance(identity, str):
         return _not_started(code="incident-merge-runner-no-arm", detail=identity)
-    try:
-        plugin = registered_plugin_root(repo_root=args.project_root, registry=args.registry)
-    except (OSError, KeyError, ValueError):
-        return _not_started(
-            code="incident-merge-runner-no-authority",
-            detail="no registered canonical incident authority for this project",
-        )
+    command = _authority_command(script=args.authority_script, interpreter=interpreter)
+    if isinstance(command, int):
+        return command
     return _Ready(
         forge=forge,
         identity=identity,
-        command=registered_authority_command(plugin_root=plugin),
+        command=command,
         principal=f"incident-merge-app-{credential.app_id}",
     )
+
+
+def _authority_command(*, script: Path, interpreter: Path) -> list[str] | int:
+    """The authority command, only when the script and interpreter are protected; else why not.
+
+    The runner is root, so it executes only a root-owned build: the script and the serving
+    interpreter, with every ancestor directory and each resolved target, must be owned by root
+    (or the running account) and writable by neither group nor other, the rule the observer's
+    loader applies to its own reader.
+    """
+    if not script.exists():
+        return _not_started(
+            code="incident-merge-runner-no-authority",
+            detail=f"no canonical incident authority script at {script}",
+        )
+    unprotected = [str(path) for path in (script, interpreter) if not protected_path(path=path)]
+    if unprotected:
+        return _not_started(
+            code="incident-merge-runner-authority-unprotected",
+            detail=f"not root-owned and unwritable by group and other: {', '.join(unprotected)}",
+        )
+    return authority_command(interpreter=interpreter, script=script)
 
 
 def run(  # noqa: PLR0913 — every host dependency is an injected seam.
     *,
     argv: Sequence[str],
     owner_uid: int = 0,
+    interpreter: Path = Path(sys.executable),
     run_text_command: TextRunner = run_text,
     make_reader: Callable[..., ForgeReader] = token_forge_reader,
     connect: Callable[..., MergeForge | AppRefusal] = MergeForge.connect,
@@ -138,10 +156,17 @@ def run(  # noqa: PLR0913 — every host dependency is an injected seam.
 ) -> int:
     """Merge one pull request or say, by name, why not; see the module docstring."""
     args = _parse(argv=argv)
-    ready = _prepare(args=args, owner_uid=owner_uid, connect=connect)
+    ready = _prepare(args=args, owner_uid=owner_uid, connect=connect, interpreter=interpreter)
     if isinstance(ready, int):
         return ready
     gating = make_reader(token=ready.forge.token)
+    ledger = ledger_recorder(run=run_text_command)
+    written: list[str] = []
+
+    def record(*, incident_id: str, text: str) -> None:
+        written.append(text)
+        ledger(incident_id=incident_id, text=text)
+
     try:
         outcome = merge_incident_repair(
             repo=args.repository,
@@ -157,12 +182,15 @@ def run(  # noqa: PLR0913 — every host dependency is an injected seam.
                 identity=ready.identity,
             ),
             queue=graphql_queue_reader(read=gating),
-            record=ledger_recorder(run=run_text_command),
+            record=record,
             clock=clock,
             sleep=sleep,
         )
     except LedgerWriteError as unrecorded:
         _say(text=f"incident-merge-runner-record-failed: {unrecorded}")
+        for text in written[-1:]:
+            for line in text.splitlines():
+                _say(text=line)
         _say(text="the pull request may already be merged: read the forge")
         return _UNRECORDED
     if isinstance(outcome, Merged):

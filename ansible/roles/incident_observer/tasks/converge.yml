@@ -363,27 +363,32 @@
     label: "{{ item.dest }}"
   notify: Reload systemd for the incident observer units
 
-- name: Refuse a host that does not declare its incident-merge plugin registry
-  ansible.builtin.assert:
-    that:
-      - incident_observer_merge_registry | string | length > 0
-    fail_msg: >-
-      incident_observer_merge_registry is undeclared; the incident-merge runner reads the
-      plugin registry that names the registered canonical incident authority, and a guessed
-      path on a live host is never installed, so the host must declare it (HOST_VARS.md).
-    success_msg: the incident-merge plugin registry is {{ incident_observer_merge_registry }}
+- name: Create root's op config directory for the incident-merge runner's credential wrapper
+  # The wrapper keeps HOME=/root for a root caller (OPENV_KEEP_PRIVILEGES=1) and `op run`
+  # writes its config under it; the unit's ProtectHome=read-only cannot create a missing
+  # directory, and ReadWritePaths with a leading '-' only skips one, so it exists first.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  loop:
+    - /root/.config
+    - /root/.config/op
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
     and incident_observer_installation_name is not defined
 
-- name: Look for the declared incident-merge plugin registry
+- name: Look for the incident-merge runner's authority script
   ansible.builtin.stat:
-    path: "{{ incident_observer_merge_registry }}"
+    path: "{{ incident_observer_merge_authority_script }}"
     get_checksum: false
   become: true
-  register: incident_observer_merge_registry_stat
+  register: incident_observer_merge_authority_stat
   check_mode: false
   when: >-
     not (incident_observer_scratch | bool)
@@ -391,13 +396,19 @@
     and incident_observer_target_branch | default('', true) | length == 0
     and incident_observer_installation_name is not defined
 
-- name: Refuse an apply when the declared incident-merge plugin registry is absent
+- name: Refuse an apply whose incident-merge authority script is absent or not root-only
+  # The runner is root and executes this script: it must be a regular file owned by root
+  # and writable by neither group nor other (the runner re-checks every ancestor).
   ansible.builtin.assert:
     that:
-      - incident_observer_merge_registry_stat.stat.exists
+      - incident_observer_merge_authority_stat.stat.exists
+      - incident_observer_merge_authority_stat.stat.isreg | default(false)
+      - incident_observer_merge_authority_stat.stat.pw_name | default('') == 'root'
+      - not (incident_observer_merge_authority_stat.stat.wgrp | default(true))
+      - not (incident_observer_merge_authority_stat.stat.woth | default(true))
     fail_msg: >-
-      the declared incident-merge plugin registry {{ incident_observer_merge_registry }} does
-      not exist on this host; nothing is installed that points the runner at it.
+      {{ incident_observer_merge_authority_script }} must exist as a regular file owned by
+      root and writable by neither group nor other; nothing is installed that would run it as root.
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
