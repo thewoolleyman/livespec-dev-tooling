@@ -7,7 +7,7 @@ on a host in this pass.
 
 ## Recommendation
 
-Choose the **post-merge apply**, run from the control node `vps`, over a timer
+Choose the **post-merge apply**, run from the **control-node role host**, over a timer
 on `converge-ci-stack.service`. Do not build either until the two blockers
 below are merged.
 
@@ -18,15 +18,15 @@ copies the artifact set, then starts the unit when a copy changed or the
 unit's last Result was not `success`). A timer on the unit would re-run the
 converge against the tree the last apply installed, so a merged change would
 not reach the host: the timer would converge stale inputs on a schedule and
-report success. Only an apply from `vps` moves merged bytes onto the hosts.
+report success. Only an apply from the control-node role host moves merged bytes onto the hosts.
 The 2026-11-18 drift (gamingpc 6, gmktec 18, hp 16, poweredge 27 changed
 tasks) is that copy backlog, not cluster state.
 
 ## What triggers it, how often, within what bound
 
-- Mechanism: a systemd timer on `vps` runs a committed wrapper every 15
+- Mechanism: a systemd timer on the control-node role host runs a committed wrapper every 15
   minutes. The wrapper fetches `origin/master` and compares the SHA recorded as
-  last applied (a file on `vps`, written only after a drift-zero read-back
+  last applied (a file on that host, written only after a drift-zero read-back
   passes) with master's tip. If no path under `ci-runner/` or `ansible/` changed
   between the two, it exits 0 and does nothing. Otherwise it runs the
   committed scoped apply described below.
@@ -38,7 +38,7 @@ tasks) is that copy backlog, not cluster state.
   bounded retry, each recorded).
 - A merge-event trigger (a workflow) is rejected: anything under
   `.github/workflows/` needs an exemption and a label, and a runner on the
-  tailnet-less GitHub side cannot reach `vps` anyway (`.ai/tailnet-posture.md`).
+  tailnet-less GitHub side cannot reach the control-node role host anyway (`.ai/tailnet-posture.md`).
   The timer polls instead.
 
 ## What it must NOT apply unattended
@@ -82,7 +82,7 @@ After the scoped apply, the wrapper runs `just ansible-drift ansible/ci-pool.yml
 (check mode, `--diff`) against the same hosts and parses the play recap. The
 pass condition is `changed=0` for every role the trigger owns on every CI host
 (the item's third assertion). The wrapper writes one JSON record per run on
-`vps` (applied-from SHA, master SHA, per-host `changed` counts, the converge
+the control-node role host (applied-from SHA, master SHA, per-host `changed` counts, the converge
 unit Result per host, UTC time) and appends a summary comment to the item's
 owning ledger entry only on a state change (first pass, first failure, hold),
 never every tick. Roles outside the trigger's ownership (credential roles) are
@@ -91,7 +91,7 @@ credential never fakes a failure and never hides in a pass.
 
 ## Revert and kill switch
 
-- Kill switch: `systemctl disable --now` of the timer on `vps`, plus a
+- Kill switch: `systemctl disable --now` of the timer on the control-node role host, plus a
   committed sentinel the wrapper checks first (an `apply.disabled` file next to
   the recorded SHA): the sentinel stops an apply that the timer already started
   at its next step boundary.
@@ -125,7 +125,7 @@ credential never fakes a failure and never hides in a pass.
 
 ## What the host-captured proof runs
 
-On `vps` and the four CI hosts, after both dependencies are on master:
+On the control-node role host and the four CI hosts, after both dependencies are on master:
 
 1. Merge a one-line change to a placement value file; start a clock.
 2. Without running any apply by hand, wait for the timer. Record the apply's
@@ -142,3 +142,23 @@ On `vps` and the four CI hosts, after both dependencies are on master:
 
 The proof runs on the live hosts, so it is `host_verified`, replayed by an
 independent session per `.ai/independent-host-replay-identity.md`.
+
+## Amendment 2026-11-18: place the trigger by machine role, not by hostname
+
+Ruling (throughput-plans-coordinator, 2026-11-18, relaying the maintainer's VPS migration ruling
+10:06:31Z on livespec-dev-tooling-6tgd2z): the VPS keeps only overseerd and
+caam-anthropic-loop-runner, so the trigger is NOT placed on `vps`, and no hostname is hardcoded
+anywhere in the trigger, its wrapper, its tests or its unit. The trigger is installed on whichever
+host carries the **control-node role**, the host `ansible-apply` runs from and that runs the
+coordinators. Today that is hetzner-xubuntu, which is a fact about the fleet this memo does not
+pin. The role is resolved from the committed fleet inventory by role, so a move of the role moves
+the timer with the next apply. The mechanism, the 15-minute poll, the 30-minute bound, the
+credential hold and the drift-zero read-back above are unchanged; only where the timer lives
+changed. Every earlier mention of the host in this memo reads "the control-node role host".
+
+Tier: internal, no spec revise (same ruling). The bound and the hold rule are operations of this
+repository's CI-host tooling. The item's tier release cites `## Runner-pool node rebuild recipe`
+(SPECIFICATION/non-functional-requirements.md:475), and the nearest clause, "Live converge from the
+control node" (line 509, on origin/master at fetch time 2026-11-18), requires only that a merged
+change be applicable by ONE committed apply from the control node with no reboot. The 30-minute
+bound and the hold rule add to it and contradict nothing in it.
