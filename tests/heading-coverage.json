@@ -4585,5 +4585,45 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-gaetnq owns it (spec-first, revise of a-scheduled-graphql-reconciler-emits).",
     "work_item": "livespec-dev-tooling-gaetnq"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Reconcile-runs host timer role",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`), which is the integration tier or above, is owed for this heading: the real reconcile_runs role rendered by ansible-core and its scripts run against fakes, next to tests/consumer/test_reconcile_runs_render.py (spec-first, revise of the-reconcile-runs-host-timer-role). livespec-dev-tooling-lo25nk owns it.",
+    "work_item": "livespec-dev-tooling-lo25nk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the reconcile_runs role sweeps each enabled tenant once, serially, and holds a held host",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`), which is the integration tier or above, is owed for this heading: the real reconcile_runs role rendered by ansible-core and its scripts run against fakes, next to tests/consumer/test_reconcile_runs_render.py (spec-first, revise of the-reconcile-runs-host-timer-role). livespec-dev-tooling-lo25nk owns it.",
+    "work_item": "livespec-dev-tooling-lo25nk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hung tenant pass is bounded and retried by the next sweep",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`), which is the integration tier or above, is owed for this heading: the real reconcile_runs role rendered by ansible-core and its scripts run against fakes, next to tests/consumer/test_reconcile_runs_render.py (spec-first, revise of the-reconcile-runs-host-timer-role). livespec-dev-tooling-lo25nk owns it.",
+    "work_item": "livespec-dev-tooling-lo25nk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the reconcile_runs dead-man names the stale tenant and never refreshes a marker",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`), which is the integration tier or above, is owed for this heading: the real reconcile_runs role rendered by ansible-core and its scripts run against fakes, next to tests/consumer/test_reconcile_runs_render.py (spec-first, revise of the-reconcile-runs-host-timer-role). livespec-dev-tooling-lo25nk owns it.",
+    "work_item": "livespec-dev-tooling-lo25nk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pass resolves its credential wrapper at run time from the tenant's own configuration",
+    "test": "TODO",
+    "reason": "A real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`), which is the integration tier or above, is owed for this heading: the real reconcile_runs role rendered by ansible-core and its scripts run against fakes, next to tests/consumer/test_reconcile_runs_render.py (spec-first, revise of the-reconcile-runs-host-timer-role). livespec-dev-tooling-lo25nk owns it.",
+    "work_item": "livespec-dev-tooling-lo25nk"
   }
 ]

@@ -6005,6 +6005,48 @@ And the "dolt-backup run failed" trigger does not count it
 
 And when no alert channel accepts the alert, the alert unit itself exits non-zero
 
+## Scenario: the reconcile_runs role sweeps each enabled tenant once, serially, and holds a held host
+
+Given role `reconcile_runs` has installed a host with three tenants, one of them held individually
+
+When the sweep timer fires
+
+Then the two enabled tenants' passes run one after the other in list order and the held tenant's pass does not run
+
+And with the host hold on, every tenant's units are installed and no timer is enabled or active
+
+## Scenario: a hung tenant pass is bounded and retried by the next sweep
+
+Given a tenant pass exceeds its declared runtime bound
+
+When the bound elapses
+
+Then the pass is stopped and the sweep continues with the next tenant
+
+And the tenant is retried by the next sweep and by no in-sweep restart
+
+## Scenario: the reconcile_runs dead-man names the stale tenant and never refreshes a marker
+
+Given role `reconcile_runs` is enabled for a tenant and its last-success marker is older than the declared bound
+
+When the staleness check runs
+
+Then it fails, naming the tenant and the marker's age
+
+And a later converge of the role does not refresh that marker
+
+And a tenant the role has just enabled does not read as missing
+
+## Scenario: a pass resolves its credential wrapper at run time from the tenant's own configuration
+
+Given a tenant whose committed configuration names its own credential wrapper
+
+When the tenant's pass starts
+
+Then the pass runs under that wrapper, read at that moment from the tenant's committed configuration
+
+And host configuration carries no credential and no per-tenant wrapper name
+
 ## Scenario: self_hosted_routing passes a guarded merge_group route and fails an unguarded one
 
 ```gherkin
