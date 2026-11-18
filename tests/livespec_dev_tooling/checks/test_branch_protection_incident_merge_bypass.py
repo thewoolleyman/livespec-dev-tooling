@@ -108,7 +108,6 @@ def test_an_incident_merge_app_whose_bypass_mode_is_not_pull_request_fails(
 @pytest.mark.parametrize(
     "actors",
     [
-        [_recovery_actor()],
         [_recovery_actor(), _incident_actor(), {"actor_type": "RepositoryRole", "actor_id": 5}],
         [_recovery_actor(), _incident_actor(), _incident_actor()],
         [_incident_actor()],

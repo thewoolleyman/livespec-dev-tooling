@@ -148,11 +148,15 @@ def bypass_mismatch(
 ) -> str | None:
     """Why a ruleset's bypass list is not exactly the admitted Integrations, or None.
 
-    The admitted set is the recovery `Integration` and, when declared, the
-    incident-merge `Integration` in `pull_request` bypass mode: that principal
-    merges a pull request and must never be able to push to the branch.
+    The recovery `Integration` is required. The declared incident-merge
+    `Integration` is optional: a declared key whose `Integration` is not yet on
+    the ruleset is the not-yet-armed state, so declaring is the adoption and
+    adding it to the ruleset is the arming (contracts.md v247). When present it
+    must hold `pull_request` bypass mode, because that principal merges a pull
+    request and must never be able to push to the branch. Any other actor, and
+    any duplicate, is refused.
     """
-    expected = (
+    admitted = (
         {recovery_app_id}
         if incident_merge_app_id is None
         else {recovery_app_id, incident_merge_app_id}
@@ -164,7 +168,12 @@ def bypass_mismatch(
         and cast("dict[str, object]", actor).get("actor_type") == _APP_ACTOR_TYPE
     ]
     ids = [app.get("actor_id") for app in apps]
-    if len(apps) != len(actors) or len(ids) != len(expected) or set(ids) != expected:
+    if (
+        len(apps) != len(actors)
+        or len(set(ids)) != len(ids)
+        or recovery_app_id not in ids
+        or not set(ids) <= admitted
+    ):
         return _OTHER_ACTOR
     modes = [app.get("bypass_mode") for app in apps if app.get("actor_id") == incident_merge_app_id]
     if any(mode != _INCIDENT_MERGE_BYPASS_MODE for mode in modes):
