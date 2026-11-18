@@ -53,6 +53,8 @@ _TASKS = _ROLE / "tasks" / "converge.yml"
 _AGGREGATE = "ci-green"
 _ROLE_KEY = "incident_observer_required_jobs"
 _MATRIX_NAME = "${{ matrix.target }}"
+# livespec-dev-tooling-mxjbmi: the per-file coverage shard job reports one name per shard.
+_SHARD_NAME = "check-per-file-coverage-shard (${{ matrix.shard }})"
 _SECRET = b"job-universe-fixture"
 
 
@@ -70,6 +72,11 @@ def _reported_names(*, job_id: str, job: dict[str, Any]) -> list[str]:
     name = str(job.get("name", job_id))
     if name == _MATRIX_NAME:
         return [str(target) for target in job["strategy"]["matrix"]["target"]]
+    if name == _SHARD_NAME:
+        return [
+            _SHARD_NAME.replace("${{ matrix.shard }}", str(n))
+            for n in job["strategy"]["matrix"]["shard"]
+        ]
     assert "${{" not in name, (
         f"job {job_id} reports under the templated name {name!r}, which this "
         "universe cannot spell; teach _reported_names its legs"

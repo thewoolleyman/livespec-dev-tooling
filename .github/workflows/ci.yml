@@ -403,19 +403,26 @@ jobs:
           name: ${{ matrix.target }}
           job-status: ${{ job.status }}
 
-  # Coverage-pair producer (work-item livespec-dev-tooling-yilyxr.2 extension,
-  # unblocking yilyxr.1's CI-side metric): runs the ONE clean suite pass and
-  # publishes the repo-root .coverage it produces. The consumer job below
-  # (check-coverage) downloads it and reads it instead of running the suite a
-  # second time — the same consume-once dedup `just check` already does
-  # locally (scripts/just/check-coverage.sh), now effective in CI where the
-  # two jobs used to run the full suite independently on separate runners.
-  check-per-file-coverage:
-    timeout-minutes: 180  # 7-day p95 68, max 141 min on a starved node (livespec-dev-tooling-u6jztk)
-    name: check-per-file-coverage
-    # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
-    # this job running IN FULL when incident-ci failed or refused: only its
-    # passed aggregate can omit work here.
+  # livespec-dev-tooling-mxjbmi: per-file coverage as PARALLEL SHARDS, the shape
+  # livespec-orchestrator-beads-fabro's CI already runs (bd-ib-m26pql). The
+  # unsharded gate ran the whole suite (about 13,200 tests, pytest -n 3) in one
+  # pod: the 16 newest completed pull-request runs took 13.1 to 45.5 min, median
+  # 23.9 min, and two runs started 3 s apart differed 3.5x on the same tests, so
+  # it is the pull-request critical path. Each shard runs a disjoint,
+  # duration-balanced share of the tracked test files (`just coverage-shard <n> 4`,
+  # balanced by scripts/just/coverage-shard-durations.tsv) and only
+  # RECORDS coverage data; check-per-file-coverage below `needs` every shard,
+  # combines their data and runs the unchanged canonical per-file verifier.
+  # The shard count is 4, matching the orchestrator: at most 4 churn slots per
+  # pull request. Raising it means editing the `shard` list and the count passed
+  # to the recipe. The shards are in ci-green's needs, so a failed shard fails
+  # the gate directly.
+  check-per-file-coverage-shard:
+    timeout-minutes: 90  # each shard runs about a quarter of the suite; the unsharded job's 180 covered a starved node at 4x the work
+    name: check-per-file-coverage-shard (${{ matrix.shard }})
+    # `needs:` only to read incident-ci's `omitted` output, exactly as the
+    # aggregate below does: an expedited incident PR whose passed aggregate
+    # omitted check-per-file-coverage omits its shards too.
     needs: [merge-group-guard, incident-ci]
     if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
     runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
@@ -427,7 +434,141 @@ jobs:
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Same one-step preparation as the aggregate below (see its comment).
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # livespec-dev-tooling-mxjbmi: a slow shard must name where it ran. The
+      # coverage job's minutes are lost to per-pod CPU starvation, not to a
+      # bigger suite, and the pods are gone by the time anyone asks which node
+      # was starved. This logs the runner pod, the node when the runner pod's
+      # spec exposes it as NODE_NAME (the downward API; an ARC runner template
+      # change, not a workflow one, supplies it), the CPU quota and the CPU
+      # pressure before the suite runs; the closing step logs the same counters
+      # after it, so throttling during the run shows as a difference.
+      - name: Log where this shard ran (runner pod, node, CPU quota and pressure)
+        run: |
+          echo "coverage-shard-context: shard=${{ matrix.shard }}/4 runner=${RUNNER_NAME:-unknown} hostname=$(hostname) node=${NODE_NAME:-unset}"
+          echo "coverage-shard-context: nproc=$(nproc) cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo unreadable)"
+          echo "coverage-shard-context: loadavg=$(cut -d' ' -f1-3 /proc/loadavg) cpu.pressure=$(head -1 /proc/pressure/cpu 2>/dev/null || echo unreadable)"
+          echo "coverage-shard-context: cpu.stat-before=$(tr '\n' ' ' < /sys/fs/cgroup/cpu.stat 2>/dev/null || echo unreadable)"
+
+      - name: omitted-by-incident-policy (per the released incident CI aggregate)
+        if: ${{ needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage') }}
+        env:
+          MEMBER: check-per-file-coverage-shard
+        run: |
+          echo "omitted-by-incident-policy: ${MEMBER} was not executed. The released incident controller's passed aggregate (job incident-ci) defers check-per-file-coverage, and its shards with it, for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: just coverage-shard ${{ matrix.shard }} 4
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
+        run: |
+          # Same node PATH block as the aggregate's suite step below: the suite
+          # spawns `node` in some tests, and the mise node/npm shims busy-loop
+          # or miss under the container-hooks HOME.
+          shims_dir="$(dirname "$(command -v npm)")"
+          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
+          [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
+          # The after-suite counters are logged on failure too, so a throttled
+          # shard that failed still names its starvation.
+          rc=0
+          just coverage-shard ${{ matrix.shard }} 4 || rc=$?
+          echo "coverage-shard-context: shard=${{ matrix.shard }}/4 rc=${rc} cpu.stat-after=$(tr '\n' ' ' < /sys/fs/cgroup/cpu.stat 2>/dev/null || echo unreadable) cpu.pressure=$(head -1 /proc/pressure/cpu 2>/dev/null || echo unreadable)"
+          exit "$rc"
+
+      # The per-shard name keeps the artifact names distinct within one run
+      # (upload-artifact@v4 refuses a repeated name); the reader takes
+      # `flake-retries-<suffix>` as the publish-flake-retries composite Action
+      # names it. Same path and retention as the aggregate's upload.
+      - name: Publish the flake-retry records for the host-side reader
+        if: ${{ !cancelled() && !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-retries-shard-${{ matrix.shard }}
+          path: tmp/flake-retries/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # include-hidden-files is REQUIRED: the data file is a dotfile.
+      - name: Publish this shard's coverage data for check-per-file-coverage
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: .coverage-shards/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+      # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73),
+      # under the job's reported name. The leg is named `(n)`, not `(n/4)`, because
+      # an artifact name cannot hold a `/`.
+      - name: Publish this job's result for ci-green
+        if: ${{ always() }}
+        uses: ./.github/actions/publish-gate-result
+        with:
+          name: check-per-file-coverage-shard (${{ matrix.shard }})
+          job-status: ${{ job.status }}
+
+  # Coverage-pair producer (work-item livespec-dev-tooling-yilyxr.2 extension,
+  # unblocking yilyxr.1's CI-side metric): runs the ONE clean suite pass and
+  # publishes the repo-root .coverage it produces. The consumer job below
+  # (check-coverage) downloads it and reads it instead of running the suite a
+  # second time — the same consume-once dedup `just check` already does
+  # locally (scripts/just/check-coverage.sh), now effective in CI where the
+  # two jobs used to run the full suite independently on separate runners.
+  # livespec-dev-tooling-mxjbmi: the suite pass above now runs as the shards of
+  # check-per-file-coverage-shard; this job combines their coverage data
+  # (LIVESPEC_COVERAGE_SHARDS_DIR) and runs the unchanged canonical per-file
+  # verifier, so its name, its artifacts and its verdict are what they were.
+  check-per-file-coverage:
+    timeout-minutes: 180  # 7-day p95 68, max 141 min on a starved node (livespec-dev-tooling-u6jztk)
+    name: check-per-file-coverage
+    # `needs:` only to read incident-ci's `omitted` output. `!cancelled()` keeps
+    # this job running IN FULL when incident-ci failed or refused: only its
+    # passed aggregate can omit work here.
+    # livespec-dev-tooling-mxjbmi: it also `needs` every shard for the data it
+    # combines. The job-level `if:` stays what it was (a gating job's job-level
+    # condition may not depend on a result; tests/consumer/test_ci_matrix_shape.py),
+    # so a failed shard is handled by the first step below, which fails this job.
+    needs: [merge-group-guard, incident-ci, check-per-file-coverage-shard]
+    if: ${{ !cancelled() && needs.merge-group-guard.outputs.skip != 'true' }}
+    runs-on: ${{ needs.merge-group-guard.outputs.trusted == 'true' && fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') || 'ubuntu-latest' }}
+    container:
+      image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-v1.183.1
+    env:
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # livespec-dev-tooling-mxjbmi: with every later step conditioned on success()
+      # a failed or skipped shard would leave this job green with nothing done, and
+      # check-coverage, which needs this job, would then re-run the whole suite.
+      # Fail here instead, naming the shard result; ci-green fails on the shard too.
+      # No `if:` on the step: the incident-omission wiring test accepts no other condition.
+      - name: Every coverage shard succeeded
+        env:
+          SHARD_RESULT: ${{ needs.check-per-file-coverage-shard.result }}
+        run: |
+          if [ "${SHARD_RESULT}" != "success" ]; then
+            echo "::error::check-per-file-coverage-shard concluded ${SHARD_RESULT}; there is no complete coverage data to combine"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v5
 
@@ -458,8 +599,21 @@ jobs:
         run: |
           echo "omitted-by-incident-policy: ${MEMBER} was not executed. The released incident controller's passed aggregate (job incident-ci) defers it for this pull request head." | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # livespec-dev-tooling-mxjbmi: every shard's coverage data, downloaded
+      # before the verifier so it combines them instead of re-running the suite
+      # (scripts/just/check-per-file-coverage.sh reads LIVESPEC_COVERAGE_SHARDS_DIR).
+      - name: Download every coverage shard's data
+        if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-*
+          path: .coverage-shards
+          merge-multiple: true
+
       - name: just check-per-file-coverage
         if: ${{ !(needs.incident-ci.result == 'success' && contains(fromJSON(needs.incident-ci.outputs.omitted || '[]'), 'check-per-file-coverage')) }}
+        env:
+          LIVESPEC_COVERAGE_SHARDS_DIR: .coverage-shards
         run: |
           # The full suite spawns `node` in some tests; under the
           # container-hooks HOME the mise node/npm shims busy-loop or miss
@@ -1415,7 +1569,7 @@ jobs:
   # conclude success, so that path passes exactly as before.
   ci-green:
     name: ci-green
-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch, incident-ci]
+    needs: [check-python, check-per-file-coverage-shard, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch, incident-ci]
     if: always()
     runs-on: ubuntu-latest
     # The required-leg reader (last two steps) checks the tree out and reads

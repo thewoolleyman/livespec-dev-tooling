@@ -76,12 +76,17 @@ _CI_YML = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 _INCIDENT_JOB = "incident-ci"
 _GATE_JOB = "ci-green"
+# livespec-dev-tooling-mxjbmi: the shards run the suite whose member is check-per-file-coverage,
+# so each omits with it and carries the same guard. The released controller maps the member to
+# the aggregate job only, so the shard job stays out of _OMITTED_BY_JOB (compared with it).
+_SHARD_JOB = "check-per-file-coverage-shard"
 
 # The jobs `ci-green` requires. Identical to the set before this work item:
 # branch protection requires only `ci-green`, so this set IS the required set.
 _REQUIRED = frozenset(
     {
         "check-python",
+        "check-per-file-coverage-shard",
         "check-per-file-coverage",
         "check-coverage",
         "check-python-batch",
@@ -120,6 +125,7 @@ _OMITTING_REASONS = frozenset({"incident-policy:coverage", "incident-policy:spec
 
 # The jobs whose member is a whole step, with the member as the guard names it.
 _SINGLE_MEMBER_JOBS = {
+    "check-per-file-coverage-shard": "'check-per-file-coverage'",
     "check-per-file-coverage": "'check-per-file-coverage'",
     "check-coverage": "matrix.target",
     "check-metadata": "matrix.target",
@@ -138,9 +144,14 @@ _BATCH_ENV = (
 # The one artifact step that must also run after a failed step, because a retry record matters most
 # when the job fails. It keeps the guard, so an omitted member still moves no artifact. No other step
 # gets this form: a failed job publishing `.coverage` would hand check-coverage partial data.
-_RUNS_AFTER_FAILURE = (
-    "check-per-file-coverage",
-    "Publish the flake-retry records for the host-side reader",
+_RUNS_AFTER_FAILURE = frozenset(
+    {
+        ("check-per-file-coverage", "Publish the flake-retry records for the host-side reader"),
+        (
+            "check-per-file-coverage-shard",
+            "Publish the flake-retry records for the host-side reader",
+        ),
+    }
 )
 # The last two carry the merge-group tree-equality skip term (livespec-dev-tooling-ymog6r):
 # the guard job's `skip` output is true only for a proven tree-equal one-entry merge group,
@@ -299,7 +310,7 @@ def _writer_findings(*, jobs: dict[str, Any]) -> list[str]:
 
 def _bystander_findings(*, jobs: dict[str, Any]) -> list[str]:
     """A job holding no deferred member never reads the omission list."""
-    bystanders = _ALL_JOBS - set(_OMITTED_BY_JOB) - {_INCIDENT_JOB, _GATE_JOB}
+    bystanders = _ALL_JOBS - set(_OMITTED_BY_JOB) - {_INCIDENT_JOB, _GATE_JOB, _SHARD_JOB}
     return [
         f"job {name} holds no deferred member but references the omission list"
         for name in sorted(bystanders)
@@ -368,7 +379,7 @@ def _single_member_findings(*, name: str, job: dict[str, Any], member: str) -> l
         if _does_member_work(step=step):
             accepted = (
                 (run_if, run_after_failure_if)
-                if (name, step["name"]) == _RUNS_AFTER_FAILURE
+                if (name, step["name"]) in _RUNS_AFTER_FAILURE
                 else (run_if,)
             )
             if condition not in accepted:
@@ -556,10 +567,16 @@ _GUARD_OF_MATRIX_TARGET = _GUARD.format(member="matrix.target")
             "consumer' does the member's work without the released-aggregate guard",
         ),
         (
+            # The trailing lines pick the aggregate's step: the shard job repeats the step
+            # name and guard (livespec-dev-tooling-mxjbmi) but uploads `flake-retries-shard-N`.
             "      - name: Publish the flake-retry records for the host-side reader\n"
-            "        if: ${{ !cancelled() && !(" + _GUARD_OF_PER_FILE_COVERAGE + ") }}\n",
+            "        if: ${{ !cancelled() && !("
+            + _GUARD_OF_PER_FILE_COVERAGE
+            + ") }}\n"
+            + "        uses: actions/upload-artifact@v4\n        with:\n          name: flake-retries\n",
             "      - name: Publish the flake-retry records for the host-side reader\n"
-            "        if: ${{ !cancelled() }}\n",
+            "        if: ${{ !cancelled() }}\n"
+            "        uses: actions/upload-artifact@v4\n        with:\n          name: flake-retries\n",
             "job check-per-file-coverage: step 'Publish the flake-retry records for the "
             "host-side reader' does the member's work without the released-aggregate guard",
         ),
@@ -587,8 +604,12 @@ _GUARD_OF_MATRIX_TARGET = _GUARD.format(member="matrix.target")
             "job check-metadata: step 'Checkout' carries an unrecognised condition",
         ),
         (
-            "        if: ${{ " + _GUARD_OF_PER_FILE_COVERAGE + " }}\n",
-            "        if: ${{ env.OMITTED_BY_INCIDENT_POLICY == 'true' }}\n",
+            # The env lines pick the aggregate's report step: the shard job repeats the guard
+            # but names MEMBER: check-per-file-coverage-shard (livespec-dev-tooling-mxjbmi).
+            "        if: ${{ " + _GUARD_OF_PER_FILE_COVERAGE + " }}\n"
+            "        env:\n          MEMBER: check-per-file-coverage\n",
+            "        if: ${{ env.OMITTED_BY_INCIDENT_POLICY == 'true' }}\n"
+            "        env:\n          MEMBER: check-per-file-coverage\n",
             "job check-per-file-coverage does not report an omitted member explicitly, "
             "exactly once",
         ),

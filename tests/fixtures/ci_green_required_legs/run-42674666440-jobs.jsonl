@@ -11,3 +11,7 @@
 {"conclusion":"success","name":"check-coverage","status":"completed"}
 {"conclusion":"success","name":"export-telemetry","status":"completed"}
 {"conclusion":"success","name":"ci-green","status":"completed"}
+{"conclusion":"success","name":"check-per-file-coverage-shard (1)","status":"completed"}
+{"conclusion":"success","name":"check-per-file-coverage-shard (2)","status":"completed"}
+{"conclusion":"success","name":"check-per-file-coverage-shard (3)","status":"completed"}
+{"conclusion":"success","name":"check-per-file-coverage-shard (4)","status":"completed"}
