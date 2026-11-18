@@ -113,6 +113,13 @@ Every repository's `ClusterQueue` joins the single cohort
 So the fair-share term is realized as: guaranteed floors that sum to the
 host capacity, plus unrestricted opportunistic borrowing above them.
 
+The cohort-30 derivation is per `ResourceFlavor`, not a sum across every
+flavor: only `churn-slot-flavor` contributes to that fleet total.
+`livespec-dev-tooling-arm64-cq` (ko26ez.7) instead holds the enrolled workers'
+derived `@WORKER_CHURN_SLOTS@` on `churn-slot-worker-arm64-flavor`, with a zero
+borrowing limit, so it is a cohort member but remains outside the fleet-flavor
+derivation.
+
 #### `fairSharing.weight` is deliberately left at 1, and is currently inert
 
 Every committed `ClusterQueue` carries `fairSharing.weight: 1`. The

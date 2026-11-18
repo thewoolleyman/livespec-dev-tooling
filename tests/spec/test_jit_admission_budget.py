@@ -60,6 +60,8 @@ _PROFILES_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profil
 # The one cohort the fair-share term is apportioned within.
 _COHORT = "fleet-ci-runner-pool"
 _CHURN_SLOT = "ci-runner.io/churn-slot"
+_FLEET_FLAVOR = "churn-slot-flavor"
+_WORKER_QUOTA_TEMPLATE = "@WORKER_CHURN_SLOTS@"
 
 # The bound the section's "small multiple ... and any floor" clause resolves to
 # for this pool, recorded with the pool's admission derivation as the section
@@ -111,39 +113,87 @@ _KIND = re.compile(r"^kind:\s*(?P<kind>\S+)$", re.MULTILINE)
 _NAME = re.compile(r"^  name:\s*(?P<name>\S+)", re.MULTILINE)
 _COHORT_NAME = re.compile(r"^  cohortName:\s*(?P<cohort>\S+)", re.MULTILINE)
 _CLUSTER_QUEUE = re.compile(r"^  clusterQueue:\s*(?P<cq>\S+)", re.MULTILINE)
-_NOMINAL_QUOTA = re.compile(r"^\s+nominalQuota:\s*(?P<quota>\d+)\s*$", re.MULTILINE)
 _LENDING_LIMIT = re.compile(r"^\s+lendingLimit:\s*(?P<limit>\S+)\s*$", re.MULTILINE)
 _MAX_RUNNERS = re.compile(r"^\s*maxRunners:\s*(?P<max>\d+)\s*$", re.MULTILINE)
 _QUEUE_NAME = re.compile(r"^\s*kueue\.x-k8s\.io/queue-name:\s*(?P<lq>\S+)\s*$", re.MULTILINE)
 _ADMISSION_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(?P<capacity>\d+)\s*$", re.MULTILINE)
+_FLAVOR_NAME = re.compile(r"^ {8}- name:\s*(?P<flavor>\S+)\s*$", re.MULTILINE)
+_CHURN_RESOURCE_NAME = re.compile(
+    r'^ {12}- name:\s*["\']?ci-runner\.io/churn-slot["\']?\s*$', re.MULTILINE
+)
+_RESOURCE_FIELD = re.compile(
+    r"^ {14}(?P<field>nominalQuota|borrowingLimit):\s*(?P<value>\S+)\s*$", re.MULTILINE
+)
 
 
 def _documents() -> list[str]:
     """Every YAML document across the committed ClusterQueue manifests."""
     return [
         document
-        for path in sorted(_KUEUE_DIR.glob("cluster-queue-*.yaml"))
+        for path in sorted(_KUEUE_DIR.rglob("cluster-queue-*.yaml"))
         for document in _DOC_SEPARATOR.split(path.read_text(encoding="utf-8"))
     ]
 
 
-def _cohort_quotas() -> dict[str, int]:
-    """Each cohort-member ClusterQueue's churn-slot `nominalQuota`."""
-    quotas: dict[str, int] = {}
-    for document in _documents():
+def _churn_slot_flavors(document: str, member: str) -> dict[str, tuple[str, str | None]]:
+    """Read one ClusterQueue's churn-slot quota details without parsing templates as YAML."""
+    flavors: dict[str, tuple[str, str | None]] = {}
+    matches = list(_FLAVOR_NAME.finditer(document))
+    for index, flavor in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(document)
+        block = document[flavor.end() : end]
+        if _CHURN_RESOURCE_NAME.search(block) is None:
+            continue
+        fields = {
+            field.group("field"): field.group("value") for field in _RESOURCE_FIELD.finditer(block)
+        }
+        assert "nominalQuota" in fields, (
+            f"a `{_COHORT}` member's `{_CHURN_SLOT}` flavor needs a nominalQuota; "
+            f"member={member} flavor={flavor.group('flavor')}"
+        )
+        flavors[flavor.group("flavor")] = (fields["nominalQuota"], fields.get("borrowingLimit"))
+    return flavors
+
+
+def _cohort_flavor_quotas(
+    documents: list[str] | None = None,
+) -> dict[str, dict[str, tuple[str, str | None]]]:
+    """Every cohort member's churn-slot quota and borrowing limit, keyed by flavor.
+
+    The worker ClusterQueue is a template, so its quota is intentionally retained
+    as text rather than forced through the integer-only fleet arithmetic.
+    """
+    members: dict[str, dict[str, tuple[str, str | None]]] = {}
+    for document in _documents() if documents is None else documents:
         kind = _KIND.search(document)
         cohort = _COHORT_NAME.search(document)
         name = _NAME.search(document)
-        quota = _NOMINAL_QUOTA.search(document)
         if kind is None or kind.group("kind") != "ClusterQueue":
             continue
         if cohort is None or cohort.group("cohort") != _COHORT:
             continue
-        assert name is not None and quota is not None and _CHURN_SLOT in document, (
-            f"a `{_COHORT}` member must carry a name and one `{_CHURN_SLOT}` "
-            f"nominalQuota; document={document!r}"
+        assert name is not None, f"a `{_COHORT}` member must carry a name; document={document!r}"
+        flavors = _churn_slot_flavors(document, name.group("name"))
+        assert flavors, (
+            f"a `{_COHORT}` member must carry one `{_CHURN_SLOT}` nominalQuota; "
+            f"member={name.group('name')}"
         )
-        quotas[name.group("name")] = int(quota.group("quota"))
+        members[name.group("name")] = flavors
+    return members
+
+
+def _cohort_quotas() -> dict[str, int]:
+    """Each fleet-flavor cohort member's churn-slot `nominalQuota`."""
+    quotas: dict[str, int] = {}
+    for member, flavors in _cohort_flavor_quotas().items():
+        if _FLEET_FLAVOR not in flavors:
+            continue
+        quota, _ = flavors[_FLEET_FLAVOR]
+        assert quota.isdecimal(), (
+            f"the `{_FLEET_FLAVOR}` quota must be a committed integer; "
+            f"member={member} quota={quota}"
+        )
+        quotas[member] = int(quota)
     return quotas
 
 
@@ -250,6 +300,96 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
         f"either without complaint; sum={sum(quotas.values())} capacity={capacity} "
         f"per_node={capacities} quotas={quotas}"
     )
+
+
+def _assert_fleet_flavor_capacity(
+    members: dict[str, dict[str, tuple[str, str | None]]],
+    capacity: int,
+    reported_flavors: frozenset[str] = frozenset(),
+) -> None:
+    """Assert the pool capacity against the fleet flavor only, never every flavor."""
+    totals = {
+        flavor: sum(
+            int(quota)
+            for flavors in members.values()
+            if (entry := flavors.get(flavor)) is not None and (quota := entry[0]).isdecimal()
+        )
+        for flavor in {
+            _FLEET_FLAVOR,
+            *reported_flavors,
+            *(flavor for flavors in members.values() for flavor in flavors),
+        }
+    }
+    assert totals[_FLEET_FLAVOR] == capacity, (
+        f"the `{_FLEET_FLAVOR}` quotas alone must equal the pool capacity; "
+        f"members={sorted(members)} flavor_totals={totals} capacity={capacity}"
+    )
+
+
+def test_worker_flavor_members_are_read_but_never_counted_as_fleet_capacity() -> None:
+    """Worker quota holders are template-derived, non-borrowing, separate flavor members."""
+    members = _cohort_flavor_quotas()
+    worker_holders = {
+        member: entry
+        for member, flavors in members.items()
+        for flavor, entry in flavors.items()
+        if flavor.startswith("churn-slot-worker-") and entry[0] != "0"
+    }
+    assert worker_holders == {"livespec-dev-tooling-arm64-cq": (_WORKER_QUOTA_TEMPLATE, "0")}
+    _assert_fleet_flavor_capacity(members, sum(_pool_capacity().values()))
+
+
+def test_worker_flavor_fixture_does_not_inflate_the_fleet_flavor_total() -> None:
+    """A moved worker quota fails with its member and both flavor totals named."""
+    fleet_member = """kind: ClusterQueue
+metadata:
+  name: fleet-cq
+spec:
+  cohortName: fleet-ci-runner-pool
+  resourceGroups:
+    - coveredResources: [\"ci-runner.io/churn-slot\"]
+      flavors:
+        - name: churn-slot-flavor
+          resources:
+            - name: \"ci-runner.io/churn-slot\"
+              nominalQuota: 30
+"""
+    worker_member = """kind: ClusterQueue
+metadata:
+  name: fixture-worker-cq
+spec:
+  cohortName: fleet-ci-runner-pool
+  resourceGroups:
+    - coveredResources: [\"ci-runner.io/churn-slot\"]
+      flavors:
+        - name: {flavor}
+          resources:
+            - name: \"ci-runner.io/churn-slot\"
+              nominalQuota: 1
+              borrowingLimit: 0
+"""
+    worker_flavor = "churn-slot-worker-arm64-flavor"
+    _assert_fleet_flavor_capacity(
+        _cohort_flavor_quotas([fleet_member, worker_member.format(flavor=worker_flavor)]),
+        30,
+        frozenset({worker_flavor}),
+    )
+
+    try:
+        _assert_fleet_flavor_capacity(
+            _cohort_flavor_quotas([fleet_member, worker_member.format(flavor=_FLEET_FLAVOR)]),
+            30,
+            frozenset({worker_flavor}),
+        )
+    except AssertionError as error:
+        message = str(error)
+    else:
+        raise AssertionError(
+            "moving fixture-worker-cq onto churn-slot-flavor must exceed its capacity"
+        )
+    assert "fixture-worker-cq" in message
+    assert "'churn-slot-flavor': 31" in message
+    assert "'churn-slot-worker-arm64-flavor': 0" in message
 
 
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
