@@ -23,6 +23,7 @@ _SKIP_TERM = "needs.merge-group-guard.outputs.skip != 'true'"
 _SKIPPABLE = frozenset(
     {
         "check-python",
+        "check-per-file-coverage-shard",
         "check-per-file-coverage",
         "check-coverage",
         "check-python-batch",

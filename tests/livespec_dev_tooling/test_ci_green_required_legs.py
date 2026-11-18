@@ -58,6 +58,10 @@ _EXPECTED_LEGS = frozenset(
         "check-types",
         "check-lint",
         "check-format",
+        "check-per-file-coverage-shard (1)",
+        "check-per-file-coverage-shard (2)",
+        "check-per-file-coverage-shard (3)",
+        "check-per-file-coverage-shard (4)",
         "check-per-file-coverage",
         "check-coverage",
         "check-python-batch",
@@ -96,6 +100,11 @@ def test_the_partial_outage_run_that_merged_fails_naming_each_never_created_leg(
         LegGap(leg="check-format", finding=NEVER_CREATED),
         LegGap(leg="check-per-file-coverage", finding=NEVER_CREATED),
         LegGap(leg="check-coverage", finding=NEVER_CREATED),
+        # livespec-dev-tooling-mxjbmi: this recorded run predates the per-file coverage shards.
+        *(
+            LegGap(leg=f"check-per-file-coverage-shard ({n})", finding=NEVER_CREATED)
+            for n in range(1, 5)
+        ),
     }
 
 
@@ -222,7 +231,8 @@ def test_main_fails_the_partial_outage_run_with_one_annotation_per_gap(
         "::error::ci-green: required leg check-lint: never created in this run" in out,
         out.rstrip().endswith("FAILED"),
     )
-    assert facts == (1, 4, True, True)
+    # 4 recorded gaps plus the 4 shard legs this recorded run predates (livespec-dev-tooling-mxjbmi).
+    assert facts == (1, 8, True, True)
 
 
 def test_main_passes_the_full_master_run(*, capsys: pytest.CaptureFixture[str]) -> None:

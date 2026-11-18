@@ -46,6 +46,10 @@ incident_observer_required_jobs:
   - check-types
   - check-lint
   - check-format
+  - check-per-file-coverage-shard (1)
+  - check-per-file-coverage-shard (2)
+  - check-per-file-coverage-shard (3)
+  - check-per-file-coverage-shard (4)
   - check-per-file-coverage
   - check-coverage
   - check-python-batch
@@ -265,6 +269,10 @@ incident_observer_installations:
       - check-types
       - check-lint
       - check-format
+      - check-per-file-coverage-shard (1)
+      - check-per-file-coverage-shard (2)
+      - check-per-file-coverage-shard (3)
+      - check-per-file-coverage-shard (4)
       - check-per-file-coverage
       - check-coverage
       - check-python-batch
