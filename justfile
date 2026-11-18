@@ -1149,6 +1149,26 @@ check-pbt-coverage-pure-modules:
 check-per-file-coverage:
     scripts/just/check-per-file-coverage.sh
 
+# livespec-dev-tooling-mxjbmi: ONE shard of the per-file coverage suite, for
+# CI's parallel coverage jobs. It records coverage data under .coverage-shards/
+# and judges nothing; check-per-file-coverage combines every shard (when
+# LIVESPEC_COVERAGE_SHARDS_DIR names that directory) and runs the unchanged
+# per-file verifier. The same recipe name and arguments as
+# livespec-orchestrator-beads-fabro's. Deliberately NOT a `check-` slug and not
+# in the `check` aggregate: locally, check-per-file-coverage runs the whole
+# suite itself.
+[positional-arguments]
+coverage-shard shard_index shard_count:
+    scripts/just/coverage-shard.sh "$@"
+
+# livespec-dev-tooling-mxjbmi: regenerate
+# scripts/just/coverage-shard-durations.tsv, the committed per-test-file
+# duration table coverage-shard balances the shards with, from one timed run of
+# the whole suite. Commit the result. Not a `check-` slug and not in the `check`
+# aggregate: it is a maintainer action.
+coverage-shard-durations:
+    scripts/just/coverage-shard-durations.sh
+
 # Plan-lifecycle enforcement — static half: every active legacy
 # plan/*/handoff.md or migrated plan/*/epic.md declares a concrete ledger epic
 # id (credential-free, runs everywhere, including consumer CI).

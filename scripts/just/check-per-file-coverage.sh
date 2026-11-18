@@ -101,22 +101,45 @@ watch_xdist_controller() {
     done
 }
 
-watchdog_failure_file="$(mktemp "${TMPDIR:-/tmp}/check-per-file-coverage-watchdog.XXXXXX")"
+# livespec-dev-tooling-mxjbmi: when CI has already run the suite as parallel
+# shards (scripts/just/coverage-shard.sh), LIVESPEC_COVERAGE_SHARDS_DIR names the
+# directory holding every shard's coverage data. Combine it into this
+# aggregate's data file instead of re-running the suite; everything below the
+# suite run (the failure receipt, the per-file verifier, the final-bytes reuse
+# receipt) is unchanged, so the verdict is the unsharded one. Unset (local
+# `just check`, the root-uid workflow, the factory), the suite runs here
+# exactly as before.
 status=0
-env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
-    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30 \
-    &
-pytest_controller_pid=$!
-watch_xdist_controller "$pytest_controller_pid" "$watchdog_failure_file" &
-watchdog_pid=$!
-wait "$pytest_controller_pid" || status=$?
-kill "$watchdog_pid" 2>/dev/null || true
-wait "$watchdog_pid" || true
-if [[ -s "$watchdog_failure_file" ]]; then
-    cat "$watchdog_failure_file" >&2
-    status=1
+if [[ -n "${LIVESPEC_COVERAGE_SHARDS_DIR:-}" ]]; then
+    shopt -s nullglob
+    shard_data=("$LIVESPEC_COVERAGE_SHARDS_DIR"/.coverage.shard-*)
+    shopt -u nullglob
+    if [[ ${#shard_data[@]} -eq 0 ]]; then
+        echo ":: check-per-file-coverage: LIVESPEC_COVERAGE_SHARDS_DIR=$LIVESPEC_COVERAGE_SHARDS_DIR holds no shard data" >&2
+        status=1
+    else
+        echo ":: check-per-file-coverage: combining ${#shard_data[@]} coverage shards from $LIVESPEC_COVERAGE_SHARDS_DIR"
+        rm -f "$coverage_file"
+        env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
+            uv run coverage combine --rcfile=pyproject.toml "${shard_data[@]}" || status=$?
+    fi
+else
+    watchdog_failure_file="$(mktemp "${TMPDIR:-/tmp}/check-per-file-coverage-watchdog.XXXXXX")"
+    env -u COVERAGE_FILE LIVESPEC_COVERAGE_DATA_FILE="$coverage_file" \
+        uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30 \
+        &
+    pytest_controller_pid=$!
+    watch_xdist_controller "$pytest_controller_pid" "$watchdog_failure_file" &
+    watchdog_pid=$!
+    wait "$pytest_controller_pid" || status=$?
+    kill "$watchdog_pid" 2>/dev/null || true
+    wait "$watchdog_pid" || true
+    if [[ -s "$watchdog_failure_file" ]]; then
+        cat "$watchdog_failure_file" >&2
+        status=1
+    fi
+    rm -f "$watchdog_failure_file"
 fi
-rm -f "$watchdog_failure_file"
 if [[ "$status" -ne 0 ]]; then
     if failure_id="$(scripts/just/coverage-reuse-id.sh failure)"; then
         printf '%s %s\n' "$failure_id" "$status" > "$failure_receipt"
