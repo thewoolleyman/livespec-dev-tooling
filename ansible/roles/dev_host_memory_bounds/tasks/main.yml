@@ -9,10 +9,13 @@
 # scratchpad bind mount for the next boot. No session's environment changes,
 # the mounted /tmp keeps its size, and the scratchpads stay where they are.
 #
-# TWO LIVE STEPS, each a `never`-tagged invocation of its own, taken at a
+# THREE LIVE STEPS, each a `never`-tagged invocation of its own, taken at a
 # moment the operator chose and never as a side effect of a converge:
 # - `--tags dev_host_memory_bounds_tmp_cap` remounts the running /tmp at its
 #   cap. It moves no file, so it is safe whenever /tmp fits under the cap.
+# - `--tags dev_host_memory_bounds_tmp_nr_inodes` raises the running /tmp's
+#   inode limit without changing its size. It is safe regardless of how full
+#   /tmp is because it changes no byte limit.
 # - `--tags dev_host_memory_bounds_cutover` starts the scratchpad bind on the
 #   running host. It REFUSES while any process holds a file open under the
 #   scratchpad directory, because a writer would keep its RAM inode while
@@ -524,6 +527,50 @@
   changed_when: true
   tags: [never, dev_host_memory_bounds_tmp_cap]
   when: "'dev_host_memory_bounds_tmp_cap' in ansible_run_tags"
+
+- name: Refuse an inode-only live step on a host whose state is not present
+  ansible.builtin.assert:
+    that:
+      - dev_host_memory_bounds_state == 'present'
+    fail_msg: a live step applies installed bounds; converge with state present first.
+    success_msg: state is present
+  tags: [never, dev_host_memory_bounds_tmp_nr_inodes]
+  when: "'dev_host_memory_bounds_tmp_nr_inodes' in ansible_run_tags"
+
+- name: Read the live /tmp inode limit
+  ansible.builtin.command:
+    argv: [findmnt, -no, OPTIONS, "{{ dev_host_memory_bounds_scratch_ram_root }}"]
+  register: dev_host_memory_bounds_rt_tmp_options
+  check_mode: false  # read-only probe; a dry run must see the real answer
+  changed_when: false
+  tags: [never, dev_host_memory_bounds_tmp_nr_inodes]
+  when: "'dev_host_memory_bounds_tmp_nr_inodes' in ansible_run_tags"
+
+- name: Record the live /tmp inode limit
+  ansible.builtin.set_fact:
+    dev_host_memory_bounds_rt_tmp_nr_inodes: >-
+      {{ dev_host_memory_bounds_rt_tmp_options.stdout | trim | split(',')
+         | select('match', '^nr_inodes=') | first | default('nr_inodes=0')
+         | replace('nr_inodes=', '') | int }}
+  tags: [never, dev_host_memory_bounds_tmp_nr_inodes]
+  when: "'dev_host_memory_bounds_tmp_nr_inodes' in ansible_run_tags"
+
+- name: Raise the live /tmp inode limit without resizing it
+  # Unlike the byte-cap step, this has no size= option and can safely run while
+  # /tmp is over the byte-cap guard.  A remount is only needed to raise the
+  # limit; never lower a host's existing inode limit.
+  ansible.builtin.command:
+    argv:
+      - mount
+      - -o
+      - "remount,nr_inodes={{ dev_host_memory_bounds_tmp_nr_inodes }}"
+      - "{{ dev_host_memory_bounds_scratch_ram_root }}"
+  become: true
+  changed_when: true
+  tags: [never, dev_host_memory_bounds_tmp_nr_inodes]
+  when:
+    - "'dev_host_memory_bounds_tmp_nr_inodes' in ansible_run_tags"
+    - (dev_host_memory_bounds_rt_tmp_nr_inodes | int) < (dev_host_memory_bounds_tmp_nr_inodes | human_to_bytes | int)
 
 # --- live: scratchpad bind (never-tagged; refused while files are open) ------
 

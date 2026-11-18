@@ -124,7 +124,7 @@ just ansible-drift ansible/dev-host.yml --tags dev_host_memory_bounds,local_gate
 just ansible-apply ansible/dev-host.yml --tags dev_host_memory_bounds,local_gate_slots
 ```
 
-## The two live steps
+## The three live steps
 
 Each live step is its own invocation, taken at a moment the operator chose.
 
@@ -134,6 +134,15 @@ no open file is disturbed.
 
 ```bash
 just ansible-apply ansible/dev-host.yml --tags dev_host_memory_bounds_tmp_cap
+```
+
+**Raise only the running `/tmp` inode limit.** This changes only
+`nr_inodes`, never `size`, and therefore runs whatever `/tmp` currently holds.
+It remounts only when the live inode limit is below the configured value; a
+second invocation, or a host already above that value, changes nothing.
+
+```bash
+just ansible-apply ansible/dev-host.yml --tags dev_host_memory_bounds_tmp_nr_inodes
 ```
 
 **Move the scratchpads to disk on the running host.** The ordinary route is

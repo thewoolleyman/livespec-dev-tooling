@@ -201,6 +201,33 @@ def test_the_tmp_cap_dropin_carries_the_size_and_inode_cap(rendered: dict[str, s
     )
 
 
+def test_the_live_inode_raise_remounts_only_nr_inodes() -> None:
+    tasks = _yaml(relative="tasks/main.yml")
+    assert isinstance(tasks, list)
+    inode_raise = next(
+        (
+            task
+            for task in tasks
+            if isinstance(task, dict)
+            and task.get("name") == "Raise the live /tmp inode limit without resizing it"
+        ),
+        None,
+    )
+    assert isinstance(inode_raise, dict), "the role must have an inode-only live /tmp step"
+    assert inode_raise.get("tags") == [
+        "never",
+        "dev_host_memory_bounds_tmp_nr_inodes",
+    ]
+    command = inode_raise.get("ansible.builtin.command")
+    assert isinstance(command, dict)
+    assert command.get("argv") == [
+        "mount",
+        "-o",
+        "remount,nr_inodes={{ dev_host_memory_bounds_tmp_nr_inodes }}",
+        "{{ dev_host_memory_bounds_scratch_ram_root }}",
+    ]
+
+
 def test_the_stray_unit_glob_matches_the_scratchpad_mount_units(rendered: dict[str, str]) -> None:
     assert rendered["stray_glob"] == "tmp-claude*.mount"
 
