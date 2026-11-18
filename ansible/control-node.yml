@@ -1,0 +1,24 @@
+---
+# Plays that run on the CONTROL-NODE ROLE host: the machine `ansible-apply` runs
+# from and that runs the coordinators. The play selects the `control_node_role`
+# inventory group and nothing here names a machine; moving the role is a change to
+# that group's control_node_machine_id (ansible/inventory/legacy.yml) plus a
+# converge from the new control node.
+#
+#   just ansible-drift ansible/control-node.yml
+#   just ansible-apply ansible/control-node.yml
+#
+# The play is the SHARED SEAM: roles that belong on the control node are added to
+# this play's `roles:`, one tagged entry each, never to a hostname-selecting play.
+# It carries one read-only identity task so the guard's verdict is observable
+# before any role is added: on the control node it reports the resolved connection
+# and the machine-id; elsewhere the first task refuses.
+- name: Control-node role host
+  hosts: control_node_role
+  gather_facts: false
+  tasks:
+    - name: Report the control-node identity this play resolved
+      ansible.builtin.debug:
+        msg: "control-node-role connection={{ ansible_connection }} machine-id={{ control_node_identity_found }}"
+      changed_when: false
+      tags: [control_node_identity]
