@@ -219,7 +219,7 @@ def build_namespace_dirs(
     for key in sorted(keys):
         ns_dir = Path(tempfile.mkdtemp(prefix=f"covns-{key}-", dir=str(root)))
         _record_creator(namespace_dir=ns_dir)
-        (ns_dir / "tmp").mkdir(exist_ok=True)
+        (ns_dir / "tmp").mkdir(mode=0o700, exist_ok=True)
         dirs[key] = ns_dir
     return dirs
 
