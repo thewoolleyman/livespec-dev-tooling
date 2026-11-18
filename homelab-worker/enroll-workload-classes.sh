@@ -255,6 +255,7 @@ if [ "$factory" -eq 1 ]; then
   say "factory: enrolled (share ${factory_capacity}m CPU)"
 else
   kubectl label node "$node" ci-runner.io/factory- >/dev/null 2>&1 || true
+  kubectl label node "$node" ci-runner.io/factory-admit=false --overwrite >/dev/null
   if [ "$recorded_split" -eq 1 ] && [ "$factory_share" = 0 ]; then
     say "factory: NOT enrolled: recorded zero share (0%): $split_reason"
   else

@@ -41,6 +41,7 @@ _FAKE_KUBECTL = r"""#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_DIR/argv.log"
 case "$*" in
   "get nodes -l ci-runner.io/factory=true -o json") cat "$FAKE_DIR/nodes.json" ;;
+  "get nodes -l ci-runner.io/factory-admit=true -o json") cat "$FAKE_DIR/admit-nodes.json" ;;
   "get pods --all-namespaces -l app.kubernetes.io/managed-by=sandbox-driver-kubernetes -o json")
     [ -f "$FAKE_DIR/pods.json" ] || { echo 'Error from server: connection refused' >&2; exit 1; }
     cat "$FAKE_DIR/pods.json" ;;
@@ -57,8 +58,11 @@ def _node(
     alloc: str = "32",
     arch: str | None = None,
     worker: bool = False,
+    factory: bool = True,
 ) -> _Json:
-    labels = {"kubernetes.io/hostname": name, "ci-runner.io/factory": "true"}
+    labels = {"kubernetes.io/hostname": name}
+    if factory:
+        labels["ci-runner.io/factory"] = "true"
     if admit is not None:
         labels[_ADMIT] = admit
     if arch is not None:
@@ -86,6 +90,7 @@ def _run(
     tmp_path: Path,
     *,
     nodes: list[_Json],
+    admitted_nodes: list[_Json] | None = None,
     pods: list[_Json] | None,
     budgets: str | None,
     gate: str = "on",
@@ -99,6 +104,10 @@ def _run(
     _ = kubectl.write_text(_FAKE_KUBECTL, encoding="utf-8")
     kubectl.chmod(kubectl.stat().st_mode | stat.S_IEXEC)
     _ = (fake / "nodes.json").write_text(json.dumps({"items": nodes}), encoding="utf-8")
+    _ = (fake / "admit-nodes.json").write_text(
+        json.dumps({"items": admitted_nodes if admitted_nodes is not None else nodes}),
+        encoding="utf-8",
+    )
     if pods is not None:
         _ = (fake / "pods.json").write_text(json.dumps({"items": pods}), encoding="utf-8")
     budget_file = tmp_path / "factory-pod-budgets.conf"
@@ -234,6 +243,20 @@ def test_a_label_already_correct_is_not_rewritten(tmp_path: Path) -> None:
     )
     assert run.returncode == 0, run.stderr
     assert labels == []
+
+
+def test_a_stale_admission_on_a_non_factory_node_is_cleared(tmp_path: Path) -> None:
+    former_factory = "former-factory"
+    run, labels = _run(
+        tmp_path,
+        nodes=[],
+        admitted_nodes=[_node(former_factory, admit="true", factory=False)],
+        pods=[],
+        budgets=_BUDGETS,
+    )
+    assert run.returncode == 0, run.stderr
+    assert labels == [_label(former_factory, "false")]
+    assert f"cleared stale {_ADMIT} on non-factory node {former_factory}" in run.stdout
 
 
 def test_a_full_fleet_fails_open_on_the_node_with_most_headroom(tmp_path: Path) -> None:
