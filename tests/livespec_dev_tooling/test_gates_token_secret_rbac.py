@@ -136,20 +136,40 @@ def test_the_gate_submitter_may_delete_jobs_and_nothing_else() -> None:
     assert "only jobs may be deleted" in suite
 
 
+def test_factory_gate_submission_has_an_independent_bound_service_account() -> None:
+    """Factory sandboxes must not share the VPS gate-submitter credential.
+
+    The factory reaches the API server over the tailnet, while the existing
+    ``gate-submitter`` identity belongs to the VPS consumer.  The identities
+    must therefore remain separate all the way through their RoleBindings: a
+    factory binding to the VPS ServiceAccount (or the reverse) would make a
+    rotate or revoke of one credential interrupt both consumers.
+    """
+    declared = _declared_yaml()
+
+    assert "name: gate-submitter-factory" in declared, (
+        "gates-rbac.yaml must declare the separate gate-submitter-factory "
+        "ServiceAccount, Role, RoleBinding, and ServiceAccount-token Secret "
+        "for factory sandboxes"
+    )
+
+
 def test_the_rbac_manifest_declares_no_secret_holding_a_github_credential() -> None:
     """The per-run token Secret is created at submit time and exists in no source.
 
     THE CONVERGE IS WHY THIS MATTERS. `reconstruct/converge-ci-stack.sh` applies
     this manifest on every boot, so a Secret declared here persists for as long
     as the node does — which is exactly the long-lived credential the contract
-    forbids. The one Secret this file has always carried is the ServiceAccount
-    token that renders the kubeconfig, and it holds no GitHub credential.
+    forbids. The two declared Secrets are the independently revocable
+    ServiceAccount tokens that render the VPS and factory kubeconfigs; neither
+    holds a GitHub credential.
     """
     declared = _declared_yaml()
 
-    assert declared.count("\nkind: Secret\n") == 1, (
-        f"{_RBAC.name} must declare exactly one Secret — the ServiceAccount token — so the "
-        f"private-sibling installation token has nowhere standing to live"
+    assert declared.count("\nkind: Secret\n") == 2, (
+        f"{_RBAC.name} must declare exactly two Secrets — the VPS and factory "
+        f"ServiceAccount tokens — so the private-sibling installation token has nowhere "
+        f"standing to live"
     )
     assert "type: kubernetes.io/service-account-token" in declared
     assert "github" not in declared.lower(), (
