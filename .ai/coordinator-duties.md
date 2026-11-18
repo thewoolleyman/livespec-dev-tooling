@@ -789,6 +789,8 @@ owns the canary and roll; carriers `livespec-dev-tooling-faetyh` and orchestrato
 `the-roll-refuses-a-tag-without-canary-coverage-of-changed-workfl`. Maintainer [6tgd2z 2026-11-13T00:19:55Z]: "Ensure
 this doesn't happen again, and get things back on track ASAP. …"
 
+**CANARY-COVERS-CHANGED-PATHS also reads the modules the workflow text consumes (coordinator's reading).** The coverage record lists, beside the `workflow.fabro` diff, every changed module under the dispatcher's prepare and materialize path (the Python constants and renderers whose values the workflow nodes read, for example `_dispatcher_gh_refresh.py`), because a regression there is invisible to a workflow-text diff. A canary run must reach `publish_draft` SUCCESSFULLY on the rolling tag before any roll. Measured 2026-11-18: v0.341.0 changed the gh-refresh bundle root in `_dispatcher_gh_refresh.py` (commit 323d1497b, bd-ib-kzgpzm) while the workflow's `push()` default (3 sites in implement-work-item, 2 in groom-work-item) still named `/workspace/.livespec-gh-refresh`; every `publish_draft` on 0.341.0 returned `LIVESPEC_PUSH_AUTH_ABSENT` (bd-ib-2x6orj, run 01M7R4B6DADP), the coverage record could not see it, and the canary run caught it. The orchestrator entry rolled back to v0.340.0. Proposed by throughput-plans-coordinator, ruled by legacy-coordinator-agent [6tgd2z 2026-11-18 ~21:0xZ].
+
 **Stop the line at the second deterministic failure (rule STOP-AT-SECOND).** It binds the coordinator and the
 dispatcher. A deterministic failure class (same node, same signature, same launch build) stops the line at its SECOND
 occurrence, holding new launches in the repositories the class can reach (a one-shot placement into a repository under a
