@@ -1,4 +1,4 @@
-# 012 — Retrospective: livespec-ai org migration failures (2026-11-15 to 2026-11-16)
+# 014 — Retrospective: livespec-ai org migration failures (2026-11-15 to 2026-11-16)
 
 Work item: `livespec-dev-tooling-o6mqy5`. Plan epic: `livespec-dev-tooling-xowhol`.
 Written by the stale-base-merge-options seat, 2026-11-16, by hand (no factory dispatch).
@@ -13,7 +13,8 @@ measured duration from the ledger record unless it is marked as an estimate.
 that first read **PREVENTION OWED** now names an item. throughput-plans-coordinator
 ruled on 2026-11-16 (03:1xZ) that all of them be filed through capture-work-item
 today, merging entries that share one cause, and this seat filed them as children
-of `livespec-dev-tooling-xowhol`. The note records no "none owed" decision.
+of `livespec-dev-tooling-xowhol`. Most were later closed or withdrawn; see "Disposition of the
+preventing items, read 2026-11-18" at the end for the current state.
 
 Sources: the scope events and tick records on `livespec-dev-tooling-r7iuj6` and
 `livespec-dev-tooling-6tgd2z`; the incident items `mzbt35`, `zq2i4c` and
@@ -332,11 +333,41 @@ raise lifting the gate for that fix at once, with bounds.
   committed route built fast, or by the maintainer's own word in the acting
   session, never by a different seat.
 
-## Open for the maintainer
+## Disposition of the preventing items, read 2026-11-18
 
-Every entry that first read **PREVENTION OWED** now names an item. The ten items
-are children of `livespec-dev-tooling-xowhol`, all `pending-approval`:
-`2ysrwp` (2), `jw3f6t` (5), `zn2oud` (6), `uggmdq` (10), `yuj3zs` (12),
-`l27jyh` (13), `gjxx7z` (14 and A3), `hpef4m` (A5), `zvgu6o` (C2) and `ymspuf`
-(C3). Entries 7, 8, 9, 11, A1, A2, A4 and C1 already named a preventing item or
-a recorded rule. C4 names the correction recorded on `o6mqy5`.
+This section replaces the earlier "Open for the maintainer" text, which said all ten
+items were children of `livespec-dev-tooling-xowhol` and `pending-approval`. That was
+true on 2026-11-16 and is no longer. Status below was read from the ledger on
+2026-11-18 (`bd show` of each id).
+
+| Failure | Preventing item | Status now | Basis |
+|---|---|---|---|
+| 2 factory dead about 10 h | `2ysrwp` | closed 2026-11-16T21:03Z | closed without delivery by legacy-coordinator-agent: a process guard that is not a contract and carries no DoD bullet (maintainer complaint on xowhol, rule SPEC-IS-NOT-THE-DEFAULT). Reopen on a measured recurrence. |
+| 5 queue setting changed unread | `jw3f6t` | closed 2026-11-16 | same basis as `2ysrwp` |
+| 14 and A3 behaviour change and "held empty" queue | `gjxx7z` | closed 2026-11-16 | same basis as `2ysrwp` |
+| 6 incident declared in comments only | `zn2oud` | withdrawn 2026-11-16T20:36Z | "withdrawn on maintainer order: non-carrier of xowhol" |
+| 12 VPS agent pushes refused 403 | `yuj3zs` | withdrawn | same maintainer order |
+| A5 ruled fix already existed | `hpef4m` | withdrawn | same maintainer order |
+| C2 proof-only host reboot unannounced | `zvgu6o` | withdrawn | same maintainer order |
+| 10 factory-identity gates not updated | `uggmdq` | live, `pending-approval`, now under `kcoslm` | still owed |
+| 13 no sanctioned read of the ARC App quota | `l27jyh` | live, `pending-approval`, now under `kcoslm` | still owed |
+| C3 migration-session coordinator errors | `ymspuf` | live, `ready`, under `kcoslm` | still owed |
+
+Entries 7, 8, 9, 11, A1, A2, A4 and C1 named a preventing item or a recorded rule at
+filing; their items were not re-read for this section. C4 names the correction recorded
+on `o6mqy5`. `ec6f3w` (a halt step that changes CI routing variables registers its
+restore as a checked step) was also closed without delivery on the same basis.
+
+### What the maintainer is asked to decide
+
+The DoD of `o6mqy5` says each failure names the item that prevents its recurrence, or
+records the maintainer's decision that none is owed. Seven of the ten entries above
+now point at a closed or withdrawn item, so for those the note records no prevention.
+Withdrawals were made on the maintainer's own order, so those four (6, 12, A5, C2) are
+decisions already; the three closed by coordinator on the maintainer's complaint
+(2, 5, 14 and A3) rest on a coordinator ruling and need the maintainer's own
+confirmation that no prevention is owed, with the stated reopen condition (a measured
+recurrence). Entries 10, 13 and C3 stay owed and are tracked.
+
+Attesting `o6mqy5` means: this note is the complete list of failures, and for each the
+disposition above is the maintainer's decision.
