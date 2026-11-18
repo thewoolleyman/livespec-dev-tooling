@@ -6283,3 +6283,37 @@ When branch_protection_alignment runs with an admin-scoped token
 
 Then it exits 4 with one fail finding whose failure_mode is merge_queue_bypass_path
 ```
+
+## Scenario: dev host retention refuses to start when its root-owned gate-run listing copy is absent or unsafe
+
+Given the root-owned copy of the gate-run listing code is absent, or is writable by a non-root account
+
+When the dev host retention unit starts
+
+Then it exits non-zero naming the missing or unsafe path
+
+And it does not execute `dev-tooling/gate-run.sh` or any other file from a checkout
+
+## Scenario: dev host retention never executes anything from a checkout
+
+Given a governed checkout owned by the retention user whose `dev-tooling/gate-run.sh` a non-root account can write
+
+When the dev host retention run visits that checkout
+
+Then it does not execute that `gate-run.sh` or any other file from the checkout
+
+And it reads the checkout's `tmp/gate-runs` as data only
+
+## Scenario: dev host retention still cleans aged terminal gate runs from every readable checkout
+
+Given one governed checkout owned by the retention user and another checkout path that cannot be read as data
+
+And the readable checkout holds an aged terminal gate run
+
+When the dev host retention run completes
+
+Then the aged terminal gate run in the readable checkout is removed
+
+And the run logs a `SKIP` line naming the unreadable path
+
+And the run continues without aborting
