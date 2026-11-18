@@ -51,6 +51,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Reconcile-runs host timer role",
+    "work_item": "livespec-dev-tooling-lo25nk",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Tests never pin committed configuration values",
     "work_item": "livespec-dev-tooling-symfx2",
     "first_seen": "2026-11-04"
@@ -625,6 +632,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hung tenant pass is bounded and retried by the next sweep",
+    "work_item": "livespec-dev-tooling-lo25nk",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a job on a runner-only node reads the pool's host-served caches over the node network",
     "work_item": "livespec-dev-tooling-h6jsgv",
     "first_seen": "2026-11-03"
@@ -796,6 +810,13 @@
     "heading": "## Scenario: a node takes runner pods up to its declared churn-slot capacity and no fewer",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pass resolves its credential wrapper at run time from the tenant's own configuration",
+    "work_item": "livespec-dev-tooling-lo25nk",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -2084,6 +2105,20 @@
     "heading": "## Scenario: the range replay refuses a suite-green commit whose added tests fail on its parent",
     "work_item": "livespec-dev-tooling-5uobsl",
     "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the reconcile_runs dead-man names the stale tenant and never refreshes a marker",
+    "work_item": "livespec-dev-tooling-lo25nk",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the reconcile_runs role sweeps each enabled tenant once, serially, and holds a held host",
+    "work_item": "livespec-dev-tooling-lo25nk",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",
