@@ -87,6 +87,36 @@ all:
     caam_role_holder:
       hosts:
         vps: {}
+    # THE CONTROL-NODE ROLE (livespec-dev-tooling bd-ib-voazyv S3, with ctete5's
+    # converge trigger, on the maintainer's 2026-11-18 VPS migration ruling: the VPS
+    # keeps only overseerd and caam-anthropic-loop-runner). The control node is the
+    # machine `ansible-apply` runs from and that runs the coordinators; today that is
+    # hetzner-xubuntu. THE ONE PLACE the role is bound to a machine is the
+    # control_node_machine_id below: plays select this GROUP, never a host name,
+    # and the group holds exactly ONE entry (tests/livespec_dev_tooling/
+    # test_control_node_role_group.py). Moving the role is one change here, the new
+    # control node's `cat /etc/machine-id`, plus a converge from that machine.
+    #
+    # The entry is an alias, not a hostname: its connection is `local`, valid only
+    # where the controller's machine-id equals control_node_machine_id. On any other
+    # controller a play that selects the group REFUSES at its first task and names
+    # both machine-ids, exactly as the `vps` entry below does, so an accidental run
+    # from another seat never converges that seat as if it were the control node.
+    # `control_node_identity_file` exists for the guard's own test; passing it as an
+    # extra var also bypasses the guard, which is deliberate (a guard against an
+    # accidental run, not a security boundary against an operator who sets it).
+    control_node_role:
+      hosts:
+        control-node:
+          control_node_machine_id: 0cba40e2d13946e8a1605ab5f0236046
+          control_node_identity_found: >-
+            {{ lookup('ansible.builtin.file', control_node_identity_file | default('/etc/machine-id')) | trim }}
+          ansible_connection: >-
+            {{ 'local' if control_node_identity_found == control_node_machine_id
+            else undef(hint='REFUSED: the control_node_role entry uses a local connection, which is valid'
+            ~ ' only on the control node (machine-id ' ~ control_node_machine_id
+            ~ '), and this controller has machine-id ' ~ control_node_identity_found
+            ~ '. Run plays that select control_node_role from the control node.') }}
     legacy:
       children:
         dev_hosts:
