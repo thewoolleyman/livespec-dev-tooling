@@ -1,6 +1,6 @@
 # 014 — Retrospective: livespec-ai org migration failures (2026-11-15 to 2026-11-16)
 
-Work item: `livespec-dev-tooling-o6mqy5`. Plan epic: `livespec-dev-tooling-xowhol`.
+Work item: [`livespec-dev-tooling-o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5). Plan epic: [`livespec-dev-tooling-xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol).
 Written by the stale-base-merge-options seat, 2026-11-16, by hand (no factory dispatch).
 
 The maintainer's direction, verbatim (relayed by throughput-plans-coordinator,
@@ -13,13 +13,13 @@ measured duration from the ledger record unless it is marked as an estimate.
 that first read **PREVENTION OWED** now names an item. throughput-plans-coordinator
 ruled on 2026-11-16 (03:1xZ) that all of them be filed through capture-work-item
 today, merging entries that share one cause, and this seat filed them as children
-of `livespec-dev-tooling-xowhol`. Most were later closed or withdrawn; see "Disposition of the
+of [`livespec-dev-tooling-xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol). Most were later closed or withdrawn; see "Disposition of the
 preventing items, read 2026-11-18" at the end for the current state.
 
-Sources: the scope events and tick records on `livespec-dev-tooling-r7iuj6` and
-`livespec-dev-tooling-6tgd2z`; the incident items `mzbt35`, `zq2i4c` and
-`xyi5vu`; the RETRO INPUT comment from legacy-coordinator-agent on `o6mqy5`
-(2026-11-15 23:07Z); and this plan's ledger timeline on `xowhol`.
+Sources: the scope events and tick records on [`livespec-dev-tooling-r7iuj6`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-r7iuj6) and
+[`livespec-dev-tooling-6tgd2z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z); the incident items [`mzbt35`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-mzbt35), [`zq2i4c`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c) and
+[`xyi5vu`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xyi5vu); the RETRO INPUT comment from legacy-coordinator-agent on [`o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5)
+(2026-11-15 23:07Z); and this plan's ledger timeline on [`xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol).
 
 ## The common pattern
 
@@ -31,7 +31,7 @@ committed but never converged (2). A queue was reported empty while it held a
 PR (A3). A fix merged and was assumed to cure the red (A1). The rule this repo
 already carries, "confirm the reader before you write" (CLAUDE.md §"Ordering"),
 covers each of them. The second shape is the circular gate: a check refused the
-very fix for the red it guarded (4, C1). The lesson recorded on `6tgd2z` is to
+very fix for the red it guarded (4, C1). The lesson recorded on [`6tgd2z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z) is to
 raise lifting the gate for that fix at once, with bounds.
 
 ## Failures recorded at filing (the item's Context list)
@@ -43,8 +43,8 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** every flow failure below went undetected until something tripped
   over it. Failure 2 alone stayed hidden for about 10 h.
 - **Window:** cutover ~10:xxZ to the maintainer's verdict ~20:0xZ, 2026-11-15.
-- **Prevention:** the acceptance gate, assertion 10 rows a-e on `xowhol`
-  (22:10:19Z), whose carriers include `livespec-dev-tooling-kb2ud6` (prove
+- **Prevention:** the acceptance gate, assertion 10 rows a-e on [`xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol)
+  (22:10:19Z), whose carriers include [`livespec-dev-tooling-kb2ud6`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kb2ud6) (prove
   factory dispatch, the release fan-out and a pin bump against the org).
 
 ### 2. Factory dead for about 10 h
@@ -56,24 +56,24 @@ raise lifting the gate for that fix at once, with bounds.
   about 10 h of factory throughput.
 - **Window:** ~10:xxZ to 19:56Z, 2026-11-15. A canary found it at 19:43Z, and it
   was fixed at 19:56Z.
-- **Prevention:** `livespec-dev-tooling-kb2ud6` (prove factory dispatch against
+- **Prevention:** [`livespec-dev-tooling-kb2ud6`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kb2ud6) (prove factory dispatch against
   the org). For the general rule that a committed host route needs a
   convergence read on the host before the step counts as done:
-  `livespec-dev-tooling-2ysrwp`.
+  [`livespec-dev-tooling-2ysrwp`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-2ysrwp).
 
-### 3. CI runners could not register at the org (incidents xyi5vu and mzbt35)
+### 3. CI runners could not register at the org (incidents [xyi5vu](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xyi5vu) and [mzbt35](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-mzbt35))
 
 - **Cause:** dev-tooling CI fell back to hosted runners. The ARC org credential
-  projection (`h5r75q`) sat ready and unbuilt under hold-gmktec from 16:32Z. A
+  projection ([`h5r75q`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-h5r75q)) sat ready and unbuilt under hold-gmktec from 16:32Z. A
   GO went out at 19:0xZ with no committed route.
 - **Cost:** about 3 h of avoidable wait, from 16:32Z to the GO. The apply then
   ran under OVERRIDE-THEN-BACKFILL from 21:43Z to 21:59Z.
 - **Window:** 16:32Z to 21:59:55Z (labels flipped), 2026-11-15.
-- **Prevention:** `livespec-dev-tooling-h5r75q` (ARC secret reinjection projects
+- **Prevention:** [`livespec-dev-tooling-h5r75q`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-h5r75q) (ARC secret reinjection projects
   the org App credential from SSM). Also owed: the #4814 backfill to the other 16
-  scale sets plus a drift `changed=0` read, queued on `xowhol`.
+  scale sets plus a drift `changed=0` read, queued on [`xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol).
 
-### 4. Merge queue starved on the org App's API quota (incident zq2i4c)
+### 4. Merge queue starved on the org App's API quota (incident [zq2i4c](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c))
 
 - **Cause:** parallel check-fleet-conformance sweeps exhausted installation
   182016479. One sweep made 521 core requests (405 of them per-file contents
@@ -84,8 +84,8 @@ raise lifting the gate for that fix at once, with bounds.
   rate-limited run until 02:49Z on 2026-11-16 (see A1).
 - **Window:** 2026-11-15 ~19:xxZ to 2026-11-16 02:49Z.
 - **Prevention:** FIX 1 (61d934dcd) and FIX 2 (`livespec-dev-tooling#4824`,
-  f1b5eade2, under `livespec-dev-tooling-bcwf2z`) cut a sweep to about 50 calls
-  (measured 2026-11-16 02:34Z). `livespec-dev-tooling-n35tv5` holds the further
+  f1b5eade2, under [`livespec-dev-tooling-bcwf2z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-bcwf2z)) cut a sweep to about 50 calls
+  (measured 2026-11-16 02:34Z). [`livespec-dev-tooling-n35tv5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-n35tv5) holds the further
   read reduction. Its lever 1 was measured as worth at most 3 calls and was not
   built. Its no-re-sweep form became the propose-change
   `livespec-dev-tooling#4833`. Lever (b), an Actions concurrency group, is armed
@@ -97,7 +97,7 @@ raise lifting the gate for that fix at once, with bounds.
   19:45:45Z. That broke check-branch-protection-alignment's floor.
 - **Cost:** every dev-tooling commit was refused for about 10 min.
 - **Window:** 19:45:45Z to ~19:56Z, 2026-11-15.
-- **Prevention:** `livespec-dev-tooling-jw3f6t` (a ruleset edit is preceded by a dry
+- **Prevention:** [`livespec-dev-tooling-jw3f6t`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-jw3f6t) (a ruleset edit is preceded by a dry
   read of every check that judges that ruleset).
 
 ### 6. Incident declared in comments only
@@ -107,7 +107,7 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** about 1 h of repair commits running the full aggregate instead of
   the expedited lane.
 - **Window:** 18:18Z to 19:3xZ, 2026-11-15.
-- **Prevention:** `livespec-dev-tooling-zn2oud` (declaring an incident files its
+- **Prevention:** [`livespec-dev-tooling-zn2oud`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zn2oud) (declaring an incident files its
   incident record at once).
 
 ### 7. The incident lane cannot land product .py through the merge queue
@@ -122,8 +122,8 @@ raise lifting the gate for that fix at once, with bounds.
   Red-Green lane. Expedited #4818 was closed unmerged. Its chain then could not
   close (A4).
 - **Window:** 2026-11-15 ~20:xxZ onward. It is still open.
-- **Prevention:** `livespec-dev-tooling-yfrepg` (the merge_group read;
-  `livespec-dev-tooling#4832` is in the queue) and `livespec-dev-tooling-72b33c`
+- **Prevention:** [`livespec-dev-tooling-yfrepg`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-yfrepg) (the merge_group read;
+  `livespec-dev-tooling#4832` is in the queue) and [`livespec-dev-tooling-72b33c`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-72b33c)
   (the out-of-queue incident merge, BLOCKED). The coordinator routed the
   merge_group PR-resolution fix to expedited-incident-response-flag (2026-11-16
   02:5xZ).
@@ -131,14 +131,14 @@ raise lifting the gate for that fix at once, with bounds.
 ### 8. attempt.base has two meanings
 
 - **Cause:** the commit hook reads the attempt base as the merge base, while
-  incident CI reads it as the PR base. The mzbt35 fix round was refused after
+  incident CI reads it as the PR base. The [mzbt35](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-mzbt35) fix round was refused after
   master moved ("push update does not match the current canonical existing
   PR").
-- **Cost:** the mzbt35 incident push-2 was refused, and the operator moved it to
+- **Cost:** the [mzbt35](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-mzbt35) incident push-2 was refused, and the operator moved it to
   the normal lane (2026-11-15 ~23:xxZ). #4817 merged only at 2026-11-16 ~02:5xZ
   (3c15608b).
 - **Window:** 2026-11-15 ~23:xxZ to 2026-11-16 ~02:5xZ.
-- **Prevention:** `livespec-dev-tooling-ca6usr`.
+- **Prevention:** [`livespec-dev-tooling-ca6usr`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-ca6usr).
 
 ### 9. A check armed before adoption
 
@@ -148,7 +148,7 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** the orchestrator cannot take dev-tooling v1.212.0 or later. Interim
   bump to v1.211.0 (`livespec-orchestrator-beads-fabro#5371`).
 - **Window:** from the v1.212.0 release onward. It is still open.
-- **Prevention:** `livespec-dev-tooling-o6eytb` (require the merge queue on
+- **Prevention:** [`livespec-dev-tooling-o6eytb`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6eytb) (require the merge queue on
   dev-tooling and the orchestrator). This is the CLAUDE.md §"Ordering" rule,
   "adoption first, then arming", which this repo already paid for once in
   `46c5dab`.
@@ -167,7 +167,7 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** #5364 alone sat about 12 h. The template is a live hazard until it
   is fixed.
 - **Window:** 11:19Z onward, 2026-11-15. Partly open.
-- **Prevention:** `livespec-dev-tooling-uggmdq`, which covers all five identity
+- **Prevention:** [`livespec-dev-tooling-uggmdq`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-uggmdq), which covers all five identity
   surfaces as five Definition-of-Done bullets and may be split per repository at
   groom time. The value-free org probe
   (`/var/tmp/ldseat/org_ratelimit_probe.py`) is the content of its fifth bullet and
@@ -179,7 +179,7 @@ raise lifting the gate for that fix at once, with bounds.
   orchestrator failed at 0 s ("workflow file issue").
 - **Cost:** no automated pin bump landed on the orchestrator after the cutover.
 - **Window:** cutover onward. It is still open.
-- **Prevention:** `livespec-dev-tooling-kb2ud6`.
+- **Prevention:** [`livespec-dev-tooling-kb2ud6`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kb2ud6).
 
 ### 12. VPS agent pushes refused with 403
 
@@ -187,17 +187,17 @@ raise lifting the gate for that fix at once, with bounds.
   The fix, `livespec-dev-tooling#4804`, sat ungraded.
 - **Cost:** about 4.5 h with agent pushes refused on vps.
 - **Window:** 16:20Z to 21:00Z (applied), 2026-11-15.
-- **Prevention:** the grading lapse is coordinator error C3. `livespec-dev-tooling-yuj3zs` (a coordinator-graded PR waiting
+- **Prevention:** the grading lapse is coordinator error C3. [`livespec-dev-tooling-yuj3zs`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-yuj3zs) (a coordinator-graded PR waiting
   past a stated bound is surfaced on the coordinator's tick report). The fix
   itself is applied.
 
 ### 13. No sanctioned read of the ARC App's quota
 
 - **Cause:** the ARC App key lives only in poweredge-xubuntu's credstore.
-- **Cost:** the mzbt35 revert trigger fell back to a log proxy (kubectl logs of
+- **Cost:** the [mzbt35](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-mzbt35) revert trigger fell back to a log proxy (kubectl logs of
   arc-gha-rs-controller and the listener).
 - **Window:** 2026-11-15 ~21:xxZ onward. It is still open.
-- **Prevention:** `livespec-dev-tooling-l27jyh` (the ARC App's rate budget is
+- **Prevention:** [`livespec-dev-tooling-l27jyh`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-l27jyh) (the ARC App's rate budget is
   readable through a sanctioned, value-free probe). The org-bucket probe covers
   installation 182016479, not the ARC App.
 
@@ -210,7 +210,7 @@ raise lifting the gate for that fix at once, with bounds.
 - **Cost:** a wasted merge group for #4818. The same hazard recurred on
   2026-11-16 (A3).
 - **Window:** cutover onward.
-- **Prevention:** `livespec-dev-tooling-gjxx7z`, one item for entries 14 and A3,
+- **Prevention:** [`livespec-dev-tooling-gjxx7z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-gjxx7z), one item for entries 14 and A3,
   which share a cause: a held PR whose auto-merge is re-armed by a push, an
   update-branch or a peer on the shared login is detected and disarmed while the
   queue owner holds it. It also records that `gh pr ready` no longer arms
@@ -228,7 +228,7 @@ raise lifting the gate for that fix at once, with bounds.
 - **Window:** 01:32Z to 02:49Z.
 - **Prevention:** the incident END rule the coordinator set: the first master
   ci.yml push run reading SUCCESS with zero rate-limited rows, recorded on
-  `zq2i4c`. It was met at 02:49Z by run 43792059408.
+  [`zq2i4c`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c). It was met at 02:49Z by run 43792059408.
 
 ### A2. livespec's own compat pin stale since 2026-11-15
 
@@ -241,7 +241,7 @@ raise lifting the gate for that fix at once, with bounds.
   (a defect red, not an external one) on run 43786816282.
 - **Window:** 2026-11-15 13:02:59Z (pin-freshness failure) to 2026-11-16
   02:32:14Z (`livespec#3261` merged).
-- **Prevention:** `livespec-dev-tooling-jqzi6n`.
+- **Prevention:** [`livespec-dev-tooling-jqzi6n`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-jqzi6n).
 
 ### A3. A queue reported "held empty" while it held a PR
 
@@ -253,31 +253,31 @@ raise lifting the gate for that fix at once, with bounds.
   installation 182016479 during the throttle.
 - **Window:** 02:08:46Z to 02:16:59Z.
 - **Prevention:** the seat loop now re-reads the queue and disarms re-armed held
-  PRs every tick. `livespec-dev-tooling-gjxx7z` for the shared-login re-arm hazard
+  PRs every tick. [`livespec-dev-tooling-gjxx7z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-gjxx7z) for the shared-login re-arm hazard
   itself (see 14).
 
-### A4. The incident chain for zq2i4c can never close
+### A4. The incident chain for [zq2i4c](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c) can never close
 
 - **Cause:** expedited attempt zq2i4c-attempt-1 (generation 3) is pr-bound to
   #4818, which was closed unmerged when FIX 2 moved to the normal lane (failure
   7). No incident-authority verb adopts a normal-lane merge as the repair.
-- **Cost:** zq2i4c stays active although its END was met at 02:49Z. The marker
+- **Cost:** [zq2i4c](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c) stays active although its END was met at 02:49Z. The marker
   at `tests/livespec_dev_tooling/fleet/test_context_read_memo.py:14` and the
   deferred ordinary-admission and spec-debt stay owed.
 - **Window:** 02:49Z onward.
-- **Prevention:** `livespec-dev-tooling-lf043` (an abandoned or drill incident
-  chain can never close). zq2i4c is its second case, after igjtqq.
+- **Prevention:** [`livespec-dev-tooling-lf043`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-lf043) (an abandoned or drill incident
+  chain can never close). [zq2i4c](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c) is its second case, after [igjtqq](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-igjtqq).
 
 ### A5. A ruled fix that already existed, and a lever nearly built unmeasured
 
 - **Cause:** "FIX 2b" (in-place retry, cooldown, a request gap) was ruled
-  without reading `_gh_runner.py`, which already had all three. n35tv5 lever 1
+  without reading `_gh_runner.py`, which already had all three. [n35tv5](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-n35tv5) lever 1
   was then ordered built before the shim measurement, which showed it could save
   at most 3 calls of 50.
 - **Cost:** two near-misses caught before any commit: one handoff cycle each.
 - **Window:** 2026-11-16 ~01:0xZ to ~02:4xZ.
-- **Prevention:** n35tv5's own rule ("each lever MEASURED before it is built").
-  `livespec-dev-tooling-hpef4m` (a fix ruling reads the current
+- **Prevention:** [n35tv5](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-n35tv5)'s own rule ("each lever MEASURED before it is built").
+  [`livespec-dev-tooling-hpef4m`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-hpef4m) (a fix ruling reads the current
   code it rules on, and records that read, before the fix is routed).
 
 ## Coordinator failures (legacy-coordinator-agent's RETRO INPUT, 2026-11-15 23:07Z)
@@ -289,9 +289,9 @@ raise lifting the gate for that fix at once, with bounds.
   put to the maintainer.
 - **Cost:** about 1 h stalled, from 22:08Z to ~23:1xZ.
 - **Window:** 22:08Z to ~23:1xZ, 2026-11-15.
-- **Prevention:** the bounded master-green bypass rule recorded on `6tgd2z`
+- **Prevention:** the bounded master-green bypass rule recorded on [`6tgd2z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z)
   (only red-cause PRs, every other check green, named on the PR, a revert path
-  first, ending at master green). It was used for zq2i4c on 2026-11-16 and ended
+  first, ending at master green). It was used for [zq2i4c](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zq2i4c) on 2026-11-16 and ended
   at 02:49Z.
 
 ### C2. A proof-only host reboot announced without a values check
@@ -301,9 +301,9 @@ raise lifting the gate for that fix at once, with bounds.
   (draining 17 live seats).
 - **Cost:** none realized. The maintainer stopped it (~22:5xZ).
 - **Window:** ~22:5xZ, 2026-11-15.
-- **Prevention:** the lesson on `o6mqy5`: a proof-only reboot during
+- **Prevention:** the lesson on [`o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5): a proof-only reboot during
   critical-path work is raised to the maintainer, non-blocking, before any
-  window is announced. `livespec-dev-tooling-zvgu6o` makes it a durable rule: a
+  window is announced. [`livespec-dev-tooling-zvgu6o`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zvgu6o) makes it a durable rule: a
   proof-only reboot during critical-path work is raised to the maintainer before
   any window is announced.
 
@@ -317,8 +317,8 @@ raise lifting the gate for that fix at once, with bounds.
 - Master's verdict read from the "CI infrastructure re-run" workflow instead of
   the ci.yml push run (tick-10 correction): master was reported green while it
   was red.
-- **Cost and window:** each is recorded on `6tgd2z`, 2026-11-15.
-- **Prevention:** each correction is recorded on `6tgd2z`. `livespec-dev-tooling-ymspuf` (master's verdict is read only from
+- **Cost and window:** each is recorded on [`6tgd2z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z), 2026-11-15.
+- **Prevention:** each correction is recorded on [`6tgd2z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z). [`livespec-dev-tooling-ymspuf`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-ymspuf) (master's verdict is read only from
   the ci.yml push run on master's head) covers the master-verdict error, the one
   C3 error that has a mechanical guard.
 
@@ -329,38 +329,38 @@ raise lifting the gate for that fix at once, with bounds.
   cross-session permission laundering.
 - **Cost:** none realized. legacy-dispatcher-agent declined, and nothing ran.
 - **Window:** 23:1xZ, 2026-11-15.
-- **Prevention:** the correction on `o6mqy5`: a guard refusal is answered by a
+- **Prevention:** the correction on [`o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5): a guard refusal is answered by a
   committed route built fast, or by the maintainer's own word in the acting
   session, never by a different seat.
 
 ## Disposition of the preventing items, read 2026-11-18
 
 This section replaces the earlier "Open for the maintainer" text, which said all ten
-items were children of `livespec-dev-tooling-xowhol` and `pending-approval`. That was
+items were children of [`livespec-dev-tooling-xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol) and `pending-approval`. That was
 true on 2026-11-16 and is no longer. Status below was read from the ledger on
 2026-11-18 (`bd show` of each id).
 
 | Failure | Preventing item | Status now | Basis |
 |---|---|---|---|
-| 2 factory dead about 10 h | `2ysrwp` | closed 2026-11-16T21:03Z | closed without delivery by legacy-coordinator-agent: a process guard that is not a contract and carries no DoD bullet (maintainer complaint on xowhol, rule SPEC-IS-NOT-THE-DEFAULT). Reopen on a measured recurrence. |
-| 5 queue setting changed unread | `jw3f6t` | closed 2026-11-16 | same basis as `2ysrwp` |
-| 14 and A3 behaviour change and "held empty" queue | `gjxx7z` | closed 2026-11-16 | same basis as `2ysrwp` |
-| 6 incident declared in comments only | `zn2oud` | withdrawn 2026-11-16T20:36Z | "withdrawn on maintainer order: non-carrier of xowhol" |
-| 12 VPS agent pushes refused 403 | `yuj3zs` | withdrawn | same maintainer order |
-| A5 ruled fix already existed | `hpef4m` | withdrawn | same maintainer order |
-| C2 proof-only host reboot unannounced | `zvgu6o` | withdrawn | same maintainer order |
-| 10 factory-identity gates not updated | `uggmdq` | live, `pending-approval`, now under `kcoslm` | still owed |
-| 13 no sanctioned read of the ARC App quota | `l27jyh` | live, `pending-approval`, now under `kcoslm` | still owed |
-| C3 migration-session coordinator errors | `ymspuf` | live, `ready`, under `kcoslm` | still owed |
+| 2 factory dead about 10 h | [`2ysrwp`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-2ysrwp) | closed 2026-11-16T21:03Z | closed without delivery by legacy-coordinator-agent: a process guard that is not a contract and carries no DoD bullet (maintainer complaint on [xowhol](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol), rule SPEC-IS-NOT-THE-DEFAULT). Reopen on a measured recurrence. |
+| 5 queue setting changed unread | [`jw3f6t`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-jw3f6t) | closed 2026-11-16 | same basis as [`2ysrwp`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-2ysrwp) |
+| 14 and A3 behaviour change and "held empty" queue | [`gjxx7z`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-gjxx7z) | closed 2026-11-16 | same basis as [`2ysrwp`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-2ysrwp) |
+| 6 incident declared in comments only | [`zn2oud`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zn2oud) | withdrawn 2026-11-16T20:36Z | "withdrawn on maintainer order: non-carrier of [xowhol](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol)" |
+| 12 VPS agent pushes refused 403 | [`yuj3zs`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-yuj3zs) | withdrawn | same maintainer order |
+| A5 ruled fix already existed | [`hpef4m`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-hpef4m) | withdrawn | same maintainer order |
+| C2 proof-only host reboot unannounced | [`zvgu6o`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-zvgu6o) | withdrawn | same maintainer order |
+| 10 factory-identity gates not updated | [`uggmdq`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-uggmdq) | live, `pending-approval`, now under [`kcoslm`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kcoslm) | still owed |
+| 13 no sanctioned read of the ARC App quota | [`l27jyh`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-l27jyh) | live, `pending-approval`, now under [`kcoslm`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kcoslm) | still owed |
+| C3 migration-session coordinator errors | [`ymspuf`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-ymspuf) | live, `ready`, under [`kcoslm`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kcoslm) | still owed |
 
 Entries 7, 8, 9, 11, A1, A2, A4 and C1 named a preventing item or a recorded rule at
 filing; their items were not re-read for this section. C4 names the correction recorded
-on `o6mqy5`. `ec6f3w` (a halt step that changes CI routing variables registers its
+on [`o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5). [`ec6f3w`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-ec6f3w) (a halt step that changes CI routing variables registers its
 restore as a checked step) was also closed without delivery on the same basis.
 
 ### What the maintainer is asked to decide
 
-The DoD of `o6mqy5` says each failure names the item that prevents its recurrence, or
+The DoD of [`o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5) says each failure names the item that prevents its recurrence, or
 records the maintainer's decision that none is owed. Seven of the ten entries above
 now point at a closed or withdrawn item, so for those the note records no prevention.
 Withdrawals were made on the maintainer's own order, so those four (6, 12, A5, C2) are
@@ -369,5 +369,5 @@ decisions already; the three closed by coordinator on the maintainer's complaint
 confirmation that no prevention is owed, with the stated reopen condition (a measured
 recurrence). Entries 10, 13 and C3 stay owed and are tracked.
 
-Attesting `o6mqy5` means: this note is the complete list of failures, and for each the
+Attesting [`o6mqy5`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5) means: this note is the complete list of failures, and for each the
 disposition above is the maintainer's decision.

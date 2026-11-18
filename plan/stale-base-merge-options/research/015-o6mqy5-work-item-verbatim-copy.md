@@ -1,4 +1,4 @@
-# 015 — Verbatim copy of work item livespec-dev-tooling-o6mqy5
+# 015 — Verbatim copy of work item [livespec-dev-tooling-o6mqy5](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5)
 
 A read-only snapshot of the ledger record and its comments, taken from the beads tenant on 2026-11-18T09:54Z with `bd show --json` and `bd comments --json`. The ledger is the authority; this file is a readable copy for review, not a second source of truth. Text is reproduced as stored: nothing is reworded. Comment bodies that are structured key/value or JSON records are shown in code blocks so their line breaks survive; prose comments are shown as quotes. Comments added after the snapshot time are not here.
 
@@ -32,27 +32,27 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 > 4. MERGE QUEUE STARVED ON THE ORG APP'S API QUOTA (incident zq2i4c). Parallel check-fleet-conformance sweeps exhausted installation 182016479, so master went red on the rate limit and the fix (FIX 2) could not commit past check-master-ci-green. About 1 h was spent routing around that circle before the maintainer waived the one check for one commit (~23:1xZ).
 > 5. A QUEUE SETTING CHANGED WITHOUT READING ITS CHECK. ruleset 26758787 max_entries_to_build went 4 to 1 at 19:45:45Z. That broke check-branch-protection-alignment's floor, and every dev-tooling commit was refused for ~10 min.
 > 6. INCIDENT DECLARED IN COMMENTS ONLY. "Incident" was stated at 18:18Z, but no incident record existed until 19:3xZ, so the repair commits ran the full aggregate for an hour.
-> 7. THE INCIDENT LANE CANNOT LAND PRODUCT .PY THROUGH THE MERGE QUEUE. check-red-green-replay reads incident provenance only on pull_request (livespec-dev-tooling-yfrepg). The tailnet-only observer is unreachable from hosted CI. The out-of-queue incident merge needs spec changes in livespec and dev-tooling (72b33c).
-> 8. attempt.base HAS TWO MEANINGS (livespec-dev-tooling-ca6usr). The mzbt35 fix round was refused after master moved.
-> 9. A CHECK ARMED BEFORE ADOPTION. dev-tooling v1.212.0 put livespec-orchestrator-beads-fabro in QUEUE_REQUIRED_REPOSITORIES while the orchestrator had no merge queue, so every orchestrator pin bump to v1.212.0 or later is refused. Interim: a v1.211.0 bump (#5371). Adoption: livespec-dev-tooling-o6eytb.
+> 7. THE INCIDENT LANE CANNOT LAND PRODUCT .PY THROUGH THE MERGE QUEUE. check-red-green-replay reads incident provenance only on pull_request ([livespec-dev-tooling-yfrepg](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-yfrepg)). The tailnet-only observer is unreachable from hosted CI. The out-of-queue incident merge needs spec changes in livespec and dev-tooling (72b33c).
+> 8. attempt.base HAS TWO MEANINGS ([livespec-dev-tooling-ca6usr](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-ca6usr)). The mzbt35 fix round was refused after master moved.
+> 9. A CHECK ARMED BEFORE ADOPTION. dev-tooling v1.212.0 put livespec-orchestrator-beads-fabro in QUEUE_REQUIRED_REPOSITORIES while the orchestrator had no merge queue, so every orchestrator pin bump to v1.212.0 or later is refused. Interim: a v1.211.0 bump (#5371). Adoption: [livespec-dev-tooling-o6eytb](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6eytb).
 > 10. FACTORY-IDENTITY GATES NOT UPDATED FOR THE ORG APP (livespec-ai-factory-bot, 5761962):
 >     - the orchestrator factory provenance (#5364, held do-not-merge from 11:19Z to ~23:xxZ for a past "cutover slot");
 >     - the orchestrator bypass-audit default login;
 >     - livespec's auto-enable-merge template, where the next re-render would REMOVE the org login fleet-wide;
 >     - dolt-server's dispatch-identity check;
 >     - the ab630bf7 quota probe, which mints with the personal App id and gets a 404, so the quota is unmeasurable.
-> 11. AUTOMATED PIN BUMPS DEAD. Every sibling-released bump-pin-from-dispatch run on the orchestrator failed at 0s ("workflow file issue"). Owner: livespec-dev-tooling-kb2ud6.
+> 11. AUTOMATED PIN BUMPS DEAD. Every sibling-released bump-pin-from-dispatch run on the orchestrator failed at 0s ("workflow file issue"). Owner: [livespec-dev-tooling-kb2ud6](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-kb2ud6).
 > 12. VPS AGENT PUSHES REFUSED WITH 403. The fix (livespec-dev-tooling#4804) sat ungraded from 16:20Z to 20:5xZ; it was applied 21:00Z.
 > 13. NO SANCTIONED READ OF THE ARC APP'S QUOTA. The key lives only in poweredge-xubuntu's credstore, so the mzbt35 revert trigger fell back to a log proxy.
 > 14. BEHAVIOUR CHANGES NOT ANNOUNCED. Post-migration, gh pr ready no longer arms auto-merge in livespec-dev-tooling. Queue state must be read from the queue entry, and a stale auto-merge arm re-enqueued an incident PR (#4818) that the queue would convict.
-> Sources: scope events and tick records on livespec-dev-tooling-r7iuj6 and livespec-dev-tooling-6tgd2z, and the incident items mzbt35, zq2i4c and xyi5vu.
+> Sources: scope events and tick records on [livespec-dev-tooling-r7iuj6](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-r7iuj6) and [livespec-dev-tooling-6tgd2z](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z), and the incident items mzbt35, zq2i4c and xyi5vu.
 >
 
 ## Metadata
 
 | Field | Value |
 |---|---|
-| id | livespec-dev-tooling-o6mqy5 |
+| id | [livespec-dev-tooling-o6mqy5](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5) |
 | type | task |
 | status | pending-approval |
 | priority | P2 |
@@ -61,12 +61,12 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 | created at | 2026-11-15T23:02:15Z |
 | updated at | 2026-11-15T23:06:30Z |
 | labels | intake:triaged, origin:freeform |
-| parent | livespec-dev-tooling-xowhol |
+| parent | [livespec-dev-tooling-xowhol](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol) |
 | comment count | 13 |
 
 ### Dependencies
 
-- `livespec-dev-tooling-xowhol` (parent-child): Plan: stale-base merge options (up-to-date branches, merge queues, third-party tools)
+- [`livespec-dev-tooling-xowhol`](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol) (parent-child): Plan: stale-base merge options (up-to-date branches, merge queues, third-party tools)
 
 ### Other record fields
 
@@ -89,7 +89,7 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 
 > livespec-spec-change-tier
 >
-> work-item: livespec-dev-tooling-o6mqy5
+> work-item: [livespec-dev-tooling-o6mqy5](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-o6mqy5)
 > stage: filing
 > tier: spec-change
 > classification: chore
@@ -107,14 +107,14 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 
 - comment id: `01a1e177-6791-7534-a6ed-0fb00aece8ec`
 
-> RETRO INPUT, legacy-coordinator-agent (session 7a5b1072, vps vmi3006760.contaboserver.net), 2026-11-15T23:07Z (date -u). These are the coordinator's own failures on the livespec-ai organization migration (stale-base-merge-options, livespec-dev-tooling-xowhol). Added at the maintainer's direction: "Yes that's a good assessment of your failure. Stick that on the retro item too".
+> RETRO INPUT, legacy-coordinator-agent (session 7a5b1072, vps vmi3006760.contaboserver.net), 2026-11-15T23:07Z (date -u). These are the coordinator's own failures on the livespec-ai organization migration (stale-base-merge-options, [livespec-dev-tooling-xowhol](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol)). Added at the maintainer's direction: "Yes that's a good assessment of your failure. Stick that on the retro item too".
 >
 > 1. THE MASTER-GREEN CIRCLE: never offered the obvious bypass (maintainer-confirmed assessment).
 >    - What happened: master was red on zq2i4c, check-fleet-conformance failing on GitHub API quota and rate limits. The fix, FIX 2 livespec-dev-tooling#4818, re-routed to the normal lane, was refused at Red by check-master-ci-green ALONE (gate run 20261115T220516Z-595412).
 >    - At 22:08Z the stale-base seat put the circle to the coordinator: rule on a bounded re-run of master's check-fleet-conformance, versus an incident-mode route for master.
 >    - The coordinator ruled the 429 re-run (backoff 5/10/20, at most 3) and the incident route. Every option it weighed routed AROUND the gate. It never put the trivial option to the maintainer: merge the quota fix past check-master-ci-green, because that gate was refusing the cure for the very red it guards. The work stayed stalled waiting on quota until the maintainer ordered the bypass himself (~23:1xZ): "We were stalled in a chicken-and-egg loop, waiting for the quota, which was absolutely a stupid thing to do ... You should have realized this is the obvious solution and raised it to me as an option."
 >    - Rules that already covered it: P5, the forest check ("when every option a seat offers routes around a trivial fix, ask why the trivial fix is not an option"); OVERRIDE-THEN-BACKFILL ("a committed-route ordering never deadlocks a plan").
->    - Lesson: when a gate refuses the fix for the very red it is guarding, the gate is circular. Raise lifting it for that fix at once, as a recommendation, with bounds: only the PRs that remove the red's cause; every other check green; the bypass named on the PR; a revert path named first; it ends when master reads green. The ruling and decision are recorded on livespec-dev-tooling-6tgd2z.
+>    - Lesson: when a gate refuses the fix for the very red it is guarding, the gate is circular. Raise lifting it for that fix at once, as a recommendation, with bounds: only the PRs that remove the red's cause; every other check green; the bypass named on the PR; a revert path named first; it ends when master reads green. The ruling and decision are recorded on [livespec-dev-tooling-6tgd2z](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z).
 >
 > 2. THE HETZNER-XUBUNTU REBOOT ANNOUNCED WITHOUT A VALUES CHECK (~22:5xZ).
 >    - The coordinator announced the reboot window because its stated gates were met (xyi5vu step 4 proved; no gate or apply in flight). It never asked what a reboot buys versus what it costs during the migration's critical path. Its only purpose was a plan proof. Its cost was draining 17 live seats, including stale-base's in-flight mzbt35 work.
@@ -160,7 +160,7 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 > (c) It went silent from 06:36Z to 15:44Z. It is an interactive seat on the same exhausted pool, so it stalled with everyone else.
 > (d) Pacing duty (budget = pts over reserve / hours to reset; alert at 1.25x or runway < reset) was assigned only at ~15:4xZ, after the fact.
 > FIXES OWED:
-> - RESETS-ARE-PRE-AUTHORIZED is recorded on livespec-dev-tooling-6tgd2z. Port it into coordinator-duties.md and caam-anthropic-loop-runner's rule, and make NO-STALL-CREDENTIALS cite free resets explicitly.
+> - RESETS-ARE-PRE-AUTHORIZED is recorded on [livespec-dev-tooling-6tgd2z](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-6tgd2z). Port it into coordinator-duties.md and caam-anthropic-loop-runner's rule, and make NO-STALL-CREDENTIALS cite free resets explicitly.
 > - Reopen or refile overseer-33kyxp's spend half as a deterministic claim (not an LLM seat), triggered when the live interactive account is under reserve and a reset is available.
 > - A watcher that is not on the interactive pool: run caam's usage pass and the pacing check as systemd timers on a factory or dedicated slot, with a page to the maintainer when every interactive account is under reserve.
 > - token-spend-analysis gets a pacing charter: a budget per window, a throttle order of pausable seats, and its own act to claim a reset.
@@ -252,7 +252,7 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 > 5. THE HANDOFF LAUNDERED THE ASK. The resumed session repeated a carried maintainer ask instead of re-deciding it under §13 ("A maintainer ask carried from a handoff is re-decided by the coordinator").
 >
 > PREVENTIONS (owners):
-> - livespec-dev-tooling-2chu3g (expedited-incident-response-flag): merge_group gets the observer config, so the incident lane passes the queue. This is the root fix. FLEET SCOPE: every repo with both a queue and the incident lane.
+> - [livespec-dev-tooling-2chu3g](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-2chu3g) (expedited-incident-response-flag): merge_group gets the observer config, so the incident lane passes the queue. This is the root fix. FLEET SCOPE: every repo with both a queue and the incident lane.
 > - #4948's own test (every `python3 -m` module named in a workflow or action is importable) closes the push-only blind spot that let #4934 merge. ev7cil re-adds nothing that is not importable.
 > - RULE (to port into coordinator-duties.md §2, docs PR owed by legacy-coordinator-agent): RED-MASTER-IS-THE-COORDINATOR'S. A red master in livespec-dev-tooling is resolved by the coordinator, never parked for the maintainer. If no forward fix has merged within 30 minutes, it takes the server-side revert of the breaking change (restoring a prior working state is never maintainer-tier). If the queue or a ruleset refuses a verified fix, it takes the bypass itself: a temporary bypass actor, the merge, the restore, and a diff of the ruleset against its backup, logged under OVERRIDE-THEN-BACKFILL.
 > - Acceptance gap of the migration (same class as failure 1, "judged on a checklist, not on flow"): the incident lane's flow through the merge queue was never in assertion 10's rows. stale-base-merge-options adds a row: an incident-lane PR passes the queue (or an admin bypass is drilled) in each repository with a queue.
@@ -287,7 +287,7 @@ Retrospective: livespec-ai org migration failures (2026-11-15)
 - comment id: `01a1ec01-6c95-764e-8056-7b630f6f9c44`
 
 > PLAN WORK COMPLETE, recorded by legacy-coordinator-agent (session 13d3a3f9), 00:1xZ 2026-11-18 (date -u), measured against the maintainer's definition ("Done means everything in the plan is done except the retro").
-> At 00:13:40Z (kn5n3a closed, read back by throughput-plans-coordinator) every child of stale-base-merge-options (livespec-dev-tooling-xowhol) is CLOSED except o6mqy5, the retrospective, which the maintainer excepted. Every DoD condition reads TRUE: 1, 2, 3, 4, 6 by the seat's direct read, with a replayed record; 5 (kb2ud6 closed); 7 (0 old-owner refs in all 10 at 00:03:44Z, nwzkto closed); 8 (every host, coordinator fix 22:05-22:4xZ); 9 (all 10, legs on k3s); 10 (50 cells); 11 and 12.
+> At 00:13:40Z (kn5n3a closed, read back by throughput-plans-coordinator) every child of stale-base-merge-options ([livespec-dev-tooling-xowhol](https://vps.perch-rudd.ts.net:8010/project?id=ad6f454d-52f2-4f19-8514-22dc14ff5cc9&bead=livespec-dev-tooling-xowhol)) is CLOSED except o6mqy5, the retrospective, which the maintainer excepted. Every DoD condition reads TRUE: 1, 2, 3, 4, 6 by the seat's direct read, with a replayed record; 5 (kb2ud6 closed); 7 (0 old-owner refs in all 10 at 00:03:44Z, nwzkto closed); 8 (every host, coordinator fix 22:05-22:4xZ); 9 (all 10, legs on k3s); 10 (50 cells); 11 and 12.
 > DEADLINE: ~20:35Z. Plan work finished 00:13:40Z, so the deadline was MISSED BY 218 MIN (3 h 38 min). The 20:27Z "DEADLINE MET" was false; see the retro entries on o6mqy5.
 > Closeout in progress by the plan seat: plan Proof of Done captures, the completeness review, the archive. Then the retrospective (o6mqy5) is next.
 >
