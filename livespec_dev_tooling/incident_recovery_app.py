@@ -24,7 +24,6 @@ never written to a reply, a record or a log.
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import stat
@@ -46,8 +45,13 @@ from livespec_runtime_budget.github_budget import (  # noqa: E402 — vendor-pat
     GithubBudgetRequest,
     GithubBudgetResponse,
 )
-from returns.io import IOFailure  # noqa: E402
 
+from livespec_dev_tooling._incident_app_installation import (  # noqa: E402
+    AppRefusal,
+    InstallationScope,
+    installation_request,
+    mint_installation_token,
+)
 from livespec_dev_tooling._incident_recovery_signing import openssl_sign  # noqa: E402
 from livespec_dev_tooling.budgeted_gh import github_api_url  # noqa: E402
 from livespec_dev_tooling.incident_protected_path import protected_path  # noqa: E402
@@ -61,35 +65,30 @@ __all__: list[str] = [
     "AppRefusal",
     "RecoveryAppCredential",
     "RecoveryForge",
+    "pem_private_key",
+    "recovery_scope",
 ]
 
 RECOVERY_APP_CREDENTIAL = "recovery-app.json"
 _TIMEOUT_SECONDS = 10.0
-_JWT_BACKDATE_SECONDS = 60
-_JWT_LIFETIME_SECONDS = 540
 _MAX_CREDENTIAL_BYTES = 16384
-_HTTP_OK = 200
-_HTTP_CREATED = 201
-_HTTP_NOT_MODIFIED = 304
 ForgeAccess = Literal["read", "write"]
 
 
-def _scoped_grants(*, access: ForgeAccess) -> tuple[dict[str, str], dict[str, str]]:
-    """The grants a minted token may report; any other read or write fails.
+def recovery_scope(*, access: ForgeAccess) -> InstallationScope:
+    """The recovery App's grant: contents `access` and nothing wider.
 
     GitHub reports every App installation token's grant with `metadata: read` beside
     what was requested, because no App can drop that permission (measured on the live
     recovery App for both accesses, 2026-11-07).
     """
-    return {"contents": access}, {"contents": access, "metadata": "read"}
-
-
-@dataclass(frozen=True, kw_only=True)
-class AppRefusal:
-    """A named reason the recovery App identity cannot act; it grants nothing."""
-
-    code: str
-    detail: str
+    return InstallationScope(
+        identity="recovery App",
+        code_prefix="recovery-app",
+        grant_label=f"contents-{access}",
+        permissions={"contents": access},
+        accepted=({"contents": access}, {"contents": access, "metadata": "read"}),
+    )
 
 
 def _protected_file(*, path: Path) -> bool:
@@ -131,7 +130,7 @@ class RecoveryAppCredential:
             data = None
         record = cast("dict[str, object]", data) if isinstance(data, dict) else {}
         app_id, key = record.get("app_id"), record.get("private_key")
-        pem = _pem(key=key) if isinstance(key, str) else None
+        pem = pem_private_key(key=key) if isinstance(key, str) else None
         if (
             set(record) != {"app_id", "private_key"}
             or not isinstance(app_id, str)
@@ -145,7 +144,7 @@ class RecoveryAppCredential:
         return cls(app_id=app_id, private_key=pem)
 
 
-def _pem(*, key: str) -> str | None:
+def pem_private_key(*, key: str) -> str | None:
     """Rewrap a (possibly single-line) projected PEM private key, or None if it is not one.
 
     The wrapper projects the key as ONE line (`.ai/fleet-and-secrets.md`), and the
@@ -160,10 +159,6 @@ def _pem(*, key: str) -> str | None:
         return None
     wrapped = "\n".join(body[index : index + 64] for index in range(0, len(body), 64))
     return f"-----BEGIN {label}-----\n{wrapped}\n-----END {label}-----\n"
-
-
-def _segment(*, value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
 
 def urllib_transport(*, request: GithubBudgetRequest) -> GithubBudgetResponse:
@@ -217,83 +212,27 @@ class RecoveryForge:
         access: ForgeAccess = "write",
     ) -> RecoveryForge | AppRefusal:
         """Mint the installation token scoped to `repository` with exactly `access` on contents."""
-        client = GithubBudgetedClient(transport=transport, max_attempts=1)
-        now = int(clock())
-        claims = {
-            "iat": now - _JWT_BACKDATE_SECONDS,
-            "exp": now + _JWT_LIFETIME_SECONDS,
-            "iss": credential.app_id,
-        }
-        unsigned = ".".join(
-            _segment(value=json.dumps(part, separators=(",", ":")).encode())
-            for part in ({"alg": "RS256", "typ": "JWT"}, claims)
+        minted = mint_installation_token(
+            repository=repository,
+            app_id=credential.app_id,
+            private_key=credential.private_key,
+            scope=recovery_scope(access=access),
+            transport=transport,
+            clock=clock,
+            signer=signer,
         )
-        signature = signer(message=unsigned.encode(), private_key=credential.private_key)
-        if not signature:
-            return AppRefusal(
-                code="recovery-app-signing-unavailable",
-                detail="the system crypto could not sign the recovery App JWT",
-            )
-        jwt = {"Authorization": f"Bearer {unsigned}.{_segment(value=signature)}"}
-        status, found = _call(
-            client=client, method="GET", resource=f"repos/{repository}/installation", headers=jwt
-        )
-        installation = (
-            cast("dict[str, object]", found).get("id") if isinstance(found, dict) else None
-        )
-        if status != _HTTP_OK or type(installation) is not int:
-            return AppRefusal(
-                code="recovery-app-not-installed",
-                detail=f"the recovery App installation does not cover {repository}",
-            )
-        status, minted = _call(
-            client=client,
-            method="POST",
-            resource=f"app/installations/{installation}/access_tokens",
-            headers=jwt,
-            value={
-                "repositories": [repository.split("/", 1)[1]],
-                "permissions": {"contents": access},
-            },
-        )
-        grant = cast("dict[str, object]", minted) if isinstance(minted, dict) else {}
-        token, granted = grant.get("token"), grant.get("permissions")
-        if (
-            status != _HTTP_CREATED
-            or not isinstance(token, str)
-            or not token
-            or granted not in _scoped_grants(access=access)
-        ):
-            return AppRefusal(
-                code="recovery-app-token-refused",
-                detail=f"no contents-{access} installation token was minted for {repository}",
-            )
+        if isinstance(minted, AppRefusal):
+            return minted
+        token, client = minted
         return cls(repository=repository, token=token, client=client)
 
     def request(self, *, method: str, path: str, value: object | None = None) -> tuple[int, object]:
         """One installation-authenticated call under `repos/<repository>/`."""
-        return _call(
+        return installation_request(
             client=self.client,
+            repository=self.repository,
+            token=self.token,
             method=method,
-            resource=f"repos/{self.repository}/{path}",
-            headers={"Authorization": f"Bearer {self.token}"},
+            path=path,
             value=value,
         )
-
-
-def _call(
-    *,
-    client: GithubBudgetedClient,
-    method: str,
-    resource: str,
-    headers: dict[str, str],
-    value: object | None = None,
-) -> tuple[int, object]:
-    outcome = client.request(method=method, resource=resource, headers=headers, value=value)
-    if isinstance(outcome, IOFailure):
-        return 0, None
-    response = outcome.unwrap()
-    # A revalidated read answers 304 with the retained body: to a caller that is the
-    # resource as it stands, so it reads as an ordinary 200 (measured live, 2026-11-07).
-    status = _HTTP_OK if response.status_code == _HTTP_NOT_MODIFIED else response.status_code
-    return status, response.value
