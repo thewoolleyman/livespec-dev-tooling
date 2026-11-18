@@ -786,13 +786,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods",
-    "work_item": "livespec-dev-tooling-pojsfk",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a planned power-off evacuation refuses when no other always-on node can take the listener pods",
     "work_item": "livespec-dev-tooling-w66r34",
     "first_seen": "2026-11-14"
@@ -1507,13 +1500,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing",
-    "work_item": "livespec-dev-tooling-pojsfk",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unknown CI-facilities posture is refused",
     "work_item": "livespec-dev-tooling-62zla3",
     "first_seen": "2026-11-03"
@@ -1650,20 +1636,6 @@
     "heading": "## Scenario: ci-green alerts once and master_ci_green blocks after one day of external-only red",
     "work_item": "livespec-dev-tooling-arfnpo",
     "first_seen": "2026-11-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
-    "work_item": "livespec-dev-tooling-pojsfk",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
-    "work_item": "livespec-dev-tooling-pojsfk",
-    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",

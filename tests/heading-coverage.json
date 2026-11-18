@@ -662,8 +662,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml evacuate action against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_evacuation_moves_listener_pods_and_leaves_other_pods",
+    "reason": "Integration-tier: runs the committed play through pinned ansible-core against a stateful kubectl stand-in, proving every listener deletion is read back Running on another Ready node while DaemonSet, Job, unowned, and factory pods remain bound and reported.",
     "work_item": "livespec-dev-tooling-pojsfk"
   },
   {
@@ -678,24 +678,24 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a Ready node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_clear_lost_is_refused_for_a_ready_node_without_a_delete",
+    "reason": "Integration-tier: runs clear-lost through pinned ansible-core against a Ready-node kubectl stand-in and proves the refusal makes no delete or pod-state change.",
     "work_item": "livespec-dev-tooling-pojsfk"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a lost node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_clear_lost_force_deletes_stuck_listener_pods_and_reports_each",
+    "reason": "Integration-tier: runs clear-lost through pinned ansible-core against a lost-node stateful kubectl stand-in and proves each stuck listener pod is force-deleted and reported.",
     "work_item": "livespec-dev-tooling-pojsfk"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml cordon and uncordon actions against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_unconfirmed_uncordon_reads_and_writes_nothing",
+    "reason": "Integration-tier: runs uncordon through pinned ansible-core with an absent and a mismatched node confirmation, proving the stateful kubectl stand-in records no read or write.",
     "work_item": "livespec-dev-tooling-pojsfk"
   },
   {
