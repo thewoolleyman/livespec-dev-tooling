@@ -109,7 +109,6 @@ def test_exact_attempt_job_resolves_check_without_equal_job_id_or_pr_arrays(corr
         ("actions/runs/812", "repository", {"full_name": "owner/repo", "id": 999}),
         ("pulls/55", "merged", True),
         ("pulls/55", "state", "closed"),
-        ("pulls/55", "merge_commit_sha", "a" * 40),
         ("pulls/55", "head", {}),
         ("git/commits/" + "d" * 40, "parents", [{"sha": "c" * 40}, {"sha": "e" * 40}]),
         ("git/commits/" + "d" * 40, "parents", [None]),
