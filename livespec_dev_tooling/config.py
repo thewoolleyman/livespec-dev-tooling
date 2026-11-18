@@ -600,6 +600,10 @@ class Config:
     # repository's default-branch rulesets. An App id is not a secret. Absent,
     # a queue-required repository fails `merge_queue_bypass_path`.
     recovery_bypass_integration_id: int | None = None
+    # The GitHub App id of the incident-merge principal (contracts.md v246),
+    # which `branch_protection_alignment` admits beside the recovery App only
+    # in `pull_request` bypass mode. Absent, no incident-merge App is admitted.
+    incident_merge_integration_id: int | None = None
     # Bare FILENAMES of the DIRECT-CHILD `.py` files under `BIN_WRAPPER_TREE`
     # that are NOT shebang wrappers — pre-import machinery `wrapper_shape` must
     # not hold to the canonical 5-statement shape, and that `all_declared` must
@@ -1453,11 +1457,11 @@ def _parse_self_hosted_routing_overrides(*, table: dict[str, Any]) -> dict[str, 
     return overrides
 
 
-def _parse_recovery_bypass_integration_id(*, table: dict[str, Any]) -> int | None:
-    """Parse the recovery App id `branch_protection_alignment` admits as a bypass."""
-    value = table.get("recovery_bypass_integration_id")
+def _parse_integration_id(*, table: dict[str, Any], key: str) -> int | None:
+    """Parse an App id `branch_protection_alignment` admits as a ruleset bypass."""
+    value = table.get(key)
     if value is not None and type(value) is not int:
-        msg = "`recovery_bypass_integration_id` must be an integer GitHub App id"
+        msg = f"`{key}` must be an integer GitHub App id"
         raise ConfigParseError(msg)
     return value
 
@@ -1534,7 +1538,12 @@ def load_config(*, repo_root: Path) -> Config:
         merge_queue_author_allowlist=overrides.get(
             "merge_queue_author_allowlist", baseline.merge_queue_author_allowlist
         ),
-        recovery_bypass_integration_id=_parse_recovery_bypass_integration_id(table=table),
+        recovery_bypass_integration_id=_parse_integration_id(
+            table=table, key="recovery_bypass_integration_id"
+        ),
+        incident_merge_integration_id=_parse_integration_id(
+            table=table, key="incident_merge_integration_id"
+        ),
         bin_non_wrapper_files=overrides.get(
             "bin_non_wrapper_files", baseline.bin_non_wrapper_files
         ),
