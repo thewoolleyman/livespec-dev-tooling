@@ -108,7 +108,11 @@ def test_scale_sets_only_upgrades_every_scale_set_and_applies_nothing(tmp_path: 
         if c.startswith("kubectl ") and any(f" {verb} " in f"{c} " for verb in verbs)
     ]
     assert not mutating, f"scale-sets-only must apply and create nothing: {mutating}"
-    other_helm = [c for c in calls if c.startswith("helm ") and c not in upgrades]
+    other_helm = [
+        c
+        for c in calls
+        if c.startswith("helm ") and c not in upgrades and not c.startswith("helm history ")
+    ]
     assert not other_helm
 
 

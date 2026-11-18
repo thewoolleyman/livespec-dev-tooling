@@ -758,9 +758,25 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   # so no amd64-only job image is scheduled onto an arm64 worker.
   arch_overlay="${rendered_values_dir}/${release}.arch.yaml"
   "${ARC_DIR}/render-arch-overlay.sh" release "$release" "$arch_overlay"
-  log "7.${release}: helm upgrade --install ${release} (hook template ${hook_revision})"
+  # AN UNCHANGED RELEASE IS NOT UPGRADED (livespec-dev-tooling-zl6gch). Every
+  # upgrade bumps the AutoscalingRunnerSet generation and re-creates the
+  # listener pod, so the converge upgrades a scale set only when its inputs
+  # digest differs from the one stored ON THE LIVE RELEASE (its helm history
+  # description), read back from the cluster and never from a host file. The
+  # digest covers the rendered values, the arch overlay and the chart tarball.
+  # A release that is absent, whose latest revision is not deployed, or whose
+  # digest cannot be read is upgraded: a failed read never skips.
+  inputs_digest="$(cat "$rendered_values" "$arch_overlay" "$ARC_SCALE_SET_CHART" | sha256sum | cut -d' ' -f1)"
+  live_history="$(helm history "$release" --namespace "$RUNNERS_NAMESPACE" --max 1 -o json 2>/dev/null)" || live_history=""
+  if grep -q '"status":"deployed"' <<<"$live_history" \
+    && grep -q "inputs-digest=${inputs_digest}\"" <<<"$live_history"; then
+    log "7.${release}: unchanged (inputs digest ${inputs_digest} is on the live release); NOT upgraded"
+    continue
+  fi
+  log "7.${release}: helm upgrade --install ${release} (hook template ${hook_revision}, inputs digest ${inputs_digest})"
   helm upgrade --install "$release" \
     --namespace "$RUNNERS_NAMESPACE" --create-namespace \
+    --description "inputs-digest=${inputs_digest}" \
     -f "$rendered_values" \
     -f "$arch_overlay" \
     "$ARC_SCALE_SET_CHART"
