@@ -310,7 +310,8 @@ def test_the_revert_removes_unit_files_and_the_docs_say_so_and_name_the_apply_or
 
     assert "state: absent" in tasks
     assert "breakage_pass_unwanted | length > 0" in tasks
-    assert "NOT currently installed" in docs
+    assert "the `vps` ALREADY carries them" in docs
+    assert "NOT currently installed" not in docs
     assert "`reconcile_runs` must be reviewed and applied first" in docs
     assert "removes every breakage pass unit file" in docs
 
