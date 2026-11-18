@@ -1,0 +1,50 @@
+---
+# An ORDINARY login key (not the forward-only keys of authorized_keys_managed).
+# No `become`: the connection is the account that owns the file on a Mac.
+- name: Require the authorized_keys account and file path
+  ansible.builtin.assert:
+    that:
+      - authorized_keys_managed_login_user | length > 0
+      - authorized_keys_managed_login_group | length > 0
+      - authorized_keys_managed_login_path | length > 0
+    fail_msg: >-
+      authorized_keys_managed_login_user, authorized_keys_managed_login_group and
+      authorized_keys_managed_login_path must be declared in group_vars or
+      host_vars. Nothing has been changed.
+    quiet: true
+
+# ADOPT: remove a hand-placed UNMARKED line for the same key blob so the marked
+# entry replaces it without a duplicate. The regexp is anchored to a line that
+# STARTS with the key type and blob. The managed line starts with the option
+# `no-X11-forwarding`, so it never matches and a second apply is changed=0.
+- name: Adopt a hand-placed unmarked line for each declared key
+  ansible.builtin.lineinfile:
+    path: "{{ authorized_keys_managed_login_path }}"
+    regexp: '^{{ (item.public_key.split()[0:2] | join(" ")) | regex_escape }}( .*)?$'
+    state: absent
+  when: (item.state | default('present')) != 'absent'
+  loop: "{{ authorized_keys_managed_login_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Place each declared login key in its marked block
+  ansible.builtin.blockinfile:
+    path: "{{ authorized_keys_managed_login_path }}"
+    create: true
+    owner: "{{ authorized_keys_managed_login_user }}"
+    group: "{{ authorized_keys_managed_login_group }}"
+    mode: "0600"
+    marker: "# {mark} ANSIBLE MANAGED authorized_keys_managed_login: {{ item.name }}"
+    block: "no-X11-forwarding {{ item.public_key }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ authorized_keys_managed_login_entries }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Leave the authorized_keys file owned by its account with mode 0600
+  ansible.builtin.file:
+    path: "{{ authorized_keys_managed_login_path }}"
+    state: file
+    owner: "{{ authorized_keys_managed_login_user }}"
+    group: "{{ authorized_keys_managed_login_group }}"
+    mode: "0600"

@@ -1,0 +1,33 @@
+---
+# Manage a declared login key in each Mac's ~/.ssh/authorized_keys so
+# hetzner-xubuntu can ssh in. Work item livespec-dev-tooling-gs3hp5.
+#
+#   just ansible-drift ansible/authorized-keys-macs.yml
+#   just ansible-apply ansible/authorized-keys-macs.yml
+#
+# ROLLBACK: set `state: absent` on the entry in
+# ansible/inventory/group_vars/interactive_claude_macs.yml and re-apply (that
+# removes its marked block); then delete the entry in a later change. Merely
+# deleting the entry leaves the block in place, so also remove the block lines
+# if you did not use state: absent. Do it as a committed change, never by hand.
+#
+# Apply from the vps control node: the vps identity is the one the Macs admit,
+# and a hand edit of a Mac's authorized_keys is refused by fleet_host_guard.
+#
+# The first play is the START-OF-RUN PRECONDITION: any_errors_fatal stops the
+# run before the converge play when any Mac is unreachable over ssh as
+# cwoolley or has no Python interpreter Ansible can use. No root is needed.
+- name: Mac preconditions for the managed authorized_keys login key
+  hosts: interactive_claude_macs
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Reach the Mac over ssh with a usable Python interpreter
+      ansible.builtin.ping:
+
+- name: Managed authorized_keys login key on the Macs
+  hosts: interactive_claude_macs
+  gather_facts: false
+  roles:
+    - role: authorized_keys_managed_login
+      tags: [authorized_keys_managed_login]

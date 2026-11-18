@@ -1,8 +1,9 @@
 ---
 # Group variables for `interactive_claude_macs` -- the maintainer's Macs that
-# run interactive Claude Code sessions. Converged ONLY for the
-# claude_memory_write_guard role (livespec-dev-tooling-i76rv2); see the header
-# of inventory/legacy.yml.
+# run interactive Claude Code sessions. Converged for the
+# claude_memory_write_guard role (livespec-dev-tooling-i76rv2) and the
+# authorized_keys_managed_login role (livespec-dev-tooling-gs3hp5); see the
+# header of inventory/legacy.yml.
 
 # Ordinary ssh over the tailnet; the macOS GUI Tailscale client hosts no
 # Tailscale SSH server. Every member's account is cwoolley.
@@ -17,3 +18,11 @@ ansible_python_interpreter: /usr/bin/python3
 claude_memory_write_guard_policy_dir: /Library/Application Support/ClaudeCode
 claude_memory_write_guard_lib_dir: /Library/Application Support/ClaudeCode
 claude_memory_write_guard_group: wheel
+
+# --- authorized_keys_managed_login (ansible/authorized-keys-macs.yml) -------
+authorized_keys_managed_login_user: cwoolley
+authorized_keys_managed_login_group: staff
+authorized_keys_managed_login_path: /Users/cwoolley/.ssh/authorized_keys
+authorized_keys_managed_login_entries:
+  - name: hetzner-xubuntu-session
+    public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDvo4a+h0iJJh98xFo0369SmLAhtkEddesiVlnGIR2HZ ubuntu@hetzner-xubuntu
