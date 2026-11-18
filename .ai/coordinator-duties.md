@@ -888,6 +888,13 @@ reading over 30 twice on another node is REPORTED for CI-capacity routing. [6tgd
 - **Maintainer-given limits.** These are the only ones:
   - Never choose paid credits.
   - Never change caam rules (rule E), and never second-guess caam account selection (R489).
+  - **Rule ANTHROPIC-0-IS-THE-MAINTAINERS: never report spend on anthropic-0.** It is the maintainer's main personal
+    account, used on all his devices; its drain, pay-as-you-go included, is expected, and its caam protection exists to
+    keep headroom for him. No coordinator or seat reports its spend as a finding, an alarm or a FOR THE MAINTAINER item;
+    only a change to its protection or binding is reportable. Maintainer [6tgd2z 2026-11-18 ~00:3xZ], verbatim: "Stop
+    yelling about the spend on my first Anthropic Zero account. It's my main account. I use it everywhere. Of course
+    it's going to drain. That is why it's protected so there's stuff left for me to use on all my other devices. Stop
+    yelling at me about it. Write this down everywhere that it needs to be remembered"
   - dispatch-control-plane is monitor-only, and must not absorb today's operations.
   - Launchers take the factory from the target repository's committed `default_factory` (R503).
   - Keep interactive turns lean (R509).
