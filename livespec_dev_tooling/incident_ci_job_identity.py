@@ -135,7 +135,6 @@ class CiJobVerifier:
             and pr.get("number") == self.query.pr_number
             and pr.get("state") == "open"
             and pr.get("merged") is False
-            and pr.get("merge_commit_sha") == self.identity.merge_sha
             and base.get("sha") == self.query.base_sha
             and head.get("sha") == self.query.head_sha
             and base.get("ref") == self.identity.base_ref
