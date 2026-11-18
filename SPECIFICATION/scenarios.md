@@ -1230,20 +1230,6 @@ And the push MUST complete only after that Job reports a green verdict
 
 And the green token MUST be recorded for that tree
 
-## Scenario: an opted-in push is refused when no verdict arrives
-
-Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
-
-And a pushing host where the pushing user can read the gates kubeconfig
-
-And the cluster's API server is unreachable from that host
-
-When a git push of a tree that has no green token runs the pre-push gate
-
-Then the push MUST be refused
-
-And the local `just check` fall-through MUST NOT run in place of the missing verdict
-
 ## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict
 
 Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
@@ -1518,7 +1504,9 @@ And the cluster's API server is unreachable from that host
 
 When a git push of a tree that has no green token runs the pre-push gate
 
-Then the push MUST be refused
+Then the push MUST take the local `just check` fall-through
+
+And the push MUST NOT be refused because the cluster returned no verdict
 
 And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
 
@@ -1540,7 +1528,9 @@ And a git push of a tree that has no green token whose pre-push gate has submitt
 
 When the gate client receives SIGTERM while it waits for that Job's verdict
 
-Then the push MUST be refused
+Then the push MUST NOT complete
+
+And the local `just check` fall-through MUST NOT run
 
 And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
 
@@ -4368,7 +4358,7 @@ When the host sleeps while the gate client waits on that gate Job, and then wake
 
 Then the push MUST complete only on a green verdict that same gate Job reports for that tree
 
-And when the client obtains no verdict from that gate Job, the push MUST be refused and the outcome event MUST be `no-verdict`
+And when the client obtains no verdict from that gate Job, the push MUST take the local `just check` fall-through and the outcome event MUST be `no-verdict`
 
 ## Scenario: the start task refuses an undeclared host before any host change
 
