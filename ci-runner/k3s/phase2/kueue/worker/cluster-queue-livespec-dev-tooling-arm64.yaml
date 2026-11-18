@@ -22,6 +22,8 @@
 # an arm64 node could fill. On churn-slot-worker-arm64-flavor the slots are
 # counted only against that flavor, and the cohort lends them only to the
 # eligible repositories' queues that list it after churn-slot-flavor.
+# The admission-budget check reads this manifest with every other ClusterQueue
+# and keeps this worker-flavor quota outside the fleet-flavor capacity total.
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
