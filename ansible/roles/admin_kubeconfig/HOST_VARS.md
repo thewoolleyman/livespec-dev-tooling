@@ -26,9 +26,18 @@ goes stale when that happens. Refreshing is a re-run of the role (the playbook
 `ansible/admin-kubeconfig.yml`, or the tag the consuming repository applies it
 under): it reads the node again and replaces the file only if the content changed.
 
+**Trust and verbosity.** The fetched file is trusted because it came from the control-plane
+node over the tailnet: the `slurp` transport rides Ansible's own ssh with the
+inventory's host-key settings, and the `ssh` transport rides the session account's own
+ssh client configuration, so each host's `Host <node>` block should pin the node's host
+key and set `StrictHostKeyChecking yes`. The role rejects a file that carries more than
+one server or any `exec`, `auth-provider`, `token` or `username` style login, but it
+cannot prove the file is genuine. Never run the playbook at `-vvvv`: connection-level
+output includes the module's stdout, which `no_log` does not hide.
+
 **What counts as an outage.** Any failure of the read keeps an existing file: a
 connection that cannot be made, an ssh refusal, a non-zero `cat`, a file the node
-does not have. Only a host with no file at all fails.
+does not have. Only a host with no file, or with an empty one, fails.
 
 **Why a sibling and not one role.** `SPECIFICATION/contracts.md` names
 `gates_kubeconfig` by role name for the delegated pre-push gate's credential, so

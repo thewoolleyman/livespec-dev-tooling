@@ -6,6 +6,18 @@
 # or a debug message (SPECIFICATION/constraints.md "No credential in a process's
 # argument vector").
 
+- name: Refuse a host that is not meant to hold a cluster-admin credential
+  # The group restriction must not live only in the playbook's `hosts:` line: any other
+  # play that lists this role, or a hand-written host pattern, would otherwise install a
+  # credential that can do anything in the cluster on any host.
+  ansible.builtin.assert:
+    that:
+      - "'cluster_admin_hosts' in groups"
+      - inventory_hostname in groups['cluster_admin_hosts']
+    fail_msg: >-
+      {{ inventory_hostname }} is not in the cluster_admin_hosts inventory group, so
+      it must not hold a cluster-admin kubeconfig. Nothing has been changed.
+
 - name: Look for the kubeconfig this host already holds
   # Read first, so the outage decision below knows whether there is something to keep.
   ansible.builtin.stat:
@@ -68,7 +80,7 @@
   # success with no credential installed.
   ansible.builtin.assert:
     that:
-      - admin_kubeconfig_present.stat.exists or admin_kubeconfig_read_ok | bool
+      - (admin_kubeconfig_present.stat.exists and admin_kubeconfig_present.stat.size | int > 0) or admin_kubeconfig_read_ok | bool
     fail_msg: >-
       The control-plane node {{ admin_kubeconfig_remote_host }} could not be read
       ({{ admin_kubeconfig_fetch }}) and {{ admin_kubeconfig_dest }} does not exist, so
@@ -102,6 +114,12 @@
           - "'server:' in admin_kubeconfig_fetched_text"
           - "'client-certificate-data:' in admin_kubeconfig_fetched_text"
           - "'client-key-data:' in admin_kubeconfig_fetched_text"
+          # Exactly one server, and no credential plugin or alternative login: a
+          # kubeconfig `exec` or `auth-provider` block runs a command as this account the
+          # next time kubectl starts, so a file carrying one is never an admin kubeconfig
+          # that k3s wrote.
+          - admin_kubeconfig_fetched_text | regex_findall('(?m)^\\s*server:') | length == 1
+          - not (admin_kubeconfig_fetched_text | regex_search('(?m)^\\s*(exec|auth-provider|token|tokenFile|username|password|command|proxy-url):'))
         fail_msg: >-
           {{ admin_kubeconfig_remote_host }}:{{ admin_kubeconfig_remote_path }} is
           not a kubeconfig that carries a client certificate and key; refusing to
@@ -140,4 +158,10 @@
         group: "{{ admin_kubeconfig_group }}"
         mode: "0600"
       become: "{{ admin_kubeconfig_become }}"
+      no_log: true
+
+    - name: Drop the fetched credential from this run's variables
+      # The fact would otherwise stay readable by any later task in the same play.
+      ansible.builtin.set_fact:
+        admin_kubeconfig_fetched_text: ""
       no_log: true
