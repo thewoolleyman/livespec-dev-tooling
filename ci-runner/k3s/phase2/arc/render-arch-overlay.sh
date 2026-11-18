@@ -5,7 +5,8 @@
 #
 # Usage: render-arch-overlay.sh <kind> <name> <dst>
 #   kind `release`: <dst> is a helm values overlay that gives the scale set's
-#   runner pod a REQUIRED node affinity on kubernetes.io/arch In <arches>.
+#   runner pod a CI-enrollment node selector and REQUIRED node affinity on
+#   kubernetes.io/arch In <arches>.
 #   kind `gate` / `factory`: <dst> is the comma-separated arches alone.
 #
 # A name the list does not declare is refused: a class with no declared
@@ -27,7 +28,10 @@ if [ "$kind" != release ]; then
   exit 0
 fi
 {
-  printf 'template:\n  spec:\n    affinity:\n      nodeAffinity:\n'
+  # `enroll-workload-classes.sh` removes this label when a homelab worker
+  # leaves the CI class. Keep the hard requirement in the shared overlay so
+  # every scale set excludes the worker until it is re-enrolled.
+  printf 'template:\n  spec:\n    nodeSelector:\n      k3s-role: arc-runner-host\n    affinity:\n      nodeAffinity:\n'
   printf '        requiredDuringSchedulingIgnoredDuringExecution:\n          nodeSelectorTerms:\n'
   printf '            - matchExpressions:\n                - key: kubernetes.io/arch\n                  operator: In\n                  values:\n'
   printf '%s\n' "$arches" | tr ',' '\n' | sed 's/^/                    - /'
