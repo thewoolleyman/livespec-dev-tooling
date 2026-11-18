@@ -141,8 +141,14 @@ incident_observer_recovery_app_key_env: LIVESPEC_RECOVERY_ORG_APP_PRIVATE_KEY
 # control node; incident_merge_app.py reads them and refuses any App id but the
 # committed incident_merge_integration_id. Names only: no value lives here, and no
 # task reads them yet, so declaring them projects, writes and enables nothing.
+# The converge now projects them (livespec-dev-tooling-u3nbm3, slice B5) into
+# incident_observer_merge_app_path, written at apply under no_log, root-owned and
+# mode 0600 so the observer process and its reader (which run as
+# incident_observer_user) can never read it, only when the wrapper projects BOTH
+# variables. Until then no file exists and the principal refuses by name.
 incident_observer_merge_app_id_env: LIVESPEC_INCIDENT_MERGE_APP_ID
 incident_observer_merge_app_key_env: LIVESPEC_INCIDENT_MERGE_APP_PRIVATE_KEY
+incident_observer_merge_app_path: /etc/livespec-incident/merge-app.json
 incident_observer_reader_env_path: /etc/livespec-incident/reader.env
 incident_observer_reader_env_var: BEADS_DOLT_PASSWORD
 incident_observer_tenant_project_id: c8dcb5d9-1d1c-47d9-a1e5-f856e60b9544
