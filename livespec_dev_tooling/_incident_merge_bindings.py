@@ -65,6 +65,7 @@ __all__: list[str] = [
     "ArmIdentity",
     "LedgerWriteError",
     "authority_chain_reader",
+    "authority_command",
     "graphql_queue_reader",
     "ledger_recorder",
     "read_arm_identity",
@@ -134,6 +135,11 @@ def read_arm_identity(*, state_dir: Path, repository: str, pr_number: int) -> Ar
         generation=arm.generation,
         owner=arm.owner,
     )
+
+
+def authority_command(*, interpreter: Path, script: Path) -> list[str]:
+    """The canonical authority process: the credential wrapper, then the serving interpreter."""
+    return [_WRAPPER, "--", str(interpreter), str(script)]
 
 
 def authority_chain_reader(

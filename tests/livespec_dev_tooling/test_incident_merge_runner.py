@@ -145,7 +145,7 @@ _MERGED = Merged(
 )
 
 
-def _world(monkeypatch, *, outcome, identity=_IDENTITY, plugin=Path("/plugin")):
+def _world(monkeypatch, *, outcome, identity=_IDENTITY):
     """One runner world: every host dependency replaced, the principal's outcome chosen."""
     merge = (
         Mock(side_effect=outcome)
@@ -158,14 +158,29 @@ def _world(monkeypatch, *, outcome, identity=_IDENTITY, plugin=Path("/plugin")):
     monkeypatch.setattr(runner, "load_config", Mock(return_value=config))
     monkeypatch.setattr(runner, "read_arm_identity", Mock(return_value=identity))
     monkeypatch.setattr(runner, "merge_incident_repair", merge)
-    if isinstance(plugin, Path):
-        monkeypatch.setattr(runner, "registered_plugin_root", Mock(return_value=plugin))
-    else:
-        monkeypatch.setattr(runner, "registered_plugin_root", Mock(side_effect=plugin))
     return merge
 
 
-def _go(*, tmp_path, connect=None, argv=("--pr", "7"), run_text_command=None, make_reader=None):
+def _protected_script(*, directory):
+    """A stand-in authority script the protection rule accepts: 0644 in a 0755 directory."""
+    reader = directory / "reader"
+    reader.mkdir(mode=0o755, exist_ok=True)
+    reader.chmod(0o755)
+    script = reader / "incident_authority.py"
+    _ = script.write_text("# authority\n")
+    script.chmod(0o644)
+    return script
+
+
+def _go(
+    *,
+    tmp_path,
+    connect=None,
+    argv=("--pr", "7"),
+    run_text_command=None,
+    make_reader=None,
+    script=None,
+):
     path = _credential(directory=tmp_path / "cred")
     return runner.run(
         argv=[
@@ -174,10 +189,11 @@ def _go(*, tmp_path, connect=None, argv=("--pr", "7"), run_text_command=None, ma
             str(path),
             "--project-root",
             str(tmp_path),
-            "--registry",
-            str(tmp_path / "registry.json"),
+            "--authority-script",
+            str(script or _protected_script(directory=tmp_path)),
         ],
         owner_uid=_UID,
+        interpreter=Path("/usr/bin/env"),
         connect=connect or Mock(return_value=SimpleNamespace(token=_APP_TOKEN)),
         run_text_command=run_text_command or Mock(return_value=(0, "{}")),
         make_reader=make_reader or Mock(),
@@ -229,8 +245,8 @@ def test_the_runner_does_not_start_without_a_fit_credential(monkeypatch, tmp_pat
             str(tmp_path / "absent.json"),
             "--project-root",
             str(tmp_path),
-            "--registry",
-            str(tmp_path / "registry.json"),
+            "--authority-script",
+            str(tmp_path / "authority.py"),
         ],
         owner_uid=_UID,
     )
@@ -252,8 +268,8 @@ def test_the_runner_does_not_start_when_the_app_the_arm_or_the_authority_is_miss
     )
     _ = _world(monkeypatch, outcome=_MERGED, identity="no pre-merge arm is recorded for o/r")
     no_arm = _go(tmp_path=tmp_path)
-    _ = _world(monkeypatch, outcome=_MERGED, plugin=OSError())
-    no_authority = _go(tmp_path=tmp_path)
+    _ = _world(monkeypatch, outcome=_MERGED)
+    no_authority = _go(tmp_path=tmp_path, script=tmp_path / "missing" / "incident_authority.py")
     out = capsys.readouterr().out
     facts = [
         (refused, no_arm, no_authority) == (2, 2, 2),
@@ -287,8 +303,8 @@ def test_the_runner_refuses_by_name_when_no_arm_record_exists_for_the_pull_reque
             str(credential),
             "--project-root",
             str(tmp_path),
-            "--registry",
-            str(tmp_path / "registry.json"),
+            "--authority-script",
+            str(tmp_path / "authority.py"),
             "--state-dir",
             str(state),
             "--repository",
@@ -309,7 +325,7 @@ def test_the_runner_refuses_by_name_when_no_arm_record_exists_for_the_pull_reque
 def test_the_runner_requires_a_pull_request_number(tmp_path):
     with pytest.raises(SystemExit) as raised:
         runner.run(
-            argv=["--credential", str(tmp_path / "x"), "--registry", str(tmp_path / "r")],
+            argv=["--credential", str(tmp_path / "x"), "--authority-script", str(tmp_path / "r")],
             owner_uid=_UID,
         )
     assert raised.value.code == 2
@@ -353,7 +369,7 @@ def test_the_seams_handed_to_the_principal_reach_the_host_through_the_bindings(
 
 def test_main_reads_the_pull_request_only_from_the_command_line(monkeypatch, tmp_path, capsys):
     absent = tmp_path / "absent.json"
-    argv = ["runner", "--pr", "5", "--credential", str(absent), "--registry", str(absent)]
+    argv = ["runner", "--pr", "5", "--credential", str(absent), "--authority-script", str(absent)]
     monkeypatch.setattr(sys, "argv", argv)
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as raised:
@@ -477,7 +493,7 @@ def _unit() -> str:
         incident_observer_reference_dir="/var/lib/livespec-incident/reference",
         incident_observer_state_dir="/var/lib/livespec-incident/receipts",
         incident_observer_venv="/opt/livespec-incident/venv",
-        incident_observer_merge_registry="/declared/by/host_vars/installed_plugins.json",
+        incident_observer_merge_authority_script="/declared/reader/incident_authority.py",
     )
 
 
@@ -490,7 +506,7 @@ def test_the_unit_runs_the_runner_once_for_the_instance_pull_request_and_never_w
         "-m livespec_dev_tooling.incident_merge_runner --pr %i " in exec_lines[0],
         "Type=oneshot" in _unit(),
         "User=root" in _unit(),
-        "ConditionPathExists=/etc/livespec-incident/merge-app.json" in _unit(),
+        "AssertPathExists=/etc/livespec-incident/merge-app.json" in _unit(),
         len(installs) == 1,
         installs[0]["ansible.builtin.template"]["src"] == "livespec-incident-merge@.service.j2",
         installs[0]["ansible.builtin.template"]["mode"] == "0644",
@@ -498,20 +514,10 @@ def test_the_unit_runs_the_runner_once_for_the_instance_pull_request_and_never_w
     assert all(facts)
 
 
-def test_the_unit_is_hardened_and_the_registry_is_a_declared_host_fact_never_a_guess():
+def test_the_unit_is_hardened_and_names_the_root_owned_authority_script():
     unit = _unit()
     tasks = yaml.safe_load((_ROLE / "tasks" / "converge.yml").read_text())
     names = [task.get("name", "") for task in tasks]
-    refusals = [
-        task
-        for task in tasks
-        if "incident-merge plugin registry" in task.get("name", "")
-        and "ansible.builtin.assert" in task
-    ]
-    defaults = yaml.safe_load((_ROLE / "defaults" / "main.yml").read_text())
-    host_vars = yaml.safe_load(
-        (_ROOT / "ansible" / "inventory" / "host_vars" / "vps.yml").read_text()
-    )
     template_text = (_ROLE / "templates" / "livespec-incident-merge@.service.j2").read_text()
     facts = [
         all(
@@ -526,13 +532,9 @@ def test_the_unit_is_hardened_and_the_registry_is_a_declared_host_fact_never_a_g
         [line for line in unit.splitlines() if line.startswith("ReadWritePaths")]
         == ["ReadWritePaths=-/root/.config/op"],
         "Environment=OPENV_KEEP_PRIVILEGES=1" in unit.splitlines(),
-        "--registry /declared/by/host_vars/installed_plugins.json" in unit,
+        "--authority-script /declared/reader/incident_authority.py" in unit,
         ".claude" not in template_text,
-        defaults["incident_observer_merge_registry"] == "",
-        host_vars["incident_observer_merge_registry"].endswith("/installed_plugins.json"),
-        len(refusals) == 2,
-        any("Look for the declared incident-merge plugin registry" in name for name in names),
-        names.index("Look for the declared incident-merge plugin registry")
+        names.index("Look for the incident-merge runner's authority script")
         < names.index("Install the incident-merge runner's templated oneshot unit"),
     ]
     assert all(facts)
