@@ -1591,6 +1591,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment accepts a queue-required repository whose declared incident-merge App is not yet on the ruleset",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: branch_protection_alignment accepts a queue-required ruleset whose bypass actors are the recovery App and the declared incident-merge App",
     "work_item": "livespec-dev-tooling-u3nbm3",
     "first_seen": "2026-11-18"
@@ -1608,6 +1615,13 @@
     "heading": "## Scenario: branch_protection_alignment fails a queue-required repository whose master does not require the merge queue",
     "work_item": "livespec-dev-tooling-mvqo6h",
     "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails a queue-required ruleset that carries an Integration the repository has not declared",
+    "work_item": "livespec-dev-tooling-u3nbm3",
+    "first_seen": "2026-11-18"
   },
   {
     "spec_root": "SPECIFICATION",

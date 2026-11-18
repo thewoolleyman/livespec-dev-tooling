@@ -6269,3 +6269,27 @@ Then it does not merge
 
 And the incident work item records the refusal naming that required check
 ```
+
+## Scenario: branch_protection_alignment accepts a queue-required repository whose declared incident-merge App is not yet on the ruleset
+
+```gherkin
+Given a queue-required repository whose committed configuration declares a distinct incident_merge_integration_id
+
+And the active ruleset on its default branch carries only the recovery App as a bypass actor
+
+When branch_protection_alignment runs with an admin-scoped token
+
+Then it reports no merge_queue_bypass_path finding
+```
+
+## Scenario: branch_protection_alignment fails a queue-required ruleset that carries an Integration the repository has not declared
+
+```gherkin
+Given a queue-required repository that declares no incident_merge_integration_id
+
+And the active ruleset carries the recovery App and one other Integration with bypass_mode pull_request
+
+When branch_protection_alignment runs with an admin-scoped token
+
+Then it exits 4 with one fail finding whose failure_mode is merge_queue_bypass_path
+```

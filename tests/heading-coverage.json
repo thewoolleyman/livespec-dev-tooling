@@ -4488,5 +4488,21 @@
     "test": "TODO",
     "reason": "Spec-first (v246): a real test at the integration tier or above is owed for this scenario: it exercises the incident-merge principal's contract against a live ruleset and an incident work item with a pr-bound attempt, for the behaviour this heading names. livespec-dev-tooling-u3nbm3 owns it.",
     "work_item": "livespec-dev-tooling-u3nbm3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment accepts a queue-required repository whose declared incident-merge App is not yet on the ruleset",
+    "test": "TODO",
+    "reason": "Spec-first (v247): a real test at the integration tier or above is owed for this scenario: it runs branch_protection_alignment against a live queue-required ruleset and a consumer configuration for the pre-arming (declared key, App not yet on the ruleset) and undeclared-extra-Integration cases this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: branch_protection_alignment fails a queue-required ruleset that carries an Integration the repository has not declared",
+    "test": "TODO",
+    "reason": "Spec-first (v247): a real test at the integration tier or above is owed for this scenario: it runs branch_protection_alignment against a live queue-required ruleset and a consumer configuration for the pre-arming (declared key, App not yet on the ruleset) and undeclared-extra-Integration cases this heading names. livespec-dev-tooling-u3nbm3 owns it.",
+    "work_item": "livespec-dev-tooling-u3nbm3"
   }
 ]
