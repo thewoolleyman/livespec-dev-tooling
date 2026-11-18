@@ -134,11 +134,22 @@ read-back supersedes the text of livespec-dev-tooling#5021, which names the shar
 
 ## Apply order: `reconcile_runs` FIRST
 
-`livespec-tenant-wrap.sh` and the staleness check are NOT currently installed on
-the host. Role `reconcile_runs` installs them, and this role refuses to run without
-them. So `reconcile_runs` must be reviewed and applied first, as its own step
+`livespec-tenant-wrap.sh` and the staleness check come from role `reconcile_runs`,
+and this role refuses to run without them. So on a host that does not carry them,
+`reconcile_runs` must be reviewed and applied first, as its own step
 (`just ansible-drift`, then `just ansible-apply`, with its own second look), and
-only then `breakage_pass`. The role also refuses a repository whose checkout,
+only then `breakage_pass`.
+
+Measured 2026-11-18 (read-only): the `vps` ALREADY carries them, with
+`reconcile-runs.timer` and `reconcile-runs-staleness.timer` active, so a `breakage_pass`
+apply there would find its wrapper. `hetzner-xubuntu` has static `reconcile-runs-*`
+service units and the staleness script but no timer and no `livespec-tenant-wrap.sh`.
+The maintainer's VPS migration ruling (2026-11-18, 10:06Z on livespec-dev-tooling-6tgd2z)
+keeps only overseerd and caam-anthropic-loop-runner on the vps, so these two roles are
+to move to the control-node role host (inventory group `control_node_role`,
+`ansible/control-node.yml`), install first and retire the vps sweep second, gated on a
+measured `bd show` read from that host of at most 3 s. Do not apply either role on the
+vps in the meantime. The role also refuses a repository whose checkout,
 `.livespec.jsonc`, `dispatcher.py` or committed credential wrapper is unusable.
 
 ## Apply and revert
