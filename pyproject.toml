@@ -807,6 +807,11 @@ scenario_tiers = ["tests.consumer"]
 # behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
 # child env so the child does not self-instrument.
 subprocess_spawn_allowlist = [
+    # livespec-dev-tooling-o6u7jm: the merge unit rendered a root service the installed credential
+    # wrapper refuses at stage 1 (no SUDO_* from a sudo parent), and three string-checking tests
+    # passed on it. Only the real wrapper process shows the guard, so this test runs it with a fresh
+    # hardcoded environment (nothing of the test process, coverage startup included, reaches it).
+    "tests/livespec_dev_tooling/test_incident_merge_runner_wrapper_stage1.py",
     # livespec-dev-tooling-73qw6g: the reusable workflow invokes the CI
     # infrastructure re-run planner with a system `python3` and only the
     # checkout on PYTHONPATH. Only a fresh interpreter proves that vendored

@@ -19,14 +19,26 @@ ExecStart={{ incident_observer_venv }}/bin/python -I -m livespec_dev_tooling.inc
 # Hardened. The runner writes nothing of its own: its ledger comment and forge calls go
 # over the network. The credential wrapper (with-livespec-env.sh) is the one thing that runs
 # beside it, and reading its script shows two facts this unit rests on:
-#   - run directly as root (no sudo) it refuses unless OPENV_KEEP_PRIVILEGES=1, its documented
-#     opt-in for a root-reaching caller, in which case the child stays root with HOME=/root;
+#   - run as root with OPENV_KEEP_PRIVILEGES=1, its documented opt-in for a root-reaching
+#     caller, the child stays root with HOME=/root;
 #   - `op run` then uses root's own config directory, so that one path is writable (the role
 #     creates it root-owned 0700 before this unit is installed; ProtectHome=read-only could
 #     not create it, and the leading '-' only tolerates a missing path). Its cache is the kernel keyring and its
 #     lock file is skipped when /run/user/0 is not writable; its caller-environment capture
 #     lands in the private /tmp. Not yet exercised on the live host.
 Environment=OPENV_KEEP_PRIVILEGES=1
+# The wrapper's stage 1 (/usr/local/bin/with-livespec-env.sh, the "stage 1 expected SUDO_UID /
+# SUDO_GID / SUDO_USER in env" guards, lines ~183-188 of the installed script) requires these
+# three from an external sudo BEFORE it reaches the OPENV_KEEP_PRIVILEGES branch, so a root
+# service with no sudo parent dies there (measured 2026-11-18 on the vps by the first probe of
+# this unit). The guard defends the drop-to-invoker step (invoker home, setpriv), which the
+# KEEP_PRIVILEGES branch never takes; the values are fixed here, in a root-owned file, nothing
+# a caller controls reaches them, and root is this process's true identity. REMOVE these three
+# lines when the wrapper ships a documented root-service mode that does not require them
+# (requested of the wrapper's owner, the 1password-env-wrapper repository).
+Environment=SUDO_UID=0
+Environment=SUDO_GID=0
+Environment=SUDO_USER=root
 # The ledger client is pinned, so a configuration file can never name another executable.
 Environment=LIVESPEC_BD_PATH=/usr/local/bin/bd
 NoNewPrivileges=yes
