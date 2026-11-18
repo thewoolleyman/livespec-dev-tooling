@@ -243,6 +243,18 @@ reconcile_runs_stale_after_seconds: 5400
 # (livespec-dev-tooling-l7f72q).
 reconcile_runs_staleness_on_failure: host-unit-alert@%n.service
 
+# --- breakage_pass ---
+# The scheduled-workflow breakage pass (bd-ib-voazyv). Committed, not applied:
+# merging this changes nothing running; the live apply is the drift-gated
+# `just ansible-drift` then `ansible-apply` with --tags breakage_pass, after the
+# independent second look. Revert: set the hold to false and apply, or disable
+# the timer. The orchestrator is the first repository; it prints a verdict line
+# only for workflows it declares in dispatcher.breakage_workflows.
+breakage_pass_enabled: true
+breakage_pass_repos:
+  - name: livespec-orchestrator-beads-fabro
+    repo: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+
 # --- ssh_hardening ---
 ssh_hardening_public_address: 66.94.121.15
 ssh_hardening_password_user: ubuntu

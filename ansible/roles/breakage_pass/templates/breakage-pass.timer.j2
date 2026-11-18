@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# Starts the breakage pass over {{ item.name }} (role breakage_pass).
+[Unit]
+Description=Run the livespec breakage pass over {{ item.name }} every {{ breakage_pass_interval_minutes }} minutes
+
+[Timer]
+OnBootSec={{ breakage_pass_boot_delay }}
+OnUnitInactiveSec={{ breakage_pass_interval_minutes }}min
+Unit=livespec-breakage-pass-{{ item.name }}.service
+
+[Install]
+WantedBy=timers.target

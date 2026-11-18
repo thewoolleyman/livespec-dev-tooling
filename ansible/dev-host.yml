@@ -112,6 +112,13 @@
     # roles/reconcile_runs/HOST_VARS.md.
     - role: reconcile_runs
       tags: [reconcile_runs]
+    # The breakage pass timer (livespec-orchestrator-beads-fabro bd-ib-voazyv):
+    # one pass per watched repository, run under its committed credential
+    # wrapper, verdict lines to the journal. It needs reconcile_runs's tenant
+    # wrapper and starts nothing until `breakage_pass_enabled` is true; see
+    # roles/breakage_pass/HOST_VARS.md.
+    - role: breakage_pass
+      tags: [breakage_pass]
     # The independent released incident observer (livespec-dev-tooling-w7n3ad):
     # loopback listener first, then the tailnet front that publishes it from
     # this host's tailscale_serve_mappings. Both run under the credential
