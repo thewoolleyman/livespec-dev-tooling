@@ -192,6 +192,13 @@ dev = [
 # livespec-ai-incident-recovery org App's Integration id. An App id is not a
 # secret.
 recovery_bypass_integration_id = 5761967
+# The incident-merge principal's GitHub App id (livespec-ai-incident-merge,
+# installed on livespec-dev-tooling only; plan expedited-incident-response-flag,
+# livespec-dev-tooling-u3nbm3). Declaring it is the ADOPTION; adding the App to
+# the default-branch ruleset's bypass list (pull_request mode) is the later
+# ARMING. It must differ from recovery_bypass_integration_id. An App id is not
+# a secret.
+incident_merge_integration_id = 5812830
 # Pull-request authors whose merge groups the ci.yml merge-group-guard job
 # admits to self-hosted capacity (the guarded merge_group shape of
 # self_hosted_routing). The guard reads this list from the merge group's BASE
