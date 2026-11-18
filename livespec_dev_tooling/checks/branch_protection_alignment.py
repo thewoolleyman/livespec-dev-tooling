@@ -158,6 +158,9 @@ from livespec_dev_tooling.checks._ci_job_names import (  # noqa: E402
     parse_ci_matrix,
     parse_top_level_jobs,
 )
+from livespec_dev_tooling.checks._effective_required_checks import (  # noqa: E402
+    effective_contexts,
+)
 from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
     credential_skip_is_failure,
 )
@@ -374,7 +377,7 @@ def _effective_set_exit_code(
         return ruleset_code, rulesets
     alignment_code = _run_alignment_gate(
         log=log,
-        required=classic.contexts | rulesets.contexts,
+        required=effective_contexts(classic=classic.contexts, ruleset=rulesets.contexts),
         matrix_targets=matrix_targets,
         job_names=job_names,
     )
