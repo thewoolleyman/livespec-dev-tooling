@@ -15,6 +15,8 @@
       - breakage_pass_plugin_root | string | length > 0
       - breakage_pass_runner_bin | string | length > 0
       - breakage_pass_orchestrator_checkout | string | length > 0
+      - breakage_pass_shared_checkout | string | length > 0
+      - breakage_pass_beads_metadata_source | string | length > 0
       - breakage_pass_branch | string | length > 0
       - breakage_pass_state_dir | string | length > 0
       - breakage_pass_interval_minutes | int > 0
@@ -23,8 +25,8 @@
       - breakage_pass_repos | selectattr('repo', 'undefined') | list | length == 0
       - "'staleness' not in (breakage_pass_repos | map(attribute='name') | list)"
     fail_msg: >-
-      The breakage pass needs a plugin root, the orchestrator checkout and its branch,
-      a runner path, a state directory,
+      The breakage pass needs a plugin root, the dedicated orchestrator clone, the
+      shared checkout it must not be and its branch, a runner path, a state directory,
       and a repository list whose entries carry a name and a repo. The interval
       plus the pass timeout plus the stop timeout must stay within 30 minutes,
       the schedule the Definition of Done sets.
@@ -37,11 +39,35 @@
       - not breakage_pass_plugin_root.startswith('/tmp')
       - not breakage_pass_state_dir.startswith('/tmp')
       - not breakage_pass_runner_bin.startswith('/tmp')
+      - not breakage_pass_orchestrator_checkout.startswith('/tmp')
     fail_msg: >-
-      The plugin root, the runner and the state directory must be stable paths.
+      The plugin root, the dedicated clone, the runner and the state directory must be stable paths.
       A plugin-cache path names one build and a /tmp path does not survive a
       reboot.
     success_msg: every breakage pass path is stable
+
+- name: Refuse a dedicated clone that is, holds or sits inside the shared checkout
+  # The factory's dispatcher launches from the shared workspace checkout. A
+  # fast-forward under a running launcher is unsafe, so the pass never reads, syncs
+  # or runs from that tree: not as its own clone and not as a watched repository.
+  vars:
+    breakage_pass_dedicated_norm: "{{ breakage_pass_orchestrator_checkout | regex_replace('/+$', '') }}"
+    breakage_pass_shared_norm: "{{ breakage_pass_shared_checkout | regex_replace('/+$', '') }}"
+  ansible.builtin.assert:
+    that:
+      - breakage_pass_dedicated_norm != breakage_pass_shared_norm
+      - not (breakage_pass_dedicated_norm ~ '/').startswith(breakage_pass_shared_norm ~ '/')
+      - not (breakage_pass_shared_norm ~ '/').startswith(breakage_pass_dedicated_norm ~ '/')
+      - >-
+        breakage_pass_repos | map(attribute='repo') | map('regex_replace', '/+$', '')
+        | select('equalto', breakage_pass_shared_norm) | list | length == 0
+    fail_msg: >-
+      The dedicated orchestrator clone ({{ breakage_pass_orchestrator_checkout }}) must
+      be its own directory, neither the shared checkout ({{ breakage_pass_shared_checkout }})
+      nor inside or around it, and no watched repository may be the shared checkout.
+      The factory's dispatcher launches from that tree and the pass fast-forwards the
+      trees it reads.
+    success_msg: the dedicated clone is separate from the shared checkout
 
 - name: Install and arm the breakage pass units
   when: breakage_pass_enabled | bool
@@ -61,6 +87,131 @@
           role reconcile_runs first; a pass files ledger items and must run under the
           repository's committed credential wrapper, never a bare family wrapper.
         success_msg: the tenant credential wrapper is installed
+
+    # The dedicated clone. Created here, before the inputs below are checked, and never
+    # re-cloned: `creates:` makes a second run change nothing. Read the origin URL
+    # from the shared checkout when no host variable names one, refuse a URL that
+    # carries credentials, and clone as the pass's user so the host's own gh or ssh
+    # access is what authenticates, never anything embedded here.
+    - name: Read the origin URL of the shared checkout
+      ansible.builtin.command:
+        argv: [git, -C, "{{ breakage_pass_shared_checkout }}", config, --get, remote.origin.url]
+      register: breakage_pass_shared_origin
+      changed_when: false
+      failed_when: false
+      become: true
+      become_user: "{{ breakage_pass_user }}"
+      check_mode: false
+      when: breakage_pass_orchestrator_origin_url | length == 0
+
+    - name: Settle the dedicated clone's origin URL
+      ansible.builtin.set_fact:
+        breakage_pass_clone_url: >-
+          {{ breakage_pass_orchestrator_origin_url
+             if (breakage_pass_orchestrator_origin_url | length > 0)
+             else (breakage_pass_shared_origin.stdout | default('') | trim) }}
+
+    - name: Refuse a missing or credential-bearing origin URL
+      ansible.builtin.assert:
+        that:
+          - breakage_pass_clone_url | length > 0
+          - not (breakage_pass_clone_url is match('^[A-Za-z][A-Za-z0-9+.-]*://[^/@:]+:[^/@]*@'))
+        fail_msg: >-
+          The dedicated clone has no usable origin URL. Set breakage_pass_orchestrator_origin_url,
+          or make {{ breakage_pass_shared_checkout }} a checkout with an origin remote. A URL that
+          embeds a password or token is refused: the host's gh credential helper or ssh key
+          authenticates the clone.
+        success_msg: the dedicated clone's origin URL carries no credentials
+
+    - name: Check whether the dedicated clone exists
+      ansible.builtin.stat:
+        path: "{{ breakage_pass_orchestrator_checkout }}/.git"
+      register: breakage_pass_clone_stat
+      become: true
+      check_mode: false
+
+    - name: Create the dedicated clone's parent directory
+      ansible.builtin.file:
+        path: "{{ breakage_pass_orchestrator_checkout | dirname }}"
+        state: directory
+        owner: "{{ breakage_pass_user }}"
+        group: "{{ breakage_pass_group }}"
+        mode: "0755"
+      become: true
+
+    - name: Clone the orchestrator for the breakage pass
+      block:
+        - name: Clone from origin
+          ansible.builtin.command:
+            argv: [git, clone, --quiet, "{{ breakage_pass_clone_url }}", "{{ breakage_pass_orchestrator_checkout }}"]
+            creates: "{{ breakage_pass_orchestrator_checkout }}/.git"
+          environment:
+            GIT_TERMINAL_PROMPT: "0"
+          become: true
+          become_user: "{{ breakage_pass_user }}"
+      rescue:
+        - name: Name the clone failure
+          ansible.builtin.fail:
+            msg: >-
+              Could not clone {{ breakage_pass_clone_url }} into
+              {{ breakage_pass_orchestrator_checkout }} as {{ breakage_pass_user }}. The clone uses
+              the access that user already has (gh auth git-credential for https, or an ssh key);
+              it never embeds credentials. Check `gh auth status` and network access as that user,
+              then converge again.
+
+    - name: Check the clone's gitignored beads metadata
+      ansible.builtin.stat:
+        path: "{{ breakage_pass_orchestrator_checkout }}/.beads/metadata.json"
+      register: breakage_pass_clone_metadata
+      become: true
+      check_mode: false
+
+    - name: Read the beads metadata source
+      ansible.builtin.slurp:
+        src: "{{ breakage_pass_beads_metadata_source }}"
+      register: breakage_pass_metadata_source
+      failed_when: false
+      become: true
+      check_mode: false
+      when: not breakage_pass_clone_metadata.stat.exists
+
+    - name: Refuse a missing or secret-bearing beads metadata source
+      ansible.builtin.assert:
+        that:
+          - breakage_pass_metadata_source.content is defined
+          - >-
+            (breakage_pass_metadata_source.content | default('e30=') | b64decode | from_json).keys()
+            | select('search', '(?i)pass|token|secret|key') | list | length == 0
+        fail_msg: >-
+          The clone has no .beads/metadata.json (it is gitignored) and
+          {{ breakage_pass_beads_metadata_source }} cannot supply one: it is missing, or it
+          holds a key naming a secret. Without it `bd` answers "no beads database found" and a
+          pass could not dedupe or file. Do not run `bd init`; provision the file, then converge
+          again.
+        success_msg: the beads metadata source is present and holds no secret
+      when: not breakage_pass_clone_metadata.stat.exists
+
+    - name: Keep the clone's .beads directory private, creating it if the clone has none
+      ansible.builtin.file:
+        path: "{{ breakage_pass_orchestrator_checkout }}/.beads"
+        state: directory
+        mode: "0700"
+      become: true
+      when: not ansible_check_mode or breakage_pass_clone_stat.stat.exists
+
+    - name: Provision the clone's beads metadata from the source, never overwriting
+      ansible.builtin.copy:
+        src: "{{ breakage_pass_beads_metadata_source }}"
+        dest: "{{ breakage_pass_orchestrator_checkout }}/.beads/metadata.json"
+        remote_src: true
+        force: false
+        owner: "{{ breakage_pass_user }}"
+        group: "{{ breakage_pass_group }}"
+        mode: "0600"
+      become: true
+      when:
+        - not breakage_pass_clone_metadata.stat.exists
+        - not ansible_check_mode or breakage_pass_clone_stat.stat.exists
 
     - name: Check each watched repository's checkout, config and the dispatcher
       ansible.builtin.stat:
@@ -90,6 +241,10 @@
       loop: "{{ breakage_pass_inputs.results }}"
       loop_control:
         label: "{{ item.item.0 }}: {{ item.item.1 }}"
+      # Under --check the dedicated clone is only planned, so its inputs cannot exist yet.
+      when: >-
+        not (ansible_check_mode and not breakage_pass_clone_stat.stat.exists
+             and (item.item.1 | string).startswith(breakage_pass_orchestrator_checkout))
 
     # The same script the units run, in its --resolve mode, from role reconcile_runs's
     # copy of it, so nothing is installed yet. It reads each repository's committed
@@ -104,6 +259,9 @@
       loop: "{{ breakage_pass_repos }}"
       loop_control:
         label: "{{ item.name }}"
+      when: >-
+        not (ansible_check_mode and not breakage_pass_clone_stat.stat.exists
+             and (item.repo | string).startswith(breakage_pass_orchestrator_checkout))
       register: breakage_pass_wrap_resolved
       changed_when: false
       failed_when: false
@@ -123,6 +281,7 @@
       loop: "{{ breakage_pass_wrap_resolved.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+      when: item.skipped is not defined
 
     - name: Check that the staleness check is installed
       ansible.builtin.stat:

@@ -16,19 +16,43 @@ breakage_pass_enabled: false
 #   repo   the repository's primary checkout on this host
 breakage_pass_repos: []
 
-# The pass is the orchestrator's. The role runs it from the orchestrator's own
-# checkout on this host, never from a versioned plugin-cache path: a cache path
-# names one build and goes stale on the next plugin update
-# (.ai/stale-plugin-build-path.md).
-breakage_pass_orchestrator_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+# The pass is the orchestrator's. The role runs it from a DEDICATED clone of the
+# orchestrator that only the runner advances, never from a versioned plugin-cache
+# path (a cache path names one build and goes stale on the next plugin update,
+# .ai/stale-plugin-build-path.md) and never from the shared workspace checkout:
+# the factory's dispatcher launches from that tree, and a fast-forward under a
+# running launcher is unsafe, so the two must not share one.
+breakage_pass_orchestrator_checkout: /home/ubuntu/.local/share/breakage-pass/livespec-orchestrator-beads-fabro
 breakage_pass_plugin_root: "{{ breakage_pass_orchestrator_checkout }}/.claude-plugin"
 breakage_pass_python: /usr/bin/python3
 
-# Nothing else advances the orchestrator's checkout, so a merged fix is not a
-# running fix (COMMITTED IS NOT CONVERGED). Before each pass the runner fetches
-# origin/<branch> in that checkout and in each watched repository's, and
-# fast-forwards it, refusing (exit 70, no success marker) on a modified tracked
-# file, a different branch, local commits or a failed fast-forward.
+# The role creates the dedicated clone (idempotently, never re-cloning) from this
+# URL. Empty reads the `origin` remote of the shared checkout below. The URL must
+# carry no credentials; a clone that needs forge access uses what the host user
+# already has (gh's git credential helper or ssh) and refuses with a clear message
+# when it has none.
+breakage_pass_orchestrator_origin_url: ""
+
+# The shared workspace checkout the factory's dispatcher uses. The role only READS
+# it: for the origin URL above and for the clone's gitignored .beads/metadata.json
+# below. It is never the pass's checkout, and the role refuses any configuration
+# that makes the dedicated clone that tree, inside it, or around it.
+breakage_pass_shared_checkout: /home/ubuntu/workspace/livespec-orchestrator-beads-fabro
+
+# .beads/metadata.json is gitignored (so a clone lacks it) and carries the store
+# connection `bd` needs (backend, database name, host, port, user: no password). A
+# clone without it answers `bd` with "no beads database found", so a pass that must
+# file or dedupe an item would fail. The role copies it from here when the clone has
+# none and never overwrites an existing one. It refuses a source that holds a key
+# naming a secret. Never run `bd init` for this.
+breakage_pass_beads_metadata_source: "{{ breakage_pass_shared_checkout }}/.beads/metadata.json"
+
+# The runner is the only thing that advances the dedicated clone, so a merged fix
+# is not a running fix until the next pass (COMMITTED IS NOT CONVERGED). Before each
+# pass the runner fetches origin/<branch> in that clone and in each other watched
+# repository's checkout, and fast-forwards it, refusing (exit 70, no success
+# marker) on a modified tracked file, a different branch, local commits or a failed
+# fast-forward.
 breakage_pass_branch: master
 
 # The run-time credential-wrapper resolver, installed by role reconcile_runs. A
