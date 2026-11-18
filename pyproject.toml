@@ -938,6 +938,12 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/test_green_token.py",
     "tests/livespec_dev_tooling/test_no_direct_github_access.py",
     "tests/livespec_dev_tooling/test_tdd_commit.py",
+    # livespec-dev-tooling-mxjbmi: the coverage-shard scenarios ("a shard runs its
+    # balanced slice", "the aggregate combines the shards") are shell-script behavior
+    # (coverage-shard.sh, check-per-file-coverage.sh) whose assignment, exit codes and
+    # combine step only a real bash process shows. Every child env scrubs
+    # COVERAGE_PROCESS_START + COV_CORE_* + COVERAGE_* + LIVESPEC_COVERAGE_*.
+    "tests/livespec_dev_tooling/test_coverage_shard.py",
 ]
 
 # The REPO-LOCAL (non-canonical) members of this repository's `just check`
