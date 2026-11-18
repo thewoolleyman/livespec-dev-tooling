@@ -17,7 +17,8 @@ from livespec_dev_tooling.budgeted_gh import GhRead
 from livespec_dev_tooling.checks._merge_group_guard import routes_merge_group_to_self_hosted
 
 __all__: list[str] = [
-    "only_recovery_bypass",
+    "bypass_key_code",
+    "bypass_mismatch",
     "parse_object",
     "queue_parameter_code",
     "restriction_state",
@@ -25,6 +26,17 @@ __all__: list[str] = [
 ]
 
 _APP_ACTOR_TYPE = "Integration"
+# The only bypass mode an incident-merge App may hold: it may merge a pull
+# request around the queue, never push to the branch (contracts.md v246).
+_INCIDENT_MERGE_BYPASS_MODE = "pull_request"
+_OTHER_ACTOR = (
+    "an active default-branch ruleset lets an actor other than the recovery App "
+    "and the declared incident-merge App bypass the merge queue"
+)
+_INCIDENT_MERGE_MODE = (
+    "the incident-merge App bypasses an active default-branch ruleset in a mode "
+    "other than pull_request, so it could push to the branch directly"
+)
 _REBASE = "REBASE"
 _CONCURRENCY_FLOOR = 2
 # The built-in gating label `self_hosted_routing` always unions in.
@@ -102,9 +114,59 @@ def queue_parameter_code(*, log: structlog.stdlib.BoundLogger, rule: dict[str, o
     return code
 
 
-def only_recovery_bypass(*, actors: list[object], recovery_app_id: int) -> bool:
-    """Whether a ruleset's bypass list is exactly the one recovery Integration."""
-    if len(actors) != 1 or not isinstance(actors[0], dict):
-        return False
-    actor = cast("dict[str, object]", actors[0])
-    return actor.get("actor_type") == _APP_ACTOR_TYPE and actor.get("actor_id") == recovery_app_id
+def bypass_key_code(
+    *, log: structlog.stdlib.BoundLogger, ids: tuple[int | None, int | None]
+) -> int:
+    """Grade the declared (recovery, incident-merge) App ids: `4` or `0`.
+
+    An undeclared recovery id cannot tell the recovery App from any other App,
+    and one App cannot hold both roles: the recovery principal stays the
+    inverse-only principal (contracts.md v246).
+    """
+    recovery_app_id, incident_merge_app_id = ids
+    if recovery_app_id is None:
+        log.error(
+            "recovery_bypass_integration_id is not declared, so the recovery App "
+            "cannot be told from any other bypass actor",
+            failure_mode="merge_queue_bypass_path",
+            hint="declare recovery_bypass_integration_id in [tool.livespec_dev_tooling]",
+        )
+        return 4
+    if incident_merge_app_id == recovery_app_id:
+        log.error(
+            "incident_merge_integration_id equals recovery_bypass_integration_id; "
+            "the recovery App must stay the inverse-only principal",
+            failure_mode="merge_queue_bypass_path",
+            hint="declare a separate App as the incident-merge principal",
+        )
+        return 4
+    return 0
+
+
+def bypass_mismatch(
+    *, actors: list[object], recovery_app_id: int, incident_merge_app_id: int | None
+) -> str | None:
+    """Why a ruleset's bypass list is not exactly the admitted Integrations, or None.
+
+    The admitted set is the recovery `Integration` and, when declared, the
+    incident-merge `Integration` in `pull_request` bypass mode: that principal
+    merges a pull request and must never be able to push to the branch.
+    """
+    expected = (
+        {recovery_app_id}
+        if incident_merge_app_id is None
+        else {recovery_app_id, incident_merge_app_id}
+    )
+    apps = [
+        cast("dict[str, object]", actor)
+        for actor in actors
+        if isinstance(actor, dict)
+        and cast("dict[str, object]", actor).get("actor_type") == _APP_ACTOR_TYPE
+    ]
+    ids = [app.get("actor_id") for app in apps]
+    if len(apps) != len(actors) or len(ids) != len(expected) or set(ids) != expected:
+        return _OTHER_ACTOR
+    modes = [app.get("bypass_mode") for app in apps if app.get("actor_id") == incident_merge_app_id]
+    if any(mode != _INCIDENT_MERGE_BYPASS_MODE for mode in modes):
+        return _INCIDENT_MERGE_MODE
+    return None

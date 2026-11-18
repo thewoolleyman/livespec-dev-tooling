@@ -2,7 +2,7 @@
 
 Split from the check module, which sits in the LLOC soft band. Per the
 `branch_protection_alignment` check contract in this repository's
-SPECIFICATION/contracts.md (v225), five rules apply only to a repository whose
+SPECIFICATION/contracts.md (v225, v246), five rules apply only to a repository whose
 owner is an `Organization`:
 
 - a QUEUE-REQUIRED repository (its name is in the check's
@@ -13,10 +13,12 @@ owner is an `Organization`:
 - a `merge_queue` rule whose `merge_method` is not `REBASE` fails
   `merge_queue_method_not_rebase`;
 - on a queue-required repository, every active default-branch ruleset must
-  carry the recovery `Integration` named by `recovery_bypass_integration_id`
-  as its ONLY bypass actor, and classic protection must keep `enforce_admins`
-  on with no push `restrictions`; anything else, or an undeclared key, fails
-  `merge_queue_bypass_path`;
+  carry as its bypass actors exactly the recovery `Integration` named by
+  `recovery_bypass_integration_id` and, when `incident_merge_integration_id`
+  is declared (v246), that `Integration` in `pull_request` bypass mode; classic
+  protection must keep `enforce_admins` on with no push `restrictions`;
+  anything else, an undeclared recovery key, or one App declared for both
+  roles fails `merge_queue_bypass_path`;
 - a repository whose workflows route `merge_group` to gating self-hosted
   capacity (the guarded exception of `self_hosted_routing`) must hold the
   strictest fork-PR approval setting, or fails `fork_approval_below_strictest`.
@@ -46,7 +48,8 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
 from livespec_dev_tooling.checks._branch_protection_api import _RequiredContexts  # noqa: E402
 from livespec_dev_tooling.checks._branch_protection_queue_rules import (  # noqa: E402
-    only_recovery_bypass,
+    bypass_key_code,
+    bypass_mismatch,
     parse_object,
     queue_parameter_code,
     restriction_state,
@@ -77,6 +80,7 @@ class _Inputs:
     admins_enabled: bool
     queue_required_names: frozenset[str]
     recovery_app_id: int | None
+    incident_merge_app_id: int | None
     gating_labels: tuple[str, ...]
     workflows_dir: Path
     rulesets: _RulesetRequirements | _RulesetsUnreadable
@@ -108,9 +112,14 @@ def _read_bypass_actors(*, path: str) -> list[object] | str:
 
 
 def _ruleset_bypass_code(
-    *, log: structlog.stdlib.BoundLogger, base: str, ruleset_ids: list[int], recovery_app_id: int
+    *,
+    log: structlog.stdlib.BoundLogger,
+    base: str,
+    ruleset_ids: list[int],
+    recovery_app_id: int,
+    incident_merge_app_id: int | None,
 ) -> int:
-    """Hold each active ruleset to the single recovery-Integration bypass."""
+    """Hold each active ruleset to the recovery and declared incident-merge bypass."""
     code = 0
     for ruleset_id in ruleset_ids:
         actors = _read_bypass_actors(path=f"{base}/rulesets/{ruleset_id}")
@@ -122,13 +131,13 @@ def _ruleset_bypass_code(
                 detail=actors,
             )
             return 4
-        if not only_recovery_bypass(actors=actors, recovery_app_id=recovery_app_id):
-            log.error(
-                "an active default-branch ruleset lets an actor other than the "
-                "recovery App bypass the merge queue",
-                failure_mode="merge_queue_bypass_path",
-                ruleset_id=ruleset_id,
-            )
+        mismatch = bypass_mismatch(
+            actors=actors,
+            recovery_app_id=recovery_app_id,
+            incident_merge_app_id=incident_merge_app_id,
+        )
+        if mismatch is not None:
+            log.error(mismatch, failure_mode="merge_queue_bypass_path", ruleset_id=ruleset_id)
             code = 4
     return code
 
@@ -152,18 +161,17 @@ def _bypass_code(
             hint="set enforce_admins and remove every push restriction exception",
         )
         code = 4
-    if inputs.recovery_app_id is None:
-        log.error(
-            "recovery_bypass_integration_id is not declared, so the recovery App "
-            "cannot be told from any other bypass actor",
-            failure_mode="merge_queue_bypass_path",
-            hint="declare recovery_bypass_integration_id in [tool.livespec_dev_tooling]",
-        )
+    ids = (inputs.recovery_app_id, inputs.incident_merge_app_id)
+    if bypass_key_code(log=log, ids=ids) or inputs.recovery_app_id is None:
         return 4
     return max(
         code,
         _ruleset_bypass_code(
-            log=log, base=base, ruleset_ids=ruleset_ids, recovery_app_id=inputs.recovery_app_id
+            log=log,
+            base=base,
+            ruleset_ids=ruleset_ids,
+            recovery_app_id=inputs.recovery_app_id,
+            incident_merge_app_id=inputs.incident_merge_app_id,
         ),
     )
 
@@ -254,7 +262,7 @@ def merge_queue_exit_code(
     """The merge-queue rules' exit code, or `1` when the consumer config is malformed.
 
     The config is read here because only these rules need it: the recovery
-    App id and the consumer's gating self-hosted labels.
+    and incident-merge App ids and the consumer's gating self-hosted labels.
     """
     loaded = load_config_or_report(repo_root=cwd, log=log, check_id=_CHECK_ID)
     if not is_successful(loaded):
@@ -265,6 +273,7 @@ def merge_queue_exit_code(
         admins_enabled=admins_enabled,
         queue_required_names=queue_required_names,
         recovery_app_id=config.recovery_bypass_integration_id,
+        incident_merge_app_id=config.incident_merge_integration_id,
         gating_labels=config.gating_self_hosted_labels,
         workflows_dir=cwd / _WORKFLOWS_DIR,
         rulesets=rulesets,
