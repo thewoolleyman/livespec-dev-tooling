@@ -266,6 +266,8 @@ authorized_keys_managed_entries:
 # bd_exec key may read (maintainer 2026-11-17: "it can read everything").
 # Inert until an entry sets `bd_exec: true`, which is NOT set. Verify each
 # name exists under /data/projects on the VPS before enabling.
+# livespec-website is NOT listed: the 2026-11-18 apply precheck found no checkout
+# at /data/projects/livespec-website; add it back once one exists with .beads.
 authorized_keys_managed_bd_exec_repos:
   - dolt-server
   - hetzner-xubuntu-info
@@ -280,7 +282,6 @@ authorized_keys_managed_bd_exec_repos:
   - livespec-orchestrator-git-jsonl
   - livespec-overseer
   - livespec-runtime
-  - livespec-website
   - openbrain
 # Retired by key blob (type + base64), never by its options or comment: the
 # hand-placed `homelab-debug-tunnel` entry (permitlisten 127.0.0.1:2223), the
