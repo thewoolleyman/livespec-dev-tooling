@@ -363,6 +363,64 @@
     label: "{{ item.dest }}"
   notify: Reload systemd for the incident observer units
 
+- name: Refuse a host that does not declare its incident-merge plugin registry
+  ansible.builtin.assert:
+    that:
+      - incident_observer_merge_registry | string | length > 0
+    fail_msg: >-
+      incident_observer_merge_registry is undeclared; the incident-merge runner reads the
+      plugin registry that names the registered canonical incident authority, and a guessed
+      path on a live host is never installed, so the host must declare it (HOST_VARS.md).
+    success_msg: the incident-merge plugin registry is {{ incident_observer_merge_registry }}
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
+- name: Look for the declared incident-merge plugin registry
+  ansible.builtin.stat:
+    path: "{{ incident_observer_merge_registry }}"
+    get_checksum: false
+  become: true
+  register: incident_observer_merge_registry_stat
+  check_mode: false
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
+- name: Refuse an apply when the declared incident-merge plugin registry is absent
+  ansible.builtin.assert:
+    that:
+      - incident_observer_merge_registry_stat.stat.exists
+    fail_msg: >-
+      the declared incident-merge plugin registry {{ incident_observer_merge_registry }} does
+      not exist on this host; nothing is installed that points the runner at it.
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+
+- name: Install the incident-merge runner's templated oneshot unit
+  # One instance per pull request (`livespec-incident-merge@<number>`); a bare start of
+  # the template is refused by systemd. Production apply only, like the observer unit.
+  ansible.builtin.template:
+    src: livespec-incident-merge@.service.j2
+    dest: "{{ incident_observer_merge_service_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and incident_observer_installation_name is not defined
+  notify: Reload systemd for the incident observer units
+
 - name: Write each secret from the control node's projected environment
   # The exact bytes, no trailing newline: the service compares
   # `Bearer <bytes>` against the file's contents.
