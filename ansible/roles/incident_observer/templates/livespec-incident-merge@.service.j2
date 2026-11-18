@@ -16,9 +16,18 @@ Type=oneshot
 User=root
 WorkingDirectory={{ incident_observer_reference_dir }}
 ExecStart={{ incident_observer_venv }}/bin/python -I -m livespec_dev_tooling.incident_merge_runner --pr %i --project-root {{ incident_observer_reference_dir }} --state-dir {{ incident_observer_state_dir }} --credential {{ incident_observer_merge_app_path }} --registry {{ incident_observer_merge_registry }}
-# Hardened: the runner writes nothing on this host (its ledger comment and forge calls go
-# over the network), so the filesystem is read-only and no path is writable.
+# Hardened. The runner writes nothing of its own: its ledger comment and forge calls go
+# over the network. The credential wrapper (with-livespec-env.sh) is the one thing that runs
+# beside it, and reading its script shows two facts this unit rests on:
+#   - run directly as root (no sudo) it refuses unless OPENV_KEEP_PRIVILEGES=1, its documented
+#     opt-in for a root-reaching caller, in which case the child stays root with HOME=/root;
+#   - `op run` then uses root's own config directory, so that one path is writable (the
+#     leading '-' tolerates it not existing yet). Its cache is the kernel keyring and its
+#     lock file is skipped when /run/user/0 is not writable; its caller-environment capture
+#     lands in the private /tmp. Not yet exercised on the live host.
+Environment=OPENV_KEEP_PRIVILEGES=1
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
+ReadWritePaths=-/root/.config/op

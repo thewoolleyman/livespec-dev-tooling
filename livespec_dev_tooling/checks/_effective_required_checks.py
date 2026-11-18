@@ -1,13 +1,12 @@
-"""The default branch's EFFECTIVE required-check set, read through an injected reader.
+"""The default branch's RULESET-required check set, read through an injected reader.
 
 The `branch_protection_alignment` check contract in SPECIFICATION/contracts.md
-(v149) defines the set: classic protection's required contexts UNION every
+(v149) defines the effective set as classic protection's required contexts UNION every
 active ruleset's `required_status_checks` rule on the default branch, every page
-read. The check grades that set (`effective_contexts` is the union it aligns),
-and the incident-merge principal (`livespec_dev_tooling.incident_merge_forge`)
-verifies every member of the SAME set green on a pull request's exact head. One
-definition serves both, so the two can never disagree about which checks are
-required.
+read; the check grades that union (`effective_contexts`). The incident-merge principal
+(`livespec_dev_tooling.incident_merge_forge`) holds an App grant with no Administration
+read, so it reads only the ruleset half (`read_ruleset_required_set`): the classic half
+answers 403 for that credential (measured live, livespec-dev-tooling-o6u7jm).
 
 The reader is injected: a callable taking the `gh` argument tail and answering a
 `budgeted_gh.GhRead`, so production passes `budgeted_gh.gh_read` and a test
@@ -23,10 +22,6 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 
 from livespec_dev_tooling.budgeted_gh import GhRead
-from livespec_dev_tooling.checks._branch_protection_api import (
-    _NOT_PROTECTED_MARKER,
-    _STATUS_CHECKS_NOT_ENABLED_MARKER,
-)
 from livespec_dev_tooling.checks._branch_protection_rulesets import (
     _parse_pages,
     _ruleset_status_rules,
@@ -37,7 +32,7 @@ __all__: list[str] = [
     "EffectiveSetUnreadable",
     "ForgeReader",
     "effective_contexts",
-    "read_effective_required_set",
+    "read_ruleset_required_set",
 ]
 
 
@@ -84,25 +79,6 @@ def _default_branch(*, reader: ForgeReader, repo: str) -> str | EffectiveSetUnre
     return branch
 
 
-def _classic(*, reader: ForgeReader, repo: str, branch: str) -> frozenset[str] | str:
-    """The classic contribution, or a string naming why it is unreadable."""
-    path = f"repos/{repo}/branches/{branch}/protection/required_status_checks"
-    answer = reader(args=["api", path])
-    if answer.returncode != 0:
-        combined = f"{answer.stdout}\n{answer.stderr}"
-        # The same two answers, in the same order, the check keys on.
-        if _NOT_PROTECTED_MARKER in combined:
-            return f"the default branch {branch} has no branch protection"
-        if _STATUS_CHECKS_NOT_ENABLED_MARKER in combined:
-            return frozenset()
-        return f"classic required checks unreadable: {answer.stderr.strip()[:200]}"
-    body = _json_object(stdout=answer.stdout)
-    listed = body.get("contexts") if body is not None else None
-    if not isinstance(listed, list):
-        return "classic required checks payload carried no contexts list"
-    return frozenset(c for c in cast("list[object]", listed) if isinstance(c, str))
-
-
 def _ruleset(*, reader: ForgeReader, repo: str, branch: str) -> frozenset[str] | str:
     """The active-ruleset contribution, or a string naming why it is unreadable."""
     path = f"repos/{repo}/rules/branches/{branch}?per_page=100"
@@ -115,24 +91,20 @@ def _ruleset(*, reader: ForgeReader, repo: str, branch: str) -> frozenset[str] |
     return frozenset(c for contexts, _strict in held.values() for c in contexts)
 
 
-def read_effective_required_set(
+def read_ruleset_required_set(
     *, reader: ForgeReader, repo: str
 ) -> EffectiveRequiredSet | EffectiveSetUnreadable:
-    """Read the default branch's effective required-check set whole, or say why not.
+    """Read the default branch's RULESET-required checks whole, or say why not.
 
-    An unprotected default branch is unreadable here rather than an empty set:
-    the check fails such a branch (`protection_absent`), so no set it grades
-    exists to verify against.
+    For a reader whose credential holds Metadata read and no Administration read: the classic
+    protection read answers 403 for such a credential, so the classic contribution is NOT
+    read here and a context required only by classic protection is not in this set. The
+    caller owns that limit.
     """
     branch = _default_branch(reader=reader, repo=repo)
     if isinstance(branch, EffectiveSetUnreadable):
         return branch
-    classic = _classic(reader=reader, repo=repo, branch=branch)
-    if isinstance(classic, str):
-        return EffectiveSetUnreadable(detail=classic)
     ruleset = _ruleset(reader=reader, repo=repo, branch=branch)
     if isinstance(ruleset, str):
         return EffectiveSetUnreadable(detail=ruleset)
-    return EffectiveRequiredSet(
-        branch=branch, contexts=effective_contexts(classic=classic, ruleset=ruleset)
-    )
+    return EffectiveRequiredSet(branch=branch, contexts=ruleset)

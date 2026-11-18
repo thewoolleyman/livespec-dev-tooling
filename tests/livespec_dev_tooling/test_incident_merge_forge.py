@@ -30,9 +30,8 @@ __all__: list[str] = []
 
 _REPO = "o/r"
 _HEAD = "h" * 40
-_CLASSIC = f"repos/{_REPO}/branches/master/protection/required_status_checks"
 _RULES = f"repos/{_REPO}/rules/branches/master?per_page=100"
-_ACTIONS = f"repos/{_REPO}/actions/runs?head_sha={_HEAD}&per_page=100"
+_SUITES = f"repos/{_REPO}/commits/{_HEAD}/check-suites?per_page=100"
 _CHECK_RUNS = f"repos/{_REPO}/commits/{_HEAD}/check-runs?per_page=100"
 _STATUS = f"repos/{_REPO}/commits/{_HEAD}/status?per_page=100"
 _PULL = f"repos/{_REPO}/pulls/7"
@@ -63,22 +62,21 @@ def _run(*, name: str, run_id: int, suite: int = 1, **over: object) -> dict[str,
 
 
 def _world() -> dict[str, GhRead]:
-    """The green world: classic requires `ci-green`, a ruleset requires `lint`."""
+    """The green world: a ruleset requires `ci-green` and `lint`; suite 2 is a merge queue's."""
     rule = {
         "type": "required_status_checks",
         "ruleset_id": 9,
-        "parameters": {"required_status_checks": [{"context": "lint"}]},
+        "parameters": {"required_status_checks": [{"context": "ci-green"}, {"context": "lint"}]},
     }
     return {
         f"repos/{_REPO}": _ok(body={"default_branch": "master"}),
-        _CLASSIC: _ok(body={"contexts": ["ci-green"], "strict": False}),
         _RULES: _ok(body=[[rule, {"type": "pull_request", "ruleset_id": 9}]]),
-        _ACTIONS: _ok(
+        _SUITES: _ok(
             body=[
                 {
-                    "workflow_runs": [
-                        {"check_suite_id": 1, "event": "pull_request"},
-                        {"check_suite_id": 2, "event": "merge_group"},
+                    "check_suites": [
+                        {"id": 1, "head_branch": "incident/inc-1-attempt-1"},
+                        {"id": 2, "head_branch": "gh-readonly-queue/master/pr-9-abc"},
                     ]
                 }
             ]
@@ -175,12 +173,10 @@ def test_a_status_alone_satisfies_a_context_with_no_counted_run() -> None:
         (f"repos/{_REPO}", _fail(stderr="HTTP 500"), "default branch of o/r could not be read"),
         (f"repos/{_REPO}", GhRead(returncode=0, stdout="{", stderr=""), "default branch"),
         (f"repos/{_REPO}", _ok(body=[]), "default branch"),
-        (_CLASSIC, _fail(stderr="HTTP 404: Branch not protected"), "has no branch protection"),
-        (_CLASSIC, _fail(stderr="HTTP 403: Forbidden"), "classic required checks unreadable"),
-        (_CLASSIC, _ok(body={"strict": False}), "carried no contexts list"),
         (_RULES, _fail(stderr="HTTP 502"), "ruleset rules unreadable"),
         (_RULES, _ok(body={"not": "pages"}), "not a list of rule pages"),
-        (_ACTIONS, _fail(stderr="HTTP 500"), "check results unreadable"),
+        (_SUITES, _fail(stderr="HTTP 500"), "check results unreadable"),
+        (_SUITES, _ok(body=_EMPTY_PAGES), "carried no check_suites list"),
         (_CHECK_RUNS, GhRead(returncode=0, stdout="nope", stderr=""), "body was not strict JSON"),
         (_CHECK_RUNS, _ok(body={}), "not a list of pages"),
         (_CHECK_RUNS, _ok(body=_EMPTY_PAGES), "carried no check_runs list"),
@@ -197,16 +193,8 @@ def test_an_unread_fact_is_not_green_and_says_why(path: str, answer: GhRead, rea
     assert verdict.contexts == ()
 
 
-def test_status_checks_not_enabled_is_an_empty_classic_contribution() -> None:
-    world = _world()
-    world[_CLASSIC] = _fail(stderr="HTTP 404: Required status checks not enabled")
-    verdict = _verdict(world=world)
-    assert verdict == Green(head_sha=_HEAD, contexts=frozenset({"lint"}))
-
-
 def test_an_empty_effective_set_is_not_vacuously_green() -> None:
     world = _world()
-    world[_CLASSIC] = _ok(body={"contexts": [], "strict": False})
     world[_RULES] = _ok(body=_NO_RULE_PAGES)
     verdict = _verdict(world=world)
     assert isinstance(verdict, NotGreen)
