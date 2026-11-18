@@ -1,5 +1,5 @@
 ---
-topic: a-delegated-pre-push-gate-that-reaches-no-verdict-falls-back-to-
+topic: a-delegated-pre-push-gate-that-reaches-no-verdict-falls-back-to
 author: gate-job-resources-seat
 created_at: 2026-11-17T19:05:02Z
 ---
