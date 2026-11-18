@@ -9,6 +9,7 @@ hold that starts nothing until the host variables enable it.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -22,32 +23,88 @@ _RUNNER = _ROLE / "files" / "livespec-breakage-pass"
 _CACHE_SEGMENT = "/.claude/plugins/cache/"
 
 
-def _stub_plugin(*, tmp_path: Path, body: str) -> Path:
-    scripts = tmp_path / "plugin" / "scripts" / "bin"
-    scripts.mkdir(parents=True)
-    _ = (scripts / "dispatcher.py").write_text(body, encoding="utf-8")
-    return tmp_path / "plugin"
+_BRANCH = "master"
+_GIT_ENV = {
+    **os.environ,
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_TERMINAL_PROMPT": "0",
+}
+_DISPATCHER = Path(".claude-plugin") / "scripts" / "bin" / "dispatcher.py"
+
+
+def _git(*, cwd: Path, args: list[str]) -> str:
+    done = subprocess.run(
+        [
+            "git",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            *args,
+        ],
+        cwd=cwd,
+        env=_GIT_ENV,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout.strip()
+
+
+class _World:
+    """An origin, a seed clone that publishes to it, and the host's detached checkout."""
+
+    def __init__(self, *, tmp_path: Path, body: str) -> None:
+        self.origin = tmp_path / "origin.git"
+        self.seed = tmp_path / "seed"
+        self.checkout = tmp_path / "checkout"
+        self.state = tmp_path / "state"
+        self.state.mkdir()
+        _ = _git(cwd=tmp_path, args=["init", "--bare", "-b", _BRANCH, str(self.origin)])
+        _ = _git(cwd=tmp_path, args=["clone", str(self.origin), str(self.seed)])
+        _ = _git(cwd=self.seed, args=["checkout", "-b", _BRANCH])
+        self.publish(body=body)
+        _ = _git(cwd=tmp_path, args=["clone", str(self.origin), str(self.checkout)])
+        _ = _git(cwd=self.checkout, args=["checkout", "--detach"])
+
+    def publish(self, *, body: str) -> str:
+        target = self.seed / _DISPATCHER
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _ = target.write_text(body, encoding="utf-8")
+        _ = _git(cwd=self.seed, args=["add", "-A"])
+        _ = _git(cwd=self.seed, args=["commit", "-q", "-m", "publish"])
+        _ = _git(cwd=self.seed, args=["push", "-q", "origin", _BRANCH])
+        return _git(cwd=self.seed, args=["rev-parse", "HEAD"])
+
+    def run(self, *, checkout: Path | None = None) -> subprocess.CompletedProcess[str]:
+        path = checkout if checkout is not None else self.checkout
+        return subprocess.run(
+            [
+                "/bin/bash",
+                str(_RUNNER),
+                "alpha",
+                str(path),
+                str(path / ".claude-plugin"),
+                "/usr/bin/python3",
+                str(self.state),
+                str(path),
+                _BRANCH,
+            ],
+            env=_GIT_ENV,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 
 def _run_runner(*, tmp_path: Path, body: str) -> tuple[subprocess.CompletedProcess[str], Path]:
-    plugin = _stub_plugin(tmp_path=tmp_path, body=body)
-    state = tmp_path / "state"
-    state.mkdir()
-    done = subprocess.run(
-        [
-            "/bin/bash",
-            str(_RUNNER),
-            "alpha",
-            str(tmp_path),
-            str(plugin),
-            "/usr/bin/python3",
-            str(state),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return done, state
+    world = _World(tmp_path=tmp_path, body=body)
+    return world.run(), world.state
 
 
 def test_a_passing_pass_journals_its_verdicts_then_a_result_line_and_marks_success(
@@ -55,8 +112,11 @@ def test_a_passing_pass_journals_its_verdicts_then_a_result_line_and_marks_succe
 ) -> None:
     done, state = _run_runner(tmp_path=tmp_path, body="print('breakage-pass wf.yml run=u green')\n")
 
+    lines = done.stdout.splitlines()
     assert done.returncode == 0
-    assert done.stdout.splitlines() == [
+    assert lines[0].startswith("breakage-pass-sync repo=alpha path=")
+    assert lines[0].endswith("action=current")
+    assert lines[1:] == [
         "breakage-pass wf.yml run=u green",
         "breakage-pass-result repo=alpha rc=0",
     ]
@@ -67,7 +127,7 @@ def test_a_failing_pass_keeps_its_status_and_leaves_no_success_marker(*, tmp_pat
     done, state = _run_runner(tmp_path=tmp_path, body="import sys\nsys.exit(1)\n")
 
     assert done.returncode == 1
-    assert done.stdout.splitlines() == ["breakage-pass-result repo=alpha rc=1"]
+    assert done.stdout.splitlines()[-1] == "breakage-pass-result repo=alpha rc=1"
     assert not (state / "alpha.last-success").exists()
 
 
@@ -76,7 +136,83 @@ def test_a_repository_watching_no_workflow_still_journals_the_result_line(
 ) -> None:
     done, _ = _run_runner(tmp_path=tmp_path, body="")
 
-    assert done.stdout == "breakage-pass-result repo=alpha rc=0\n"
+    assert done.stdout.splitlines()[-1] == "breakage-pass-result repo=alpha rc=0"
+    assert len(done.stdout.splitlines()) == 2
+
+
+def test_a_checkout_behind_origin_is_fast_forwarded_before_the_pass_runs(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('old reader')\n")
+    tip = world.publish(body="print('new reader')\n")
+
+    done = world.run()
+
+    lines = done.stdout.splitlines()
+    assert done.returncode == 0
+    assert f"head={tip} origin={tip} action=advanced" in lines[0]
+    assert lines[1] == "new reader"
+    assert _git(cwd=world.checkout, args=["rev-parse", "HEAD"]) == tip
+    # The acceptance read-back the docs prescribe: the fix is an ancestor of the reader.
+    _ = _git(cwd=world.checkout, args=["merge-base", "--is-ancestor", tip, "HEAD"])
+
+
+def _refused(*, done: subprocess.CompletedProcess[str], world: _World, reason: str) -> None:
+    lines = done.stdout.splitlines()
+    assert done.returncode == 70
+    assert lines[0].startswith("breakage-pass-sync-refused repo=alpha path=")
+    assert lines[0].endswith(f"reason={reason}")
+    assert lines[1:] == ["breakage-pass-result repo=alpha rc=70"]
+    assert "reader" not in done.stdout
+    assert not (world.state / "alpha.last-success").exists()
+
+
+def test_a_checkout_on_another_branch_is_refused_and_no_pass_runs(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    _ = _git(cwd=world.checkout, args=["checkout", "-q", "-b", "feature"])
+
+    _refused(done=world.run(), world=world, reason="on-branch-feature")
+
+
+def test_a_checkout_with_a_modified_tracked_file_is_refused(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    _ = (world.checkout / _DISPATCHER).write_text("print('edited reader')\n", encoding="utf-8")
+
+    _refused(done=world.run(), world=world, reason="modified-tracked-files")
+
+
+def test_a_checkout_holding_a_commit_origin_lacks_is_refused(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    _ = (world.checkout / _DISPATCHER).write_text("print('local reader')\n", encoding="utf-8")
+    _ = _git(cwd=world.checkout, args=["commit", "-q", "-am", "local only"])
+
+    _refused(done=world.run(), world=world, reason="not-fast-forward")
+
+
+def test_an_unreachable_origin_is_refused(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    _ = _git(
+        cwd=world.checkout,
+        args=["remote", "set-url", "origin", str(tmp_path / "missing.git")],
+    )
+
+    _refused(done=world.run(), world=world, reason="fetch-failed")
+
+
+def test_a_path_that_is_not_a_git_checkout_is_refused(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    _refused(done=world.run(checkout=plain), world=world, reason="not-a-git-checkout")
+
+
+def test_an_untracked_file_does_not_stop_the_pass(*, tmp_path: Path) -> None:
+    world = _World(tmp_path=tmp_path, body="print('reader ran')\n")
+    _ = (world.checkout / "stray.txt").write_text("x", encoding="utf-8")
+
+    done = world.run()
+
+    assert done.returncode == 0
+    assert "reader ran" in done.stdout
 
 
 def _defaults() -> dict[str, object]:
@@ -184,3 +320,26 @@ def test_the_dev_host_playbook_carries_the_role_and_the_host_variables_enable_it
     assert re.search(r"- role: breakage_pass\n\s+tags: \[breakage_pass\]", playbook)
     assert re.search(r"^breakage_pass_enabled: true$", host_vars, re.MULTILINE)
     assert "/home/ubuntu/workspace/livespec-orchestrator-beads-fabro" in host_vars
+
+
+def test_the_service_hands_the_runner_the_orchestrator_checkout_and_branch() -> None:
+    service = (_ROLE / "templates" / "breakage-pass.service.j2").read_text(encoding="utf-8")
+
+    assert (
+        "{{ breakage_pass_state_dir }} {{ breakage_pass_orchestrator_checkout }}"
+        " {{ breakage_pass_branch }}"
+    ) in service
+    assert _defaults()["breakage_pass_branch"] == "master"
+
+
+def test_the_role_refuses_a_missing_checkout_or_branch_and_the_docs_name_the_acceptance_readback() -> (
+    None
+):
+    tasks = (_ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+    docs = (_ROLE / "HOST_VARS.md").read_text(encoding="utf-8")
+
+    assert "breakage_pass_orchestrator_checkout | string | length > 0" in tasks
+    assert "breakage_pass_branch | string | length > 0" in tasks
+    assert "COMMITTED IS NOT CONVERGED" in docs
+    assert "merge-base --is-ancestor" in docs
+    assert "exit 70" in docs
