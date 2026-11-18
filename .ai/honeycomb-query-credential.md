@@ -44,7 +44,7 @@ values) and grep the fleet repositories for how each one is used.
 
 ## Two traps when you run the query helper
 
-The helper is `~/token-spend-report/scripts/hcq.py`. Both of these traps were measured on 2026-11-02 by plan
+The helper was `~/token-spend-report/scripts/hcq.py`; on 2026-11-18 that path did not exist on the dev host, so check before relying on it. A one-off query needs only the plain JSON-RPC call in `plan/gate-job-resources/research/006-per-node-shard-job-duration-method.md`. Both of these traps were measured on 2026-11-02 by plan
 codex-implement-cost-per-run.
 
 - **Do not read results from the wrapper's stdout.** Run as
