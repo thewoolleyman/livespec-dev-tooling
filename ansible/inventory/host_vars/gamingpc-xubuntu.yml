@@ -121,3 +121,10 @@ node_status_credential_remote_user: cwoolley
 # against the fingerprint thewoolleyman/gamingpc-xubuntu-info docs/bootstrap.md
 # records.
 controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKuej1c3Cw/I995gHVmAjaFfibSxBIKHNznAuNkyYiCV"
+
+# --- pressure_telemetry (BestEffort slice, livespec-dev-tooling-d6ntx3) ---
+# Emit the BestEffort pod slice's cpu.pressure so every avg60 revert tripwire
+# (plan gate-job-resources) can be read over a window from Honeycomb.
+# Revert by setting the list to [] and re-applying --tags pressure_telemetry.
+pressure_telemetry_cgroups:
+  - kubepods.slice/kubepods-besteffort.slice

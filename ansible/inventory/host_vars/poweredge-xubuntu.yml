@@ -65,6 +65,7 @@ k3s_config_system_slice_cpu_weight: 1000
 # setting it to [] and re-applying --tags pressure_telemetry.
 pressure_telemetry_cgroups:
   - system.slice/k3s.service
+  - kubepods.slice/kubepods-besteffort.slice  # livespec-dev-tooling-d6ntx3: the BestEffort slice every avg60 tripwire names
 
 # --- factory_budget_reconciler ---
 # This node may hold 9 factory sandbox pods: the TEMPORARY fixed factory-vs-CI
