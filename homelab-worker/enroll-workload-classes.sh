@@ -225,9 +225,13 @@ if [ "$ci" -eq 1 ]; then
   say "CI: enrolled with $slots churn slots (share ${ci_capacity}m of ${millicores}m allocatable CPU)"
 else
   kubectl label node "$node" k3s-role- >/dev/null 2>&1 || true
+  # Keep the extended resource present at zero.  Removing it leaves a kubelet's
+  # previously advertised capacity available to the worker queues until another
+  # status update happens, while zero makes both the Node and queue convergence
+  # immediately reflect this CI unenrollment.
+  kubectl patch node "$node" --subresource=status --type=merge \
+    -p '{"status":{"capacity":{"ci-runner.io/churn-slot":"0"}}}' >/dev/null
   if [ "$recorded_split" -eq 1 ] && [ "$ci_share" = 0 ]; then
-    kubectl patch node "$node" --subresource=status --type=merge \
-      -p '{"status":{"capacity":{"ci-runner.io/churn-slot":null}}}' >/dev/null
     say "CI: NOT enrolled: recorded zero share (0%): $split_reason"
   else
     say "CI: NOT enrolled: no scale set in $(basename "$conf") declares $arch"
