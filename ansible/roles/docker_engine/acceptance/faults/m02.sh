@@ -13,7 +13,7 @@ echo "######## 1. converge, no acknowledgement (expect refusal)"; converge $I $L
 echo "######## 2. acknowledged, postcondition still failing (expect verify refusal)"; converge $I $L.ack1.log -e docker_engine_acknowledge_run=$RUN
 grep -aE 'verify (proceed|refuse)' $L.ack1.log | sed -n 1,2p | cut -c1-250; echo "phase=$(phase_of $I)"
 echo "######## 3. repair: the guard's own footprint-removal phase, run by the operator"
-vm $I "sudo /usr/local/libexec/docker-engine-guard rollback $RUN --phase footprint-removal; echo exit=\$?; iptables -S | grep -ci docker; ip6tables -S | grep -ci docker; iptables -t nat -S | grep -c 172.17"
+vm $I "sudo /usr/local/libexec/docker-engine-guard rollback $RUN --state-root /var/lib/docker-engine-guard --runtime-root /run/docker-engine-guard --phase footprint-removal; echo exit=\$?; iptables -S | grep -ci docker; ip6tables -S | grep -ci docker; iptables -t nat -S | grep -c 172.17"
 echo "######## 4. acknowledged verify (expect promotion to rolled-back)"; converge $I $L.ack2.log -e docker_engine_acknowledge_run=$RUN
 grep -aE 'verify (proceed|refuse)' $L.ack2.log | sed -n 1,2p | cut -c1-250
 echo "phase=$(phase_of $I)"

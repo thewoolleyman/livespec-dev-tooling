@@ -50,6 +50,8 @@
       - refusals
       - --declared
       - "{{ docker_engine_preflight_declared.path }}"
+      - --state-root
+      - "{{ docker_engine_state_root }}"
   register: docker_engine_guard_preflight
   become: true
   changed_when: false

@@ -218,7 +218,7 @@ def test_the_preflight_command_line_prints_every_refusal_and_exits_non_zero(
 
     with caplog.at_level("ERROR"):
         code = cli.main(
-            argv=["refusals", "--declared", str(declared)],
+            argv=["refusals", "--declared", str(declared), "--state-root", str(tmp_path / "var")],
             runner=bus,
             config=slow["config"],
             dropins=slow["dropins"],
@@ -263,7 +263,7 @@ def test_the_preflight_command_line_is_silent_and_exits_zero_on_a_clear_host(
 
     with caplog.at_level("ERROR"):
         code = cli.main(
-            argv=["refusals", "--declared", str(declared)],
+            argv=["refusals", "--declared", str(declared), "--state-root", str(tmp_path / "var")],
             runner=bus,
             config=ordinary["config"],
             dropins=ordinary["dropins"],

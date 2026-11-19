@@ -126,7 +126,7 @@ def _failed_sample(
     """
     failure = f"sample {len(samples)} of the observation window failed: {dict(samples[-1])}"
     _record_window(run=run, env=env, window_start=window_start, samples=samples, failure=failure)
-    env.host.systemd_run(argv=rollback_argv(run=run))
+    env.host.systemd_run(argv=rollback_argv(run=run, paths=env.paths))
     return GuardOutcome(operation="observe", run=run, verdict="refuse", reason=failure)
 
 

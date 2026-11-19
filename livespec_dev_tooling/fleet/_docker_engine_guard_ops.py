@@ -184,7 +184,7 @@ def arm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         # cannot be called in-process without deadlocking on it; it is
         # started as its own transient unit instead, exactly as the
         # observer starts one on a failed sample.
-        env.host.systemd_run(argv=rollback_argv(run=run))
+        env.host.systemd_run(argv=rollback_argv(run=run, paths=env.paths))
         return GuardOutcome(
             operation="arm",
             run=run,
@@ -200,7 +200,9 @@ def arm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         write_deadline(paths=env.paths, run=run, deadline=deadline)
     if not env.host.deadman_timer_exists(run=run):
         remaining = max(1, round(deadline.monotonic - env.host.monotonic()))
-        env.host.systemd_run(argv=deadman_argv(run=run, on_active_seconds=remaining))
+        env.host.systemd_run(
+            argv=deadman_argv(run=run, on_active_seconds=remaining, paths=env.paths)
+        )
     record_phase(paths=env.paths, run=run, phase="armed")
     return GuardOutcome(operation="arm", run=run, verdict=decision.verdict, reason="dead-man armed")
 

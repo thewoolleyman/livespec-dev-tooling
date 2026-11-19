@@ -3,7 +3,8 @@
 Run this host-side command through ``/usr/local/bin/with-livespec-env.sh`` so
 its ``bd`` calls reach the repository's live Beads tenant:
 
-``with-livespec-env.sh -- uv run python -m livespec_dev_tooling.flake_retry_filer``.
+``with-livespec-env.sh -- uv run python -m livespec_dev_tooling.flake_retry_filer
+--repo-root <checkout> --state-dir <state directory>``. Both flags are required.
 """
 
 from __future__ import annotations
@@ -38,7 +39,6 @@ _DEFINITION_OF_DONE_REFERENCE = "## Testing approach"
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
 _PLUGIN_REGISTRY = Path(".claude") / "plugins" / "installed_plugins.json"
 _READER_NAME = "flake-retry-filer"
-_DEFAULT_STATE_DIR = Path("/var/lib/livespec/flake-retry-filer")
 _DEFAULT_INTERVAL_SECONDS = 900
 _COMPLETION_MARKER = "last-successful-pass"
 _FILED_RECORDS_LEDGER = "filed-records"
@@ -373,8 +373,11 @@ def main(
 ) -> int:
     """File missing root fixes from retry records below the selected repository root."""
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument("--repo-root", type=Path, default=Path.cwd())
-    _ = parser.add_argument("--state-dir", type=Path, default=_DEFAULT_STATE_DIR)
+    # Neither location has a default. `--state-dir` is host state that a timer
+    # also reads, so a caller that omits it is refused rather than written for;
+    # `--repo-root` would otherwise be whichever directory the caller stood in.
+    _ = parser.add_argument("--repo-root", type=Path, required=True)
+    _ = parser.add_argument("--state-dir", type=Path, required=True)
     _ = parser.add_argument("--interval-seconds", type=int, default=_DEFAULT_INTERVAL_SECONDS)
     _ = parser.add_argument("--check-staleness", action="store_true")
     arguments = parser.parse_args(argv)
