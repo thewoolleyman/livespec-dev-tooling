@@ -6118,7 +6118,7 @@ When an operator runs `just ansible-drift` or `just ansible-apply` from the repo
 
 Then the ansible command the recipe runs resolves `ansible/ansible.cfg` as its configuration file
 
-And `DEFAULT_PIPELINING` is `True` for that command
+And `ANSIBLE_PIPELINING` is `True` for that command
 
 And `check-ansible-recipes-load-config` fails when a recipe's ansible invocation resolves no configuration file
 ```
