@@ -91,9 +91,10 @@ case "$1 $2" in
         printf '5: cni0    inet 10.42.7.1/24 brd 10.42.7.255 scope global cni0\\n' > "$s/cni0"
       fi
     fi
-    if [ "$n" -ge 3 ] && [ -f "$s/cni0" ]; then
+    if [ "$n" -ge 3 ]; then
       printf 'WORKER_NODE_NAME=alpha-homelab-worker\\nOTLP_PODS_ENDPOINT=10.42.7.1:4319\\n' > "$s/node.env"
     fi ;;
+  "cat "*) cat "$s/node.env" 2>/dev/null ;;
   "install -m") cat > "$s/delivered-${5##*/}" ;;
 esac
 """
@@ -233,19 +234,20 @@ def test_a_join_refreshes_the_pod_span_endpoint_after_the_node_gets_its_cni_brid
     assert (env.state / "node.env").read_text(encoding="utf-8") == (
         f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.7.1:4319\n"
     )
-    assert "pod-span endpoint now uses cni0 at 10.42.7.1:4319" in result.stdout
+    assert "pod-span endpoint recorded: 10.42.7.1:4319" in result.stdout
     assert len([call for call in _calls(env=env) if " bash -s -- " in call]) == 3
 
 
-def test_a_join_names_the_pod_span_endpoint_as_not_yet_set_when_cni0_never_appears(
+def test_a_join_records_the_flannel_subnets_first_usable_address_when_cni0_never_appears(
     env: _Env,
 ) -> None:
-    """A pod-less worker leaves the bridge-gated endpoint visibly pending."""
+    """A pod-less worker has no cni0 bridge, yet the join records and names the endpoint."""
     (env.state / "no-cni0").touch()
     result = _run(env=env, args=_args(env))
     assert result.returncode != 0
-    assert "pod-span endpoint is not yet set" in result.stdout
-    assert len([call for call in _calls(env=env) if " bash -s -- " in call]) == 2
+    assert "pod-span endpoint recorded: 10.42.7.1:4319" in result.stdout
+    assert "not yet set" not in result.stdout
+    assert len([call for call in _calls(env=env) if " bash -s -- " in call]) == 3
 
 
 @pytest.mark.parametrize(

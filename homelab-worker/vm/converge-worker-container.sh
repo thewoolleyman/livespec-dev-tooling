@@ -359,6 +359,87 @@ else
   say "worker $worker awaits enrollment: the operator delivers bootstrap-kubeconfig and client-ca.crt to $root/enrollment"
 fi
 
+# The pod-span endpoint is the first usable address of the worker's flannel
+# subnet, never the bridge's address at join time: the bridge keeps an older
+# subnet until its first pod, while the Node's pod CIDR and flannel's subnet
+# are the ones the cluster assigned. first_usable reads "a.b.c.d/len" and
+# prints the first usable address of that network.
+first_usable() {
+  awk -F'[./]' 'NF == 5 {
+    ip = $1 * 16777216 + $2 * 65536 + $3 * 256 + $4
+    block = 2 ^ (32 - $5)
+    n = int(ip / block) * block + 1
+    printf "%d.%d.%d.%d\n", int(n / 16777216) % 256, int(n / 65536) % 256, int(n / 256) % 256, n % 256
+  }'
+}
+
+# install_in_container <mode> <path>: write stdin to <path> in the worker and
+# report whether its content changed (0 changed, 1 already identical).
+install_in_container() {
+  local mode="$1" path="$2" content
+  content="$(cat)"
+  if [ "$(docker exec "$worker" cat "$path" 2>/dev/null || true)" = "$content" ]; then
+    return 1
+  fi
+  printf '%s\n' "$content" |
+    docker exec -i "$worker" sh -c "cat >$path && chmod $mode $path"
+}
+
+# The endpoint follows a flannel subnet that changes while the container keeps
+# running or restarts, with no operator command: a systemd path unit in the
+# worker re-derives it whenever /run/flannel/subnet.env changes.
+install_pod_span_endpoint_follower() {
+  local changed=1
+  install_in_container 0755 /usr/local/sbin/homelab-pod-span-endpoint <<'EOS' && changed=0
+#!/bin/sh
+# Record the first usable address of the flannel subnet as OTLP_PODS_ENDPOINT
+# in node.env, and restart the pod-span collector when it changed.
+set -eu
+subnet_env="${FLANNEL_SUBNET_ENV:-/run/flannel/subnet.env}"
+node_env="${POD_SPAN_NODE_ENV:-/etc/otel-collector/node.env}"
+[ -s "$node_env" ] || exit 0
+subnet="$(sed -n 's/^FLANNEL_SUBNET=//p' "$subnet_env" 2>/dev/null | sed -n 1p)"
+[ -n "$subnet" ] || exit 0
+address="$(printf '%s\n' "$subnet" | awk -F'[./]' 'NF == 5 {
+  ip = $1 * 16777216 + $2 * 65536 + $3 * 256 + $4
+  block = 2 ^ (32 - $5)
+  n = int(ip / block) * block + 1
+  printf "%d.%d.%d.%d\n", int(n / 16777216) % 256, int(n / 65536) % 256, int(n / 256) % 256, n % 256
+}')"
+[ -n "$address" ] || exit 0
+name="$(sed -n 's/^WORKER_NODE_NAME=//p' "$node_env" | sed -n 1p)"
+want="WORKER_NODE_NAME=$name
+OTLP_PODS_ENDPOINT=$address:4319"
+[ "$(cat "$node_env")" != "$want" ] || exit 0
+printf '%s\n' "$want" >"$node_env"
+systemctl restart otel-collector-pods
+EOS
+  install_in_container 0644 /etc/systemd/system/homelab-pod-span-endpoint.service <<'EOS' && changed=0
+[Unit]
+Description=Record the pod-span endpoint from the worker's flannel subnet
+ConditionPathExists=/etc/otel-collector/node.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homelab-pod-span-endpoint
+EOS
+  install_in_container 0644 /etc/systemd/system/homelab-pod-span-endpoint.path <<'EOS' && changed=0
+[Unit]
+Description=Follow the worker's flannel subnet with the pod-span endpoint
+
+[Path]
+PathChanged=/run/flannel/subnet.env
+Unit=homelab-pod-span-endpoint.service
+
+[Install]
+WantedBy=multi-user.target
+EOS
+  if [ "$changed" = 0 ]; then
+    docker exec "$worker" systemctl daemon-reload
+  fi
+  docker exec "$worker" systemctl enable --now homelab-pod-span-endpoint.path >/dev/null
+}
+
 if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
   bridge="$(docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null | awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true)"
   if [ -s "$root/telemetry/pods-config.yaml" ]; then
@@ -370,17 +451,22 @@ if [ -s "$root/telemetry/config.yaml" ] && [ -s "$root/telemetry/.env" ]; then
     # the node's gateway address is already named in flannel's subnet.env; binding
     # it early fails and retries in the pod-span unit alone, so the unit starts
     # whenever an address is known and converges itself when cni0 appears.
-    gateway="$bridge"
+    flannel_subnet="$(docker exec "$worker" cat /run/flannel/subnet.env 2>/dev/null | sed -n 's/^FLANNEL_SUBNET=//p' | sed -n 1p || true)"
+    gateway=""
+    [ -z "$flannel_subnet" ] || gateway="$(printf '%s\n' "$flannel_subnet" | first_usable)"
+    source_name="the flannel subnet $flannel_subnet"
     if [ -z "$gateway" ]; then
-      gateway="$(docker exec "$worker" cat /run/flannel/subnet.env 2>/dev/null | sed -n 's/^FLANNEL_SUBNET=\([0-9.]*\)\/[0-9]*$/\1/p' | sed -n 1p || true)"
+      gateway="$bridge"
+      source_name="cni0"
     fi
     if [ -n "$gateway" ]; then
       printf 'WORKER_NODE_NAME=%s\nOTLP_PODS_ENDPOINT=%s:4319\n' "$worker" "$gateway" >"$root/telemetry/node.env"
       docker exec "$worker" systemctl restart otel-collector-pods
-      if [ -n "$bridge" ]; then
-        say "pod-span collector started on $worker ($gateway:4319)"
+      install_pod_span_endpoint_follower
+      if [ -n "$bridge" ] && [ "$bridge" = "$gateway" ]; then
+        say "pod-span collector started on $worker ($gateway:4319 from $source_name)"
       else
-        say "pod-span collector started on $worker ($gateway:4319 from the flannel subnet; cni0 is not up yet, so it retries the bind alone)"
+        say "pod-span collector started on $worker ($gateway:4319 from $source_name; the bind retries alone until cni0 carries it)"
       fi
     else
       say "worker $worker names no pod-network gateway yet (no cni0, no flannel subnet); host metrics continue and the pod-span collector starts on the next run"

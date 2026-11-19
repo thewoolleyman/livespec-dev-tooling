@@ -109,26 +109,20 @@ converge() {
   in_vm bash -s -- "$worker" "$host" "$image" "$state_root" $worker_network <"$hw/vm/converge-worker-container.sh"
 }
 
-bridge_address() {
-  in_vm docker exec "$worker" ip -4 -o addr show dev cni0 2>/dev/null |
-    awk '{print $4}' | cut -d / -f 1 | sed -n 1p || true
-}
-
+# refresh_pod_span_endpoint: a final converge records the pod-span endpoint as
+# the first usable address of the worker's flannel subnet (converge-worker-
+# container.sh), with no wait for cni0 and no operator command; the join names
+# the endpoint it recorded.
 refresh_pod_span_endpoint() {
-  local bridge waited
-  waited=0
-  bridge="$(bridge_address)"
-  until [ -n "$bridge" ]; do
-    if [ "$waited" -ge "$wait_seconds" ]; then
-      say "pod-span endpoint is not yet set: cni0 received no address within ${wait_seconds}s after Node registration"
-      return
-    fi
-    sleep "$poll"
-    waited=$((waited + poll))
-    bridge="$(bridge_address)"
-  done
+  local endpoint
   converge
-  say "pod-span endpoint now uses cni0 at $bridge:4319"
+  endpoint="$(in_vm cat "$state_root/telemetry/node.env" 2>/dev/null |
+    sed -n 's/^OTLP_PODS_ENDPOINT=//p' | sed -n 1p || true)"
+  if [ -n "$endpoint" ]; then
+    say "pod-span endpoint recorded: $endpoint (the first usable address of the worker's flannel subnet)"
+  else
+    say "pod-span endpoint is not yet set: the worker has no flannel subnet or no delivered telemetry"
+  fi
 }
 
 if kubectl get node "$worker" >/dev/null 2>&1; then
