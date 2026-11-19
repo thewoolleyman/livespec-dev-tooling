@@ -46,6 +46,7 @@ spec:
             # its memory coverage must be present in the committed template.
             - name: memory
               nominalQuota: 4.25Gi
+              borrowingLimit: 0
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
