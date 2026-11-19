@@ -210,6 +210,7 @@ template:
           # value distinct from the reservation.
           requests:
             ci-runner.io/churn-slot: "1"
+            memory: 1.5Gi
           limits:
             ci-runner.io/churn-slot: "1"
 
