@@ -252,6 +252,11 @@
     - role: factory_workspace_root
       tags: [factory_workspace_root]
       when: ci_pool_factory_node == 'true'
+    # The same node's ended-run workspaces, archived then removed under disk pressure
+    # (report-only unless the host's vars arm it; see the role's defaults).
+    - role: factory_workspace_sweep
+      tags: [factory_workspace_sweep]
+      when: ci_pool_factory_node == 'true'
     # And the image that pod is built from, held in THIS node's k3s containerd
     # before the scheduler weighs the node (work-item bd-ib-kogktm, in the
     # livespec-orchestrator-beads-fabro tenant). Measured 2026-10-26: every

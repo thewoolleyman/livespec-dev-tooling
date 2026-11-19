@@ -119,3 +119,14 @@ shared_credentials_host_probe_names:
   - LIVESPEC_AI_ARC_APP_ID
   - LIVESPEC_AI_ARC_INSTALLATION_ID
   - LIVESPEC_AI_ARC_PRIVATE_KEY
+
+# --- factory_workspace_sweep ---
+# Archive-then-remove of ended factory runs' workspaces under disk pressure
+# (poweredge root 95% full, DiskPressure since 2026-11-19T13:41Z). REPORT-ONLY
+# until factory_workspace_sweep_apply is true. REVERT / KILL SWITCH: set apply
+# to false. Archives live under the role's archive dir; see the role defaults.
+factory_workspace_sweep_enabled: true
+factory_workspace_sweep_apply: true
+# Full eligible manifest (coordinator ruling): the 30 GiB target left a 1 GiB
+# margin over the ~29.4 GiB clear point, which running sandboxes erase in minutes.
+factory_workspace_sweep_stop_free_gib: 55

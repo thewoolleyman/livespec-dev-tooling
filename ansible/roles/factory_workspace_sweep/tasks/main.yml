@@ -1,0 +1,70 @@
+---
+- name: Create the sweep install directory
+  ansible.builtin.file:
+    path: "{{ factory_workspace_sweep_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: factory_workspace_sweep_enabled | bool
+
+- name: Install the sweep script and this host's committed manifest
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ factory_workspace_sweep_lib_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - {src: factory_workspace_sweep.py, dest: factory_workspace_sweep.py}
+    - {src: "{{ factory_workspace_sweep_manifest }}", dest: manifest.json}
+  when: factory_workspace_sweep_enabled | bool
+
+- name: Report-only pass (always runs, removes nothing)
+  ansible.builtin.command: >-
+    python3 {{ factory_workspace_sweep_lib_dir }}/factory_workspace_sweep.py
+    --manifest {{ factory_workspace_sweep_lib_dir }}/manifest.json
+    --root {{ factory_workspace_sweep_root }}
+    --archive-dir {{ factory_workspace_sweep_archive_dir }}
+    --stop-free-gib {{ factory_workspace_sweep_stop_free_gib }}
+    --min-age-hours {{ factory_workspace_sweep_min_age_hours }}
+    --kubectl '{{ factory_workspace_sweep_kubectl }}'
+    --pod-scope '{{ factory_workspace_sweep_pod_scope }}'
+  become: true
+  register: factory_workspace_sweep_report
+  changed_when: false
+  check_mode: false
+  when:
+    - factory_workspace_sweep_enabled | bool
+    - not ansible_check_mode
+
+- name: Show the report-only pass
+  ansible.builtin.debug:
+    msg: "{{ factory_workspace_sweep_report.stdout_lines | default([]) }}"
+  when: factory_workspace_sweep_report.stdout_lines is defined
+
+- name: Apply pass (archive, verify, then remove; stops at the free-space target)
+  ansible.builtin.command: >-
+    python3 {{ factory_workspace_sweep_lib_dir }}/factory_workspace_sweep.py
+    --manifest {{ factory_workspace_sweep_lib_dir }}/manifest.json
+    --root {{ factory_workspace_sweep_root }}
+    --archive-dir {{ factory_workspace_sweep_archive_dir }}
+    --stop-free-gib {{ factory_workspace_sweep_stop_free_gib }}
+    --min-age-hours {{ factory_workspace_sweep_min_age_hours }}
+    --kubectl '{{ factory_workspace_sweep_kubectl }}'
+    --pod-scope '{{ factory_workspace_sweep_pod_scope }}'
+    --apply
+  become: true
+  register: factory_workspace_sweep_applied
+  changed_when: "'APPLY DONE' in factory_workspace_sweep_applied.stdout"
+  when:
+    - factory_workspace_sweep_enabled | bool
+    - factory_workspace_sweep_apply | bool
+    - not ansible_check_mode
+
+- name: Show the apply pass
+  ansible.builtin.debug:
+    msg: "{{ factory_workspace_sweep_applied.stdout_lines | default([]) }}"
+  when: factory_workspace_sweep_applied is defined and factory_workspace_sweep_applied.stdout_lines is defined

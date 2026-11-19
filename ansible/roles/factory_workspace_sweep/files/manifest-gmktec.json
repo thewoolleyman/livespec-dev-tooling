@@ -1,0 +1,200 @@
+[
+ {
+  "dir": "petri-01m7pypy7xeaxvxw40hg08bjk3-l0",
+  "kb": 1158760,
+  "cls": "item-ready",
+  "head": "8180eb4f73c761ddb5095d57af0c749882e55715",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-jgl66s",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m7pf2g3qkv47tec4rfyte145-l0",
+  "kb": 1078476,
+  "cls": "item-backlog",
+  "head": "bea679c627f5bcccdc5e9085d86b4ef116fe316c",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-e7yfcw",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m7aevjqdpd9hy7jgy6cyfwyj-l0",
+  "kb": 828696,
+  "cls": "item-ready",
+  "head": "b569ffc7298201af83b029e2e0b4fe4997726d79",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-3h7dsf",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m76pzx4c8jef915c3yr5kffb-l0",
+  "kb": 804384,
+  "cls": "item-ready",
+  "head": "d69c8bd8738c6dd156d19a8642940f2530b18975",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-lrjdlo",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m7533n2nht4fyzxgchzhk5av-l0",
+  "kb": 798784,
+  "cls": "item-ready",
+  "head": "77ea555513795cf9f3bab7ec877409bcf0f7b270",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-d2qm5d",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6xf3d578kthhejjwa106ez8-l0",
+  "kb": 745240,
+  "cls": "item-ready",
+  "head": "73e8f5b8d7cd0781b36ae33db80281a1f2532b6a",
+  "dirty": true,
+  "evidence": "head-ancestor-of:origin/needs-human/af87232fabe14b31ae10ecf8066d944c",
+  "item": "bd-ib-d2qm5d",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m74saak717e2ffv3bbng02dk-l0",
+  "kb": 728964,
+  "cls": "item-ready",
+  "head": "09438b114bef9220e0409b92d8eb758751bd0dac",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-d2qm5d",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6pc3fner49z47gmakfd7vnk-l0",
+  "kb": 698556,
+  "cls": "item-ready",
+  "head": "3f55e85c98e9d4e932cd9bc6a201932af8bbf490",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-hap62u",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m7avfmtha1g4qwywaby4qm7k-l0",
+  "kb": 668296,
+  "cls": "item-ready",
+  "head": "48426e27472bcb6e5b8ec315ccd7d0e2d0882f85",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "livespec-dev-tooling-g3mnat",
+  "repo": "livespec-dev-tooling",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m7d5k5x0jzk7gd6z33gvnakr-l0",
+  "kb": 658976,
+  "cls": "item-ready",
+  "head": "063f12d164bfc641d1414ef719b1149fb7932469",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-azhnw5",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6gb2x2b9gfkhzvg2g3caha3-l0",
+  "kb": 656128,
+  "cls": "item-ready",
+  "head": "08bded50c93988e68edbe842bbcf52f85f632c8c",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-piclal",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6n7dbcecsq2tg09h3fnkwe5-l0",
+  "kb": 650508,
+  "cls": "item-ready",
+  "head": "453efdcc998c938558406497625bfa57c6c7dfa3",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-ff5ohb",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6gqfbqttj3dq9y54gcg37cp-l0",
+  "kb": 648872,
+  "cls": "item-ready",
+  "head": "4a5125dc3f047d0f5abad71ea80e5c5f47e690a1",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-d2qm5d",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6h9dfgy81y7g1yp3f7fpa64-l0",
+  "kb": 646964,
+  "cls": "item-ready",
+  "head": "1d43a97d769a1e2754d1ffdab3844ea592f61db0",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-ff5ohb",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m72qj9p6ga24f9y7s4e8wfjt-l0",
+  "kb": 636260,
+  "cls": "item-ready",
+  "head": "77626de3c1ba1e1e83dcb20a2a4363cac9427355",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-qshcwc",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m768tckypsxw093a095anzmh-l0",
+  "kb": 609240,
+  "cls": "item-ready",
+  "head": "32dffaa7ecf74c761ccae422f6252e434d0240d1",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "livespec-dev-tooling-hzhw6y",
+  "repo": "livespec-dev-tooling",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m701jk9nvg98kbmvc7b67d6s-l0",
+  "kb": 608488,
+  "cls": "item-ready",
+  "head": "3a25bfac686fa8743129623065d3746c076a9388",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "bd-ib-qv7ba2",
+  "repo": "livespec-orchestrator-beads-fabro",
+  "action": "archive"
+ },
+ {
+  "dir": "petri-01m6jqtknqf9mvsjyr0qd93j72-l0",
+  "kb": 324832,
+  "cls": "item-ready",
+  "head": "ea66e9de19a6d7a93062765e1c0dedd7bf1a7f79",
+  "dirty": false,
+  "evidence": "head-on-no-fetched-origin-ref",
+  "item": "livespec-dev-tooling-22wpdk",
+  "repo": "livespec-dev-tooling",
+  "action": "archive"
+ }
+]

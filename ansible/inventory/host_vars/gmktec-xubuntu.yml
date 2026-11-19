@@ -1112,3 +1112,15 @@ controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINVacRASJc+
 # Revert by setting the list to [] and re-applying --tags pressure_telemetry.
 pressure_telemetry_cgroups:
   - kubepods.slice/kubepods-besteffort.slice
+
+# --- factory_workspace_sweep ---
+# Headroom sweep of ended factory runs' workspaces (gmktec root 80% used, 88G free,
+# kubelet clears DiskPressure at 15 percent free, about 68.7G). REPORT-ONLY until
+# factory_workspace_sweep_apply is true. Archives go to the ci-cache tier
+# (/var/cache/ci-runner, its own LV, not root). REVERT / KILL SWITCH: apply: false.
+factory_workspace_sweep_enabled: true
+factory_workspace_sweep_apply: true
+factory_workspace_sweep_manifest: manifest-gmktec.json
+factory_workspace_sweep_stop_free_gib: 100
+factory_workspace_sweep_kubectl: with-factory-kubeconfig kubectl
+factory_workspace_sweep_pod_scope: -n factory

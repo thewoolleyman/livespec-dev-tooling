@@ -116,6 +116,7 @@ _HP_MUST_RUN = frozenset(
         # reaches both roles there again. Reverting the trial is the same profile
         # edit back, after which these two move back to _HP_MUST_NOT_RUN.
         "factory_workspace_root",
+        "factory_workspace_sweep",
         "sandbox_image_warm",
         # The ghcr pull mirror's node half, on EVERY ci_pool node
         # (livespec-dev-tooling-e2gv6n): hp pulls CI and factory images from
@@ -147,6 +148,9 @@ _POWEREDGE_ROLES = (
     "fpart",
     "apparmor_profile",
     "factory_workspace_root",
+    # Archive-then-remove of ended runs' workspaces on the same FACTORY_NODE gate
+    # (livespec-dev-tooling-3q3xma); report-only unless a host arms it.
+    "factory_workspace_sweep",
     # The containerd warm of the factory pod image, beside the workspace root on
     # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
     "sandbox_image_warm",
@@ -239,6 +243,9 @@ _GMKTEC_ROLES = (
     "fpart",
     "apparmor_profile",
     "factory_workspace_root",
+    # Archive-then-remove of ended runs' workspaces on the same FACTORY_NODE gate
+    # (livespec-dev-tooling-3q3xma); report-only unless a host arms it.
+    "factory_workspace_sweep",
     # The containerd warm of the factory pod image, beside the workspace root on
     # the same FACTORY_NODE gate (work-item bd-ib-kogktm).
     "sandbox_image_warm",
