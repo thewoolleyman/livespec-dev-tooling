@@ -83,3 +83,27 @@ def test_every_repro_flavor_is_pinned_to_its_node_by_hostname() -> None:
     hosts = {str(f["spec"]["nodeLabels"]["kubernetes.io/hostname"]) for f in flavors}
     expected = {"gamingpc-xubuntu", "poweredge-xubuntu", "gmktec-xubuntu", "hp-xubuntu"}
     assert hosts == expected, hosts
+
+
+_BUDGET = (
+    Path(__file__).resolve().parents[2] / "ci-runner" / "k3s" / "phase2" / "node-cpu-budget.yaml"
+)
+_FLAVOR = re.compile(r"^gates-repro-(?P<node>[a-z0-9]+)-flavor$")
+
+
+def test_every_repro_flavor_quota_equals_its_nodes_budgeted_repro_cpu() -> None:
+    """A repro flavor's cpu quota is the repro lane its node's committed budget names.
+
+    The budget counts a repro gate as a CPU claim on the node, so a flavor cannot be
+    armed, raised or disarmed without the budget naming it. The values are read from
+    both files; no literal is asserted.
+    """
+    nodes: dict[str, dict[str, Any]] = yaml.safe_load(_BUDGET.read_text(encoding="utf-8"))["nodes"]
+    mismatched: dict[str, tuple[int, object]] = {}
+    for name, (cpu, _memory) in _repro_quotas().items():
+        match = _FLAVOR.match(name)
+        assert match is not None, name
+        budgeted = nodes[f"{match['node']}-xubuntu"].get("repro_cpu")
+        if budgeted != cpu:
+            mismatched[name] = (cpu, budgeted)
+    assert not mismatched, mismatched

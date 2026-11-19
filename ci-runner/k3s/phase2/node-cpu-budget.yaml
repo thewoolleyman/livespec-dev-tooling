@@ -7,6 +7,12 @@
 # with the lanes and the gate-unit annotation, in one commit (target
 # 9 / 21 / 3 / 3; NODE-CPU-BUDGET.md gives the rule).
 #
+# It also owns each node's repro lane (`repro_cpu`): the cpu quota of that node's
+# flavor in kueue/cluster-queue-repro-gates.yaml. A repro gate is a claim on the
+# node that the budget must count (2026-11-19: two repro Jobs overcommitted
+# hp-xubuntu beside two factory sandboxes), and tests/spec/test_repro_queue_arming.py
+# requires each flavor to equal it.
+#
 # It owns nothing else. Churn slots (phase0-bare-metal/profiles/<node>.env
 # ADMISSION_CAPACITY_C) and factory pod budgets (ansible/inventory/host_vars/
 # <node>.yml factory_pod_budget) live only in their own files.
@@ -22,12 +28,16 @@ nodes:
   gmktec-xubuntu:
     allocatable_cpu: 32
     gate_cpu: 10            # gates-flavor (15 -> 10, 2026-11-14)
+    repro_cpu: 10           # gates-repro-gmktec-flavor
   poweredge-xubuntu:
     allocatable_cpu: 72
     gate_cpu: 30            # gates-poweredge-flavor (30 -> 20, 2026-11-14; 20 -> 30 honest requests, 2026-11-15)
+    repro_cpu: 10           # gates-repro-poweredge-flavor
   hp-xubuntu:
     allocatable_cpu: 14.5
     gate_cpu: 0             # gates-hp-flavor (5 -> 0, 2026-11-16)
+    repro_cpu: 0            # gates-repro-hp-flavor (10 -> 0, 2026-11-19)
   gamingpc-xubuntu:
     allocatable_cpu: 12     # capacity 16; kubelet reserves take 4
     gate_cpu: 10            # gates-gamingpc-flavor (5 -> 10, 2026-11-15)
+    repro_cpu: 0            # gates-repro-gamingpc-flavor (5 -> 0, 2026-11-19)
