@@ -130,12 +130,17 @@ capture() {
 # checkout it is absent, so the first run against livespec-orchestrator-beads-fabro,
 # which names a private sibling, stopped before submitting anything with
 # `mint-private-sibling-token: ... No such file or directory` (2026-11-12 02:41Z).
+# `--no-cache` is load-bearing: uv caches the built wheel of a path dependency and
+# serves it again after the source changed, with `--refresh-package`,
+# `--reinstall-package` and `--no-cache-package` all measured to leave it stale
+# (2026-11-19: a merged `gate_repro` change was ignored and the client printed the
+# old usage). Only a full `--no-cache` rebuilds it.
 # `--with <checkout>` builds and installs this checkout as a wheel. The Python
 # version is the one the checkout pins. `python -I` is load-bearing: this runs
 # from the checkout root, and a plain `python -m` puts the working directory
 # first on sys.path, which imports the SOURCE package (no gates/ directory)
 # instead of the wheel.
-( cd "${TOOLING_ROOT}" && exec mise exec -- uv run --no-project --isolated \
+( cd "${TOOLING_ROOT}" && exec mise exec -- uv run --no-project --isolated --no-cache \
     --python "$(cat "${TOOLING_ROOT}/.python-version")" --with "${TOOLING_ROOT}" \
     python -I -m livespec_dev_tooling.gate_repro \
     --repo-root "${repo_root}" --renderer "${RENDERER}" \
