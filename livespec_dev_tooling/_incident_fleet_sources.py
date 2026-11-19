@@ -34,6 +34,7 @@ from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
 __all__: list[str] = [
     "CLAIMS_RELATIVE_PATH",
     "COMMITTED_CLAIMS",
+    "MANIFEST_FIXTURE",
     "core_head_reader",
     "core_identity_reader",
     "core_manifest_reader",
@@ -45,6 +46,16 @@ __all__: list[str] = [
 CLAIMS_RELATIVE_PATH = Path("config") / "incident-fleet-evidence.json"
 # The claims this code was released with, never a file the caller's working directory holds.
 COMMITTED_CLAIMS = Path(__file__).resolve().parents[1] / "config" / "incident-fleet-evidence.json"
+# The committed copy whose digest the claim-schema test uses.  The refresh
+# command updates it from core's default branch with the claims it can prove.
+MANIFEST_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "tests"
+    / "livespec_dev_tooling"
+    / "fixtures"
+    / "incident_fleet"
+    / "core-fleet-manifest.jsonc"
+)
 _CORE_REPOSITORY = "livespec"
 _MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
 _REQUIRED = (
