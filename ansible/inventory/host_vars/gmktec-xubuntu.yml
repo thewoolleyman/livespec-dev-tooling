@@ -197,6 +197,9 @@ k3s_config_cpu_weight: 2000
 k3s_config_system_slice_cpu_weight: 1000
 fabro_server_instances:
   - unit_name: fabro-server
+    # The committed workflow-pin mirror maps every catalog image here to this
+    # member's release-fan-out image inventory.
+    workflow_pin_member: livespec-orchestrator-beads-fabro
     home_dir: /home/cwoolley/.fabro
     port: 32276
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32276
@@ -421,6 +424,7 @@ fabro_server_instances:
           # `Server config reloaded`; a pod already running keeps its image.
           # ROLLBACK: image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.136.2
           image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.188.1
+          image_pin_hold: livespec-dev-tooling-nfnvvb
           # REVERT: cpu_cores: 4
           cpu_cores: 6
           memory_mb: 7629
@@ -457,6 +461,7 @@ fabro_server_instances:
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
         process_spec:
           image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+          image_pin_hold: livespec-dev-tooling-wrlwvk
           # REVERT: cpu_cores: 4
           cpu_cores: 6
           memory_mb: 7629
@@ -539,6 +544,7 @@ fabro_server_instances:
   # A change to the fleet instance's environments, providers, vault, App id,
   # concurrency or otel lands here in the same change.
   - unit_name: fabro-server-candidate
+    workflow_pin_member: livespec-orchestrator-beads-fabro
     home_dir: /home/cwoolley/.fabro-candidate
     port: 32278
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32278
@@ -671,6 +677,7 @@ fabro_server_instances:
         provider: kubernetes
       - id: livespec-ci-rust
         image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-rust-agent-v1.136.2
+        image_pin_hold: livespec-dev-tooling-wrlwvk
         cpu: 4
         memory: 8GB
       - id: livespec-ci-k8s
@@ -822,6 +829,7 @@ fabro_server_instances:
   # REVERT: remove this entry, its registry and tailscale_serve entries and its
   # sandbox_driver_kubernetes_worker_config_homes entry, then stop the unit.
   - unit_name: fabro-server-homelab-worker-arm64
+    workflow_pin_member: livespec-orchestrator-beads-fabro
     home_dir: /home/cwoolley/.fabro-homelab-worker-arm64
     port: 32279
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32279
@@ -867,6 +875,7 @@ fabro_server_instances:
           # the 1.189.0 release's -arm64 tag. The fleet instance (:32276) pins its own
           # amd64 python-agent version; roll this pin with it so the two do not diverge.
           image: ghcr.io/livespec-ai/livespec-fabro-sandbox:python-agent-v1.189.0-arm64
+          image_pin_hold: livespec-dev-tooling-a3brdf
           cpu_cores: 6
           memory_mb: 7629
     vault_secrets:
@@ -888,6 +897,7 @@ fabro_server_instances:
   # since 2026-09-12, and is published under the registry name mi-homelab
   # (group_vars/dev_hosts.yml).
   - unit_name: fabro-server-mi-homelab
+    workflow_pin_member: mi-homelab
     home_dir: /home/cwoolley/.fabro-mi-homelab
     port: 32277
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32277

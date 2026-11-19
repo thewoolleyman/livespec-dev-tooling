@@ -1,0 +1,9 @@
+{
+  "livespec-orchestrator-beads-fabro": {
+    "python-agent": "python-agent-v1.207.0",
+    "python-rust-agent": "python-rust-agent-v1.188.1"
+  },
+  "mi-homelab": {
+    "python-agent": "python-agent-v1.126.0"
+  }
+}
