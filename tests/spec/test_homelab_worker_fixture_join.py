@@ -63,13 +63,19 @@ case "$1 $2" in
     [ "$1" = "-i" ] && shift
     shift
     case "$1" in
-      cat) printf '%s\\n' "$STUB_CERT" ;;
+      cat)
+        case "$2" in
+          /run/flannel/subnet.env) printf 'FLANNEL_SUBNET=10.42.7.1/24\\n' ;;
+          *) printf '%s\\n' "$STUB_CERT" ;;
+        esac ;;
       kubectl)
         shift
         case "$1 $2" in
           "apply -f") cat >> "$s/applied.yaml"; printf -- '---\\n' >> "$s/applied.yaml" ;;
           "get configmap") printf '%s' "$STUB_CERT" ;;
-          "get node") [ -f "$s/node-registered" ] || exit 1; echo 172.18.0.4 ;;
+          "get node")
+            [ -f "$s/node-registered" ] || exit 1
+            case "$*" in *podCIDR*) printf '10.42.7.0/24' ;; *) echo 172.18.0.4 ;; esac ;;
           "get csr") : ;;
         esac ;;
     esac ;;

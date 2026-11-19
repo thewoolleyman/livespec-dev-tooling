@@ -140,6 +140,15 @@ if kubectl get node "$worker" >/dev/null 2>&1; then
   exit 0
 fi
 
+# A Node that does not exist yet must not find pods already bound to its name:
+# they would keep the removed Node's pod subnet when the name registers again.
+leftover="$(kubectl get pods --all-namespaces --field-selector "spec.nodeName=$worker" \
+  -o 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' |
+  awk 'NF { print $1 }')" ||
+  die "could not read the pods bound to Node name $worker through kubectl; no token was minted"
+[ -z "$leftover" ] ||
+  die "Node $worker is not registered but pods bound to that name still exist: $(printf '%s' "$leftover" | tr '\n' ' '). Run homelab-worker/remove-worker.sh $host and wait for them to be gone; no token was minted"
+
 "$hw/enrollment/mint-bootstrap-token.sh" "$host" "$api_server" "$server_ca" "$tmp/enrollment"
 
 converge
@@ -157,6 +166,39 @@ until kubectl get node "$worker" >/dev/null 2>&1; do
 done
 say "Node $worker registered"
 refresh_pod_span_endpoint
+
+# network_of: read "a.b.c.d/len" on stdin, print its network "a.b.c.0/len".
+network_of() {
+  awk -F'[./]' 'NF == 5 {
+    ip = $1 * 16777216 + $2 * 65536 + $3 * 256 + $4
+    block = 2 ^ (32 - $5)
+    n = int(ip / block) * block
+    printf "%d.%d.%d.%d/%d\n", int(n / 16777216) % 256, int(n / 65536) % 256, int(n / 256) % 256, n % 256, $5
+  }'
+}
+
+# The pod CIDR the cluster assigned the Node must be the subnet the worker's
+# flannel agent holds; a rejoined Node that kept an older subnet leaves the
+# pod network split.
+verify_pod_subnet() {
+  local waited=0 cidr flannel subnet
+  while :; do
+    cidr="$(kubectl get node "$worker" -o 'jsonpath={.spec.podCIDR}' 2>/dev/null || true)"
+    flannel="$(in_vm docker exec "$worker" cat /run/flannel/subnet.env 2>/dev/null |
+      sed -n 's/^FLANNEL_SUBNET=//p' | sed -n 1p || true)"
+    subnet=""
+    [ -z "$flannel" ] || subnet="$(printf '%s\n' "$flannel" | network_of)"
+    if [ -n "$cidr" ] && [ "$cidr" = "$subnet" ]; then
+      say "pod CIDR $cidr of Node $worker matches the worker's flannel subnet"
+      return
+    fi
+    [ "$waited" -lt "$wait_seconds" ] ||
+      die "Node $worker's pod CIDR (${cidr:-unset}) and the worker's flannel subnet (${subnet:-${flannel:-unset}}) still differ after ${wait_seconds}s"
+    sleep "$poll"
+    waited=$((waited + poll))
+  done
+}
+verify_pod_subnet
 
 waited=0
 until "$hw/enrollment/approve-serving-csr.sh" "$host" | grep '^approve-serving-csr: approved ' >/dev/null; do

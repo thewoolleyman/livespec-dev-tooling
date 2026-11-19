@@ -53,7 +53,13 @@ printf 'kubectl %s\\n' "$*" >> "$s/calls.log"
 case "$1 $2" in
   "apply -f") cat >> "$s/applied.yaml"; printf -- '---\\n' >> "$s/applied.yaml" ;;
   "get configmap") printf '%s' "$STUB_CERT" ;;
-  "get node") [ -f "$s/node-registered" ] || exit 1; echo 10.99.0.4 ;;
+  "get pods") cat "$s/bound-pods" 2>/dev/null ;;
+  "get node")
+    [ -f "$s/node-registered" ] || exit 1
+    case "$*" in
+      *podCIDR*) cat "$s/pod-cidr" 2>/dev/null || printf '10.42.7.0/24' ;;
+      *) echo 10.99.0.4 ;;
+    esac ;;
   "get nodes") : ;;
   "get csr") : ;;
 esac
@@ -68,6 +74,9 @@ case "$1 $2" in
   "docker exec")
     case "$*" in
       *"ip -4 -o addr show dev cni0") cat "$s/cni0" 2>/dev/null ;;
+      *"cat /run/flannel/subnet.env")
+        printf 'FLANNEL_NETWORK=10.42.0.0/16\\nFLANNEL_SUBNET=%s\\n' \
+          "$(cat "$s/flannel-subnet" 2>/dev/null || printf '10.42.7.1/24')" ;;
     esac ;;
   "bash -s")
     cat > "$s/converge-stdin"
@@ -283,3 +292,41 @@ def test_a_rerun_for_a_registered_node_still_converges_its_enrollment(env: _Env)
     result = _run(env=env, args=_args(env))
     assert result.returncode == 0, result.stderr
     assert "enroll alpha-homelab-worker" in _calls(env=env)
+
+
+def test_pods_still_bound_to_the_removed_nodes_name_refuse_the_join_before_any_token_is_minted(
+    env: _Env,
+) -> None:
+    (env.state / "bound-pods").write_text(
+        "arc-runners/runner-abc EphemeralRunner\nci/bare-pod\n", encoding="utf-8"
+    )
+    result = _run(env=env, args=_args(env))
+    assert result.returncode != 0
+    assert "arc-runners/runner-abc ci/bare-pod" in result.stderr
+    assert "no token was minted" in result.stderr
+    assert not (env.state / "applied.yaml").exists() or "bootstrap-token-" not in (
+        env.state / "applied.yaml"
+    ).read_text(encoding="utf-8")
+    assert not list(env.state.glob("delivered-*"))
+    assert [c for c in _calls(env=env) if " bash -s -- " in c] == []
+
+
+def test_a_pod_cidr_that_differs_from_the_flannel_subnet_fails_the_join_naming_both(
+    env: _Env,
+) -> None:
+    (env.state / "pod-cidr").write_text("10.42.9.0/24", encoding="utf-8")
+    (env.state / "flannel-subnet").write_text("10.42.7.1/24", encoding="utf-8")
+    result = _run(env=env, args=_args(env))
+    assert result.returncode != 0
+    assert "10.42.9.0/24" in result.stderr
+    assert "10.42.7.0/24" in result.stderr
+    assert "still differ" in result.stderr
+    assert "serving certificate approved" not in result.stdout
+
+
+def test_a_matching_pod_cidr_and_flannel_subnet_is_reported_and_the_join_continues(
+    env: _Env,
+) -> None:
+    result = _run(env=env, args=_args(env))
+    assert "pod CIDR 10.42.7.0/24 of Node alpha-homelab-worker matches" in result.stdout
+    assert "no serving CSR" in result.stderr

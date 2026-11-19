@@ -21,7 +21,13 @@
 #      it could not stop.
 #   2. The kubelet is stopped inside the worker container. An absent or
 #      stopped container has no kubelet to stop.
-#   3. The Node object is deleted, if present.
+#   3. The Node object is deleted, if present, and the script then waits until
+#      no pod bound to the Node's name remains in the API (a read shows none),
+#      for up to WAIT_SECONDS (default 900, at least 15 minutes). Pods bound to
+#      the deleted Node's name are garbage-collected by the API; a worker that
+#      registers again under the same name before they are gone keeps them and
+#      their pod subnet. When the bound passes with a pod still present the
+#      script exits non-zero naming each one, before any credential is cleared.
 #   4. In the VM, under --state-root (default /mnt/lima-hwdata/worker), only
 #      what makes a rejoin take the fresh path is cleared:
 #        kubelet/kubeconfig              the node kubeconfig (kubelet.service,
@@ -48,6 +54,8 @@ prog="remove-worker"
 hw="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$hw/hosts}"
 worker_queues="${WORKER_QUEUES_CONVERGE:-$hw/../ci-runner/k3s/phase2/kueue/converge-worker-queues.sh}"
+wait_seconds="${WAIT_SECONDS:-900}"
+poll="${POLL_SECONDS:-10}"
 
 die() {
   printf '%s: %s\n' "$prog" "$*" >&2
@@ -137,6 +145,27 @@ if [ "$node_present" = 1 ]; then
 else
   say "Node $worker is not registered; nothing to delete"
 fi
+
+# bound_pods: the pods bound to the Node's name, one namespace/name per line.
+# A failed read is an error, never an empty answer.
+bound_pods() {
+  local listing
+  listing="$(kubectl get pods --all-namespaces --field-selector "spec.nodeName=$worker" \
+    -o 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')" ||
+    return 1
+  printf '%s\n' "$listing" | awk 'NF { print $1 }'
+}
+waited=0
+while :; do
+  remaining="$(bound_pods)" ||
+    die "could not read the pods bound to Node name $worker through kubectl after deleting it; no credential was cleared, run $prog again"
+  [ -n "$remaining" ] || break
+  [ "$waited" -lt "$wait_seconds" ] ||
+    die "pods bound to Node name $worker still exist ${wait_seconds}s after the Node was deleted: $(printf '%s' "$remaining" | tr '\n' ' '). No credential was cleared; run $prog again once they are gone"
+  sleep "$poll"
+  waited=$((waited + poll))
+done
+say "no pod is bound to Node name $worker"
 
 in_vm rm -rf -- \
   "$state_root/kubelet/kubeconfig" \
