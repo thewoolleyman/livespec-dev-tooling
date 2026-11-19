@@ -106,7 +106,24 @@ def _partition(
     return rebound, rereads
 
 
-def refresh(  # noqa: PLR0911
+def _failed(*, reason: str) -> RefreshResult:
+    return RefreshResult(rebound=(), needs_consumer_reread=(), failure=reason)
+
+
+def _claim_entries(
+    *, document: dict[str, object] | None, claims: tuple[CapabilityEvidence, ...]
+) -> list[dict[str, object]] | None:
+    """Return the raw claim entries only when they still pair one-to-one with the parsed claims."""
+    entries = document.get("evidence") if document is not None else None
+    if not isinstance(entries, list):
+        return None
+    raw = cast("list[object]", entries)
+    if len(raw) != len(claims) or not all(isinstance(entry, dict) for entry in raw):
+        return None
+    return cast("list[dict[str, object]]", raw)
+
+
+def refresh(
     *,
     claims_path: Path,
     manifest_fixture_path: Path,
@@ -121,39 +138,15 @@ def refresh(  # noqa: PLR0911
     """
     manifest_text = read_manifest()
     if manifest_text is None:
-        return RefreshResult(
-            rebound=(), needs_consumer_reread=(), failure="core manifest read unavailable"
-        )
+        return _failed(reason="core manifest read unavailable")
     claims_result = load_claims(path=claims_path)
     if isinstance(claims_result, Failure):
-        return RefreshResult(
-            rebound=(),
-            needs_consumer_reread=(),
-            failure=f"committed claims unreadable: {claims_result.failure()}",
-        )
+        return _failed(reason=f"committed claims unreadable: {claims_result.failure()}")
     document = _document(path=claims_path)
-    entries_value = document.get("evidence") if document is not None else None
     claims = claims_result.unwrap()
-    if not isinstance(entries_value, list):
-        return RefreshResult(
-            rebound=(),
-            needs_consumer_reread=(),
-            failure="committed claims changed while being read",
-        )
-    entries = cast("list[object]", entries_value)
-    if len(entries) != len(claims):
-        return RefreshResult(
-            rebound=(),
-            needs_consumer_reread=(),
-            failure="committed claims changed while being read",
-        )
-
-    if not all(isinstance(entry, dict) for entry in entries):
-        return RefreshResult(
-            rebound=(),
-            needs_consumer_reread=(),
-            failure="committed claims changed while being read",
-        )
+    entries = _claim_entries(document=document, claims=claims)
+    if entries is None:
+        return _failed(reason="committed claims changed while being read")
 
     identity = _digest(text=manifest_text)
     candidates = tuple(replace(claim, manifest_sha256=identity) for claim in claims)
@@ -161,11 +154,7 @@ def refresh(  # noqa: PLR0911
         read_manifest=read_manifest, claims=candidates, read_serving=read_serving
     )
     if not report.audit.rows or report.audit.manifest_sha256 != identity:
-        return RefreshResult(
-            rebound=(),
-            needs_consumer_reread=(),
-            failure="core manifest changed or could not be authenticated during refresh",
-        )
+        return _failed(reason="core manifest changed or could not be authenticated during refresh")
 
     reasons = {
         (row.repository, row.surface): row.reason
@@ -175,7 +164,7 @@ def refresh(  # noqa: PLR0911
     row_keys = {(row.repository, row.surface) for row in report.audit.rows}
     rebound, rereads = _partition(
         claims=claims,
-        entries=cast("list[dict[str, object]]", entries),
+        entries=entries,
         identity=identity,
         reasons=reasons,
         row_keys=row_keys,
