@@ -662,9 +662,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a planned power-off evacuation moves a cordoned node's listener pods and leaves its other pods",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml evacuate action against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
-    "work_item": "livespec-dev-tooling-pojsfk"
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_evacuation_moves_listener_pods_and_leaves_other_pods"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -678,25 +676,19 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node is refused for a node that reads Ready",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a Ready node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
-    "work_item": "livespec-dev-tooling-pojsfk"
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_clear_lost_is_refused_for_a_node_that_reads_ready"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: clearing a lost node force-deletes its stuck listener pods and reports each pod it cleared",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml clear-lost action on a lost node against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
-    "work_item": "livespec-dev-tooling-pojsfk"
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_clear_lost_force_deletes_stuck_listener_pods_and_reports_each"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an uncordon whose node confirmation is absent or names another node changes nothing",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading, driving the committed ansible/k3s-window-drain.yml cordon and uncordon actions against a stateful kubectl stand-in. The play and its unit-tier tests (tests/livespec_dev_tooling/test_k3s_window_drain_playbook.py) landed in livespec-dev-tooling#4404; those tests do not carry the integration tier. livespec-dev-tooling-pojsfk owns it.",
-    "work_item": "livespec-dev-tooling-pojsfk"
+    "test": "tests.livespec_dev_tooling.test_k3s_window_drain_integration.test_uncordon_with_absent_or_other_node_confirmation_changes_nothing"
   },
   {
     "spec_root": "SPECIFICATION",
