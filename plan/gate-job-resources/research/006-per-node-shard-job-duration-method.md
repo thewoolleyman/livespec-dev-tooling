@@ -7,13 +7,19 @@ coverage (50220c1db).
 
 ## Method
 
-1. GitHub: for every non-release-please run since the window start, list jobs and take the step whose name contains
-   `per-file-coverage`; keep `runner_name`, step start and end.
+1. GitHub: for every non-release-please run since the window start, list jobs and take the WORK step: a name that
+   starts with `just coverage-shard` (the orchestrator's four shard jobs run `just coverage-shard N 4`) or equals
+   `just check-per-file-coverage` (this repository's full step). Matching on `per-file-coverage` alone is WRONG: it
+   also hits the few-second "Publish this shard's coverage data" step of each orchestrator shard job. Keep
+   `runner_name`, step start and end, and the job name.
 2. Honeycomb (`metrics` dataset, MCP key, see `.ai/honeycomb-query-credential.md`): MAX of `k8s.pod.cpu.usage`
    broken down by `k8s.pod.name`, `k8s.node.name`, filtered to pods ending `-workflow`, in ONE-HOUR windows. A
    single wide window overflows the ~100-group cap. This maps runner pod name (minus `-workflow`) to node.
-3. Join on runner pod. Drop steps shorter than one minute (a skipped or instantly failing step is not a sample).
-   Print n, median, p90, min, max per node, and the unmapped count.
+3. Join on runner pod. Keep only steps that started after the 15:03Z shard weight change, with conclusion `success`.
+   Drop steps shorter than one minute (a skipped or instantly failing step is not a sample). Compare nodes only
+   WITHIN one job family (orchestrator shard job, or this repository's full step): the two families do different
+   work, so a pooled median compares unlike things. Print n, median, p90, min, max per node and family, and the
+   unmapped count.
 
 About 8 Honeycomb queries per read, against a budget near 100 per hour.
 
@@ -39,7 +45,7 @@ for repo,rid,br,ev in out:
     except Exception as e: continue
     for j in d["jobs"]:
         for s in j.get("steps",[]):
-            if s["name"].lower().find("per-file-coverage")>=0 and s.get("started_at") and s.get("completed_at"):
+            if (s["name"].startswith("just coverage-shard") or s["name"]=="just check-per-file-coverage") and s.get("started_at") and s.get("completed_at"):
                 res.append(dict(repo=repo,run=rid,br=br,job=j["name"],runner=j.get("runner_name"),st=s["started_at"],en=s["completed_at"],concl=s["conclusion"],step=s["name"],jst=j["started_at"]))
 json.dump(res,open("jobs.json","w"))
 print(len(res))
@@ -102,21 +108,23 @@ for n,v in sorted(d.items()):
 print("unmapped",un,"total",len(jobs))
 ```
 
-## Read taken 2026-11-18 ~21:20Z (steps from 15:05Z to 18:55Z)
+## Read taken 2026-11-18 (corrected ~22:05Z)
 
-| node | n | median min | p90 min |
-|---|---|---|---|
-| gamingpc-xubuntu | 3 | 15.7 | 15.9 |
-| gmktec-xubuntu | 14 | 16.9 | 19.3 |
-| poweredge-xubuntu | 7 | 31.3 | 32.0 |
-| hp-xubuntu | 0 | - | - |
+The first version of this note (livespec-dev-tooling#5045) joined the wrong step for the orchestrator shard jobs, so
+it showed hp with no real samples and concluded the trigger could not be read. That was wrong. With the step names
+above, per job family (min, median / p90, n):
 
-36 of 66 steps are unmapped (the pod's `-workflow` metric was not in the windows queried).
+| node | orchestrator shard job | dev-tooling full step |
+|---|---|---|
+| gamingpc-xubuntu | 3.9 / 6.1, n=27 | 15.7, n=3 |
+| gmktec-xubuntu | 4.9 / 7.5, n=61 | 16.2 / 19.0, n=14 |
+| hp-xubuntu | 7.7 / 9.5, n=23 | 21.8, n=1 |
+| poweredge-xubuntu | 8.8 / 11.7, n=55 | 30.8 / 32.0, n=7 |
 
-**The trigger cannot be read.** hp has no step of one minute or more in the window; its two mapped samples were
-0.3 minutes. The revert condition needs 5. Nothing here says hp is slow or fast. The only comparison the data does
-support is that poweredge runs about 1.85x gmktec on the same step.
+**The hp weight-40 revert trigger did not fire.** hp's median is 0.88x poweredge's, and hp's p90 (9.5) is below
+poweredge's (11.7) at n=23. hp runs shards, and runs them faster than poweredge. Whether hp receives them by design
+is not established.
 
-Next read: after hp has 5 real samples, rerun the three steps with a later window; if hp stays at zero real samples
-after several hours of running pods, find out why hp pods run no full shard (affinity, queue order, or the step
-skipping) before reading any median.
+**poweredge is the slow node**, about 1.8x gmktec on both job families. Speed order matches single-thread speed
+(poweredge Xeon E5-2696 v3 3.8 GHz max; hp Ryzen 4700G 3.6; gmktec Ryzen AI MAX+ 395 5.2; gamingpc 9800X3D 5.3).
+That is a correlation: no controlled single-thread benchmark has run.
