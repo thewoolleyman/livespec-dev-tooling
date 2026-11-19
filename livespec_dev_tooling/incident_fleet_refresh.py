@@ -8,6 +8,7 @@ own row still classifies are written back to the committed claims file.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -151,6 +152,7 @@ def refresh(
     entries = _claim_entries(document=document, claims=claims)
     if entries is None:
         return _failed(reason="committed claims changed while being read")
+    audited = copy.deepcopy(document)
 
     identity = _digest(text=manifest_text)
     candidates = tuple(replace(claim, manifest_sha256=identity) for claim in claims)
@@ -173,6 +175,11 @@ def refresh(
         reasons=reasons,
         row_keys=row_keys,
     )
+
+    # Every claim field outside the rebound manifest bindings must still be the
+    # audited snapshot, or this write would revert a replacement nothing audited.
+    if _document(path=claims_path) != audited:
+        return _failed(reason="committed claims changed during refresh")
 
     # The fixture records the exact committed core text that supplied the new
     # identity.  It is updated even when some claims need a later consumer read.
