@@ -4625,5 +4625,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: check-no-workflow-edits run against a real git diff of runs-on-only edits (admitted) and a deleted step (refused, naming the line), next to the existing guard tests (spec-first, revise v252 of workflow-edit-additive-means-logically-additive). livespec-dev-tooling-hz4dkk owns it.",
     "work_item": "livespec-dev-tooling-hz4dkk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory workspace sweep keeps what it cannot prove finished and preserved",
+    "test": "TODO",
+    "reason": "Spec-first (v254): a real test at the integration tier or above is owed for this heading, driving the committed workspace sweep in apply mode and in report-only mode over a fixture /srv/factory-workspaces holding a blocked item's directory, a directory whose tenant cannot be read, a directory under 24 hours old, and a dirty directory of a finished item. livespec-dev-tooling-iwvy4u owns it.",
+    "work_item": "livespec-dev-tooling-iwvy4u"
   }
 ]
