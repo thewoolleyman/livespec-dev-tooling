@@ -151,6 +151,8 @@ def publish(
 ) -> tuple[int, str]:
     """Publish once; the exit code and the line naming what the controller answered."""
     try:
+        if _AUDIENCE_VARIABLE in environ and not environ[_AUDIENCE_VARIABLE]:
+            return 1, _AUDIENCE_VARIABLE + " is empty; refusing before contacting the controller"
         value = strict_json(text=aggregate, limit=1_000_000)
         if not isinstance(value, dict) or cast("dict[str, Any]", value).get("status") != "passed":
             return 1, "the aggregate did not pass; nothing was published"

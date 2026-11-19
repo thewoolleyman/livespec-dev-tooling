@@ -188,8 +188,15 @@ incident_observer_ci_publisher_shas: []
 # ids are this installation's own inventory entry. Both are read where the policy
 # is rendered (tasks/converge.yml), never spelled here.
 # The OIDC audience the publisher requests and this installation pins. The
-# caller sets the same value as its LIVESPEC_INCIDENT_CI_AUDIENCE variable.
-incident_observer_ci_audience: "livespec-incident-observer:{{ incident_observer_repository }}"
+# role converges the same value into every caller's LIVESPEC_INCIDENT_CI_AUDIENCE
+# repository variable after the observer is serving, restoring any deletion or
+# drift on every apply.
+incident_observer_ci_audience_prefix: "livespec-incident-observer:"
+incident_observer_ci_audience: "{{ incident_observer_ci_audience_prefix }}{{ incident_observer_repository }}"
+incident_observer_ci_audience_variable: LIVESPEC_INCIDENT_CI_AUDIENCE
+# Repository-variable writes use the provisioning credential already configured
+# for the operator's login, never the observer's controller or recovery App.
+incident_observer_ci_audience_provisioner_user: "{{ ansible_user | default('ubuntu') }}"
 incident_observer_ci_identity_policy_path: /etc/livespec-incident/ci-identity.json
 # The forge's signing keys, fetched at every apply. A forge key rotation is
 # remedied by re-applying the role (README, "Rotating the CI issuer keys").
