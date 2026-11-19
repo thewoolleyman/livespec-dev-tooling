@@ -21,6 +21,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 __all__: list[str] = []
 
 _Json = dict[str, Any]
@@ -28,6 +30,9 @@ _Json = dict[str, Any]
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "factory-budget-admission"
 _RECONCILE = _DIR / "reconcile-factory-budget-admit.sh"
+_WORKER_READINESS = (
+    _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "kueue" / "worker-lane-readiness.py"
+)
 _SERVICE = _DIR / "reconcile-factory-budget-admit.service"
 _PLAY = _REPO_ROOT / "ansible" / "ci-pool.yml"
 _SELECTOR_DEFAULTS = (
@@ -58,6 +63,8 @@ def _node(
     alloc: str = "32",
     arch: str | None = None,
     worker: bool = False,
+    ready: str = "True",
+    unreachable: bool = False,
     factory: bool = True,
 ) -> _Json:
     labels = {"kubernetes.io/hostname": name}
@@ -69,7 +76,17 @@ def _node(
         labels["kubernetes.io/arch"] = arch
     if worker:
         labels["homelab-worker.livespec.dev/class"] = "worker"
-    return {"metadata": {"name": name, "labels": labels}, "status": {"allocatable": {"cpu": alloc}}}
+    taints = (
+        [{"key": "node.kubernetes.io/unreachable", "effect": "NoSchedule"}] if unreachable else []
+    )
+    return {
+        "metadata": {"name": name, "labels": labels},
+        "spec": {"taints": taints},
+        "status": {
+            "allocatable": {"cpu": alloc},
+            "conditions": [{"type": "Ready", "status": ready}],
+        },
+    }
 
 
 def _sandbox(
@@ -119,6 +136,7 @@ def _run(
         "KUBECONFIG": str(tmp_path / "kubeconfig"),
         "FACTORY_BUDGET_FILE": str(budget_file),
         "FACTORY_BUDGET_GATE": gate,
+        "WORKER_LANE_READINESS_HELPER": str(_WORKER_READINESS),
         "HOME": str(tmp_path),
     }
     argv = ["bash", str(_RECONCILE)] + (["--dry-run"] if dry_run else [])
@@ -190,6 +208,22 @@ def test_a_container_worker_takes_the_class_wide_budget(tmp_path: Path) -> None:
     run, labels = _run(second, nodes=nodes, pods=full, budgets=budgets)
     assert run.returncode == 0, run.stderr
     assert _label(worker, "false") in labels
+
+
+@pytest.mark.parametrize("state", [{"ready": "Unknown"}, {"unreachable": True}])
+def test_a_departed_worker_is_excluded_from_factory_admission(
+    tmp_path: Path, state: dict[str, object]
+) -> None:
+    worker = "departed-homelab-worker"
+    run, labels = _run(
+        tmp_path,
+        nodes=[_node(_GMK), _node(worker, worker=True, **state)],
+        pods=[],
+        budgets=f"{_GMK} 6\n@container-worker 1\n",
+    )
+    assert run.returncode == 0, run.stderr
+    assert _label(worker, "false") in labels
+    assert f"NOT_READY node={worker} excluded from the worker factory lane" in run.stdout
 
 
 def test_the_class_wide_budget_never_applies_to_a_fleet_node(tmp_path: Path) -> None:

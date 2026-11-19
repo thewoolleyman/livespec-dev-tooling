@@ -1,0 +1,11 @@
+# Rebuild worker Kueue quotas from the Ready worker set.  The script owns the
+# one readiness classification shared by gates, CI runner, and factory lanes;
+# this unit names no individual host so enrollment remains declarative.
+[Unit]
+Description=Reconcile homelab worker Kueue quotas after worker readiness changes
+After=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/kueue/converge-worker-queues.sh

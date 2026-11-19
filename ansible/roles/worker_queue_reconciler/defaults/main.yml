@@ -1,0 +1,8 @@
+---
+# worker_queue_reconciler: the server re-renders Kueue's worker gate and CI
+# quotas from Node readiness. The timer is intentionally fleet-wide: a worker
+# can depart or rejoin without an inventory edit, hostname, or operator step.
+worker_queue_reconciler_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+worker_queue_reconciler_unit_dir: /etc/systemd/system
+worker_queue_reconciler_service: reconcile-worker-queues.service
+worker_queue_reconciler_timer: reconcile-worker-queues.timer

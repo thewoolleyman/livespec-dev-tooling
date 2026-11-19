@@ -125,6 +125,11 @@ ci_converge_unit_files:
   - src: kueue/converge-worker-queues.sh
     dest: kueue/converge-worker-queues.sh
     mode: "0755"
+  # The one Node readiness classifier shared by the worker queue converge and
+  # factory admission. A departed worker must leave every worker lane together.
+  - src: kueue/worker-lane-readiness.py
+    dest: kueue/worker-lane-readiness.py
+    mode: "0755"
   - src: kueue/worker/cluster-queue-livespec-dev-tooling-arm64.yaml
     dest: kueue/worker/cluster-queue-livespec-dev-tooling-arm64.yaml
     mode: "0644"

@@ -1,0 +1,36 @@
+---
+# worker_queue_reconciler runs after ci_converge_unit has installed the Kueue
+# artifact tree. It arms the control-plane timer that applies the shared worker
+# readiness rule to gates, CI runner, and factory admission without naming a
+# worker, address, or host value.
+
+- name: Check whether the worker queue reconciler service is already installed
+  ansible.builtin.stat:
+    path: "{{ worker_queue_reconciler_unit_dir }}/{{ worker_queue_reconciler_service }}"
+  register: worker_queue_reconciler_service_present
+  become: true
+
+- name: Install the worker queue reconciler service and timer
+  ansible.builtin.copy:
+    src: >-
+      {{ worker_queue_reconciler_phase2_dir }}/kueue/{{ item }}
+    dest: "{{ worker_queue_reconciler_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ worker_queue_reconciler_service }}"
+    - "{{ worker_queue_reconciler_timer }}"
+  become: true
+  notify: Reload systemd for the worker queue reconciler
+
+- name: Publish a changed worker queue unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the worker queue reconciler timer
+  ansible.builtin.systemd_service:
+    name: "{{ worker_queue_reconciler_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or worker_queue_reconciler_service_present.stat.exists
