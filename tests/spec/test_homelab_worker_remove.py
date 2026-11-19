@@ -46,8 +46,15 @@ case "$1 $2" in
     [ ! -f "$s/node" ] || printf '%s %s' "$3" "$(<"$s/node")" ;;
   "get pods")
     [ "$KUBECTL_FAILS" != pods ] || { echo "Connection closed" >&2; exit 255; }
+    if [ -f "$s/node-deleted" ] && [ -f "$s/linger-reads" ]; then
+      n="$(<"$s/linger-reads")"
+      if [ "$n" -le 0 ]; then rm -f "$s/pods" "$s/linger-reads"; else echo $((n - 1)) > "$s/linger-reads"; fi
+    fi
     cat "$s/pods" 2>/dev/null ;;
-  "delete node") rm -f "$s/node" ;;
+  "delete node")
+    rm -f "$s/node"
+    : > "$s/node-deleted"
+    [ -f "$s/linger-reads" ] || [ -f "$s/pods-linger" ] || rm -f "$s/pods" ;;
 esac
 exit 0
 """
@@ -131,6 +138,7 @@ def _run(
     args: list[str] | None = None,
     kubectl_fails: str = "",
     vm_unreachable: bool = False,
+    wait_seconds: str = "0",
 ) -> subprocess.CompletedProcess[str]:
     return run_under_hang_guard(
         [
@@ -147,6 +155,8 @@ def _run(
             "WORKER_QUEUES_CONVERGE": str(env.bin_dir / "worker-queues"),
             "KUBECTL_FAILS": kubectl_fails,
             "VM_UNREACHABLE": "1" if vm_unreachable else "",
+            "WAIT_SECONDS": wait_seconds,
+            "POLL_SECONDS": "1",
         },
         check=False,
     )
@@ -248,6 +258,7 @@ def test_the_removal_ends_with_the_join_command_that_rejoins_the_worker(env: _En
 
 def test_a_rerun_with_the_node_already_gone_still_clears_and_converges(env: _Env) -> None:
     (env.state / "node").unlink()
+    (env.state / "pods").unlink()
     result = _run(env=env)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "not registered" in result.stdout
@@ -314,3 +325,32 @@ def test_bad_arguments_are_refused_before_any_cluster_or_vm_call(
     assert result.returncode != 0
     assert message in result.stderr
     assert _calls(env=env) == []
+
+
+def test_a_removal_waits_for_the_pods_bound_to_the_deleted_node_and_exits_zero_once_they_are_gone(
+    env: _Env,
+) -> None:
+    (env.state / "linger-reads").write_text("2", encoding="utf-8")
+    result = _run(env=env, wait_seconds="30")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"no pod is bound to Node name {_WORKER}" in result.stdout
+    reads = [c for c in _calls(env=env) if c.startswith("kubectl get pods") and "nodeName" in c]
+    assert len(reads) >= 3
+    assert _index(env=env, fragment="kubectl delete node") < max(
+        i for i, c in enumerate(_calls(env=env)) if "nodeName" in c
+    )
+    assert any(" rm " in c for c in _calls(env=env))
+
+
+def test_pods_still_bound_after_the_bound_fail_the_removal_naming_each_and_clear_nothing(
+    env: _Env,
+) -> None:
+    (env.state / "pods-linger").touch()
+    result = _run(env=env, wait_seconds="0")
+    assert result.returncode != 0
+    assert "kube-system/flannel-x" in result.stderr
+    assert "ci/done-job-x" in result.stderr
+    assert "No credential was cleared" in result.stderr
+    assert not [c for c in _calls(env=env) if " rm " in c]
+    assert "worker-queues" not in _calls(env=env)
+    assert all((env.root / name).exists() for name in _CLEARED)
