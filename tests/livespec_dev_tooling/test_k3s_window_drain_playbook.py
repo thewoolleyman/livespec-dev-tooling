@@ -283,6 +283,11 @@ def test_the_pod_read_asks_for_the_fields_the_selection_rests_on() -> None:
     assert "--all-namespaces" in script
 
 
+def test_the_nodes_read_escapes_the_always_on_label_dot_with_one_backslash() -> None:
+    assert "{.metadata.labels.ci-runner\\.io/always-on}" in _pod_script()
+    assert "ci-runner\\\\.io" not in _pod_script()
+
+
 def _pod_script() -> str:
     task = _task(name=_POD_TASK)
     body = task.split("        cmd: |\n", 1)[1].split("\n      become: true", 1)[0]
@@ -308,6 +313,15 @@ case "$1 $2" in
       echo 'stand-in kubectl: the nodes read failed' >&2
       exit 1
     fi
+    # Real kubectl reads the label only when the dot in its key is escaped with
+    # exactly one backslash; any other template reads no label at all.
+    case "$*" in
+      *'{.metadata.labels.ci-runner\.io/always-on}'*) ;;
+      *)
+        echo 'stand-in kubectl: the nodes template cannot read ci-runner.io/always-on' >&2
+        exit 1
+        ;;
+    esac
     cat "${STAND_IN_DIR}/nodes"
     ;;
   'get pods')
