@@ -81,7 +81,12 @@ metadata:
 spec:
   hard:
     requests.cpu: "84"
-    requests.memory: 171470Mi
+    # 25 SLOTS (2026-11-19, plan gate-job-resources, throughput-plans-coordinator
+    # ruling R301): the fleet cap of 20 plus 5 for ended-run sandboxes retained
+    # under Scenario 281 or not yet deleted. 25 x 7630Mi = 190750Mi. ./DERIVATION.md
+    # "Retained ended-run sandboxes (2026-11-19)". REVERT (one apply of
+    # ansible/ci-pool.yml --tags ci_factory_quota): requests.memory: 171470Mi
+    requests.memory: 190750Mi
     # REQUEST 3 / LIMIT 6 (2026-11-05, bd-ib-zl3qcz): the fleet's sandboxes
     # request 3 cpu and may burst to 6, so the limit total is 20 runs x 6 = 120
     # while requests.cpu stays 84. ./DERIVATION.md "Request 3, limit 6".
@@ -89,8 +94,10 @@ spec:
     # 21 x 6 = 126 (2026-11-12): one 6-cpu slot over the fleet cap of 20, so a
     # small limits-bearing pod beside 20 sandboxes cannot refuse the 20th.
     # ./DERIVATION.md "One limits slot over the fleet cap". REVERT: limits.cpu: "120"
-    limits.cpu: "126"
-    limits.memory: 181710Mi
+    # 25 x 6 = 150 (2026-11-19). REVERT: limits.cpu: "126"
+    limits.cpu: "150"
+    # 25 x 7630Mi = 190750Mi (2026-11-19). REVERT: limits.memory: 181710Mi
+    limits.memory: 190750Mi
     pods: "42"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
