@@ -1337,6 +1337,11 @@ omit = [
     # dispatcher's sandbox (unset COVERAGE_PROCESS_START in that wrapper);
     # revert this line once it lands there.
     "/workspace/.livespec-gh-refresh/*",
+    # The factory's current Codex setup installs the same token helper below
+    # the agent's plugin root. It is dispatcher-owned code, not this
+    # repository's first-party source; omit it for the same reason as the
+    # legacy workspace path above.
+    "/root/.claude/plugins/livespec-gh-refresh/*",
 ]
 
 [tool.coverage.report]

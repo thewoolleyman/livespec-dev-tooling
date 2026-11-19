@@ -81,6 +81,8 @@ import re
 import sys
 from pathlib import Path
 
+from livespec_dev_tooling.fabro_catalog_image_pins import catalog_pin_issues as _catalog_pin_issues
+
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
@@ -387,6 +389,7 @@ def main() -> int:
             workflow_source=(cwd / _CI_WORKFLOW_PATH).read_text(encoding="utf-8"),
         )
     )
+    issues.extend(_catalog_pin_issues(cwd=cwd))
     if issues:
         for issue in issues:
             log.error("fabro sandbox image pin out of lockstep", issue=issue)
