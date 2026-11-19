@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.226.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.225.0...v1.226.0) (2026-11-19)
+
+
+### Features
+
+* **gate_repro:** a command after -- is rendered as one encoded --repro-command flag (livespec-dev-tooling-z66x7t) ([3b0ee30](https://github.com/livespec-ai/livespec-dev-tooling/commit/3b0ee30ff9652a8674d6bd810ea7d5013cc736f5))
+* **gates:** the renderer takes one encoded --repro-command and gate-repro passes the words after -- (livespec-dev-tooling-z66x7t) ([b756698](https://github.com/livespec-ai/livespec-dev-tooling/commit/b756698f40ad43cd9b4bc2329d896b3192b40301))
+
+
+### Bug Fixes
+
+* **gates:** gate-repro builds its client with --no-cache so a changed gate_repro is not ignored (livespec-dev-tooling-z66x7t) ([094e56d](https://github.com/livespec-ai/livespec-dev-tooling/commit/094e56d35dab16dcda209da4824db4b711a5519c))
+
 ## [1.225.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.224.0...v1.225.0) (2026-11-19)
 
 
