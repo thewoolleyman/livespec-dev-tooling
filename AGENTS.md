@@ -231,7 +231,10 @@ The files:
 - Read `.ai/herdr-tab-placement.md` before creating a herdr tab that has to sit
   in a particular position, or before concluding herdr cannot move a tab.
   `tab create` appends at the end. `tab.move` exists in the socket API, not in
-  the `herdr tab` CLI (corrected by the maintainer, 2026-10-26).
+  the `herdr tab` CLI (corrected by the maintainer, 2026-10-26), and before
+  placing or auditing which workspace a seat's tab lives in: it is the workspace
+  named for the seat's repo, except throughput-improvements tabs (maintainer,
+  2026-11-19).
 - Read `.ai/coordinator-duties.md` before directing other seats as a
   coordinator, before stating what a burn or spend fix is worth, before
   retrying any check that failed intermittently, or before waiting on a seat's
