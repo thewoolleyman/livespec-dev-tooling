@@ -443,12 +443,9 @@
           always_on_listener_destinations() {
             local name state cordoned always_on names=''
             while IFS='|' read -r name state cordoned always_on; do
-              # The two-field form is only the static test stand-in's legacy
-              # node table. Kubernetes' jsonpath above always emits all fields.
               if test "${state}" = 'True' && test "${name}" != "${node}" \
                 && { test -z "${cordoned}" || test "${cordoned}" != 'true'; } \
-                && { { test -z "${cordoned}" && test -z "${always_on}"; } \
-                  || test "${always_on}" = 'true'; }; then
+                && test "${always_on}" = 'true'; then
                 names+=" ${name}"
               fi
             done <<< "${1}"

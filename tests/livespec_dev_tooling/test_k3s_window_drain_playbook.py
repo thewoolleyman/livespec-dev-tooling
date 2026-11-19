@@ -408,7 +408,7 @@ def _run(
     kubelet_confirms: bool = True,
     owner_recreates: bool = True,
     replacement_phase: str = "Running",
-    nodes: str = "node-a|True\nnode-b|True\n",
+    nodes: str = "node-a|True|true|true\nnode-b|True|false|true\n",
     nodes_read_fails: str = "",
 ) -> _Outcome:
     stand_in = tmp_path / "stand-in"
@@ -627,7 +627,7 @@ def test_a_replacement_on_a_node_that_is_not_ready_does_not_meet_the_post_condit
         node_state="true|True",
         pods=_PODS,
         wait_seconds="0",
-        nodes="node-a|True\nnode-b|Unknown\nnode-c|True\n",
+        nodes="node-a|True|true|true\nnode-b|Unknown|false|true\nnode-c|True|false|true\n",
     )
     assert outcome.returncode == 1, outcome
     assert outcome.deletes() != []
@@ -843,7 +843,7 @@ def test_evacuate_refuses_when_no_other_node_is_ready(*, tmp_path: Path) -> None
         action="evacuate",
         node_state="true|True",
         pods=_PODS,
-        nodes="node-a|True\nnode-b|Unknown\n",
+        nodes="node-a|True|true|true\nnode-b|Unknown|false|true\n",
     )
     assert outcome.returncode == 1, outcome
     assert "no other node is Ready" in outcome.stderr
@@ -863,7 +863,7 @@ def test_evacuate_refuses_before_deleting_when_no_ready_uncordoned_always_on_nod
         # The node list is name, Ready, cordoned, always-on.  node-b is Ready,
         # but cannot take the listener because it does not carry the always-on
         # label; node-a is the cordoned node being evacuated.
-        nodes="node-a|True|true|true\nnode-b|True|false|\n",
+        nodes="node-a|True|true|true\nnode-b|True||\n",
     )
     assert outcome.returncode == 1, outcome
     assert "arc-systems/overseer-listener" in outcome.stderr
