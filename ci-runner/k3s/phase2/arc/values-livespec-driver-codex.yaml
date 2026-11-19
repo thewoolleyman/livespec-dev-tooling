@@ -51,6 +51,17 @@ listenerTemplate:
   spec:
     nodeSelector:
       ci-runner.io/always-on: "true"
+    tolerations:
+      - key: livespec.io/factory-pressure
+        operator: Exists
+        effect: PreferNoSchedule
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: runner-scale-set-listener
     containers:
       - name: listener
 
