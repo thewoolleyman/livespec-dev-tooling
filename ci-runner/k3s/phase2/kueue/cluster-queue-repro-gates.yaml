@@ -131,25 +131,10 @@ spec:
             # count. No seat still needs the reproduction route; its code is
             # retired by a follow-up work item under the same plan. Until then
             # `just gate-repro` cannot admit, by design.
-            #
-            # ARMED ONE UNIT 2026-11-19 (livespec-dev-tooling-ybqgri; plan
-            # gate-job-resources; requested by ci-runtime-and-cost under
-            # legacy-coordinator-agent's REPRODUCE-LOCALLY-FIRST). The flaky
-            # test_a_stalled_gate_reaps_a_descendant_that_started_its_own_session
-            # must be reproduced in the CI image under load (about 12 bounded
-            # busy loops, 30 repeats, one Job), and that load must not land on
-            # a shared node (gmktec, poweredge, hp). Kueue's per-node fit admits
-            # the repro Job only while the node has 5 cpu of free requests, so
-            # it delays a real gate by at most one repro's length.
-            #
-            # END CONDITION: revert this flavor to 0 / 0Gi in the same normal
-            # pull-request path as soon as the ybqgri reproduction result is
-            # recorded on livespec-dev-tooling-ybqgri. REVERT: set both quotas
-            # below back to zero (and repro_cpu in node-cpu-budget.yaml to 0).
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 0
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 0Gi
         - name: gates-repro-poweredge-flavor
           resources:
             # ARMED: ONE gate unit (5 cpu / 8Gi, gates-cq's gate-unit
