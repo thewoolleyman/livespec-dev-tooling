@@ -46,7 +46,11 @@ case "$1 $2" in
     [ ! -f "$s/node" ] || printf '%s %s' "$3" "$(<"$s/node")" ;;
   "get pods")
     [ "$KUBECTL_FAILS" != pods ] || { echo "Connection closed" >&2; exit 255; }
-    cat "$s/pods" 2>/dev/null ;;
+    if [ -f "$s/node" ]; then
+      cat "$s/pods" 2>/dev/null
+    else
+      cat "$s/post-delete-pods" 2>/dev/null
+    fi ;;
   "delete node") rm -f "$s/node" ;;
 esac
 exit 0
@@ -131,6 +135,7 @@ def _run(
     args: list[str] | None = None,
     kubectl_fails: str = "",
     vm_unreachable: bool = False,
+    pod_gc_wait_seconds: str = "900",
 ) -> subprocess.CompletedProcess[str]:
     return run_under_hang_guard(
         [
@@ -147,6 +152,7 @@ def _run(
             "WORKER_QUEUES_CONVERGE": str(env.bin_dir / "worker-queues"),
             "KUBECTL_FAILS": kubectl_fails,
             "VM_UNREACHABLE": "1" if vm_unreachable else "",
+            "POD_GC_WAIT_SECONDS": pod_gc_wait_seconds,
         },
         check=False,
     )
@@ -257,6 +263,19 @@ def test_a_rerun_with_the_node_already_gone_still_clears_and_converges(env: _Env
     again = _run(env=env)
     assert again.returncode == 0, again.stdout + again.stderr
     assert _calls(env=env)[-1] == "worker-queues"
+
+
+def test_removal_names_pods_that_outlive_its_post_deletion_wait(env: _Env) -> None:
+    (env.state / "post-delete-pods").write_text(
+        "kube-system/flannel-stale Running DaemonSet\n"
+        "kube-system/kube-proxy-stale Running DaemonSet\n",
+        encoding="utf-8",
+    )
+    result = _run(env=env, pod_gc_wait_seconds="0")
+    assert result.returncode != 0
+    assert "kube-system/flannel-stale" in result.stderr
+    assert "kube-system/kube-proxy-stale" in result.stderr
+    assert (env.root / "kubelet/kubeconfig").exists()
 
 
 @pytest.mark.parametrize("container", [None, "false\n"])

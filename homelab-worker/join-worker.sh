@@ -93,6 +93,72 @@ in_vm() {
   limactl shell --workdir / "$worker" sudo "$@"
 }
 
+worker_pods() {
+  kubectl get pods --all-namespaces --field-selector "spec.nodeName=$worker" \
+    -o 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}'
+}
+
+node_pod_cidr() {
+  kubectl get node "$worker" -o 'jsonpath={.spec.podCIDR}'
+}
+
+flannel_subnet() {
+  in_vm docker exec "$worker" awk -F= \
+    '$1 == "FLANNEL_SUBNET" { print $2; exit }' /run/flannel/subnet.env
+}
+
+cidr_network() {
+  local cidr="$1" address prefix a b c d bits mask octet network
+  case "$cidr" in
+    *.*.*.*/*) ;;
+    *) return 1 ;;
+  esac
+  address="${cidr%/*}"
+  prefix="${cidr##*/}"
+  IFS=. read -r a b c d <<<"$address"
+  for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" =~ ^[0-9]+$ ]] || return 1
+    [ "$octet" -le 255 ] || return 1
+  done
+  [[ "$prefix" =~ ^[0-9]+$ ]] || return 1
+  [ "$prefix" -le 32 ] || return 1
+  bits="$prefix"
+  network=""
+  for octet in "$a" "$b" "$c" "$d"; do
+    if [ "$bits" -ge 8 ]; then
+      mask=255
+    elif [ "$bits" -le 0 ]; then
+      mask=0
+    else
+      mask=$((256 - (1 << (8 - bits))))
+    fi
+    network="${network}${network:+.}$((10#$octet & mask))"
+    bits=$((bits - 8))
+  done
+  printf '%s/%s\n' "$network" "$prefix"
+}
+
+wait_for_matching_pod_subnet() {
+  local waited=0 node_cidr flannel_cidr node_network flannel_network
+  while :; do
+    node_cidr="$(node_pod_cidr)" ||
+      die "could not read pod CIDR from Node $worker through kubectl"
+    flannel_cidr="$(flannel_subnet)" ||
+      die "could not read the flannel subnet from worker $worker"
+    node_network="$(cidr_network "$node_cidr" || true)"
+    flannel_network="$(cidr_network "$flannel_cidr" || true)"
+    if [ -n "$node_network" ] && [ "$node_network" = "$flannel_network" ]; then
+      say "Node $worker pod CIDR $node_cidr matches flannel subnet $flannel_cidr"
+      return
+    fi
+    if [ "$waited" -ge "$wait_seconds" ]; then
+      die "Node $worker pod CIDR ${node_cidr:-<empty>} and flannel subnet ${flannel_cidr:-<empty>} still differ after ${wait_seconds}s"
+    fi
+    sleep "$poll"
+    waited=$((waited + poll))
+  done
+}
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 chmod 0700 "$tmp"
@@ -140,6 +206,11 @@ if kubectl get node "$worker" >/dev/null 2>&1; then
   exit 0
 fi
 
+stale_pods="$(worker_pods)" ||
+  die "could not read pods bound to absent Node $worker through kubectl; no bootstrap credential was issued"
+[ -z "$stale_pods" ] ||
+  die "pods are still bound to absent Node $worker; no bootstrap credential was issued: $stale_pods"
+
 "$hw/enrollment/mint-bootstrap-token.sh" "$host" "$api_server" "$server_ca" "$tmp/enrollment"
 
 converge
@@ -156,6 +227,7 @@ until kubectl get node "$worker" >/dev/null 2>&1; do
   waited=$((waited + poll))
 done
 say "Node $worker registered"
+wait_for_matching_pod_subnet
 refresh_pod_span_endpoint
 
 waited=0
