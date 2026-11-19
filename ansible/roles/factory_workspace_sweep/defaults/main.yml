@@ -1,0 +1,32 @@
+---
+# factory_workspace_sweep — archive-then-remove of ended factory runs'
+# workspaces under the factory workspace root on a node whose root filesystem is
+# under disk pressure (poweredge-xubuntu, 2026-11-19: 152G of 196G).
+#
+# KILL SWITCH / REVERT: report-only is the default. Set
+# factory_workspace_sweep_apply: false (or remove it) to stop removing; archives
+# already written stay under factory_workspace_sweep_archive_dir and can be
+# restored with `zstd -dc <archive> | tar -C <the workspace root> -xf -`.
+factory_workspace_sweep_enabled: false
+factory_workspace_sweep_apply: false
+# The committed manifest this host applies (a file under files/); per-host manifests
+# are named manifest-<host>.json. Installed on the host as manifest.json.
+factory_workspace_sweep_manifest: manifest.json
+# The one declared path, never respelled here: the workspace-root naming guard
+# (test_factory_workspace_root_not_reclaimed) allows only the declaring role to name it.
+factory_workspace_sweep_root: "{{ factory_workspace_root_path }}"
+# On the ci-cache tier (its own LV, not root). The storage sweeper removes only
+# pvc-* directories under the workvols tier, so it never touches this path.
+factory_workspace_sweep_archive_dir: /var/cache/ci-runner/factory-workspace-archive
+# kubelet evicts at nodefs.available<5% with a 10% minimum-reclaim, so the
+# condition holds until free space reaches 15% of the root (about 29.4G on a
+# 196G root); 30 GiB is that plus margin.
+factory_workspace_sweep_stop_free_gib: 30
+factory_workspace_sweep_min_age_hours: 24
+factory_workspace_sweep_lib_dir: /usr/local/lib/factory-workspace-sweep
+# How the host lists pods to prove no pod references a workspace. A k3s server node
+# uses its own kubectl over every namespace; an agent node that hosts a Fabro server
+# (gmktec) uses the committed factory credential, which is scoped to the `factory`
+# namespace where sandbox pods live. A failure to list keeps every directory.
+factory_workspace_sweep_kubectl: k3s kubectl
+factory_workspace_sweep_pod_scope: -A
