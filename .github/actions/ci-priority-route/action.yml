@@ -1,0 +1,21 @@
+name: ci-priority-route
+description: Resolve a CI run's band from the coordinator-owned priority record.
+
+inputs:
+  ci-priority-record:
+    description: The CI_PRIORITY_RECORD repository variable.
+    required: true
+
+outputs:
+  band:
+    description: The highest band for a work item named by this run.
+    value: ${{ steps.route.outputs.band }}
+
+runs:
+  using: composite
+  steps:
+    - id: route
+      shell: bash
+      env:
+        INPUT_CI_PRIORITY_RECORD: ${{ inputs.ci-priority-record }}
+      run: node "${{ github.action_path }}/route.js"
