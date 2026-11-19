@@ -47,6 +47,12 @@ class RefreshResult:
         return not self.failure and not self.needs_consumer_reread
 
 
+_DUPLICATE_REASON = (
+    "another claim already names this consumer and surface, so this claim's own evidence "
+    "was never independently read"
+)
+
+
 def _atomic_write(*, path: Path, text: str) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
@@ -70,6 +76,34 @@ def _unclassified_reason(*, claim: CapabilityEvidence, rows: dict[tuple[str, str
         (claim.repository, claim.surface),
         "the refreshed manifest no longer names this consumer and surface",
     )
+
+
+def _partition(
+    *,
+    claims: tuple[CapabilityEvidence, ...],
+    entries: list[dict[str, object]],
+    identity: str,
+    reasons: dict[tuple[str, str], str],
+    row_keys: set[tuple[str, str]],
+) -> tuple[list[CapabilityEvidence], list[tuple[CapabilityEvidence, str]]]:
+    """Rebind each independently proved claim's entry; list every other claim for a re-read."""
+    rebound: list[CapabilityEvidence] = []
+    rereads: list[tuple[CapabilityEvidence, str]] = []
+    # The audit judges one row per (repository, surface), so only the first
+    # claim for a key has had its own evidence read; later duplicates have not.
+    judged: set[tuple[str, str]] = set()
+    for claim, entry in zip(claims, entries, strict=True):
+        key = (claim.repository, claim.surface)
+        if key in judged:
+            rereads.append((claim, _DUPLICATE_REASON))
+            continue
+        judged.add(key)
+        if key in reasons or key not in row_keys:
+            rereads.append((claim, _unclassified_reason(claim=claim, rows=reasons)))
+            continue
+        entry["manifest_sha256"] = identity
+        rebound.append(replace(claim, manifest_sha256=identity))
+    return rebound, rereads
 
 
 def refresh(  # noqa: PLR0911
@@ -114,6 +148,13 @@ def refresh(  # noqa: PLR0911
             failure="committed claims changed while being read",
         )
 
+    if not all(isinstance(entry, dict) for entry in entries):
+        return RefreshResult(
+            rebound=(),
+            needs_consumer_reread=(),
+            failure="committed claims changed while being read",
+        )
+
     identity = _digest(text=manifest_text)
     candidates = tuple(replace(claim, manifest_sha256=identity) for claim in claims)
     report = run_fleet_audit(
@@ -132,25 +173,13 @@ def refresh(  # noqa: PLR0911
         if row.disposition == "unclassified"
     }
     row_keys = {(row.repository, row.surface) for row in report.audit.rows}
-    rebound: list[CapabilityEvidence] = []
-    rereads: list[tuple[CapabilityEvidence, str]] = []
-    for claim, raw_entry in zip(claims, entries, strict=True):
-        if not isinstance(raw_entry, dict):
-            return RefreshResult(
-                rebound=(),
-                needs_consumer_reread=(),
-                failure="committed claims changed while being read",
-            )
-        entry = cast("dict[str, object]", raw_entry)
-        reason = _unclassified_reason(claim=claim, rows=reasons)
-        if (claim.repository, claim.surface) in reasons or (
-            claim.repository,
-            claim.surface,
-        ) not in row_keys:
-            rereads.append((claim, reason))
-            continue
-        entry["manifest_sha256"] = identity
-        rebound.append(replace(claim, manifest_sha256=identity))
+    rebound, rereads = _partition(
+        claims=claims,
+        entries=cast("list[dict[str, object]]", entries),
+        identity=identity,
+        reasons=reasons,
+        row_keys=row_keys,
+    )
 
     # The fixture records the exact committed core text that supplied the new
     # identity.  It is updated even when some claims need a later consumer read.
