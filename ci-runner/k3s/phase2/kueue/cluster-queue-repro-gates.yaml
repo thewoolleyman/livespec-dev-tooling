@@ -49,7 +49,7 @@
 # hostname nodeSelector on the Job, and Kueue assigns only the flavor whose
 # nodeLabels agree with it, so the Job is admitted through that node's quota and
 # runs only there. A flavor is ZERO unless armed (hp-xubuntu, poweredge-xubuntu
-# and gmktec-xubuntu are each armed at one gate unit; gamingpc is armed at one unit TEMPORARILY from 2026-11-19, see its flavor below for the end condition): arming a node means
+# and gmktec-xubuntu are each armed at one gate unit; gamingpc stays at zero): arming a node means
 # raising ITS flavor to one gate unit in a separate pull request, which belongs
 # to plan gate-job-resources' per-node CPU budget (a repro gate is a second
 # 5 cpu / 8Gi claim on a node whose budget does not count it), and reverting
@@ -131,28 +131,10 @@ spec:
             # count. No seat still needs the reproduction route; its code is
             # retired by a follow-up work item under the same plan. Until then
             # `just gate-repro` cannot admit, by design.
-            #
-            # ARMED ONE UNIT 2026-11-19 (livespec-dev-tooling-wg4a2x; plan
-            # gate-job-resources; legacy-coordinator-agent ruling). The
-            # intermittent replay-suite failures happen ONLY on this node: 5
-            # kernel memcg OOM kills of pytest-xdist workers in 24 h here, none
-            # on gmktec, hp or poweredge gate pods, and the pods that were killed
-            # held 7.7-7.9 GiB against the 8Gi limit. A repro on another node
-            # cannot show it, and what holds that memory is measured only by a
-            # per-process sampler in a whole-gate Job HERE. This adds no
-            # permanent gate: Kueue's per-node fit (the gates-hostname Topology)
-            # admits a repro Job only while the node has 5 cpu of free requests,
-            # so it can delay a real gate by at most one repro's length and never
-            # overcommits the 12 allocatable cpu.
-            #
-            # END CONDITION: revert this flavor to 0 / 0Gi in the same normal
-            # pull-request path as soon as the memory cause is measured and
-            # recorded on livespec-dev-tooling-wg4a2x. REVERT: set both quotas
-            # below back to zero.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 0
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 0Gi
         - name: gates-repro-poweredge-flavor
           resources:
             # ARMED: ONE gate unit (5 cpu / 8Gi, gates-cq's gate-unit
