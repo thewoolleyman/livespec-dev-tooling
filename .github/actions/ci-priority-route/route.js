@@ -26,23 +26,29 @@ function writeSummary(reason) {
   }
 }
 
-function validTimestamp(value) {
+function validTimestamp(value, now = Date.now()) {
   if (typeof value !== "string") {
     return false;
   }
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && Date.now() - timestamp <= MAX_RECORD_AGE_MILLISECONDS;
+  return (
+    Number.isFinite(timestamp) &&
+    timestamp <= now &&
+    now - timestamp <= MAX_RECORD_AGE_MILLISECONDS
+  );
 }
 
-function parseRecord(text) {
+function parseRecord(text, now = Date.now()) {
   try {
     const record = JSON.parse(text);
     if (
       !record ||
       record.schema !== 1 ||
-      !validTimestamp(record.generated_at) ||
-      typeof record.radar_commit !== "string" ||
-      !record.radar_commit ||
+      !validTimestamp(record.generated_at, now) ||
+      !(
+        (typeof record.radar_commit === "string" && record.radar_commit) ||
+        (typeof record.source === "string" && record.source)
+      ) ||
       !record.items ||
       Array.isArray(record.items) ||
       typeof record.items !== "object" ||
@@ -54,6 +60,15 @@ function parseRecord(text) {
       if (!Object.hasOwn(BAND_ORDER, band)) {
         return null;
       }
+    }
+    if (
+      record.plan_rank !== undefined &&
+      (Array.isArray(record.plan_rank) ||
+        !record.plan_rank ||
+        typeof record.plan_rank !== "object" ||
+        Object.values(record.plan_rank).some((rank) => !Number.isInteger(rank)))
+    ) {
+      return null;
     }
     return record;
   } catch {
@@ -73,7 +88,7 @@ function eventItemIds(eventName, event) {
   if (eventName === "push") {
     return itemIds(
       (event.commits || [])
-        .map((commit) => commit.message || "")
+        .map((commit) => (commit.message || "").split(/\r?\n/, 1)[0])
         .join("\n"),
     );
   }
@@ -100,7 +115,7 @@ function readEvent() {
 }
 
 function route({ env = process.env, now = Date.now } = {}) {
-  const record = parseRecord(env.INPUT_CI_PRIORITY_RECORD || "");
+  const record = parseRecord(env.INPUT_CI_PRIORITY_RECORD || "", now());
   if (!record) {
     return { band: DEFAULT_BAND, reason: "normal lane selected: priority record is missing or unreadable" };
   }
