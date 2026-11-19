@@ -1,0 +1,136 @@
+---
+- name: Refuse an incomplete token-spend report route
+  ansible.builtin.assert:
+    that:
+      - token_spend_report_user | string | length > 0
+      - token_spend_report_group | string | length > 0
+      - token_spend_report_root | string | length > 0
+      - token_spend_report_scripts_dir | string | length > 0
+      - token_spend_report_source_checkout | string | length > 0
+      - token_spend_report_source_path | string | length > 0
+      - token_spend_report_source_sha is match('^[0-9a-f]{40}$')
+      - token_spend_report_scripts | length > 0
+      - token_spend_report_scripts.values() | reject('match', '^[0-9a-f]{64}$') | list | length == 0
+    fail_msg: >-
+      token-spend report account, destination, a 40-hex source commit and a
+      64-hex SHA-256 per script must be declared.
+    success_msg: token-spend report route is complete
+
+- name: Create a scratch directory on the control node
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: token-spend-report-
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+  register: token_spend_report_scratch
+
+- name: Extract the pinned scripts from the control node's vps-info clone
+  # `git archive` at the pinned commit: a missing commit fails here, and a
+  # branch name is not a commit, so nothing floating can be read.
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ token_spend_report_source_checkout }}"
+      - archive
+      - --format=tar
+      - "--output={{ token_spend_report_scratch.path }}/source.tar"
+      - "{{ token_spend_report_source_sha }}"
+      - "{{ token_spend_report_source_path }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Unpack the pinned scripts
+  ansible.builtin.unarchive:
+    src: "{{ token_spend_report_scratch.path }}/source.tar"
+    dest: "{{ token_spend_report_scratch.path }}"
+    remote_src: true
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Digest the extracted scripts on the control node
+  ansible.builtin.stat:
+    path: "{{ token_spend_report_scratch.path }}/{{ token_spend_report_source_path }}/{{ item.key }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  loop: "{{ token_spend_report_scripts | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: token_spend_report_extracted
+
+- name: Refuse any extracted script that differs from its pinned digest
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == item.item.value
+    fail_msg: >-
+      {{ item.item.key }} at {{ token_spend_report_source_sha }} does not match
+      its pinned SHA-256; nothing was installed.
+    success_msg: "{{ item.item.key }} matches its pinned SHA-256"
+  loop: "{{ token_spend_report_extracted.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Create the token-spend script directory
+  ansible.builtin.file:
+    path: "{{ token_spend_report_scripts_dir }}"
+    state: directory
+    owner: "{{ token_spend_report_user }}"
+    group: "{{ token_spend_report_group }}"
+    mode: "0755"
+  become: true
+
+- name: Install the verified token-spend scripts
+  # Copies only bytes the digest assertion above has already accepted; a
+  # VPS-local edit can never become the source of a later apply.
+  ansible.builtin.copy:
+    src: "{{ token_spend_report_scratch.path }}/{{ token_spend_report_source_path }}/{{ item.key }}"
+    dest: "{{ token_spend_report_scripts_dir }}/{{ item.key }}"
+    owner: "{{ token_spend_report_user }}"
+    group: "{{ token_spend_report_group }}"
+    mode: "0755"
+  become: true
+  loop: "{{ token_spend_report_scripts | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Read back installed token-spend script digests
+  # A host read, not a copy result: the bytes visible at the live destination.
+  ansible.builtin.stat:
+    path: "{{ token_spend_report_scripts_dir }}/{{ item.key }}"
+    checksum_algorithm: sha256
+  become: true
+  loop: "{{ token_spend_report_scripts | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: token_spend_report_readback
+
+- name: Assert installed token-spend bytes equal the pinned digests
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == item.item.value
+    fail_msg: >-
+      {{ item.item.key }} on {{ inventory_hostname }} differs from its pinned
+      SHA-256 after apply.
+    success_msg: "{{ item.item.key }} on {{ inventory_hostname }} matches its pinned SHA-256"
+  loop: "{{ token_spend_report_readback.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Remove the control-node scratch directory
+  ansible.builtin.file:
+    path: "{{ token_spend_report_scratch.path }}"
+    state: absent
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  changed_when: false
