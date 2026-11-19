@@ -112,7 +112,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
     --argjson jqueue "$jqueue_ms" '
     {traceId:$trace, spanId:$span, parentSpanId:$parent, name:$name, kind:1,
      startTimeUnixNano:$start, endTimeUnixNano:$end,
-     attributes:[
+     attributes:([
        {key:"repo",value:{stringValue:$repo}},
        {key:"ci.run_id",value:{intValue:($run_id|tostring)}},
        {key:"ci.run_attempt",value:{intValue:($run_attempt|tostring)}},
@@ -123,7 +123,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
        {key:"ci.job.queue_ms",value:{intValue:($jqueue|tostring)}}
      ] + (if $runner_name == "" then [] else
        [{key:"ci.runner_name",value:{stringValue:$runner_name}}]
-     end),
+     end)),
      status:{code:$code}}')"
   job_spans="$(jq -c ". + [$span]" <<<"$job_spans")"
 done < <(jq -r '.jobs[] | [.databaseId, .name, (.conclusion // ""), (.startedAt // ""), (.completedAt // "")] | @tsv' <<<"$run_json")
