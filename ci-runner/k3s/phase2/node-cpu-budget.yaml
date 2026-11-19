@@ -40,4 +40,4 @@ nodes:
   gamingpc-xubuntu:
     allocatable_cpu: 12     # capacity 16; kubelet reserves take 4
     gate_cpu: 10            # gates-gamingpc-flavor (5 -> 10, 2026-11-15)
-    repro_cpu: 0            # gates-repro-gamingpc-flavor (5 -> 0, 2026-11-19)
+    repro_cpu: 5            # gates-repro-gamingpc-flavor (0 -> 5, 2026-11-19, ybqgri repro; revert on its end condition)
