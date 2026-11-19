@@ -78,6 +78,18 @@ all:
         macbook-air.perch-rudd.ts.net:
         macbook-m4-max.perch-rudd.ts.net:
         macmini.perch-rudd.ts.net:
+    # The homelab worker hosts (livespec-dev-tooling-qpmzxa, plan
+    # homelab-k8s-worker-nodes): macOS hosts that run a homelab worker VM and
+    # receive the committed homelab-worker scripts at a release tag from
+    # ansible/homelab-worker-scripts.yml. Its OWN group: a host also in
+    # interactive_claude_macs stays there for the memory-write guard, and no
+    # play selects this group for anything but this delivery. The inventory
+    # name is the short host name the worker's own name derives from; it is
+    # reached by ORDINARY ssh as cwoolley, never Tailscale SSH.
+    homelab_workers:
+      hosts:
+        macbook-m4-max:
+          ansible_host: macbook-m4-max.perch-rudd.ts.net
     # The credential-rotation ROLE HOLDER (livespec-overseer plan
     # central-credential-service): the one host that runs caam-delivery-push and pushes
     # credentials to the listed hosts. THE ONE PLACE the role is bound to a machine;

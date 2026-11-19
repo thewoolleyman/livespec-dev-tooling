@@ -1,0 +1,134 @@
+---
+# See defaults/main.yml and ansible/homelab-worker-scripts.yml.
+
+- name: Say plainly that nothing is changed when the confirmation does not name this host
+  ansible.builtin.debug:
+    msg: >-
+      homelab_worker_scripts_confirm is {{ homelab_worker_scripts_confirm | quote }},
+      not {{ inventory_hostname }}: nothing was read and nothing was changed.
+  when: homelab_worker_scripts_confirm != inventory_hostname
+
+- name: Stop this host here when the confirmation does not name it
+  ansible.builtin.meta: end_host
+  when: homelab_worker_scripts_confirm != inventory_hostname
+
+- name: Read the release tag HEAD sits on
+  # Local, read-only, and run under --check too: the tag is the build every
+  # host record names, so a drift run must refuse a non-tag checkout as well.
+  ansible.builtin.command:
+    argv: [git, -C, "{{ playbook_dir }}/..", describe, --tags, --exact-match, HEAD]
+  delegate_to: localhost
+  become: false
+  register: homelab_worker_scripts_describe
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    homelab_worker_scripts_describe.rc != 0
+    or homelab_worker_scripts_describe.stdout | trim
+    is not match(homelab_worker_scripts_tag_pattern)
+
+- name: Name the tag being delivered
+  ansible.builtin.set_fact:
+    homelab_worker_scripts_tag: "{{ homelab_worker_scripts_describe.stdout | trim }}"
+
+- name: Make a scratch directory for the tag's committed files on the control node
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: homelab-worker-scripts-
+  delegate_to: localhost
+  become: false
+  register: homelab_worker_scripts_scratch
+  check_mode: false
+
+- name: Deliver the tag, and always remove the control-node scratch directory
+  block:
+    - name: Extract the tag's committed files, not the working tree
+      # `git archive <tag>` reads the tag's own objects, so what is delivered is
+      # byte-identical to the tag whatever the checkout's working tree holds.
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          git -C "{{ playbook_dir }}/.." archive --format=tar {{ homelab_worker_scripts_tag | quote }}
+          -- {{ homelab_worker_scripts_paths | map('quote') | join(' ') }}
+          | tar -x -C {{ homelab_worker_scripts_scratch.path | quote }}
+        executable: /bin/bash
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      check_mode: false
+
+    - name: List the files the tag's archive extracted
+      # The scratch tree holds exactly the tag's committed files (the archive
+      # above), so listing it lists the tag's files without a second git call.
+      ansible.builtin.find:
+        paths: "{{ homelab_worker_scripts_paths | map('regex_replace', '^', homelab_worker_scripts_scratch.path ~ '/') | list }}"
+        recurse: true
+        hidden: true
+        file_type: file
+      delegate_to: localhost
+      become: false
+      register: homelab_worker_scripts_found
+      check_mode: false
+
+    - name: Fix the file and directory lists
+      ansible.builtin.set_fact:
+        homelab_worker_scripts_files: >-
+          {{ homelab_worker_scripts_found.files | map(attribute='path')
+          | map('regex_replace', '^' ~ (homelab_worker_scripts_scratch.path | regex_escape) ~ '/', '')
+          | sort | list }}
+        homelab_worker_scripts_tag_dir: "{{ homelab_worker_scripts_root }}/{{ homelab_worker_scripts_tag }}"
+
+    - name: Fix the directory list
+      ansible.builtin.set_fact:
+        homelab_worker_scripts_dirs: "{{ homelab_worker_scripts_files | map('dirname') | unique | sort | list }}"
+
+    - name: Create the root, the tag directory and every directory of the tree
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ homelab_worker_scripts_owner }}"
+        group: "{{ homelab_worker_scripts_group }}"
+        mode: "0755"
+      loop: >-
+        {{ [homelab_worker_scripts_root, homelab_worker_scripts_tag_dir]
+        + (homelab_worker_scripts_dirs | map('regex_replace', '^', homelab_worker_scripts_tag_dir ~ '/') | list) }}
+
+    - name: Deliver each committed file at its relative path
+      # `mode: preserve` keeps the executable bit the tag records. Under --diff a
+      # file that differs is reported by name.
+      ansible.builtin.copy:
+        src: "{{ homelab_worker_scripts_scratch.path }}/{{ item }}"
+        dest: "{{ homelab_worker_scripts_tag_dir }}/{{ item }}"
+        owner: "{{ homelab_worker_scripts_owner }}"
+        group: "{{ homelab_worker_scripts_group }}"
+        mode: preserve
+      loop: "{{ homelab_worker_scripts_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Record the tag beside the delivered trees
+      ansible.builtin.copy:
+        content: "{{ homelab_worker_scripts_tag }}\n"
+        dest: "{{ homelab_worker_scripts_tag_dir }}/RELEASE_TAG"
+        owner: "{{ homelab_worker_scripts_owner }}"
+        group: "{{ homelab_worker_scripts_group }}"
+        mode: "0644"
+
+    - name: Point current at this tag
+      ansible.builtin.file:
+        src: "{{ homelab_worker_scripts_tag_dir }}"
+        dest: "{{ homelab_worker_scripts_root }}/current"
+        state: link
+        force: "{{ ansible_check_mode }}"
+        # Under --check the tag directory does not exist yet, so the link has no
+        # target to prove; force only lets the dry run reach the end.
+        owner: "{{ homelab_worker_scripts_owner }}"
+        group: "{{ homelab_worker_scripts_group }}"
+  always:
+    - name: Remove the control-node scratch directory
+      ansible.builtin.file:
+        path: "{{ homelab_worker_scripts_scratch.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      check_mode: false
