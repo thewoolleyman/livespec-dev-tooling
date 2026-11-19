@@ -45,6 +45,7 @@ from livespec_dev_tooling.incident_fleet_cli import (
     production_environment,
 )
 from livespec_dev_tooling.incident_fleet_host import HostProbe
+from livespec_dev_tooling.incident_fleet_refresh import RefreshResult
 from livespec_dev_tooling.incident_fleet_serving import ServingReader
 
 # --- committed claims and core's manifest ---
@@ -502,6 +503,49 @@ def test_unreadable_claims_are_reported_and_fail_the_audit(
     _ = environment.claims_path.write_text("{", encoding="utf-8")
     assert main(argv=["audit"], environment=environment) != 0
     assert "finding\tevidence claims:" in capsys.readouterr().out
+
+
+def test_refresh_prints_rebound_claims_and_refuses_consumer_rereads(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rebound, reread = _cap_claims()[:2]
+    environment = replace(
+        _environment(tmp_path=tmp_path), manifest_fixture_path=tmp_path / "manifest.jsonc"
+    )
+    monkeypatch.setattr(
+        "livespec_dev_tooling.incident_fleet_cli.refresh",
+        lambda **_kwargs: RefreshResult(
+            rebound=(rebound,),
+            needs_consumer_reread=((reread, "serving version unreadable"),),
+        ),
+    )
+
+    assert main(argv=["refresh"], environment=environment) == 1
+    captured = capsys.readouterr()
+    assert captured.out == f"rebound\t{rebound.repository}\t{rebound.surface}\n"
+    assert captured.err == (
+        f"needs consumer re-read\t{reread.repository}\t{reread.surface}: "
+        "serving version unreadable\n"
+    )
+
+
+def test_refresh_refuses_a_missing_fixture_or_a_refresh_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environment = _environment(tmp_path=tmp_path)
+    assert main(argv=["refresh"], environment=environment) == 1
+    assert capsys.readouterr().err == "refused\tmanifest fixture path is not configured\n"
+
+    environment = replace(environment, manifest_fixture_path=tmp_path / "manifest.jsonc")
+    monkeypatch.setattr(
+        "livespec_dev_tooling.incident_fleet_cli.refresh",
+        lambda **_kwargs: RefreshResult(
+            rebound=(), needs_consumer_reread=(), failure="core manifest read unavailable"
+        ),
+    )
+
+    assert main(argv=["refresh"], environment=environment) == 1
+    assert capsys.readouterr().err == "refused\tcore manifest read unavailable\n"
 
 
 def test_enablement_enables_a_repository_on_the_fresh_ready_list(
