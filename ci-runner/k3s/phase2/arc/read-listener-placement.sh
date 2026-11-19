@@ -14,7 +14,8 @@
 #
 # WHAT IT PRINTS. One line per AutoscalingListener:
 #   <scale set>  <listener pod>  <node>  <pod state>  <verdict>
-# and then the set of nodes that carry the label.
+# and then one count line per node that carries the label. The count is
+# observational: it does not by itself make the read-back pass or fail.
 #
 # EXIT STATUS.
 #   0  every scale set's listener pod is Running on a node that carries the label
@@ -66,7 +67,10 @@ done <<< "$labelled"
 # The listener pod of each AutoscalingListener, by OWNER rather than by name.
 # A listener being replaced can briefly own two pods; the one that is not being
 # deleted wins, so a healthy replacement is not reported as Terminating.
-declare -A pod_of=() node_of=() state_of=()
+declare -A pod_of=() node_of=() state_of=() running_on=()
+for node in "${!always_on[@]}"; do
+  running_on["$node"]=0
+done
 while IFS='|' read -r pod kind owner node phase deleting; do
   [ -n "$pod" ] || continue
   [ "$kind" = "AutoscalingListener" ] || continue
@@ -103,6 +107,9 @@ while IFS='|' read -r listener scale_set; do
     verdict="ok"
   fi
   [ "$verdict" = "ok" ] || bad=$(( bad + 1 ))
+  if [ "$state" = "Running" ] && [ -n "$node" ] && [ -n "${always_on[$node]:-}" ]; then
+    running_on["$node"]=$(( running_on["$node"] + 1 ))
+  fi
   printf '%-44s %-52s %-32s %-12s %s\n' "${scale_set:-<unnamed>}" "${pod:-<none>}" "${node:-<none>}" "${state:-<none>}" "$verdict"
 done <<< "$listeners"
 
@@ -123,6 +130,10 @@ while IFS= read -r scale_set; do
 done <<< "$runner_sets"
 
 printf '\nnodes carrying %s: %s\n' "$ALWAYS_ON_LABEL" "${!always_on[*]}"
+while IFS= read -r node; do
+  [ -n "$node" ] || continue
+  printf 'listener pods running on always-on node %s: %s\n' "$node" "${running_on[$node]}"
+done < <(printf '%s\n' "${!always_on[@]}" | sort)
 
 if [ "$sets_total" -eq 0 ]; then
   echo "FAIL: ${RUNNERS_NAMESPACE} holds no AutoscalingRunnerSet, so no scale set is installed and there is no placement to confirm"
