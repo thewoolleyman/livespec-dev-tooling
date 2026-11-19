@@ -28,6 +28,11 @@
 # so the full aggregate stays the safety net.
 export skip := ""
 
+# Provisioning recipes run from the repository root while their configuration
+# belongs to the `ansible/` tree. Export the absolute path from Just's own file
+# location so every ansible command sees the committed configuration.
+export ANSIBLE_CONFIG := justfile_directory() + "/ansible/ansible.cfg"
+
 # pytest-xdist worker count, lane-aware (plan/fabro-ci-image-factoring cont.5).
 # GitHub-hosted CI (LIVESPEC_CI_LANE=hosted, set from CI_RUNNER_LABELS in
 # ci.yml) uses all cores (-n auto — GH runners are small + dedicated). The
@@ -345,6 +350,7 @@ check:
         check-ansible-hostname-free
         check-ansible-get-url-checksum
         check-ansible-authorized-keys-managed
+        check-ansible-recipes-load-config
         check-dev-host-fabro-client-bins-declared
         check-lint
         check-format
@@ -426,6 +432,13 @@ check-ansible-get-url-checksum:
 
 check-ansible-authorized-keys-managed:
     uv run pytest tests/consumer/test_authorized_keys_managed.py tests/consumer/test_authorized_keys_managed_login.py
+
+# Both provisioning recipes run from the repository root, while Ansible's
+# configuration lives in the provisioning tree. This consumer-tier check
+# confirms the recipe environment resolves that tree's config and its
+# pipelining setting with the exact pinned ansible-core.
+check-ansible-recipes-load-config:
+    uv run pytest tests/consumer/test_ansible_recipes_load_config.py
 
 # Every `dispatcher.factories.<name>.bin` this repository commits names the
 # `path` of one `fabro_client_builds` entry, so the Fabro client a Dispatcher

@@ -4246,8 +4246,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an ansible recipe run from the repository root loads the provisioning tree's configuration",
-    "test": "TODO",
-    "reason": "Spec-first (ansible-recipes-load-ansible-cfg): a real test at the integration tier or above (this repository's scenario rows run at the consumer tier, `tests.consumer`) is owed for this scenario, running each ansible recipe's invocation from the repository root and asserting the resolved config file and DEFAULT_PIPELINING; it implements check-ansible-recipes-load-config. livespec-dev-tooling-d2ysfg owns it.",
+    "test": "tests.consumer.test_ansible_recipes_load_config.test_ansible_recipes_load_the_provisioning_configuration",
+    "reason": "Consumer-tier: runs both provisioning recipes from the repository root, asserts that each resolves `ansible/ansible.cfg`, then uses that resolved configuration with the recipes' pinned ansible-core to assert `ANSIBLE_PIPELINING` is `True`; it implements `check-ansible-recipes-load-config` (livespec-dev-tooling-d2ysfg).",
     "work_item": "livespec-dev-tooling-d2ysfg"
   },
   {
