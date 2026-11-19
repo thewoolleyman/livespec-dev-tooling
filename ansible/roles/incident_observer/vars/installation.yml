@@ -29,6 +29,12 @@ incident_observer_required_jobs: "{{ incident_observer_installation_entry.requir
 incident_observer_port: "{{ incident_observer_installation_entry.port }}"
 incident_observer_tenant_project_id: "{{ incident_observer_installation_entry.tenant_project_id }}"
 incident_observer_reader_env_var: "{{ incident_observer_installation_entry.reader_env_var }}"
+# This installation's own approved publisher commits, from its inventory entry
+# (absent means none). It, never production's play-level list, decides whether
+# the installation's CI identity policy is provisioned and whether its
+# /<name>/ci/publish route is published (defaults/main.yml,
+# incident_observer_installation_routes).
+incident_observer_ci_publisher_shas: "{{ incident_observer_installation_entry.ci_publisher_shas | default([]) }}"
 incident_observer_installation_root: "{{ incident_observer_home }}/installation-{{ incident_observer_installation_name }}"
 incident_observer_config_path: "{{ incident_observer_etc_dir }}/controller-{{ incident_observer_installation_name }}.json"
 incident_observer_manifest_path: "{{ incident_observer_etc_dir }}/released-installation-{{ incident_observer_installation_name }}.json"
