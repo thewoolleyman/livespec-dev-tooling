@@ -7,7 +7,7 @@ says the path is the semver-stable identifier and "the underlying step list MAY
 change between versions", which is exactly why this asserts the declared wire
 and not the steps.
 
-Three Actions are held to their documented wire, one clause each beyond the
+Five Actions are held to their documented wire, one clause each beyond the
 shared "declares its inputs, outputs, and required permissions" rule:
 
 - **`setup`** — one optional input defaulting to `.python-version`, and no
@@ -24,6 +24,9 @@ shared "declares its inputs, outputs, and required permissions" rule:
   states (`500`, `1`, `30`, `3900`, `""`). Each default is a number a caller
   omits and therefore never sees; drifting one silently changes the budget every
   fleet workflow waits on. Its single declared output `token` is asserted too.
+- **`publish-flake-retries`** — one optional `suffix` input defaulting to the
+  empty string, and no outputs.
+- **`forge-read`** — no inputs and no outputs.
 
 `action.yml` is read as TEXT and its `inputs:` / `outputs:` blocks parsed by
 line shape rather than by a YAML parser: this library declares zero runtime
@@ -34,6 +37,7 @@ mapping GitHub itself requires.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -56,6 +60,7 @@ _FIELD_LINE = re.compile(r"^    (?P<field>[a-z-]+): ?(?P<value>.*)$")
 
 # The invocation form `run-check`'s step list must still name.
 _CHECK_INVOCATION = "python -m livespec_dev_tooling.checks."
+_FORGE_READ_POLICY_MODULE = "livespec_dev_tooling.budgeted_gh"
 
 # Each Action's documented wire: the inputs REQUIRED, the optional inputs and
 # their documented defaults, and the declared outputs.
@@ -63,6 +68,8 @@ _REQUIRED_INPUTS: dict[str, tuple[str, ...]] = {
     "setup": (),
     "run-check": ("check-name",),
     "github-rate-budget-token": ("client-id", "private-key"),
+    "publish-flake-retries": (),
+    "forge-read": (),
 }
 _DEFAULTED_INPUTS: dict[str, dict[str, str]] = {
     "setup": {"python-version-file": ".python-version"},
@@ -76,11 +83,15 @@ _DEFAULTED_INPUTS: dict[str, dict[str, str]] = {
         "max-wait-seconds": "3900",
         "jitter-seed": "",
     },
+    "publish-flake-retries": {"suffix": ""},
+    "forge-read": {},
 }
 _DECLARED_OUTPUTS: dict[str, tuple[str, ...]] = {
     "setup": (),
     "run-check": (),
     "github-rate-budget-token": ("token",),
+    "publish-flake-retries": (),
+    "forge-read": (),
 }
 
 
@@ -116,6 +127,11 @@ def _fields(*, block: str, field: str) -> dict[str, str]:
     return values
 
 
+def _entry_names(*, block: str) -> set[str]:
+    """The entry names directly declared in an Action wire block."""
+    return set(_ENTRY_NAME.findall(block))
+
+
 def test_every_shipped_composite_action_declares_its_documented_wire() -> None:
     """Each Action's required inputs, optional defaults, and outputs match the contract."""
     sources = {name: _action_source(name=name) for name in sorted(_REQUIRED_INPUTS)}
@@ -129,58 +145,45 @@ def test_every_shipped_composite_action_declares_its_documented_wire() -> None:
     )
 
     inputs = {name: _block(source=source, key="inputs") for name, source in sources.items()}
-    missing_inputs = {
-        name: sorted(
-            declared
-            for declared in (*_REQUIRED_INPUTS[name], *_DEFAULTED_INPUTS[name])
-            if declared not in set(_ENTRY_NAME.findall(inputs[name]))
-        )
-        for name in sources
+    expected_inputs = {
+        name: set(_REQUIRED_INPUTS[name]) | set(_DEFAULTED_INPUTS[name]) for name in sources
     }
-    absent = {name: names for name, names in missing_inputs.items() if names}
-    assert not absent, (
-        f"a consumer passes these Actions inputs BY NAME, so a documented input the "
-        f"Action no longer declares is a break its `uses:` step cannot see; absent={absent}"
+    declared_inputs = {name: _entry_names(block=inputs[name]) for name in sources}
+    assert declared_inputs == expected_inputs, (
+        "a consumer passes these Actions inputs BY NAME, so the declared input set "
+        f"must exactly match the documented wire; observed={declared_inputs}, "
+        f"expected={expected_inputs}"
     )
 
-    not_required = {
-        name: sorted(
-            declared
-            for declared in _REQUIRED_INPUTS[name]
-            if _fields(block=inputs[name], field="required").get(declared) != "true"
-        )
+    expected_required = {
+        name: {
+            input_name: "true" if input_name in _REQUIRED_INPUTS[name] else "false"
+            for input_name in expected_inputs[name]
+        }
         for name in sources
     }
-    relaxed = {name: names for name, names in not_required.items() if names}
-    assert not relaxed, (
-        f"an input the contract marks REQUIRED must stay required — relaxing it lets a "
-        f"caller omit it and reach the step list with an empty value; relaxed={relaxed}"
+    declared_required = {name: _fields(block=inputs[name], field="required") for name in sources}
+    assert declared_required == expected_required, (
+        "the required flags are part of the wire: a required input cannot be relaxed "
+        f"and an optional input cannot become required; observed={declared_required}, "
+        f"expected={expected_required}"
     )
 
-    drifted = {
-        f"{name}.{declared}": (observed, expected)
-        for name in sources
-        for declared, expected in _DEFAULTED_INPUTS[name].items()
-        for observed in [_fields(block=inputs[name], field="default").get(declared)]
-        if observed != expected
-    }
-    assert not drifted, (
-        f"a default is the value every caller that omits the input receives and never "
-        f"sees, so drift here silently changes behaviour fleet-wide; drifted={drifted}"
+    declared_defaults = {name: _fields(block=inputs[name], field="default") for name in sources}
+    assert declared_defaults == _DEFAULTED_INPUTS, (
+        "a default is the value every caller that omits the input receives and never "
+        f"sees, so Action defaults must exactly match the documented wire; "
+        f"observed={declared_defaults}, expected={_DEFAULTED_INPUTS}"
     )
 
-    missing_outputs = {
-        name: sorted(
-            declared
-            for declared in _DECLARED_OUTPUTS[name]
-            if declared not in set(_ENTRY_NAME.findall(_block(source=sources[name], key="outputs")))
-        )
-        for name in sources
+    declared_outputs = {
+        name: _entry_names(block=_block(source=sources[name], key="outputs")) for name in sources
     }
-    unwired_outputs = {name: names for name, names in missing_outputs.items() if names}
-    assert not unwired_outputs, (
-        f"a declared output is what a caller's downstream step reads by name; "
-        f"unwired={unwired_outputs}"
+    expected_outputs = {name: set(outputs) for name, outputs in _DECLARED_OUTPUTS.items()}
+    assert declared_outputs == expected_outputs, (
+        "a declared output is what a caller's downstream step reads by name, so the "
+        f"output set must exactly match the documented wire; observed={declared_outputs}, "
+        f"expected={expected_outputs}"
     )
 
     assert _CHECK_INVOCATION in sources["run-check"], (
@@ -188,3 +191,16 @@ def test_every_shipped_composite_action_declares_its_documented_wire() -> None:
         f"form — an Action running something else satisfies every input assertion above "
         f"while breaking every consumer's check matrix"
     )
+
+
+def test_forge_read_command_docstring_names_the_budgeted_read_policy_module() -> None:
+    """The workflow-side command names the same policy module as its Action."""
+    action_source = _action_source(name="forge-read")
+    command_path = _ACTIONS_DIR / "forge-read" / "livespec-forge-read"
+    command_source = command_path.read_text(encoding="utf-8")
+    docstring = ast.get_docstring(ast.parse(command_source))
+
+    assert _FORGE_READ_POLICY_MODULE in action_source
+    assert docstring is not None
+    assert _FORGE_READ_POLICY_MODULE in docstring
+    assert "livespec_dev_tooling._forge_policy" not in docstring

@@ -8,7 +8,7 @@ SPECIFICATION/contracts.md (its expedited incident execution rules) defines the 
 (work item livespec-dev-tooling-levu6j). This is its workflow-side definition:
 the composite Action `forge-read` puts it on the job's path, and it needs
 nothing beyond python3 and `gh`. The released incident CI entrance applies the
-same rule through livespec_dev_tooling._forge_policy, and
+same rule through livespec_dev_tooling.budgeted_gh, and
 tests/livespec_dev_tooling/test_forge_policy.py holds the two equal.
 """
 
