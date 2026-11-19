@@ -119,7 +119,10 @@
   # plugin reads tolerations from this file alone (no environment override), so a
   # worker instance needs a HOME of its own. Its sandboxes select the worker class
   # label and the architecture, name no host, and tolerate the class taint but not
-  # the admission hold, so a joined worker takes them once its hold is lifted. No
+  # the admission hold, so a joined worker takes them once its hold is lifted. They
+  # also select ci-runner.io/factory-admit=true, which the factory budget reconciler
+  # withholds from a worker whose Node is not Ready, so a departed worker takes no
+  # new factory sandbox. No
   # other HOME's file carries the toleration, so no other instance's sandbox can
   # land on a worker.
   ansible.builtin.template:
@@ -132,7 +135,8 @@
   vars:
     sandbox_driver_kubernetes_factory: "{{ item.name }}"
     sandbox_driver_kubernetes_node_selector: >-
-      {{ {'homelab-worker.livespec.dev/class': 'worker', 'kubernetes.io/arch': item.arch} }}
+      {{ {'homelab-worker.livespec.dev/class': 'worker', 'kubernetes.io/arch': item.arch,
+          'ci-runner.io/factory-admit': 'true'} }}
     sandbox_driver_kubernetes_tolerations:
       - key: homelab-worker.livespec.dev/class
         operator: Equal
