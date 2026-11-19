@@ -44,7 +44,7 @@ run_json="$(gh run view "$RUN_ID" --repo "$REPO" \
 # 24s with no way to separate queue wait from execution slowdown. The REST
 # jobs endpoint carries both; build a databaseId -> created_at map once.
 job_created_json="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --paginate \
-  -q '[.jobs[] | {id: .id, created_at: .created_at}]' | jq -sc 'add // []')"
+  -q '[.jobs[] | {id: .id, created_at: .created_at, runner_name: .runner_name}]' | jq -sc 'add // []')"
 
 trace_id="$(hex32 "$RUN_ID")"
 run_span_id="$(hex16 "$RUN_ID")"
@@ -96,6 +96,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
   # queue_ms: started_at - created_at from the REST map; 0 when the map has
   # no row (defensive: a missing row must not drop the span).
   jcreated_iso="$(jq -r --argjson id "$jid" '.[] | select(.id == $id) | .created_at // empty' <<<"$job_created_json")"
+  jrunner_name="$(jq -r --argjson id "$jid" '.[] | select(.id == $id) | .runner_name // empty' <<<"$job_created_json")"
   jqueue_ms=0
   if [ -n "$jcreated_iso" ]; then
     jcreated="$(iso_to_nanos "$jcreated_iso")"
@@ -107,7 +108,7 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
     --arg name "ci.job.$jname" --arg start "$jstart" --arg end "$jend" \
     --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson run_attempt "$run_attempt" \
     --arg jname "$jname" --arg jconcl "$jconcl" --argjson code "$jcode" \
-    --arg branch "$run_branch" --arg event "$run_event" \
+    --arg branch "$run_branch" --arg event "$run_event" --arg runner_name "$jrunner_name" \
     --argjson jqueue "$jqueue_ms" '
     {traceId:$trace, spanId:$span, parentSpanId:$parent, name:$name, kind:1,
      startTimeUnixNano:$start, endTimeUnixNano:$end,
@@ -120,7 +121,9 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
        {key:"git.branch",value:{stringValue:$branch}},
        {key:"ci.event",value:{stringValue:$event}},
        {key:"ci.job.queue_ms",value:{intValue:($jqueue|tostring)}}
-     ],
+     ] + (if $runner_name == "" then [] else
+       [{key:"ci.runner_name",value:{stringValue:$runner_name}}]
+     end),
      status:{code:$code}}')"
   job_spans="$(jq -c ". + [$span]" <<<"$job_spans")"
 done < <(jq -r '.jobs[] | [.databaseId, .name, (.conclusion // ""), (.startedAt // ""), (.completedAt // "")] | @tsv' <<<"$run_json")
