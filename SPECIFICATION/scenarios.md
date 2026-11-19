@@ -6469,3 +6469,17 @@ Then it removes none of the first three directories
 And it archives the dirty directory with a verified sha256 and records the path and digest on the item before removing it
 
 And a run in report-only mode removes and archives nothing
+
+## Scenario: an expedited repair publishes a workflow path only under a maintainer-attested scope
+
+```gherkin
+Given an authorized incident work item whose current attempt generation carries a maintainer-attested workflow path list naming exactly one workflow file
+
+When an expedited-repair commit changes that workflow file
+
+Then the incident commit hook admits the change
+
+And when the same commit also changes a second workflow file that the list does not name, the hook refuses the commit with a refusal naming the missing workflow-scoped authorization and that second path
+
+And when the attestation is not current for the attempt generation the commit binds, the hook refuses the listed path too
+```
