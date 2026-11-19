@@ -149,14 +149,20 @@ def _job_key(*, body: tuple[str, ...], key: str) -> str | None:
     return None
 
 
-def _needs(*, value: str) -> tuple[str, ...]:
-    inner = value.removeprefix("[").removesuffix("]")
-    return tuple(token.strip() for token in inner.split(",") if token.strip())
+def _needs(*, body: tuple[str, ...], value: str) -> tuple[str, ...]:
+    if value:
+        inner = value.removeprefix("[").removesuffix("]")
+        return tuple(token.strip() for token in inner.split(",") if token.strip())
+    return tuple(
+        _COMMENT.sub("", line.strip()[2:]).strip()
+        for line in _key_lines(body=body, key="needs:")
+        if line.strip().startswith("- ")
+    )
 
 
-def _matrix_lines(*, body: tuple[str, ...]) -> tuple[str, ...]:
-    """The significant lines nested under the job's `matrix:` key."""
-    starts = [index for index, line in enumerate(body) if line.strip() == "matrix:"]
+def _key_lines(*, body: tuple[str, ...], key: str) -> tuple[str, ...]:
+    """The significant lines nested under one job-level key."""
+    starts = [index for index, line in enumerate(body) if line.strip() == key]
     if not starts:
         return ()
     indent = _indent(line=body[starts[0]])
@@ -178,7 +184,7 @@ def _matrix_targets(*, body: tuple[str, ...]) -> tuple[str, ...]:
     `exclude:` add or drop legs, so any key other than `target` is underivable:
     the gate fails closed rather than counting a partial leg set.
     """
-    nested = _matrix_lines(body=body)
+    nested = _key_lines(body=body, key="matrix:")
     key_indent = min((_indent(line=line) for line in nested), default=0)
     keys = {line.strip() for line in nested if _indent(line=line) == key_indent}
     if keys != {"target:"}:
@@ -221,7 +227,7 @@ def _matrix_axes(*, body: tuple[str, ...]) -> dict[str, tuple[str, ...]] | None:
     scalars. `include:`/`exclude:`, a dynamic matrix, a duplicate key and any other value
     shape return None, so the caller treats the job's names as underivable.
     """
-    nested = _matrix_lines(body=body)
+    nested = _key_lines(body=body, key="matrix:")
     if not nested:
         return None
     key_indent = min(_indent(line=line) for line in nested)
@@ -273,7 +279,7 @@ def _suffixed_names(*, label: str, body: tuple[str, ...]) -> tuple[str, ...]:
     A job with no matrix reports the bare label; a matrix this reader does not model is
     underivable (empty), so the caller fails closed.
     """
-    if not _matrix_lines(body=body):
+    if not _key_lines(body=body, key="matrix:"):
         return (label,)
     axes = _matrix_axes(body=body)
     if axes is None:
@@ -298,7 +304,7 @@ def required_legs(*, ci_yaml_text: str, gate_job: str) -> tuple[tuple[str, tuple
     blocks = _job_blocks(ci_yaml_text=ci_yaml_text)
     gate = blocks.get(gate_job)
     needs_value = None if gate is None else _job_key(body=gate, key="needs")
-    needed = () if needs_value is None else _needs(value=needs_value)
+    needed = () if needs_value is None else _needs(body=gate or (), value=needs_value)
     needed = tuple(job for job in needed if job != GUARD_JOB)
     return tuple((job, _leg_names(job=job, body=blocks.get(job))) for job in needed)
 
