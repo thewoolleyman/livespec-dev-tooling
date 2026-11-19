@@ -32,6 +32,7 @@ from livespec_dev_tooling._incident_fleet_command import (  # noqa: E402
 )
 from livespec_dev_tooling._incident_fleet_sources import (  # noqa: E402
     COMMITTED_CLAIMS,
+    MANIFEST_FIXTURE,
     core_manifest_reader,
     load_claims,
 )
@@ -40,6 +41,7 @@ from livespec_dev_tooling.incident_fleet_host import (  # noqa: E402
     FLEET_OWNER,
     production_probe,
 )
+from livespec_dev_tooling.incident_fleet_refresh import refresh  # noqa: E402
 from livespec_dev_tooling.incident_fleet_runner import scrubbed_runner  # noqa: E402
 from livespec_dev_tooling.incident_fleet_serving import (  # noqa: E402
     ServingReader,
@@ -79,6 +81,7 @@ class CliEnvironment:
     write_enablement: EnablementWriter
     read_manifest: Callable[[], str | None]
     read_serving: ServingReader
+    manifest_fixture_path: Path | None = None
 
 
 def production_environment(*, run: CommandRunner = scrubbed_runner) -> CliEnvironment:
@@ -94,6 +97,7 @@ def production_environment(*, run: CommandRunner = scrubbed_runner) -> CliEnviro
         write_enablement=_ControllerWriter(write=enable.controller_enablement_writer()),
         read_manifest=core_manifest_reader(owner=FLEET_OWNER, run=run),
         read_serving=host_serving_reader(probe=probe),
+        manifest_fixture_path=MANIFEST_FIXTURE,
     )
 
 
@@ -119,13 +123,39 @@ def enable_repository(
     return write(repository, audit.manifest_sha256)
 
 
+def _refresh(*, environment: CliEnvironment) -> int:
+    """Refresh committed bindings, naming each claim that needs a consumer re-read."""
+    if environment.manifest_fixture_path is None:
+        _ = sys.stderr.write("refused\tmanifest fixture path is not configured\n")
+        return 1
+    result = refresh(
+        claims_path=environment.claims_path,
+        manifest_fixture_path=environment.manifest_fixture_path,
+        read_manifest=environment.read_manifest,
+        read_serving=environment.read_serving,
+    )
+    if result.failure:
+        _ = sys.stderr.write(f"refused\t{result.failure}\n")
+        return 1
+    for claim in result.rebound:
+        _ = sys.stdout.write(f"rebound\t{claim.repository}\t{claim.surface}\n")
+    for claim, reason in result.needs_consumer_reread:
+        _ = sys.stderr.write(
+            f"needs consumer re-read\t{claim.repository}\t{claim.surface}: {reason}\n"
+        )
+    return 0 if result.ok else 1
+
+
 def main(*, argv: Sequence[str], environment: CliEnvironment) -> int:
-    """Run `audit` or `enable REPOSITORY`; the exit code is the command's verdict."""
+    """Run `audit`, `refresh`, or `enable REPOSITORY`; the exit code is the verdict."""
     parser = ArgumentParser(prog="incident_fleet_cli")
     commands = parser.add_subparsers(dest="command", required=True)
     _ = commands.add_parser("audit")
+    _ = commands.add_parser("refresh")
     _ = commands.add_parser("enable").add_argument("repository")
     args = parser.parse_args(list(argv))
+    if args.command == "refresh":
+        return _refresh(environment=environment)
     claims = load_claims(path=environment.claims_path)
     report = run_fleet_audit(
         read_manifest=environment.read_manifest,
