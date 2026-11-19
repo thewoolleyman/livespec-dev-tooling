@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, replace
+from hashlib import sha256
 
 import pytest
 
+from livespec_dev_tooling._incident_inverse_types import InversePlan, LandedIncident
 from livespec_dev_tooling._incident_recovery_publication import PublicationLedger
 from tests.livespec_dev_tooling.test_incident_recovery_principal import (
     conflict_request,
@@ -33,13 +35,38 @@ def _master_untouched(world):
     return world.forge.master() == world.merge and world.forge.count("PATCH", "master") == 0
 
 
+def _unexecuted_plan(world) -> InversePlan:
+    """Build a bound wire-valid request without doing work a missing App cannot use."""
+    arm = world.intent.observer_arm
+    assert arm is not None
+    scope = LandedIncident(
+        repository=world.installation.repository,
+        pr_number=arm.pr_number,
+        original_base_sha=arm.base_sha,
+        original_head_sha=arm.head_sha,
+        before_sha=world.before,
+        merge_sha=world.merge,
+        landed_commits=(world.merge,),
+        landed_trees=(world.merge,),
+        patch_sha256="0" * 64,
+        changed_paths=("unchanged-by-refusal",),
+        authority_sha256=sha256(world.intent.registration.authority_receipt).hexdigest(),
+    )
+    return InversePlan(
+        scope=scope,
+        expected_head=world.merge,
+        tree_sha=world.merge,
+        inverse_patch=b"unexecuted-without-recovery-app",
+    )
+
+
 @pytest.mark.parametrize("operation", ["landed", "authorize", "head", "publish", "conflict"])
 def test_forge_operations_refuse_by_name_without_the_recovery_app(world, operation):
     payloads = {
         "landed": lambda: {"intent": asdict(world.intent)},
         "authorize": lambda: {"intent": asdict(world.intent), "scope": asdict(_scope(world))},
         "head": lambda: {"repository": world.installation.repository, "branch": "master"},
-        "publish": lambda: {"request": asdict(publish_request(world, plan_for(world)))},
+        "publish": lambda: {"request": asdict(publish_request(world, _unexecuted_plan(world)))},
         "conflict": lambda: {"request": asdict(conflict_request(world, head=world.merge))},
     }
     reply = world.call(operation, payloads[operation](), connect=no_app)
