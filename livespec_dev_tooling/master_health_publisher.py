@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 __all__: list[str] = ["publish_master_health"]
@@ -18,6 +19,91 @@ __all__: list[str] = ["publish_master_health"]
 _SUCCESSFUL_RESULTS = frozenset({"success", "skipped"})
 _NON_CARRIER_CONCLUSIONS = frozenset({"cancelled", "skipped", "in_progress"})
 _MAX_MASTER_HEALTH_READS = 2
+_EXTERNAL_EPISODE_LIMIT = timedelta(hours=24)
+_EXTERNAL_RED_LABEL = "master-green-external-red"
+_UNREADABLE_EPISODE_TITLE = "master-green: episode unreadable"
+
+
+def _publication_time() -> datetime:
+    """Return the UTC instant at which ci-green publishes master-health."""
+    return datetime.now(tz=timezone.utc)
+
+
+def _episode_expired(*, episode: Mapping[str, Any]) -> bool:
+    """Whether a readable episode has exceeded the external-red tolerance."""
+    started_at = episode.get("started_at")
+    if not isinstance(started_at, str):
+        return False
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if started.tzinfo is None:
+        return False
+    return _publication_time() - started.astimezone(timezone.utc) > _EXTERNAL_EPISODE_LIMIT
+
+
+def _open_issues(*, forge: Any, **query: str) -> list[Mapping[str, Any]]:
+    """Return open alert issues when this forge supports the alert seam."""
+    find_open_issues = getattr(forge, "find_open_issues", None)
+    if not callable(find_open_issues):
+        return []
+    issues: object = find_open_issues(**query)
+    if not isinstance(issues, Sequence):
+        return []
+    values = cast(Sequence[object], issues)
+    return [issue for value in values if (issue := _as_mapping(value=value)) is not None]
+
+
+def _create_alert_issue(*, forge: Any, title: str) -> None:
+    """Create an alert only through a forge that exposes the issue seam."""
+    create_issue = getattr(forge, "create_issue", None)
+    if callable(create_issue):
+        _ = create_issue(title=title, labels=[_EXTERNAL_RED_LABEL])
+
+
+def _raise_one_alert(*, forge: Any, title: str) -> None:
+    """Raise the one open issue for an alert title, including a race re-read."""
+    if _open_issues(forge=forge, title=title):
+        return
+    _create_alert_issue(forge=forge, title=title)
+    _ = _open_issues(forge=forge, title=title)
+
+
+def _close_open_alerts(*, forge: Any) -> None:
+    """Close every external-red alert once a green master ends the episode."""
+    close_issue = getattr(forge, "close_issue", None)
+    if not callable(close_issue):
+        return
+    for issue in _open_issues(forge=forge, label=_EXTERNAL_RED_LABEL):
+        _ = close_issue(
+            issue=issue,
+            comment="Closing because master-health is green.",
+        )
+
+
+def _alert_for_summary(
+    *,
+    forge: Any,
+    verdict: str,
+    episode: Mapping[str, Any] | None,
+    expired: bool,
+) -> None:
+    """Reconcile the issue signal that accompanies a master-health summary."""
+    if verdict == "green":
+        _close_open_alerts(forge=forge)
+        return
+    if episode is None and verdict in {"external", "defect"}:
+        _raise_one_alert(forge=forge, title=_UNREADABLE_EPISODE_TITLE)
+        return
+    if verdict != "external" or not expired or episode is None:
+        return
+    earliest_run_id = episode.get("earliest_run_id")
+    if isinstance(earliest_run_id, int):
+        _raise_one_alert(
+            forge=forge,
+            title=f"master-green: external episode {earliest_run_id}",
+        )
 
 
 def _as_mapping(*, value: object) -> Mapping[str, Any] | None:
@@ -163,6 +249,7 @@ def publish_master_health(
     )
     if verdict != "green" and episode is None:
         episode = _derive_episode(forge=forge, run_id=run_id)
+    expired = bool(expired or (episode is not None and _episode_expired(episode=episode)))
     summary: dict[str, Any] = {
         "verdict": verdict,
         "head_sha": head_sha,
@@ -188,5 +275,11 @@ def publish_master_health(
             "title": f"master-health: {verdict}",
             "summary": json.dumps(summary, separators=(",", ":"), sort_keys=True),
         },
+    )
+    _alert_for_summary(
+        forge=forge,
+        verdict=verdict,
+        episode=summary["episode"],
+        expired=bool(summary["expired"]),
     )
     return summary
