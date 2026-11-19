@@ -4641,5 +4641,13 @@
     "test": "TODO",
     "reason": "Spec-first (v254): a real test at the integration tier or above is owed for this heading, driving the committed workspace sweep in apply mode and in report-only mode over a fixture /srv/factory-workspaces holding a blocked item's directory, a directory whose tenant cannot be read, a directory under 24 hours old, and a dirty directory of a finished item. livespec-dev-tooling-iwvy4u owns it.",
     "work_item": "livespec-dev-tooling-iwvy4u"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited repair publishes a workflow path only under a maintainer-attested scope",
+    "test": "TODO",
+    "reason": "Spec-first (v256): a real test at the integration tier or above is owed for this heading, driving the committed incident commit hook (incident_hook_scope) over a real git diff of an expedited-repair commit against an attempt authority record carrying a maintainer-attested workflow path list: a listed path admitted, an unlisted second path refused naming the missing workflow-scoped authorization and the path, and a stale attestation refusing the listed path too. livespec-dev-tooling-jtuxzn owns it.",
+    "work_item": "livespec-dev-tooling-jtuxzn"
   }
 ]

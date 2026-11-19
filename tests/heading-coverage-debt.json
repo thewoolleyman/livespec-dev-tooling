@@ -1514,6 +1514,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an expedited repair publishes a workflow path only under a maintainer-attested scope",
+    "work_item": "livespec-dev-tooling-jtuxzn",
+    "first_seen": "2026-11-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-lugvnr",
     "first_seen": "2026-11-01"
