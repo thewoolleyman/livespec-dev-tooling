@@ -22,6 +22,8 @@
 #      whose count is below its budget, and false on the rest. The sandbox driver's
 #      node selector includes that label, so a NEW sandbox is placed only on an
 #      admitted node.
+#   4. Clears factory admission from nodes that are no longer factory nodes, so a
+#      stale label cannot place a new sandbox outside the factory class.
 #
 # ONLY FIRST PLACEMENT IS GATED. sandbox-driver-kubernetes pins a sandbox's later
 # pods (resume, recreate) and its cleanup pod to the node it already uses, with
@@ -73,6 +75,8 @@ trap 'rm -rf "$work"' EXIT
 
 kubectl get nodes -l ci-runner.io/factory=true -o json >"$work/nodes.json" \
   || die "could not list the factory nodes; changing nothing this cycle"
+kubectl get nodes -l ci-runner.io/factory-admit=true -o json >"$work/admit-nodes.json" \
+  || die "could not list the admitted nodes; changing nothing this cycle"
 kubectl get pods --all-namespaces -l app.kubernetes.io/managed-by=sandbox-driver-kubernetes -o json \
   >"$work/pods.json" || die "could not list the sandbox pods; changing nothing this cycle"
 
@@ -117,6 +121,7 @@ if gate == "on":
                 budgets[name] = int(value)
 
 nodes = load("nodes.json")["items"]
+admitted_nodes = load("admit-nodes.json")["items"]
 counts = {n["metadata"]["name"]: 0 for n in nodes}
 for pod in load("pods.json")["items"]:
     labels = pod["metadata"].get("labels") or {}
@@ -129,6 +134,12 @@ for pod in load("pods.json")["items"]:
         counts[node] += 1
 
 rows = []
+stale_admissions = []
+for n in admitted_nodes:
+    labels = n["metadata"].get("labels") or {}
+    if labels.get("ci-runner.io/factory") != "true":
+        stale_admissions.append(n["metadata"]["name"])
+
 for n in nodes:
     name = n["metadata"]["name"]
     node_labels = n["metadata"].get("labels") or {}
@@ -165,15 +176,30 @@ for r in sorted(rows, key=lambda r: r["name"]):
           % (r["name"], r["count"], r["budget"], r["admit"], r["current"]))
     if r["admit"] != r["current"]:
         print("LABEL %s %s" % (r["name"], r["admit"]))
+
+for name in sorted(stale_admissions):
+    print("CLEAR %s false" % name)
 PY
 
-grep -v '^LABEL ' "$work/decision" | sed "s/^/${SCRIPT_NAME}: /"
+sed -E "/^(LABEL|CLEAR) /d; s/^/${SCRIPT_NAME}: /" "$work/decision"
 while read -r verb node value; do
-  [ "$verb" = LABEL ] || continue
+  case "$verb" in
+  LABEL) action='set' ;;
+  CLEAR) action='clear' ;;
+  *) continue ;;
+  esac
   if [ "$DRY_RUN" = 1 ]; then
-    echo "${SCRIPT_NAME}: dry-run: would set ${ADMIT_LABEL}=${value} on ${node}"
+    if [ "$action" = clear ]; then
+      echo "${SCRIPT_NAME}: dry-run: would clear stale ${ADMIT_LABEL} on non-factory node ${node}"
+    else
+      echo "${SCRIPT_NAME}: dry-run: would set ${ADMIT_LABEL}=${value} on ${node}"
+    fi
   else
     kubectl label node "$node" "${ADMIT_LABEL}=${value}" --overwrite >/dev/null
-    echo "${SCRIPT_NAME}: set ${ADMIT_LABEL}=${value} on ${node}"
+    if [ "$action" = clear ]; then
+      echo "${SCRIPT_NAME}: cleared stale ${ADMIT_LABEL} on non-factory node ${node}"
+    else
+      echo "${SCRIPT_NAME}: set ${ADMIT_LABEL}=${value} on ${node}"
+    fi
   fi
 done <"$work/decision"
