@@ -2660,3 +2660,58 @@ The budget document's averages at 6 slots already sum to about 30 of 32 (runners
 **Measured read.** +2 h after the apply, rerun the same steps on the same node over a window of similar load (work step `just coverage-shard N 4` for orchestrator shards, `just check-per-file-coverage` for dev-tooling), and compare per-slot turnover, not raw pod counts, since four slots raise raw counts by design. This is also the owed 3-to-4 read on plan ci-runtime-and-cost.
 
 **Revert.** Restore gamingpc 3 and orchestrator 4, then apply in reverse: `ci_converge_unit` first (quotas back to 31), then `node_extended_resource --limit gamingpc-xubuntu`.
+
+## Runner-pod memory admission (2026-11-19)
+
+ARC's runner pods previously requested only `ci-runner.io/churn-slot`.  The
+container-hook workflow pod follows its runner onto the same node, so a workflow
+memory request cannot move a workload elsewhere after runner admission.  The
+runner itself must reserve the measured working set before the Kubernetes
+scheduler selects a node.
+
+The measured per-pod peak p95 request sizes are:
+
+| Scale-set class | Runner values files | request |
+| --- | --- | ---: |
+| orchestrator | `values-fabro.yaml`, `values-livespec-orchestrator-beads-fabro.yaml`, `values-livespec-orchestrator-master.yaml` | 6Gi |
+| dev-tooling | `values-livespec-dev-tooling.yaml`, `values-livespec-dev-tooling-master.yaml`, `values-livespec-dev-tooling-arm64.yaml` | 4.25Gi |
+| console-beads | `values-livespec-console-beads-fabro.yaml` | 2.75Gi |
+| overseer | `values-livespec-overseer.yaml` | 2.25Gi |
+| local CI | `values-livespec.yaml` | 1.5Gi |
+| runtime | `values-livespec-runtime.yaml` | 1.25Gi |
+| orchestrator-git | `values-livespec-orchestrator-git-jsonl.yaml` | 1Gi |
+| drivers | `values-livespec-driver-claude.yaml`, `values-livespec-driver-codex.yaml`, `values-livespec-driver-pi.yaml` | 512Mi |
+| phase-1 proof | `values-poweredge-xubuntu-k3s.yaml` | 512Mi (unmeasured conservative request) |
+
+These are requests, not limits.  A runner can use more memory when the node
+has it; a limit would turn an underestimated p95 into an OOM kill.  The
+phase-1 proof set remains outside Kueue, so its 512Mi request is enforced only
+by the Kubernetes scheduler.
+
+Every Kueue-routed runner ClusterQueue covers `memory` with the four x86
+per-node ResourceFlavors in `resource-flavor.yaml`.  Kueue selects the flavor
+and adds its hostname selector; the scheduler then makes the final placement
+decision using the same runner request.  The quota is intentionally repeated
+for every per-repository queue: queues do not share a Kueue memory cohort, and
+the scheduler is the common node-local authority that prevents one queue from
+overpacking a node occupied by another queue.
+
+| ResourceFlavor | node | allocatable Gi | factory requests Gi | gates requests Gi | calculation | memory nominalQuota |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `runner-memory-gmktec-flavor` | gmktec-xubuntu | 62.4 | 24.4 | 16 | floor(62.4 - 24.4 - 16) | 22Gi |
+| `runner-memory-hp-flavor` | hp-xubuntu | 27.2 | 14.9 | 0 | floor(27.2 - 14.9 - 0) | 12Gi |
+| `runner-memory-poweredge-flavor` | poweredge-xubuntu | 378 | 67.1 | 48 | floor(378 - 67.1 - 48) | 262Gi |
+| `runner-memory-gamingpc-flavor` | gamingpc-xubuntu | 92.38 | 0 | 16 | floor(92.38 - 0 - 16) | 76Gi |
+
+The factory figures are the active per-node factory budgets at the 8GB (7.45
+Gi) sandbox request, except gmktec's measured 24.4Gi factory request.  The gate
+figures are the committed `gates-cq` memory quotas: 16Gi on gmktec and
+gamingpc, zero on hp, and 48Gi on poweredge.  Rounding down leaves the
+unallocated fraction as safety headroom.  The arm64 worker queue is not one of
+these x86 flavors: its churn-slot quota is rendered from enrolled worker
+capacity, and its committed memory nominalQuota is the one dev-tooling runner
+request, 4.25Gi, per admitted worker slot.
+
+`tests/spec/test_runner_memory_quota_derivation.py` derives these four rounded
+headroom values from this table and checks every runner ClusterQueue's committed
+memory quota against them, in addition to checking the arm64 worker template.
