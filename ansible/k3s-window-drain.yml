@@ -427,7 +427,7 @@
           nodes_template='{range .items[*]}{.metadata.name}{"|"}'
           nodes_template+='{.status.conditions[?(@.type=="Ready")].status}{"|"}'
           nodes_template+='{.spec.unschedulable}{"|"}'
-          nodes_template+='{.metadata.labels.ci-runner\\.io/always-on}{"\n"}{end}'
+          nodes_template+='{.metadata.labels.ci-runner\.io/always-on}{"\n"}{end}'
           node_states() {
             kubectl get nodes --output "jsonpath=${nodes_template}"
           }
