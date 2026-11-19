@@ -167,6 +167,11 @@ template:
           privileged: false
           capabilities:
             drop: ["ALL"]
+        resources:
+          # This phase-1 proof runner has no Honeycomb history.  Keep its
+          # request conservative until a live replacement is measured.
+          requests:
+            memory: 512Mi
 
 # Phase-1 proof sizing, unchanged from the live release. There is no matching
 # ClusterQueue: this scale set predates the Kueue gating (see the header).

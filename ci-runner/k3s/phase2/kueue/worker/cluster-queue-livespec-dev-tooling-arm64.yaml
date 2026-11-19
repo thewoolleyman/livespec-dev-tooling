@@ -34,12 +34,18 @@ spec:
   fairSharing:
     weight: 1
   resourceGroups:
-    - coveredResources: ["ci-runner.io/churn-slot"]
+    - coveredResources: ["ci-runner.io/churn-slot", "memory"]
       flavors:
         - name: churn-slot-worker-arm64-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: @WORKER_CHURN_SLOTS@
+              borrowingLimit: 0
+            # One arm64 runner slot has the dev-tooling request below.  The
+            # worker's churn quota is rendered from its enrolled capacity, but
+            # its memory coverage must be present in the committed template.
+            - name: memory
+              nominalQuota: 4.25Gi
               borrowingLimit: 0
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
