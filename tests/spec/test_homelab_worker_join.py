@@ -53,7 +53,13 @@ printf 'kubectl %s\\n' "$*" >> "$s/calls.log"
 case "$1 $2" in
   "apply -f") cat >> "$s/applied.yaml"; printf -- '---\\n' >> "$s/applied.yaml" ;;
   "get configmap") printf '%s' "$STUB_CERT" ;;
-  "get node") [ -f "$s/node-registered" ] || exit 1; echo 10.99.0.4 ;;
+  "get node")
+    [ -f "$s/node-registered" ] || exit 1
+    case "$*" in
+      *"jsonpath={.spec.podCIDR}"*) cat "$s/node-cidr" ;;
+      *) echo 10.99.0.4 ;;
+    esac ;;
+  "get pods") cat "$s/pods" 2>/dev/null ;;
   "get nodes") : ;;
   "get csr") : ;;
 esac
@@ -68,6 +74,7 @@ case "$1 $2" in
   "docker exec")
     case "$*" in
       *"ip -4 -o addr show dev cni0") cat "$s/cni0" 2>/dev/null ;;
+      *"/run/flannel/subnet.env") sed -n 's/^FLANNEL_SUBNET=//p' "$s/flannel-subnet" 2>/dev/null ;;
     esac ;;
   "bash -s")
     cat > "$s/converge-stdin"
@@ -78,6 +85,10 @@ case "$1 $2" in
     fi
     if [ "$n" -ge 2 ]; then
       touch "$s/node-registered"
+      if [ ! -f "$s/preserve-subnets" ]; then
+        printf '10.42.7.0/24\\n' > "$s/node-cidr"
+        printf 'FLANNEL_SUBNET=10.42.7.1/24\\n' > "$s/flannel-subnet"
+      fi
       if [ ! -f "$s/no-cni0" ]; then
         printf '5: cni0    inet 10.42.7.1/24 brd 10.42.7.255 scope global cni0\\n' > "$s/cni0"
       fi
@@ -283,3 +294,22 @@ def test_a_rerun_for_a_registered_node_still_converges_its_enrollment(env: _Env)
     result = _run(env=env, args=_args(env))
     assert result.returncode == 0, result.stderr
     assert "enroll alpha-homelab-worker" in _calls(env=env)
+
+
+def test_a_join_refuses_pods_bound_to_an_absent_node_before_minting_a_token(env: _Env) -> None:
+    (env.state / "pods").write_text("kube-system/flannel-stale\\n", encoding="utf-8")
+    result = _run(env=env, args=_args(env))
+    assert result.returncode != 0
+    assert "kube-system/flannel-stale" in result.stderr
+    applied = (env.state / "applied.yaml").read_text(encoding="utf-8")
+    assert "bootstrap-token-" not in applied
+
+
+def test_a_join_names_mismatched_node_and_flannel_subnets_after_its_wait(env: _Env) -> None:
+    (env.state / "preserve-subnets").touch()
+    (env.state / "node-cidr").write_text("10.42.7.0/24\\n", encoding="utf-8")
+    (env.state / "flannel-subnet").write_text("FLANNEL_SUBNET=10.42.8.1/24\\n", encoding="utf-8")
+    result = _run(env=env, args=_args(env))
+    assert result.returncode != 0
+    assert "10.42.7.0/24" in result.stderr
+    assert "10.42.8.1/24" in result.stderr

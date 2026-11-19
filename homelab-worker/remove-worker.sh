@@ -48,6 +48,8 @@ prog="remove-worker"
 hw="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hosts_dir="${HOMELAB_WORKER_HOSTS_DIR:-$hw/hosts}"
 worker_queues="${WORKER_QUEUES_CONVERGE:-$hw/../ci-runner/k3s/phase2/kueue/converge-worker-queues.sh}"
+pod_gc_wait_seconds="${POD_GC_WAIT_SECONDS:-900}"
+poll="${POLL_SECONDS:-15}"
 
 die() {
   printf '%s: %s\n' "$prog" "$*" >&2
@@ -90,6 +92,26 @@ in_vm() {
   limactl shell --workdir / "$worker" sudo "$@"
 }
 
+worker_pods() {
+  kubectl get pods --all-namespaces --field-selector "spec.nodeName=$worker" \
+    -o 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name} {.status.phase} {.metadata.ownerReferences[*].kind}{"\n"}{end}'
+}
+
+wait_for_deleted_node_pods() {
+  local waited=0 pods remaining
+  while :; do
+    pods="$(worker_pods)" ||
+      die "could not read the pods on deleted Node $worker through kubectl; the cluster was not reached"
+    [ -z "$pods" ] && return
+    remaining="$(printf '%s\n' "$pods" | awk '{print $1}')"
+    if [ "$waited" -ge "$pod_gc_wait_seconds" ]; then
+      die "pods still bound to deleted Node $worker after ${pod_gc_wait_seconds}s: $remaining"
+    fi
+    sleep "$poll"
+    waited=$((waited + poll))
+  done
+}
+
 # --- reads: every one is checked, and nothing is changed before they pass ---
 # A bare `$(kubectl ...)` under set -e exits silently when kubectl fails, so
 # each read dies naming itself. --ignore-not-found makes an absent Node an
@@ -106,8 +128,7 @@ case "$node" in
     ;;
 esac
 
-pods="$(kubectl get pods --all-namespaces --field-selector "spec.nodeName=$worker" \
-  -o 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name} {.status.phase} {.metadata.ownerReferences[*].kind}{"\n"}{end}')" ||
+pods="$(worker_pods)" ||
   die "could not read the pods on Node $worker through kubectl; the cluster was not reached, nothing was changed"
 busy="$(printf '%s\n' "$pods" | awk '
   $2 == "Running" || $2 == "Pending" {
@@ -134,6 +155,8 @@ if [ "$node_present" = 1 ]; then
   kubectl delete node "$worker" --wait --ignore-not-found >/dev/null ||
     die "could not delete Node $worker; no credential was cleared"
   say "Node $worker deleted"
+  wait_for_deleted_node_pods
+  say "all pods bound to deleted Node $worker are gone"
 else
   say "Node $worker is not registered; nothing to delete"
 fi
