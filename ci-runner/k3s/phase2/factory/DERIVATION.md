@@ -503,6 +503,47 @@ plus slack, is tracked on livespec-dev-tooling-mlimt3.
 `./factory-namespace.yaml`) and apply `--tags ci_factory_quota`. Lowering a
 quota evicts nothing.
 
+## Retained ended-run sandboxes (2026-11-19)
+
+**What refused.** At 11:49Z on 2026-11-19 `factory-runs` refused two launches,
+livespec-dev-tooling-ulowfk (run 01M7ST87C27M) and livespec-dev-tooling-xjdjgm
+(01M7STCBH831), each with `exceeded quota: factory-runs, requested: limits.cpu=6,
+used: limits.cpu=126, limited: limits.cpu=126`. Read live at ~12:00Z: pods 21 of 42,
+`requests.cpu` 63 of 84, `limits.cpu` 126 of 126, `requests.memory` and `limits.memory`
+160230Mi. The launchers' fleet cap counted about 14 live runs, so the cap and the quota
+disagreed; `kubectl top` showed 7 of the 21 sandboxes under 50m cpu. The idle ones are
+ended-run sandboxes, kept while their item awaits a human or not yet deleted.
+
+**Why raising memory is safe on the nodes.** Every factory sandbox pod carries
+`nodeSelector` `ci-runner.io/factory=true`, `ci-runner.io/factory-admit=true` and
+`kubernetes.io/arch=amd64` (read from pod petri-01m7st5a1ne3..., ~12:10Z). Among amd64
+nodes `factory-admit` reads true only on `poweredge-xubuntu`; gmktec, hp and gamingpc read
+false, so a NEW sandbox lands on poweredge. Node read at ~12:00Z: poweredge cpu requests
+31350m of 72000m (43%) and memory requests 78680Mi (20%); gmktec memory requests 97% and
+hp 84% hold only sandboxes admitted earlier. The scheduler's node fit on requests, not
+this quota, bounds what lands on a node.
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | unchanged (25 x 3 = 75 fits) | **84** |
+| `limits.cpu` | 25 slots x 6 | **150** |
+| `requests.memory` | 25 slots x 7630Mi | **190750Mi** |
+| `limits.memory` | 25 slots x 7630Mi | **190750Mi** |
+| `pods` | unchanged | **42** |
+
+**Effect.** Four more sandboxes than today's 21 fit. On poweredge that moves cpu requests
+from about 43% to about 60% and memory requests from about 20% to about 29%. The fleet cap
+of 20 still bounds live runs; the five extra slots are for retained ended-run sandboxes.
+
+**Revert trigger.** Memory limits at 100% on a node AND a sandbox OOMKilled or Pending on
+memory, or BestEffort `cpu.pressure` avg60 above 30 on poweredge for two reads. Read at
++2 hours: `kubectl get resourcequota -n factory factory-runs` against git, node requests on
+poweredge, gmktec and hp, and the count of quota refusals in the launcher logs.
+
+**Revert.** Restore the three `REVERT` values in `./factory-namespace.yaml` (126, 171470Mi,
+181710Mi) and apply `ansible/ci-pool.yml --tags ci_factory_quota`. Lowering a quota evicts
+nothing.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows
