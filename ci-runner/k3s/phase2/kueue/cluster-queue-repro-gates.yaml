@@ -162,8 +162,18 @@ spec:
             # REVERT TRIGGER: BestEffort cpu.pressure avg60 over 30 on two reads
             # on this node. REVERT PATH: revert the arming pull request, which
             # restores zero.
+            #
+            # RAISED 5 -> 10 cpu 2026-11-19 (livespec-dev-tooling-z66x7t;
+            # throughput-plans-coordinator request), for the same reason as
+            # gmktec and hp below: a repo declaring gate_cpu = 10 (the
+            # orchestrator) asks 10 cpu, and a 5-cpu flavor can never admit it
+            # (the shellcheck OOM repro sdl8f read "insufficient quota" with no
+            # other workload on the node). Read before raising: poweredge
+            # BestEffort cpu.pressure avg60 0.26 and 0.19 on two reads, 72
+            # threads. The same revert trigger applies; to undo only this raise,
+            # set cpu back to 5.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 10
             - name: "memory"
               nominalQuota: 8Gi
         - name: gates-repro-gmktec-flavor
@@ -175,8 +185,20 @@ spec:
             # REVERT TRIGGER: BestEffort cpu.pressure avg60 over 30 on two reads
             # on this node. REVERT PATH: revert the arming pull request, which
             # restores zero.
+            #
+            # RAISED 5 -> 10 cpu 2026-11-19 (livespec-dev-tooling-z66x7t;
+            # throughput-plans-coordinator no-objection). The orchestrator's gate
+            # declares gate_cpu = 10, so its repro Job asks 10 cpu and a 5-cpu
+            # flavor can never admit it: Kueue said "insufficient quota for cpu
+            # in flavor gates-repro-gmktec-flavor" for the cthvom probe, the same
+            # reason hp was raised to 10. Memory stays 8Gi (the Job asks 8Gi).
+            # Read before raising: gmktec BestEffort cpu.pressure avg60 0.00 on
+            # two reads and the node 19 percent busy, 32 allocatable cpu. The
+            # same revert trigger applies; to undo only this raise, set cpu back
+            # to 5. gmktec carries factory pods, so a tripped trigger also cuts
+            # the fleet cap.
             - name: "cpu"
-              nominalQuota: 5
+              nominalQuota: 10
             - name: "memory"
               nominalQuota: 8Gi
         - name: gates-repro-hp-flavor
