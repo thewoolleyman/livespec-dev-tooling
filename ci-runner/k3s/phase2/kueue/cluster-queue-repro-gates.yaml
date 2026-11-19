@@ -48,8 +48,8 @@
 # hostname nodeLabel. `just gate-repro --node <node>` renders a required
 # hostname nodeSelector on the Job, and Kueue assigns only the flavor whose
 # nodeLabels agree with it, so the Job is admitted through that node's quota and
-# runs only there. A flavor is ZERO unless armed (hp-xubuntu, poweredge-xubuntu
-# and gmktec-xubuntu are each armed at one gate unit; gamingpc stays at zero): arming a node means
+# runs only there. A flavor is ZERO unless armed (poweredge-xubuntu and
+# gmktec-xubuntu are each armed at one gate unit; gamingpc and hp-xubuntu stay at zero): arming a node means
 # raising ITS flavor to one gate unit in a separate pull request, which belongs
 # to plan gate-job-resources' per-node CPU budget (a repro gate is a second
 # 5 cpu / 8Gi claim on a node whose budget does not count it), and reverting
@@ -185,23 +185,22 @@ spec:
               nominalQuota: 8Gi
         - name: gates-repro-hp-flavor
           resources:
-            # ARMED: ONE gate on hp-xubuntu at 10 cpu / 8Gi, raised from one
-            # 5 cpu gate unit because livespec-orchestrator-beads-fabro declares
-            # gate_cpu = 10 and its repro Job (gate-livespec-orchestrator-beads-
-            # fabro-2tcx8) was never admitted against the 5 cpu quota (admission
-            # wait exceeded 1800s, 2026-11-17). It is the only repository
-            # declaring gate_cpu above 5 (the others declare 2 to 4). Armed
-            # originally on hp-xubuntu, by the coordinator's ARM RULING under
-            # the per-node CPU budget (plan gate-job-resources,
-            # livespec-dev-tooling-cwrg3v). Basis: hp read 21 percent CPU at
-            # 04:38Z after the CI cut, last in the ARC runner node preference.
-            # REVERT TRIGGERS: hp BestEffort cpu.pressure avg60 over 30 on two
-            # reads, or hp CI job durations rising while a repro runs. REVERT
-            # PATH: revert this pull request, which restores zero.
+            # ZERO since 2026-11-19 (plan gate-job-resources, livespec-dev-tooling-
+            # wirn53; throughput-plans-coordinator ruling R301). The REVERT TRIGGER
+            # of its earlier arming fired: hp-xubuntu's host-wide cpu.some avg60
+            # peaked at 76.7 between 04:37:30Z and 04:43:07Z on 2026-11-19, with
+            # two repro-lane gate Jobs (gate-livespec-dev-tooling-j6hgj 15.38 cpu,
+            # -mzlkx 10.96 cpu measured, each requesting 5) running beside two
+            # petri factory sandboxes on 14.5 allocatable cpu. A 10 cpu quota
+            # admits two 5 cpu repro Jobs, and a gate Job has no cpu limit.
+            # Factory placement on hp is intended (no per-node factory cap), so
+            # the repro lane is the lever. Repro stays armed on gmktec and
+            # poweredge. REVERT PATH: revert this pull request, which restores
+            # 10 cpu / 8Gi (and re-arms the overcommit above).
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 0
             - name: "memory"
-              nominalQuota: 8Gi
+              nominalQuota: 0Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
