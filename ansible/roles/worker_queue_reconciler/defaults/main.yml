@@ -6,3 +6,12 @@ worker_queue_reconciler_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phas
 worker_queue_reconciler_unit_dir: /etc/systemd/system
 worker_queue_reconciler_service: reconcile-worker-queues.service
 worker_queue_reconciler_timer: reconcile-worker-queues.timer
+
+# The committed off-switch (livespec-dev-tooling-u45iv6 revert path). `present`
+# installs and arms the timer. `absent` stops and disables the timer and the
+# service, removes both unit files and reloads systemd, and leaves everything
+# else alone: the installed converge-worker-queues.sh and worker-lane-readiness.py
+# belong to ci_converge_unit, and the queues the last pass wrote stay as they are.
+# To roll back, set it in a committed change (a group_vars line or a revert that
+# flips this default), then re-apply with --tags worker_queue_reconciler.
+worker_queue_reconciler_state: present
