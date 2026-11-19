@@ -372,6 +372,8 @@ def test_an_ungranted_node_publishes_nothing_and_does_not_fail(
 
 
 _PUBLISHER_SHA = "f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21"
+# A repository the committed inventory does not declare, so its entry is the test's own.
+_FURTHER = "further"
 
 
 def test_a_non_empty_publisher_list_publishes_the_ci_publish_route_at_its_exact_path() -> None:
@@ -419,3 +421,75 @@ def test_a_funnel_port_publishing_a_siblings_ci_publish_path_with_its_publisher_
 
     assert outcome.failed is False, outcome.output
     assert outcome.published == []
+
+
+def _further_installation_resolved(*, publisher_shas: list[str] | None) -> dict[str, Any]:
+    """What the installation apply resolves for a further installation, through the real vars file."""
+    sibling: dict[str, Any] = {
+        **_SECOND_INSTALLATION,
+        "repository": "livespec-ai/" + _FURTHER,
+        "port": 8771,
+    }
+    if publisher_shas is not None:
+        sibling["ci_publisher_shas"] = publisher_shas
+    production = base.production_variables()
+    variables: dict[str, Any] = {
+        **production,
+        "incident_observer_installations": [
+            *production["incident_observer_installations"],
+            sibling,
+        ],
+        **base.role_yaml(relative="vars/installation.yml"),
+        "incident_observer_installation_name": _FURTHER,
+    }
+    names = (
+        "incident_observer_ci_publisher_shas",
+        "incident_observer_funnel_paths",
+        "incident_observer_funnel_targets",
+    )
+    (reply,) = refusals.run_engine(
+        cases=[
+            {
+                "variables": variables,
+                "conditions": [],
+                "templates": [
+                    "{{ {"
+                    + ", ".join(f"'{name}': {name}" for name in names)
+                    + ", 'incident_observer_ci_identity_enabled':"
+                    + " incident_observer_ci_identity_enabled | bool} | to_json }}"
+                ],
+            }
+        ]
+    )
+    resolved: dict[str, Any] = json.loads(reply["templates"][0])
+    return resolved
+
+
+def test_a_further_installation_with_a_non_empty_publisher_list_publishes_its_prefixed_route() -> (
+    None
+):
+    resolved = _further_installation_resolved(publisher_shas=[_PUBLISHER_SHA])
+
+    assert resolved["incident_observer_ci_publisher_shas"] == [_PUBLISHER_SHA]
+    assert resolved["incident_observer_ci_identity_enabled"] is True
+    assert resolved["incident_observer_funnel_paths"] == [
+        "/" + _FURTHER + _CALLBACK,
+        "/" + _FURTHER + _ORDINARY,
+        "/" + _FURTHER + _PUBLISH,
+    ]
+    assert resolved["incident_observer_funnel_targets"] == [_CALLBACK, _ORDINARY, _PUBLISH]
+
+
+@pytest.mark.parametrize("publisher_shas", [None, []])
+def test_a_further_installation_without_a_publisher_list_publishes_no_ci_publish_route(
+    publisher_shas: list[str] | None,
+) -> None:
+    resolved = _further_installation_resolved(publisher_shas=publisher_shas)
+
+    assert resolved["incident_observer_ci_publisher_shas"] == []
+    assert resolved["incident_observer_ci_identity_enabled"] is False
+    assert resolved["incident_observer_funnel_paths"] == [
+        "/" + _FURTHER + _CALLBACK,
+        "/" + _FURTHER + _ORDINARY,
+    ]
+    assert resolved["incident_observer_funnel_targets"] == [_CALLBACK, _ORDINARY]
