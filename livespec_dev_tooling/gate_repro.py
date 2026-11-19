@@ -47,6 +47,8 @@ older packaged renderer than the one this route needs.
 from __future__ import annotations
 
 import argparse
+import base64
+import shlex
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -119,17 +121,26 @@ def repro_render_argv(
     stack_interval_seconds: int,
     image: str | None = None,
     node: str | None = None,
+    command: Sequence[str] = (),
 ) -> tuple[str, ...]:
     """The renderer flags that make a gate Job a reproduction Job.
 
     `--image` (a reference by digest) and `--node` (one gate node) are rendered
     only when the operator names them; the renderer refuses a tag or an unknown
     node, so this does not re-validate either (livespec-dev-tooling-cwrg3v).
+
+    `command` is the words the operator gave after `--`. They are quoted into one
+    shell line and base64-encoded into a single `--repro-command` flag, so no
+    quoting has to survive the renderer, its placeholder substitution or the Job
+    script; an empty command renders no flag and the Job runs the repository's
+    whole gate (livespec-dev-tooling-z66x7t).
     """
     base = ("--queue", queue, "--repro-stack-interval", str(stack_interval_seconds))
     image_flags = ("--image", image) if image is not None else ()
     node_flags = ("--node", node) if node is not None else ()
-    return (*base, *image_flags, *node_flags)
+    encoded = base64.b64encode(shlex.join(command).encode("utf-8")).decode("ascii")
+    command_flags = ("--repro-command", encoded) if command else ()
+    return (*base, *image_flags, *node_flags, *command_flags)
 
 
 def _ended(*, outcome: GateRunOutcome) -> ReproOutcome:
@@ -158,6 +169,7 @@ def run_repro_gate(  # noqa: PLR0913 — every keyword is an independent input o
     stack_interval_seconds: int,
     image: str | None = None,
     node: str | None = None,
+    command: Sequence[str] = (),
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
 ) -> ReproOutcome:
@@ -180,6 +192,7 @@ def run_repro_gate(  # noqa: PLR0913 — every keyword is an independent input o
                 stack_interval_seconds=stack_interval_seconds,
                 image=image,
                 node=node,
+                command=command,
             ),
         ),
     )
@@ -211,6 +224,7 @@ def main(
     _ = parser.add_argument("--stack-interval", type=int, default=REPRO_STACK_INTERVAL_SECONDS)
     _ = parser.add_argument("--image", default=None)
     _ = parser.add_argument("--node", default=None)
+    _ = parser.add_argument("command", nargs="*")
     parsed = parser.parse_args(argv)
     outcome = run_repro_gate(
         repo_root=parsed.repo_root,
@@ -219,6 +233,7 @@ def main(
         stack_interval_seconds=parsed.stack_interval,
         image=parsed.image,
         node=parsed.node,
+        command=parsed.command,
         runner=runner,
         sleeper=sleeper,
     )
