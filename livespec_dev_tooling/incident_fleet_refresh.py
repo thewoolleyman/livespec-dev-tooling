@@ -23,7 +23,7 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.result import Failure  # noqa: E402
 
 from livespec_dev_tooling._incident_fleet_command import _digest, run_fleet_audit  # noqa: E402
-from livespec_dev_tooling._incident_fleet_sources import load_claims  # noqa: E402
+from livespec_dev_tooling._incident_fleet_sources import _claim, load_claims  # noqa: E402
 from livespec_dev_tooling._incident_fleet_types import CapabilityEvidence  # noqa: E402
 from livespec_dev_tooling.incident_fleet_serving import ServingReader  # noqa: E402
 from livespec_dev_tooling.incident_strict_json import (  # noqa: E402
@@ -113,12 +113,16 @@ def _failed(*, reason: str) -> RefreshResult:
 def _claim_entries(
     *, document: dict[str, object] | None, claims: tuple[CapabilityEvidence, ...]
 ) -> list[dict[str, object]] | None:
-    """Return the raw claim entries only when they still pair one-to-one with the parsed claims."""
+    """Return the raw claim entries only when each one is exactly its parsed claim."""
     entries = document.get("evidence") if document is not None else None
     if not isinstance(entries, list):
         return None
     raw = cast("list[object]", entries)
     if len(raw) != len(claims) or not all(isinstance(entry, dict) for entry in raw):
+        return None
+    # A replacement of the same length would still pair, so each raw entry must
+    # parse to exactly the claim the audit is about to read evidence for.
+    if any(_claim(entry=entry) != claim for entry, claim in zip(raw, claims, strict=True)):
         return None
     return cast("list[dict[str, object]]", raw)
 
