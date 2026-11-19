@@ -2709,8 +2709,11 @@ figures are the committed `gates-cq` memory quotas: 16Gi on gmktec and
 gamingpc, zero on hp, and 48Gi on poweredge.  Rounding down leaves the
 unallocated fraction as safety headroom.  The arm64 worker queue is not one of
 these x86 flavors: its churn-slot quota is rendered from enrolled worker
-capacity, and its committed memory nominalQuota is the one dev-tooling runner
-request, 4.25Gi, per admitted worker slot.
+capacity, and its memory nominalQuota is rendered beside it by
+`converge-worker-queues.sh` as `churn slots x 4352Mi`.  4352Mi is the dev-tooling
+runner request, 4.25Gi, for each churn slot the queue admits, so the memory
+quota scales with the slots exactly as the churn-slot quota does: two enrolled
+slots render 8704Mi, and no number of slots leaves memory the binding resource.
 
 `tests/spec/test_runner_memory_quota_derivation.py` derives these four rounded
 headroom values from this table and checks every runner ClusterQueue's committed
