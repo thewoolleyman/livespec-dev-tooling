@@ -43,16 +43,19 @@ only inside its wrapper. It is not pinned.
 
 ## Import dependencies of the run scripts
 
-Modules imported by a unit-run script, and whether the role pins each:
+Modules imported by a unit-run script, at the top of the file or inside a function, and whether the role pins each. A
+first pass that read only top-of-file imports missed the function-level ones (for example `quota_guard.py` imports
+`codex_reset` inside two functions); this table counts both.
 
 | Dependency | Imported by | Pinned |
 | --- | --- | --- |
-| `emit_spend_key` | `emit_spend`, `emit_caam`, `emit_codex_credits`, `emit_factory`, `emit_nodes`, `emit_codex_runs`, `build_triggers` | pinned |
+| `emit_spend_key` | `emit_spend`, `emit_caam`, `emit_codex_credits`, `emit_factory`, `emit_nodes`, `emit_codex_runs`, `build_triggers`, `quota_guard` (function level), `tenant_watch` (function level) | pinned |
 | `build_triggers` | `quota_triggers`, `quota_triggers_check` | pinned |
 | `quota_triggers` | `quota_triggers_check` | pinned |
 | `attribution` | `emit_spend`, `emit_factory` | pinned |
-| `hcq` | `emit_factory`, `emit_codex_runs` | pinned |
-| `spend_staleness` | `tenant_watch` (lazy import) | pinned |
+| `hcq` | `emit_factory`, `emit_codex_runs`, `emit_nodes` (function level), `quota_guard` (function level), `accounts` (function level) | pinned |
+| `spend_staleness` | `tenant_watch` (function level) | pinned |
+| `emit_nodes` | `emit_factory` (function level) | pinned |
 | `prices` | `emit_spend`, `emit_factory`, `emit_nodes` | gap |
 | `accounts` | `emit_spend`, `emit_caam`, `emit_codex_credits`, `emit_factory`, `emit_nodes` | gap |
 | `node_join` | `cache_events`, `emit_factory`, `emit_nodes` | gap |
@@ -60,11 +63,14 @@ Modules imported by a unit-run script, and whether the role pins each:
 | `codex_idle` | `emit_factory` | gap |
 | `journal_slots` | `emit_factory` | gap |
 | `tenant_usage_read` | `tenant_watch` (subprocess, not an import) | gap |
+| `codex_reset` | `quota_guard` (function level, two imports: the reset read and the consume path) | gap |
 
 The pinned `emit_spend.py`, `emit_factory.py`, `emit_nodes.py` and `tenant_watch.py` all depend on unpinned siblings
 (`prices`, `accounts`, `node_join`, `codex_idle`, `journal_slots`, `caam_source`, `tenant_usage_read`), so a role
 apply of those four does not by itself reproduce a working collector. `build_board.py` and `caam_source.py` import no
-sibling module.
+sibling module. `spend_staleness` (pinned) imports `build_triggers` and `quota_triggers` at function level, both pinned.
+Unpinned dependencies number eight: `prices`, `accounts`, `node_join`, `caam_source`, `codex_idle`, `journal_slots`,
+`tenant_usage_read` and `codex_reset`.
 
 ## Scripts that no unit runs and nothing imports
 
@@ -72,7 +78,7 @@ These are analysis, backfill and one-off tools. None is run by a timer or import
 is pinned except `spend_staleness.py`, which is pinned and imported lazily by `tenant_watch.py`.
 
 - Analysis and reporting: `agg.py`, `board_capture.py`, `build_page.py`, `burn.py`, `burn_levers_q.py`,
-  `cache_rewrite_q.py`, `cache_rewrite_report.py`, `codex_allowance.py`, `codex_join_check.py`, `codex_reset.py`,
+  `cache_rewrite_q.py`, `cache_rewrite_report.py`, `codex_allowance.py`, `codex_join_check.py`,
   `codex_run_mix.py`, `codex_runs_by_day.py`, `collect.py`, `collect_node_models.py`, `combined_budget.py`,
   `dod_capture.py`, `emit_local_spend.py`, `emitter_cadence.py`, `factory_join.py`, `first_turn_report.py`,
   `hc_board.py`, `hc_columns.py`, `hc_url.py`, `hc_urls.py`, `node_report.py`, `parse.py`, `reconcile_local.py`,
@@ -104,7 +110,10 @@ that none is pinned, which makes them unrecoverable from a remote.
   reconcile_runs, container/storage reclaim), `/usr/local/sbin/*` (arq snapshots, restic, dev-host retention and
   capacity check), `/usr/local/lib/livespec/pressure-telemetry.sh`, `/opt/livespec-incident/venv` (incident_observer),
   `/usr/local/libexec/livespec/claude_scratch_mover.py` (dev_host_memory_bounds),
-  `/usr/local/bin/vnc-desktop-start.sh` (vnc_desktop).
+  `/usr/local/bin/vnc-desktop-start.sh` (vnc_desktop), `/opt/livespec-incident/reader` (the orchestrator plugin at its
+  released tag, which holds the `incident_authority.py` reader script; `incident_observer_reader_dir` in the role),
+  `/opt/livespec-incident/merge-workdir` (the `WorkingDirectory` of `livespec-incident-merge@.service`;
+  `incident_observer_merge_workdir` in the role), and `/opt/livespec-incident/bin` (the render scripts).
 - Run from a git checkout on the vps, not from a role-installed copy:
   `/home/ubuntu/workspace/vps-info/services/honeycomb-trigger-recipients-check/check-trigger-recipients.sh`
   (role `honeycomb_trigger_recipients_check` references it),
@@ -121,5 +130,5 @@ This item did not verify the provisioning of the checkouts or the three unrefere
 ## Follow-ups this inventory names
 
 Per the item, pinning each script or adding a unit is filed per script. The ordered gap list is: the six unpinned
-timer-run scripts above, the seven unpinned dependencies, the three hand-installed unit pairs, and the unpinned
+timer-run scripts above, the eight unpinned dependencies, the three hand-installed unit pairs, and the unpinned
 manual tools.
