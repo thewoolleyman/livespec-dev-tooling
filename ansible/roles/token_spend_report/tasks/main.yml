@@ -161,7 +161,10 @@
     owner: "{{ token_spend_report_user }}"
     group: "{{ token_spend_report_group }}"
     mode: "0755"
+  # As the owner, so a missing ~/.config or ~/.config/systemd is created owned by
+  # the user, not by root (second-look finding 4, 2026-11-19).
   become: true
+  become_user: "{{ token_spend_report_user }}"
 
 - name: Install the oneshot unit that applies the Honeycomb triggers
   # Type=oneshot with no [Install] section and no timer: nothing starts it on

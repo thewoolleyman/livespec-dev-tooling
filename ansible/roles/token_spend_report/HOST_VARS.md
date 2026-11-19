@@ -31,6 +31,9 @@ scripts were installed, the next apply sees no change and does not retry it, but
 step 5 fails on the live difference: start it by hand with
 `systemctl --user start token-spend-quota-triggers.service` and read
 `journalctl --user -u token-spend-quota-triggers.service`.
+Known limits (independent second look, 2026-11-19): step 5 also runs on an unrelated re-apply, so a transient
+1Password or Honeycomb 5xx fails that play; the read-back is a subset match, so a live key the script does not set
+(for example `filter_combination`) is not reported; and two live triggers sharing one name are not told apart.
 Revert: remove the unit file and restore the previous pin. Triggers already PUT
 stay in Honeycomb unchanged.
 
