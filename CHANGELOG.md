@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.229.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.228.0...v1.229.0) (2026-11-19)
+
+
+### Features
+
+* **ansible:** archive-then-remove ended factory runs' workspaces on the factory nodes so their root filesystems stop filling and holding DiskPressure (livespec-dev-tooling-3q3xma) ([fef312d](https://github.com/livespec-ai/livespec-dev-tooling/commit/fef312d565aec359567a542e99acf19530e1e2ab))
+* **incident:** refresh committed fleet manifest bindings (livespec-dev-tooling-pvtohb) ([5868152](https://github.com/livespec-ai/livespec-dev-tooling/commit/58681528261d4a3343d55d2e5a0df91d5038fb5f))
+* spread ARC listener pods across always-on nodes ([21b0385](https://github.com/livespec-ai/livespec-dev-tooling/commit/21b038551b65e503ae4093d45c68732cad4eb2db))
+
+
+### Bug Fixes
+
+* load provisioning ansible configuration ([08407bd](https://github.com/livespec-ai/livespec-dev-tooling/commit/08407bda19247618887a97faa56e003e2ce5de89))
+* parenthesize conditional CI job attributes ([9d7c43a](https://github.com/livespec-ai/livespec-dev-tooling/commit/9d7c43a8ec009d2032fcb663e974b29b9bb0721b))
+* re-verify claims snapshot immediately before the claims replace ([017e1f8](https://github.com/livespec-ai/livespec-dev-tooling/commit/017e1f8f3efb2a0bbd84b582bf8b18b298824ea7))
+* refuse a same-length claims replacement between refresh reads ([21fe572](https://github.com/livespec-ai/livespec-dev-tooling/commit/21fe5720297db3a1f06ec19cb717415bc9475f55))
+* refuse to overwrite claims replaced during the refresh audit ([56d4576](https://github.com/livespec-ai/livespec-dev-tooling/commit/56d45762c7b7df174d4f868edfc541bff6b5f85b))
+
 ## [1.228.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.227.0...v1.228.0) (2026-11-19)
 
 
