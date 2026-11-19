@@ -7,6 +7,7 @@ sum rule, never as a committed number.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import stat
@@ -16,12 +17,15 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
 
 _KUEUE = Path(__file__).resolve().parents[2] / "ci-runner" / "k3s" / "phase2" / "kueue"
 _SCRIPT = _KUEUE / "converge-worker-queues.sh"
+_WORKLOAD_ARCH_TEST = Path(__file__).with_name("test_workload_arch.py")
 
 _STUB = """#!/bin/bash
 printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
@@ -106,7 +110,7 @@ def _render(
     (queues / filename).write_text(template, encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), "--dry-run"],
         capture_output=True,
         text=True,
@@ -117,7 +121,6 @@ def _render(
             "WORKER_NODES": worker_nodes or _worker_nodes(slots=arm64),
         },
         check=False,
-        timeout=30,
     )
     return result, log.read_text(encoding="utf-8").splitlines()
 
@@ -177,6 +180,36 @@ def test_a_memory_placeholder_with_no_recorded_per_slot_request_is_refused(
 def test_a_dry_run_applies_nothing(tmp_path: Path) -> None:
     _, calls = _render(tmp_path=tmp_path, arm64="3\\n")
     assert not [c for c in calls if " apply " in c]
+
+
+@pytest.mark.parametrize(
+    ("test_file", "expected_guarded_calls"),
+    [(Path(__file__), 2), (_WORKLOAD_ARCH_TEST, 1)],
+)
+def test_committed_script_runs_use_the_shared_hang_guard(
+    test_file: Path, expected_guarded_calls: int
+) -> None:
+    """Loaded hosts may be slow; script tests wait only under the shared hang guard."""
+    tree = ast.parse(test_file.read_text(encoding="utf-8"))
+    direct_subprocess_runs = [
+        call
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "subprocess"
+        and call.func.attr == "run"
+    ]
+    guarded_runs = [
+        call
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "run_under_hang_guard"
+    ]
+
+    assert not direct_subprocess_runs, f"{test_file.name} runs a committed script directly"
+    assert len(guarded_runs) == expected_guarded_calls
 
 
 def test_a_not_ready_or_unreachable_worker_offers_no_ci_worker_quota_and_is_named(
@@ -310,7 +343,7 @@ def _render_gates(
     (worker / "gates-worker-flavor.yaml").write_text(template, encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
-    result = subprocess.run(
+    result = run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), *(["--dry-run"] if dry_run else [])],
         capture_output=True,
         text=True,
@@ -324,7 +357,6 @@ def _render_gates(
             **({"GATE_UNIT_QUEUE_FILE": str(queue_file)} if queue_file else {}),
         },
         check=False,
-        timeout=30,
     )
     return result, log.read_text(encoding="utf-8").splitlines()
 
