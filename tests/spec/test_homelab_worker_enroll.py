@@ -99,7 +99,8 @@ def test_a_class_without_the_nodes_architecture_is_not_enrolled_and_is_named(
     result, calls = _run(tmp_path=tmp_path, conf=_AMD64_ONLY)
     assert result.returncode == 0, result.stderr
     assert not [c for c in calls if "k3s-role=arc-runner-host" in c or "factory=true" in c]
-    assert not [c for c in calls if "churn-slot" in c]
+    [patch] = [c for c in calls if "churn-slot" in c]
+    assert '"ci-runner.io/churn-slot":"0"' in patch
     assert "CI: NOT enrolled" in result.stdout
     assert "factory: NOT enrolled: arm64: agent layer amd64-only" in result.stdout
     assert "gate: NOT enrolled: arm64: gate image amd64-only" in result.stdout
@@ -240,7 +241,8 @@ def test_a_single_enrolled_class_takes_the_whole_allocatable_cpu(tmp_path: Path)
         f"kubectl label node {_NODE} homelab-worker.livespec.dev/gate-share-millicores=12000 --overwrite"
         in calls
     )
-    assert not [c for c in calls if "churn-slot" in c]
+    [patch] = [c for c in calls if "churn-slot" in c]
+    assert '"ci-runner.io/churn-slot":"0"' in patch
 
 
 def test_the_gate_share_is_written_before_the_worker_queues_reconcile(tmp_path: Path) -> None:
