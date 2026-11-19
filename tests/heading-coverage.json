@@ -4617,5 +4617,13 @@
     "test": "TODO",
     "reason": "A real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`), which is the integration tier or above, is owed for this heading: the real reconcile_runs role rendered by ansible-core and its scripts run against fakes, next to tests/consumer/test_reconcile_runs_render.py (spec-first, revise of the-reconcile-runs-host-timer-role). livespec-dev-tooling-lo25nk owns it.",
     "work_item": "livespec-dev-tooling-lo25nk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow edit that modifies only runs-on values is admitted at the additive tier and one that deletes a step is refused",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: check-no-workflow-edits run against a real git diff of runs-on-only edits (admitted) and a deleted step (refused, naming the line), next to the existing guard tests (spec-first, revise v252 of workflow-edit-additive-means-logically-additive). livespec-dev-tooling-hz4dkk owns it.",
+    "work_item": "livespec-dev-tooling-hz4dkk"
   }
 ]

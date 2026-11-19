@@ -1,0 +1,35 @@
+---
+# Deliver the homelab-worker scripts, at the released git tag this play is
+# applied from, to a homelab worker's macOS host. Work item
+# livespec-dev-tooling-qpmzxa (plan homelab-k8s-worker-nodes).
+#
+# remove-worker.sh, join-worker.sh and departure-drill.sh run ON the worker's
+# Mac. Until this play, the only way to get them there at a known release was a
+# by-hand `git` on the Mac, which the GitOps discipline forbids and
+# fleet_host_guard.py refuses. This play pushes them from the control node
+# instead, so a host leg can name the git tag it ran from as its build.
+#
+#   just ansible-drift ansible/homelab-worker-scripts.yml -e homelab_worker_scripts_confirm=macbook-m4-max
+#   just ansible-apply ansible/homelab-worker-scripts.yml -e homelab_worker_scripts_confirm=macbook-m4-max
+#
+# Run it from a checkout at EXACTLY a release tag (`git worktree add --detach
+# <path> v1.NNN.N`): the play refuses any other HEAD, because the tag is what a
+# host record names. It acts only on the host the confirmation names; with the
+# confirmation absent or naming another host it changes nothing and exits 0.
+#
+# WHAT IT DELIVERS: the committed files of homelab-worker/ and
+# ci-runner/k3s/phase2/ at that tag, under
+# <root>/<tag>/ (default /Users/cwoolley/homelab-worker-release/<tag>/), at the
+# relative paths the scripts expect, with <root>/<tag>/RELEASE_TAG naming the
+# tag and <root>/current pointing at the newest delivered tag. It never reads,
+# fetches, checks out or modifies any git clone on the host.
+#
+# ROLLBACK: delete <root>/<tag> and, when <root>/current points at it, repoint
+# or delete <root>/current, as a committed change. Nothing else on the host is
+# written. An older tag's tree is kept until then.
+- name: Deliver the homelab-worker scripts at the applied release tag
+  hosts: homelab_workers
+  gather_facts: false
+  roles:
+    - role: homelab_worker_scripts
+      tags: [homelab_worker_scripts]
