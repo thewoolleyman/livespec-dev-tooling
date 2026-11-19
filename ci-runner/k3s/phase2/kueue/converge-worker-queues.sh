@@ -7,7 +7,9 @@
 # (livespec-dev-tooling-ko26ez.7). converge-ci-stack.sh runs it after the
 # committed queues; homelab-worker/enroll-workload-classes.sh runs it after
 # enrolling or un-enrolling a worker, so the cohort quota is reconciled in the
-# same operation. Each template names its architecture in its file name
+# same operation. The worker-lane readiness helper is also consumed by factory
+# admission, so Ready=False/Unknown and unreachable workers leave every worker
+# lane together. Each template names its architecture in its file name
 # (…-<arch>.yaml) and sums only workers of that architecture.
 #
 # Requires kubectl with KUBECONFIG pointed at the cluster. --dry-run prints the
@@ -16,17 +18,32 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dir="${WORKER_QUEUE_DIR:-$here/worker}"
+readiness_helper="${WORKER_LANE_READINESS_HELPER:-$here/worker-lane-readiness.py}"
 dry_run=0
 [ "${1:-}" = --dry-run ] && dry_run=1
+
+[ -x "$readiness_helper" ] || {
+  echo "converge-worker-queues: FATAL: worker readiness helper is not executable: $readiness_helper" >&2
+  exit 1
+}
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+kubectl get nodes -l 'homelab-worker.livespec.dev/class=worker' -o json >"$work/workers.json"
+workers="$($readiness_helper "$work/workers.json")"
+while IFS=$'\t' read -r state name _arch _slots _share; do
+  [ -n "$state" ] || continue
+  if [ "$state" = not-ready ]; then
+    echo "converge-worker-queues: worker $name is not Ready; excluded from worker lanes"
+  fi
+done <<<"$workers"
 
 for template in "$dir"/cluster-queue-*.yaml; do
   [ -e "$template" ] || continue
   base="${template##*/}"
   arch="${base%.yaml}"
   arch="${arch##*-}"
-  slots="$(kubectl get nodes -l "homelab-worker.livespec.dev/class=worker,kubernetes.io/arch=$arch" \
-    -o jsonpath='{range .items[*]}{.status.capacity.ci-runner\.io/churn-slot}{"\n"}{end}' |
-    awk '/^[0-9]+$/ { s += $1 } END { print s + 0 }')"
+  slots="$(printf '%s\n' "$workers" | awk -F '\t' -v arch="$arch" \
+    '$1 == "ready" && $3 == arch && $4 ~ /^[0-9]+$/ { s += $4 } END { print s + 0 }')"
   rendered="$(sed "s|@WORKER_CHURN_SLOTS@|$slots|" "$template")"
   echo "converge-worker-queues: $base -> $slots churn slots from enrolled $arch workers"
   if [ "$dry_run" -eq 1 ]; then
@@ -89,10 +106,13 @@ print(cpu, memory[:-2])')"; then
 fi
 read -r gate_cpu gate_memory_gi <<<"$unit"
 gate_millicores=$((gate_cpu * 1000))
-shares="$(kubectl get nodes -l 'homelab-worker.livespec.dev/class=worker,homelab-worker.livespec.dev/gate-share-millicores' \
-  -o jsonpath='{range .items[*]}{.metadata.labels.kubernetes\.io/arch} {.metadata.labels.homelab-worker\.livespec\.dev/gate-share-millicores}{"\n"}{end}')"
-gates="$(printf '%s\n' "$shares" | awk -v g="$gate_millicores" '
-  NF == 2 && $2 ~ /^[0-9]+$/ { n = int($2 / g); if (n < 1) n = 1; s[$1] += n }
+gates="$(printf '%s\n' "$workers" | awk -F '\t' -v g="$gate_millicores" '
+  $3 != "" {
+    # Keep an enrolled-but-unready architecture flavor at zero quota: Kueue
+    # can fall through to another lane, but cannot admit work on this worker.
+    if (!($3 in s)) s[$3] = 0
+  }
+  $1 == "ready" && $3 != "" && $5 ~ /^[0-9]+$/ { n = int($5 / g); if (n < 1) n = 1; s[$3] += n }
   END { for (a in s) print a, s[a] }' | sort)"
 flavors_json="[]"
 while read -r arch count; do

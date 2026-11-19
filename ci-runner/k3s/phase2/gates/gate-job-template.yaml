@@ -67,6 +67,15 @@ spec:
   # same tree must be a new, separately-identified gate, never a silent second
   # attempt whose failure the first attempt's success would mask.
   backoffLimit: 0
+  # A node loss is infrastructure disruption, not a gate verdict. Kubernetes
+  # replaces this pod without spending the gate's only failure budget; a real
+  # command failure still ends this measurement rather than silently retrying.
+  podFailurePolicy:
+    rules:
+      - action: Ignore
+        onPodConditions:
+          - type: DisruptionTarget
+            status: "True"
   template:
     metadata:
       labels:

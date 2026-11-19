@@ -30,8 +30,7 @@ printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
 # pipefail) whenever the stub exits before printf writes.
 case " $* " in *" -f - "*) cat >/dev/null ;; esac
 case "$*" in
-  *"kubernetes.io/arch=arm64"*) printf '%b' "$ARM64_SLOTS" ;;
-  *"kubernetes.io/arch=amd64"*) printf '%b' "$AMD64_SLOTS" ;;
+  *"get nodes"*) printf '%s' "$WORKER_NODES" ;;
 esac
 """
 
@@ -48,7 +47,50 @@ spec:
 """
 
 
-def _render(*, tmp_path: Path, arm64: str) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+def _worker_nodes(*, slots: str = "", shares: str = "") -> str:
+    """A Ready enrolled Node for every supplied slot or gate-share reading."""
+    rows: list[dict[str, object]] = []
+    for index, value in enumerate(line for line in slots.replace(r"\n", "\n").splitlines() if line):
+        rows.append(
+            {
+                "metadata": {
+                    "name": f"slot-{index}",
+                    "labels": {
+                        "homelab-worker.livespec.dev/class": "worker",
+                        "kubernetes.io/arch": "arm64",
+                    },
+                },
+                "spec": {},
+                "status": {
+                    "capacity": {"ci-runner.io/churn-slot": value},
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                },
+            }
+        )
+    for index, row in enumerate(
+        line.split() for line in shares.replace(r"\n", "\n").splitlines() if line
+    ):
+        arch, share = row
+        rows.append(
+            {
+                "metadata": {
+                    "name": f"share-{index}",
+                    "labels": {
+                        "homelab-worker.livespec.dev/class": "worker",
+                        "kubernetes.io/arch": arch,
+                        "homelab-worker.livespec.dev/gate-share-millicores": share,
+                    },
+                },
+                "spec": {},
+                "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+            }
+        )
+    return json.dumps({"items": rows})
+
+
+def _render(
+    *, tmp_path: Path, arm64: str, worker_nodes: str | None = None
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     stub = bin_dir / "kubectl"
@@ -67,8 +109,7 @@ def _render(*, tmp_path: Path, arm64: str) -> tuple[subprocess.CompletedProcess[
             "PATH": f"{bin_dir}:/usr/bin:/bin",
             "STUB_LOG": str(log),
             "WORKER_QUEUE_DIR": str(queues),
-            "ARM64_SLOTS": arm64,
-            "AMD64_SLOTS": "99\\n",
+            "WORKER_NODES": worker_nodes or _worker_nodes(slots=arm64),
         },
         check=False,
         timeout=30,
@@ -90,13 +131,56 @@ def test_the_quota_is_the_sum_of_the_enrolled_workers_of_the_templates_architect
     result, calls = _render(tmp_path=tmp_path, arm64=slots)
     assert result.returncode == 0, result.stderr
     assert _quota(stdout=result.stdout) == total
-    assert all("kubernetes.io/arch=arm64" in c for c in calls)
-    assert all("homelab-worker.livespec.dev/class=worker" in c for c in calls)
+    assert any("homelab-worker.livespec.dev/class=worker" in c for c in calls)
 
 
 def test_a_dry_run_applies_nothing(tmp_path: Path) -> None:
     _, calls = _render(tmp_path=tmp_path, arm64="3\\n")
     assert not [c for c in calls if " apply " in c]
+
+
+def test_a_not_ready_or_unreachable_worker_offers_no_ci_worker_quota_and_is_named(
+    tmp_path: Path,
+) -> None:
+    unavailable = json.dumps(
+        {
+            "items": [
+                {
+                    "metadata": {
+                        "name": "unknown-worker",
+                        "labels": {
+                            "homelab-worker.livespec.dev/class": "worker",
+                            "kubernetes.io/arch": "arm64",
+                        },
+                    },
+                    "spec": {},
+                    "status": {
+                        "capacity": {"ci-runner.io/churn-slot": "3"},
+                        "conditions": [{"type": "Ready", "status": "Unknown"}],
+                    },
+                },
+                {
+                    "metadata": {
+                        "name": "unreachable-worker",
+                        "labels": {
+                            "homelab-worker.livespec.dev/class": "worker",
+                            "kubernetes.io/arch": "arm64",
+                        },
+                    },
+                    "spec": {"taints": [{"key": "node.kubernetes.io/unreachable"}]},
+                    "status": {
+                        "capacity": {"ci-runner.io/churn-slot": "4"},
+                        "conditions": [{"type": "Ready", "status": "True"}],
+                    },
+                },
+            ]
+        }
+    )
+    result, _ = _render(tmp_path=tmp_path, arm64="", worker_nodes=unavailable)
+    assert result.returncode == 0, result.stderr
+    assert _quota(stdout=result.stdout) == 0
+    assert "worker unknown-worker is not Ready" in result.stdout
+    assert "worker unreachable-worker is not Ready" in result.stdout
 
 
 def test_every_committed_worker_template_carries_the_quota_placeholder() -> None:
@@ -137,7 +221,7 @@ printf 'kubectl %s\\n' "$*" >> "$STUB_LOG"
 # pipefail) whenever the stub exits before printf writes.
 case " $* " in *" -f - "*) cat >/dev/null ;; esac
 case "$*" in
-  *"gate-share-millicores"*) printf '%b' "$GATE_SHARES" ;;
+  *"get nodes"*) printf '%s' "$WORKER_NODES" ;;
   *"get clusterqueue gates-cq"*) [ -n "$NO_GATES_CQ" ] && exit 1; printf '%s' "$GATES_CQ" ;;
 esac
 """
@@ -169,6 +253,7 @@ def _render_gates(
     dry_run: bool = True,
     gates_cq: dict[str, object] | None = None,
     queue_file: Path | None = None,
+    worker_nodes: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -189,7 +274,7 @@ def _render_gates(
             "PATH": f"{bin_dir}:/usr/bin:/bin",
             "STUB_LOG": str(log),
             "WORKER_QUEUE_DIR": str(worker),
-            "GATE_SHARES": shares,
+            "WORKER_NODES": worker_nodes or _worker_nodes(shares=shares),
             "GATES_CQ": json.dumps(_FLEET_GATES_CQ if gates_cq is None else gates_cq),
             "NO_GATES_CQ": "1" if no_gates_cq else "",
             **({"GATE_UNIT_QUEUE_FILE": str(queue_file)} if queue_file else {}),
@@ -355,6 +440,70 @@ def test_a_worker_no_longer_enrolled_drops_out_of_gates_cq(tmp_path: Path) -> No
     assert result.returncode == 0, result.stderr
     names = [f["name"] for f in _gates_patch(stdout=result.stdout)]
     assert names == ["gates-hp-flavor", "gates-flavor"]
+
+
+def test_a_not_ready_worker_offers_no_gate_flavor_until_it_returns_ready(tmp_path: Path) -> None:
+    unavailable = json.dumps(
+        {
+            "items": [
+                {
+                    "metadata": {
+                        "name": "departed-worker",
+                        "labels": {
+                            "homelab-worker.livespec.dev/class": "worker",
+                            "kubernetes.io/arch": "arm64",
+                            "homelab-worker.livespec.dev/gate-share-millicores": "5000",
+                        },
+                    },
+                    "spec": {},
+                    "status": {"conditions": [{"type": "Ready", "status": "Unknown"}]},
+                }
+            ]
+        }
+    )
+    absent, _ = _render_gates(tmp_path=tmp_path, shares="", worker_nodes=unavailable)
+    assert absent.returncode == 0, absent.stderr
+    assert "worker departed-worker is not Ready" in absent.stdout
+    [zero_quota] = [
+        flavor
+        for flavor in _gates_patch(stdout=absent.stdout)
+        if flavor["name"] == "gates-worker-taint-arm64-flavor"
+    ]
+    assert zero_quota["resources"] == [
+        {"name": "cpu", "nominalQuota": 0},
+        {"name": "memory", "nominalQuota": "0Gi"},
+    ]
+
+    returned_path = tmp_path / "returned"
+    returned_path.mkdir()
+    returned, _ = _render_gates(
+        tmp_path=returned_path, shares="", worker_nodes=_worker_nodes(shares="arm64 5000\\n")
+    )
+    assert returned.returncode == 0, returned.stderr
+    assert any(
+        flavor["name"] == "gates-worker-taint-arm64-flavor"
+        for flavor in _gates_patch(stdout=returned.stdout)
+    )
+
+
+def test_the_readiness_reconciler_is_an_installed_fleet_wide_timer() -> None:
+    root = Path(__file__).resolve().parents[2]
+    service = (root / "ci-runner/k3s/phase2/kueue/reconcile-worker-queues.service").read_text(
+        encoding="utf-8"
+    )
+    timer = (root / "ci-runner/k3s/phase2/kueue/reconcile-worker-queues.timer").read_text(
+        encoding="utf-8"
+    )
+    role = (root / "ansible/roles/worker_queue_reconciler/tasks/main.yml").read_text(
+        encoding="utf-8"
+    )
+    playbook = (root / "ansible/ci-pool.yml").read_text(encoding="utf-8")
+
+    assert "ExecStart=/usr/local/lib/ci-runner-k3s/kueue/converge-worker-queues.sh" in service
+    assert "OnUnitActiveSec=30s" in timer
+    assert "worker_queue_reconciler_timer" in role
+    assert "- role: worker_queue_reconciler" in playbook
+    assert "homelab-worker" not in service
 
 
 def test_the_worker_gate_flavor_selects_its_architecture_and_admits_only_class_tolerating_gates(

@@ -327,14 +327,6 @@
     # phase2/gate-placement/).
     - role: gate_placement_publisher
       tags: [gate_placement]
-    # And it holds each factory node to its committed `factory_pod_budget` with
-    # the ci-runner.io/factory-admit label, which the sandbox driver selects: the
-    # TEMPORARY fixed factory-vs-CI CPU share (README in
-    # phase2/factory-budget-admission/). Server-only: it runs under the admin
-    # kubeconfig. Apply it BEFORE fabro-hosts.yml renders the selector entry.
-    - role: factory_budget_reconciler
-      tags: [factory_budget_admission]
-      when: cluster_role == 'server'
     # And it hands a runner pod stranded by a down ci-runner-scheduler to the
     # default scheduler (livespec-dev-tooling-mtvxde). Server-only: it runs under
     # the admin kubeconfig.
@@ -393,6 +385,18 @@
     # 8/10 — reconstruct-on-boot converge unit (server-only, STEP_SKIP).
     - role: ci_converge_unit
       tags: [ci_converge_unit]
+      when: cluster_role == 'server'
+    # The factory admission reconciler consumes the worker readiness helper in
+    # ci_converge_unit's installed tree, so a departed worker closes its
+    # factory lane under the same rule as gates and CI queues.
+    - role: factory_budget_reconciler
+      tags: [factory_budget_admission]
+      when: cluster_role == 'server'
+    # A departed or rejoined enrolled worker changes the gate and CI queue
+    # quotas without an operator step. This follows ci_converge_unit because it
+    # executes that role's installed Kueue artifact tree.
+    - role: worker_queue_reconciler
+      tags: [worker_queue_reconciler]
       when: cluster_role == 'server'
     # And the server reorders gates-cq's flavors from those readings so a newly
     # submitted gate Job is admitted on an unsaturated lane. AFTER ci_converge_unit

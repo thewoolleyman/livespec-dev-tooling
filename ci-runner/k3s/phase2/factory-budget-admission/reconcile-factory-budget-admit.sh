@@ -59,6 +59,7 @@ esac
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 export FACTORY_BUDGET_FILE="${FACTORY_BUDGET_FILE:-/etc/livespec/factory-pod-budgets.conf}"
 export FACTORY_BUDGET_GATE="${FACTORY_BUDGET_GATE:-on}"
+export WORKER_LANE_READINESS_HELPER="${WORKER_LANE_READINESS_HELPER:-/usr/local/lib/ci-runner-k3s/kueue/worker-lane-readiness.py}"
 ADMIT_LABEL=ci-runner.io/factory-admit
 
 case "$FACTORY_BUDGET_GATE" in
@@ -79,9 +80,11 @@ kubectl get nodes -l ci-runner.io/factory-admit=true -o json >"$work/admit-nodes
   || die "could not list the admitted nodes; changing nothing this cycle"
 kubectl get pods --all-namespaces -l app.kubernetes.io/managed-by=sandbox-driver-kubernetes -o json \
   >"$work/pods.json" || die "could not list the sandbox pods; changing nothing this cycle"
+[ -x "$WORKER_LANE_READINESS_HELPER" ] \
+  || die "worker lane readiness helper is not executable: $WORKER_LANE_READINESS_HELPER; changing nothing this cycle"
 
 python3 - "$work" >"$work/decision" <<'PY'
-import json, os, sys
+import json, os, subprocess, sys
 
 work = sys.argv[1]
 gate = os.environ["FACTORY_BUDGET_GATE"]
@@ -122,6 +125,20 @@ if gate == "on":
 
 nodes = load("nodes.json")["items"]
 admitted_nodes = load("admit-nodes.json")["items"]
+try:
+    classified = subprocess.run(
+        [os.environ["WORKER_LANE_READINESS_HELPER"], os.path.join(work, "nodes.json")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+except subprocess.CalledProcessError as error:
+    raise SystemExit("could not classify worker lane readiness: %s" % error.stderr.strip()) from error
+ready_workers = {
+    fields[1]
+    for line in classified.stdout.splitlines()
+    if (fields := line.split("\t")) and fields[0] == "ready" and len(fields) == 5
+}
 counts = {n["metadata"]["name"]: 0 for n in nodes}
 for pod in load("pods.json")["items"]:
     labels = pod["metadata"].get("labels") or {}
@@ -148,8 +165,9 @@ for n in nodes:
     budget = budgets.get(name, default)
     alloc = cpu_millis(n["status"]["allocatable"]["cpu"])
     arch = node_labels.get("kubernetes.io/arch", "")
+    worker_ready = node_labels.get(WORKER_CLASS) != "worker" or name in ready_workers
     rows.append({"name": name, "count": counts[name], "budget": budget, "alloc": alloc,
-                 "current": current, "arch": arch})
+                 "current": current, "arch": arch, "worker_ready": worker_ready})
 
 if gate == "off":
     for r in rows:
@@ -157,11 +175,13 @@ if gate == "off":
     print("GATE off: every factory node admitted (kill switch)")
 else:
     for r in rows:
-        r["admit"] = "true" if r["count"] < r["budget"] else "false"
+        r["admit"] = "true" if r["worker_ready"] and r["count"] < r["budget"] else "false"
     # A sandbox selects one architecture, so the fail-open overflow is judged per
     # architecture: a full amd64 fleet is never relieved by an arm64 worker.
     for arch in sorted({r["arch"] for r in rows}):
-        group = [r for r in rows if r["arch"] == arch]
+        group = [r for r in rows if r["arch"] == arch and r["worker_ready"]]
+        if not group:
+            continue
         if all(r["admit"] == "false" for r in group):
             best = max(group, key=lambda r: (r["budget"] - r["count"], r["alloc"], r["name"]))
             best["admit"] = "true"
@@ -174,6 +194,8 @@ else:
 for r in sorted(rows, key=lambda r: r["name"]):
     print("ADMIT node=%s count=%d budget=%d admit=%s was=%s"
           % (r["name"], r["count"], r["budget"], r["admit"], r["current"]))
+    if not r["worker_ready"]:
+        print("NOT_READY node=%s excluded from the worker factory lane" % r["name"])
     if r["admit"] != r["current"]:
         print("LABEL %s %s" % (r["name"], r["admit"]))
 

@@ -160,9 +160,6 @@ _POWEREDGE_ROLES = (
     "factory_pressure_reconciler",
     # Every pool node publishes its gate-placement readings (livespec-dev-tooling-gvo7fa).
     "gate_placement_publisher",
-    # And it holds each factory node to its factory_pod_budget (the TEMPORARY
-    # fixed factory-vs-CI CPU share, maintainer ruling 2026-11-08).
-    "factory_budget_reconciler",
     # And it fails runner pods open while ci-runner-scheduler is down.
     "runner_scheduler_fail_open",
     "wedged_runner",
@@ -175,6 +172,10 @@ _POWEREDGE_ROLES = (
     "cache_telemetry",
     "container_hook",
     "ci_converge_unit",
+    # The factory admission rule and the worker-lane readiness rule both read
+    # ci_converge_unit's installed artifact tree, so they follow it.
+    "factory_budget_reconciler",
+    "worker_queue_reconciler",
     # The server reorders gates-cq's flavors from those readings, after
     # ci_converge_unit installs the static lane order it falls back to.
     "gate_placement_reconciler",
