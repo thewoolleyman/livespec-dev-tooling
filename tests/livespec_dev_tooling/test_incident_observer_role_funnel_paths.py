@@ -46,6 +46,8 @@ _ROLE_VARIABLES = (
     "incident_observer_port",
     "incident_observer_funnel_https_port",
     "incident_observer_funnel_paths",
+    "incident_observer_installation_routes",
+    "incident_observer_installations",
 )
 # The fake `tailscale`: `status --json --peers=false` answers the node's DNS
 # name and capability map, `funnel status --json` answers the recorded serve
@@ -106,6 +108,13 @@ _BOTH = {
     _CALLBACK: _PRODUCTION + _CALLBACK,
     _ORDINARY: _PRODUCTION + _ORDINARY,
 }
+_SECOND_INSTALLATION = {
+    "repository": "livespec-ai/livespec",
+    "required_jobs": ["check-lint", "ci-green"],
+    "port": 8770,
+    "tenant_project_id": "00000000-0000-0000-0000-000000000000",
+    "reader_env_var": "BEADS_DOLT_PASSWORD_LIVESPEC",
+}
 # Each node the one playbook run applies the funnel tasks to: its recorded
 # funnel status, whether the tailnet grants it the funnel attribute, and
 # whether a publish on it takes effect.
@@ -120,9 +129,49 @@ _NODES: dict[str, tuple[dict[str, Any], bool, bool]] = {
     ),
     "extra-root": (_serve(handlers={**_BOTH, "/": _PRODUCTION}), True, True),
     "extra-current": (_serve(handlers={**_BOTH, "/current": _PRODUCTION + "/current"}), True, True),
+    "empty-publisher-sibling": (
+        _serve(
+            handlers={
+                **_BOTH,
+                "/livespec/ci/publish": "http://127.0.0.1:8770/ci/publish",
+            }
+        ),
+        True,
+        True,
+    ),
+    "publishing-sibling": (
+        _serve(
+            handlers={
+                **_BOTH,
+                _PUBLISH: _PRODUCTION + _PUBLISH,
+                "/livespec/ci/publish": "http://127.0.0.1:8770/ci/publish",
+            }
+        ),
+        True,
+        True,
+    ),
     "discarding": (_serve(handlers={_CALLBACK: _PRODUCTION + _CALLBACK}), True, False),
     "ungranted": ({}, False, True),
 }
+
+
+def _node_variables(*, node: str) -> dict[str, Any]:
+    """The production apply has a publisher; a further installation has one only when it lists it."""
+    variables: dict[str, Any] = base.production_variables()
+    if node in {"empty-publisher-sibling", "publishing-sibling"}:
+        sibling: dict[str, Any] = dict(_SECOND_INSTALLATION)
+        if node == "publishing-sibling":
+            sibling["ci_publisher_shas"] = [_PUBLISHER_SHA]
+        variables.update(
+            {
+                "incident_observer_ci_publisher_shas": [_PUBLISHER_SHA],
+                "incident_observer_installations": [
+                    *variables["incident_observer_installations"],
+                    sibling,
+                ],
+            }
+        )
+    return base.resolve(variables=variables)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -142,7 +191,6 @@ def outcomes(tmp_path_factory: pytest.TempPathFactory) -> dict[str, _Outcome]:
         {key: value for key, value in task.items() if key != "become"}
         for task in tasks[names.index(_FIRST) : names.index(_LAST) + 1]
     ]
-    defaults = base.resolve(variables=base.production_variables())
     bin_dir = root / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "tailscale"
@@ -150,6 +198,7 @@ def outcomes(tmp_path_factory: pytest.TempPathFactory) -> dict[str, _Outcome]:
     fake.chmod(0o755)
     hosts: dict[str, dict[str, str]] = {}
     for node, (serve, granted, publishes) in _NODES.items():
+        variables = _node_variables(node=node)
         state = root / (node + ".json")
         state.write_text(
             json.dumps(
@@ -162,6 +211,7 @@ def outcomes(tmp_path_factory: pytest.TempPathFactory) -> dict[str, _Outcome]:
             "ansible_connection": "local",
             "fake_state": str(state),
             "fake_log": str(root / (node + ".jsonl")),
+            **{name: variables[name] for name in _ROLE_VARIABLES},
         }
     inventory = root / "inventory.yml"
     inventory.write_text(yaml.safe_dump({"all": {"hosts": hosts}}), encoding="utf-8")
@@ -176,7 +226,6 @@ def outcomes(tmp_path_factory: pytest.TempPathFactory) -> dict[str, _Outcome]:
                         "FAKE_TAILSCALE_STATE": "{{ fake_state }}",
                         "FAKE_TAILSCALE_LOG": "{{ fake_log }}",
                     },
-                    "vars": {name: defaults[name] for name in _ROLE_VARIABLES},
                     "tasks": funnel,
                 }
             ]
@@ -352,3 +401,21 @@ def test_a_scratch_installation_never_publishes_the_ci_publish_route() -> None:
     resolved = base.resolve(variables=variables)
 
     assert _PUBLISH not in resolved["incident_observer_funnel_paths"]
+
+
+def test_a_funnel_port_publishing_a_siblings_ci_publish_path_without_its_publisher_refuses(
+    outcomes: dict[str, _Outcome],
+) -> None:
+    outcome = outcomes["empty-publisher-sibling"]
+
+    assert outcome.failed is True
+    assert "publishes /livespec/ci/publish, which the role does not declare" in outcome.output
+
+
+def test_a_funnel_port_publishing_a_siblings_ci_publish_path_with_its_publisher_is_accepted(
+    outcomes: dict[str, _Outcome],
+) -> None:
+    outcome = outcomes["publishing-sibling"]
+
+    assert outcome.failed is False, outcome.output
+    assert outcome.published == []

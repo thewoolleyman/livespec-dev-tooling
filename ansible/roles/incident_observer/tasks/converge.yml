@@ -1096,17 +1096,36 @@
            | zip(incident_observer_funnel_targets | default(incident_observer_funnel_paths))
            | map('join', ' proxy http://127.0.0.1:' ~ incident_observer_port)
            | list }}
+      # The further installations whose own inventory entry lists a non-empty
+      # `ci_publisher_shas`: the only ones, besides the installation being
+      # converged (whose list is the play's incident_observer_ci_publisher_shas,
+      # already in incident_observer_funnel_paths), that publish /ci/publish.
+      incident_observer_funnel_publishing_siblings: >-
+        {{ incident_observer_installations | default([])
+           | selectattr('ci_publisher_shas', 'defined')
+           | rejectattr('ci_publisher_shas', 'equalto', [])
+           | rejectattr('repository', 'match', '^[^/]+/livespec-dev-tooling$')
+           | rejectattr('repository', 'match',
+                        '^[^/]+/' ~ (incident_observer_installation_name | default('livespec-dev-tooling')) ~ '$')
+           | list }}
       # Every public path any declared installation publishes on this port:
-      # livespec-dev-tooling's exact paths and each further installation's
-      # /<name>/ routes. Converging one installation neither refuses on nor
-      # unpublishes another's (livespec-dev-tooling-lqp2qx).
+      # the callback and ordinary-action routes for every installation, each
+      # further installation's /<name>/ci/publish only while its own publisher
+      # list is non-empty, plus this installation's own dynamically declared
+      # paths. In particular, an installation whose publisher list is empty is
+      # not credited with a /ci/publish route nothing publishes. Converging one
+      # installation neither refuses on nor unpublishes another's
+      # (livespec-dev-tooling-lqp2qx).
       incident_observer_funnel_union: >-
         {{ (incident_observer_installations | default([])
             | map(attribute='repository') | map('regex_replace', '^.*/', '')
             | map('regex_replace', '^livespec-dev-tooling$', '')
             | map('regex_replace', '^(?=.)', '/')
-            | product(incident_observer_installation_routes | default(incident_observer_funnel_paths))
+            | product(['/callback', '/ordinary-action'])
             | map('join') | list)
+           | union(incident_observer_funnel_publishing_siblings
+                   | map(attribute='repository') | map('regex_replace', '^.*/', '/')
+                   | map('regex_replace', '$', '/ci/publish') | list)
            | union(incident_observer_funnel_paths) }}
       # The route each of those paths must proxy to: the same route on the
       # listener of the installation that declares it, at that entry's port. A
@@ -1118,10 +1137,16 @@
             | map('regex_replace', '^livespec-dev-tooling$', '')
             | map('regex_replace', '^(?=.)', '/')
             | zip(incident_observer_installations | default([]) | map(attribute='port') | map('string'))
-            | product(incident_observer_installation_routes | default(incident_observer_funnel_paths))
+            | product(['/callback', '/ordinary-action'])
             | map('flatten') | map('join', '|')
             | map('regex_replace', '^([^|]*)[|]([^|]*)[|](.*)$', '\1\3 proxy http://127.0.0.1:\2\3')
             | list)
+           | union(incident_observer_funnel_publishing_siblings
+                   | map(attribute='repository') | map('regex_replace', '^.*/', '/')
+                   | zip(incident_observer_funnel_publishing_siblings | map(attribute='port') | map('string'))
+                   | map('join', '|')
+                   | map('regex_replace', '^([^|]*)[|](.*)$', '\1/ci/publish proxy http://127.0.0.1:\2/ci/publish')
+                   | list)
            | union(incident_observer_funnel_declared_routes) }}
       incident_observer_funnel_published_routes: >-
         {{ incident_observer_funnel_handlers | dict2items | map(attribute='key')
