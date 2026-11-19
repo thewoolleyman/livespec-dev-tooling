@@ -112,8 +112,10 @@ budgets quickly:
 
 - `gh run`, `gh pr`, or UNCACHED read-only `gh api` calls driven by a loop
   whose iteration count is NOT readable off the command text, or by a loop
-  that sleeps between iterations (a `gh api --cache <duration>` read is the
-  remedy the guard prescribes, so it is exempt);
+  that sleeps between iterations (a `gh api --cache <duration>` read is
+  exempt, but `--cache` is a TTL-only local cache: it sends no If-None-Match,
+  so a call after the TTL is a counted request, not a free 304; the exemption
+  is sound only when the TTL outlasts the loop);
 - shell loops or `xargs` combined with mutating `gh api` calls.
 
 Both verdicts read a MASKED copy of the command in which quoted spans and
@@ -249,11 +251,12 @@ _MUTATING_METHOD = re.compile(
     r"(?:\s|^)(?:-X|--method)(?:=|\s+)(?P<method>delete|post|patch|put)\b",
     re.IGNORECASE,
 )
-# `gh api --cache <duration>` is the very remedy the read deny message
-# prescribes: a cache hit answers 304, which spends no primary rate-limit
-# budget. Counting it as a rate-limited read denied the agent for obeying the
-# instruction it was just given -- 96 of 615 denials over the 7 days to
-# 2026-08-26 were commands already in the sanctioned cached form.
+# `gh api --cache <duration>` is a TTL-only local cache. A hit inside the TTL
+# is free; `gh` sends no If-None-Match, so a call after the TTL is a counted
+# request. The read deny message names a TTL longer than the loop period as one
+# working remedy, and counting such a read as rate-limited denied the agent for
+# obeying it -- 96 of 615 denials over the 7 days to 2026-08-26 were commands
+# already in the sanctioned cached form.
 #
 # The duration is REQUIRED, not optional: a bare `--cache` is not valid `gh`,
 # so a value that is absent or is the next flag buys no exemption.
