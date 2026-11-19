@@ -1311,3 +1311,104 @@
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
     and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Read every incident CI caller's provisioned audience
+  # The forge variable is written only after this apply has installed and
+  # checked the observer's public publisher route.  The operator's existing
+  # provisioning credential owns Actions variables; the observer service
+  # account and its recovery App never receive that authority.
+  ansible.builtin.command:
+    argv:
+      - gh
+      - api
+      - "repos/{{ item.repository }}/actions/variables/{{ incident_observer_ci_audience_variable }}"
+      - --jq
+      - .value
+  become: true
+  become_user: "{{ incident_observer_ci_audience_provisioner_user }}"
+  register: incident_observer_ci_audience_before
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ incident_observer_installations }}"
+  loop_control:
+    label: "{{ item.repository }}"
+  when: >-
+    not ansible_check_mode
+    and not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Restore every incident CI caller's audience variable from the observer inventory
+  ansible.builtin.command:
+    argv:
+      - gh
+      - variable
+      - set
+      - "{{ incident_observer_ci_audience_variable }}"
+      - --repo
+      - "{{ item.0.repository }}"
+      - --body
+      - "{{ incident_observer_ci_audience_prefix }}{{ item.0.repository }}"
+  become: true
+  become_user: "{{ incident_observer_ci_audience_provisioner_user }}"
+  register: incident_observer_ci_audience_write
+  changed_when: true
+  loop: >-
+    {{ incident_observer_installations
+       | zip(incident_observer_ci_audience_before.results | default([])) | list }}
+  loop_control:
+    label: "{{ item.0.repository }}"
+  when: >-
+    not ansible_check_mode
+    and not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+    and (item.1.rc != 0
+         or item.1.stdout != incident_observer_ci_audience_prefix ~ item.0.repository)
+
+- name: Read every incident CI caller's audience after provisioning
+  ansible.builtin.command:
+    argv:
+      - gh
+      - api
+      - "repos/{{ item.repository }}/actions/variables/{{ incident_observer_ci_audience_variable }}"
+      - --jq
+      - .value
+  become: true
+  become_user: "{{ incident_observer_ci_audience_provisioner_user }}"
+  register: incident_observer_ci_audience_after
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ incident_observer_installations }}"
+  loop_control:
+    label: "{{ item.repository }}"
+  when: >-
+    not ansible_check_mode
+    and not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+
+- name: Refuse audience provisioning unless every caller reads its inventory value
+  ansible.builtin.assert:
+    that:
+      - item.1.rc == 0
+      - item.1.stdout == incident_observer_ci_audience_prefix ~ item.0.repository
+    fail_msg: >-
+      {{ item.0.repository }} does not read {{ incident_observer_ci_audience_variable }} as
+      {{ incident_observer_ci_audience_prefix }}{{ item.0.repository }} after the committed
+      incident observer provisioning route. Refusing to treat the caller as provisioned.
+    success_msg: >-
+      {{ item.0.repository }} reads {{ incident_observer_ci_audience_variable }} as
+      {{ incident_observer_ci_audience_prefix }}{{ item.0.repository }}
+  loop: >-
+    {{ incident_observer_installations
+       | zip(incident_observer_ci_audience_after.results | default([])) | list }}
+  loop_control:
+    label: "{{ item.0.repository }}"
+  when: >-
+    not ansible_check_mode
+    and not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0

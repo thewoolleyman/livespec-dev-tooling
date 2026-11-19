@@ -94,6 +94,17 @@ def test_an_unpassed_aggregate_is_never_published():
     assert (code, sent) == (1, []) and "did not pass" in text
 
 
+def test_an_empty_audience_refuses_before_contacting_the_observer():
+    sent = []
+    code, text = run(
+        {"status": "published"},
+        environ=_ENVIRON | {"LIVESPEC_INCIDENT_CI_AUDIENCE": ""},
+        sent=sent,
+    )
+    assert (code, sent) == (1, [])
+    assert "LIVESPEC_INCIDENT_CI_AUDIENCE" in text
+
+
 @pytest.mark.parametrize(
     "environ",
     [
