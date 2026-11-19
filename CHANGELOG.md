@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.227.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.226.0...v1.227.0) (2026-11-19)
+
+
+### Features
+
+* **ansible:** the token_spend_report role installs vps-info's token-spend scripts pinned by commit sha and a SHA-256 per file (livespec-dev-tooling-f2orjr) ([4b5fdc3](https://github.com/livespec-ai/livespec-dev-tooling/commit/4b5fdc3e19a5d9bdf15616b36ec1587bf498df68))
+
 ## [1.226.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.225.0...v1.226.0) (2026-11-19)
 
 
