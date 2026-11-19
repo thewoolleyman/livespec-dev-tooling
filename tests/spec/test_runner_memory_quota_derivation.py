@@ -46,7 +46,11 @@ _HEADROOM_ROW = re.compile(
 
 def _documents(path: Path) -> list[dict[str, Any]]:
     """Load a Kueue manifest, giving its worker placeholder a test value."""
-    text = path.read_text(encoding="utf-8").replace("@WORKER_CHURN_SLOTS@", "0")
+    text = (
+        path.read_text(encoding="utf-8")
+        .replace("@WORKER_CHURN_SLOTS@", "0")
+        .replace("@WORKER_MEMORY_QUOTA@", "0Mi")
+    )
     return [document for document in yaml.safe_load_all(text) if document]
 
 
@@ -140,6 +144,24 @@ def test_runner_queue_memory_quotas_match_the_documented_node_headroom() -> None
 
 
 def test_arm64_runner_queue_covers_one_recorded_runner_request() -> None:
-    """The rendered worker quota keeps memory declared beside its churn slot."""
+    """The committed worker template keeps memory declared beside its churn slot."""
     worker_queue = _cluster_queues()[_WORKER_QUEUE]
-    assert _memory_quotas(worker_queue) == {"churn-slot-worker-arm64-flavor": "4.25Gi"}
+    assert _memory_quotas(worker_queue) == {"churn-slot-worker-arm64-flavor": "0Mi"}
+    template = (_KUEUE / "worker" / "cluster-queue-livespec-dev-tooling-arm64.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "nominalQuota: @WORKER_MEMORY_QUOTA@" in template
+
+
+def test_the_documented_per_slot_worker_memory_is_the_arm64_runner_request() -> None:
+    """DERIVATION.md's per-slot figure is the arm64 runner request, in Mi."""
+    values = yaml.safe_load(
+        (_ARC / "values-livespec-dev-tooling-arm64.yaml").read_text(encoding="utf-8")
+    )
+    [runner] = [c for c in values["template"]["spec"]["containers"] if c["name"] == "runner"]
+    request = runner["resources"]["requests"]["memory"]
+    assert request.endswith("Gi")
+    per_slot_mi = int(float(request.removesuffix("Gi")) * 1024)
+    documented = re.search(r"`churn slots x (?P<mi>\d+)Mi`", _DERIVATION.read_text("utf-8"))
+    assert documented is not None
+    assert int(documented["mi"]) == per_slot_mi

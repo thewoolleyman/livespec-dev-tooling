@@ -44,8 +44,21 @@ for template in "$dir"/cluster-queue-*.yaml; do
   arch="${arch##*-}"
   slots="$(printf '%s\n' "$workers" | awk -F '\t' -v arch="$arch" \
     '$1 == "ready" && $3 == arch && $4 ~ /^[0-9]+$/ { s += $4 } END { print s + 0 }')"
-  rendered="$(sed "s|@WORKER_CHURN_SLOTS@|$slots|" "$template")"
-  echo "converge-worker-queues: $base -> $slots churn slots from enrolled $arch workers"
+  # Each churn slot admits one runner pod, which requests the architecture's
+  # runner memory (arc/values-livespec-dev-tooling-arm64.yaml: 4.25Gi = 4352Mi),
+  # so the memory quota scales with the rendered slots exactly as the churn-slot
+  # quota does (DERIVATION.md, "Runner-pod memory admission").
+  case "$arch" in
+    arm64) memory_per_slot_mi=4352 ;;
+    *) memory_per_slot_mi= ;;
+  esac
+  if [ -z "$memory_per_slot_mi" ] && grep -q '@WORKER_MEMORY_QUOTA@' "$template"; then
+    echo "converge-worker-queues: FATAL: no per-slot runner memory is recorded for the $arch workers of $base" >&2
+    exit 1
+  fi
+  memory="$((slots * ${memory_per_slot_mi:-0}))Mi"
+  rendered="$(sed -e "s|@WORKER_CHURN_SLOTS@|$slots|" -e "s|@WORKER_MEMORY_QUOTA@|$memory|" "$template")"
+  echo "converge-worker-queues: $base -> $slots churn slots and $memory memory from enrolled $arch workers"
   if [ "$dry_run" -eq 1 ]; then
     printf '%s\n' "$rendered"
   else

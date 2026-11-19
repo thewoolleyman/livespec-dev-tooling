@@ -41,11 +41,12 @@ spec:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: @WORKER_CHURN_SLOTS@
               borrowingLimit: 0
-            # One arm64 runner slot has the dev-tooling request below.  The
-            # worker's churn quota is rendered from its enrolled capacity, but
-            # its memory coverage must be present in the committed template.
+            # Every rendered churn slot admits one arm64 runner pod with the
+            # dev-tooling request (4.25Gi), so the quota is rendered per slot
+            # beside it by ../converge-worker-queues.sh (DERIVATION.md,
+            # "Runner-pod memory admission"), never committed as one runner's.
             - name: memory
-              nominalQuota: 4.25Gi
+              nominalQuota: @WORKER_MEMORY_QUOTA@
               borrowingLimit: 0
 ---
 apiVersion: kueue.x-k8s.io/v1beta2

@@ -26,7 +26,11 @@ _MEMORY = "memory"
 
 def _documents(path: Path) -> list[dict[str, Any]]:
     """Load one committed Kueue manifest, including its worker quota template."""
-    text = path.read_text(encoding="utf-8").replace("@WORKER_CHURN_SLOTS@", "0")
+    text = (
+        path.read_text(encoding="utf-8")
+        .replace("@WORKER_CHURN_SLOTS@", "0")
+        .replace("@WORKER_MEMORY_QUOTA@", "0Mi")
+    )
     return [document for document in yaml.safe_load_all(text) if document]
 
 
