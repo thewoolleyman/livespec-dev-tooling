@@ -3687,6 +3687,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated suite-green replay leg runs pytest with the Job's declared worker count, not one derived from the committing host's CPU count",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the unit and consumer tier is owed for this scenario, driving the replay gate's delegated suite-green leg with a declared gate_parallelism, with none, and with LIVESPEC_TEST_PARALLELISM set on a committing host that exposes more CPUs than the Job's size, and asserting the Job's pytest carries -n 6, -n 4 and -n 2 respectively and never -n 16; livespec-dev-tooling-ovzmcn owns it.",
+    "work_item": "livespec-dev-tooling-ovzmcn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted",
     "test": "tests.consumer.test_gate_job_resource_scenarios.test_non_positive_cpu_refuses_before_the_consumer_submits_a_gate_job",
     "reason": "Consumer-tier: a fixture consumer declaring gate_cpu = 0 reaches the shipped client, which refuses the push naming pyproject.toml and gate_cpu before any Job can be rendered or submitted (livespec-dev-tooling-4g7als)."
