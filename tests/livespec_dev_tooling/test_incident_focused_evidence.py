@@ -7,6 +7,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -698,24 +699,28 @@ def _escaped_pids(path: Path) -> list[int]:
 def test_a_descendant_holding_the_output_open_cannot_outlast_the_bound(
     project: tuple[Path, str],
 ) -> None:
-    root, base = project
+    root, _ = project
     pid_file = root.parent / f"{root.name}-escaped.pid"
-    (root / "pyproject.toml").write_text(
-        '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n'
-        '[tool.pytest.ini_options]\naddopts = "-s"\n'
-    )
-    (root / "tests/test_escaped.py").write_text(
-        "import pathlib, subprocess\n"
-        "def test_escaped():\n"
-        '    child = subprocess.Popen(["sleep", "300"], start_new_session=True)\n'
-        f'    pathlib.Path(r"{pid_file}").write_text(str(child.pid))\n'
-    )
-    _git(root, "add", ".")
     pid_file.touch()
     try:
-        # The nested pytest must reach `test_escaped` before the bound fires, even on a
-        # loaded host; the held pipe then guarantees the deadline is what ends the run.
-        evidence = _collect(root, base, timeout=20)
+        # Exercise the process owner directly. Starting a nested pytest before the
+        # deadline made this drain proof depend on scheduler contention rather than
+        # the escaped descendant that it is meant to prove.
+        deadline = measurement.monotonic() + 20
+        result = measurement._run(  # noqa: SLF001 - exercise the process owner directly.
+            argv=[
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib, subprocess; "
+                    'child = subprocess.Popen(["sleep", "300"], start_new_session=True); '
+                    f'pathlib.Path(r"{pid_file}").write_text(str(child.pid))'
+                ),
+            ],
+            root=root,
+            env=os.environ.copy(),
+            deadline=deadline,
+        )
         # The collection returned while the descendant still holds the pipe open, so it
         # did not wait for the pipe to close. A run that never spawned the child proves
         # nothing about the drain, so it fails here instead of passing vacuously.
@@ -727,8 +732,7 @@ def test_a_descendant_holding_the_output_open_cannot_outlast_the_bound(
         for pid in _escaped_pids(pid_file):
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGKILL)
-    assert evidence["tests"]["timed_out"] is True
-    assert evidence["outcome"] == "incomplete"
+    assert result["timed_out"] is True
 
 
 def test_a_relative_omit_pattern_is_joined_to_the_repository_root(
