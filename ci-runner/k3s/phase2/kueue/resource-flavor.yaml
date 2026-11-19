@@ -73,38 +73,15 @@ spec:
       value: worker
       effect: NoSchedule
 ---
-# The runner queues carry one memory flavor for each x86 pool node.  Unlike the
-# fleet-wide churn-slot flavor, these name a concrete node so Kueue can account
-# for a runner request against the headroom documented in DERIVATION.md before
-# the scheduler's final node-local resource fit check.
+# runner-memory-flavor — the one memory flavor every x86 runner ClusterQueue
+# covers. It has NO nodeLabels on purpose: Kueue injects a flavor's nodeLabels as
+# the runner pod's nodeSelector and takes the first flavor that fits, so a
+# hostname-pinned flavor per node pinned runners to one node while the churn
+# slots live on the node (second look, 2026-11-19). Kueue only caps the fleet's
+# total runner memory here; the scheduler places by the pod memory request plus
+# the per-node churn-slot resource. DERIVATION.md "Runner memory fit".
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
-  name: runner-memory-gmktec-flavor
-spec:
-  nodeLabels:
-    kubernetes.io/hostname: gmktec-xubuntu
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: ResourceFlavor
-metadata:
-  name: runner-memory-hp-flavor
-spec:
-  nodeLabels:
-    kubernetes.io/hostname: hp-xubuntu
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: ResourceFlavor
-metadata:
-  name: runner-memory-poweredge-flavor
-spec:
-  nodeLabels:
-    kubernetes.io/hostname: poweredge-xubuntu
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: ResourceFlavor
-metadata:
-  name: runner-memory-gamingpc-flavor
-spec:
-  nodeLabels:
-    kubernetes.io/hostname: gamingpc-xubuntu
+  name: runner-memory-flavor
+spec: {}

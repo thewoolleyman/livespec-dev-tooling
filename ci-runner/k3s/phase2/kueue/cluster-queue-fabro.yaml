@@ -64,24 +64,16 @@ spec:
               # on 2026-11-05. See DERIVATION.md "The fabro fork scale set
               # (2026-11-05)".
               nominalQuota: 1
+    # One memory flavor with NO nodeLabels: Kueue caps total runner memory fleet-wide without choosing a
+    # node (a hostname-pinned flavor per node made Kueue pin runners to the first flavor that fit while
+    # the slots live on the node). The scheduler places by the pod memory request and the per-node
+    # churn-slot resource. Quota = churn slots x 11Gi (DERIVATION.md "Runner memory fit").
     - coveredResources: ["memory"]
       flavors:
-        - name: runner-memory-gmktec-flavor
+        - name: runner-memory-flavor
           resources:
             - name: memory
-              nominalQuota: 0Gi
-        - name: runner-memory-hp-flavor
-          resources:
-            - name: memory
-              nominalQuota: 12Gi
-        - name: runner-memory-poweredge-flavor
-          resources:
-            - name: memory
-              nominalQuota: 254Gi
-        - name: runner-memory-gamingpc-flavor
-          resources:
-            - name: memory
-              nominalQuota: 68Gi
+              nominalQuota: 11Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

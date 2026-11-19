@@ -2715,20 +2715,21 @@ has it; a limit would turn an underestimated p95 into an OOM kill.  The
 phase-1 proof set remains outside Kueue, so its 512Mi request is enforced only
 by the Kubernetes scheduler.
 
-Every Kueue-routed runner ClusterQueue covers `memory` with the four x86
-per-node ResourceFlavors in `resource-flavor.yaml`.  Kueue selects the flavor
-and adds its hostname selector; the scheduler then makes the final placement
-decision using the same runner request.  The quota is intentionally repeated
+**Superseded 2026-11-19 (second look, see "Runner memory fit" below):** the per-node hostname-pinned
+flavors described in this paragraph were replaced by ONE unpinned `runner-memory-flavor`; the per-node
+headroom table below now only sizes the fleet's total. Original text: Every Kueue-routed runner ClusterQueue
+covered `memory` with four x86 per-node ResourceFlavors.  Kueue selected the flavor and added its hostname
+selector; the scheduler then made the final placement decision using the same runner request.  The quota is intentionally repeated
 for every per-repository queue: queues do not share a Kueue memory cohort, and
 the scheduler is the common node-local authority that prevents one queue from
 overpacking a node occupied by another queue.
 
 | ResourceFlavor | node | allocatable Gi | factory requests Gi | gates requests Gi | calculation | memory nominalQuota |
 | --- | --- | ---: | ---: | ---: | --- | ---: |
-| `runner-memory-gmktec-flavor` | gmktec-xubuntu | 62.4 | 52.2 | 24 | max(0, floor(62.4 - 52.2 - 24)) | 0Gi |
-| `runner-memory-hp-flavor` | hp-xubuntu | 27.2 | 14.9 | 0 | floor(27.2 - 14.9 - 0) | 12Gi |
-| `runner-memory-poweredge-flavor` | poweredge-xubuntu | 378 | 67.5 | 56 | floor(378 - 67.5 - 56) | 254Gi |
-| `runner-memory-gamingpc-flavor` | gamingpc-xubuntu | 92.38 | 7.5 | 16 | floor(92.38 - 7.5 - 16) | 68Gi |
+| `headroom-gmktec` | gmktec-xubuntu | 62.4 | 52.2 | 24 | max(0, floor(62.4 - 52.2 - 24)) | 0Gi |
+| `headroom-hp` | hp-xubuntu | 27.2 | 14.9 | 0 | floor(27.2 - 14.9 - 0) | 12Gi |
+| `headroom-poweredge` | poweredge-xubuntu | 378 | 67.5 | 56 | floor(378 - 67.5 - 56) | 254Gi |
+| `headroom-gamingpc` | gamingpc-xubuntu | 92.38 | 7.5 | 16 | floor(92.38 - 7.5 - 16) | 68Gi |
 
 The factory figures are the active per-node factory budgets at the 8GB (7.45
 Gi) sandbox request, except gmktec's measured 24.4Gi factory request.  The gate
@@ -2805,16 +2806,37 @@ per-queue label in this dataset; the check "never below the current admitted pea
 (81 to 112 jobs, p50 wait 2 to 3 s) and on the cohort letting each queue borrow idle quota above nominal. The +2 hour read
 covers these four queues first. maxRunners is unchanged: `max(2 x nominalQuota, 6)` is still 6 for each.
 
-**Memory flavor quotas.** gmktec 0Gi, hp 12Gi, gamingpc 68Gi (it carries one live factory pod of 7.5Gi, so the earlier
-76Gi assumed a factory budget of 0 that the node does not hold), poweredge 254Gi (factory 67.5 at the ramp, gates 48 and
-repro 8 quota). tests/spec/test_runner_memory_quota_derivation.py recomputes each from the table above.
+**One unpinned memory flavor (second look, 2026-11-19).** The first draft kept four hostname-pinned flavors
+(gmktec 0Gi, hp 12Gi, gamingpc 68Gi, poweredge 254Gi) on every queue. An independent second look found the flaw:
+Kueue takes the FIRST memory flavor that fits (`flavorFungibility.whenCanBorrow: MayStopSearch`, borrowing across the
+cohort counts) and injects that node's hostname as the runner pod's nodeSelector, while the churn slots live on the
+NODE. After gmktec went to 0Gi, runners would have pinned to hp (about 156Gi of borrowable cohort memory against 2 slots)
+and gone Pending holding fleet-wide quota, with poweredge and gamingpc idle. The fix: ONE `runner-memory-flavor` with no
+nodeLabels. Kueue then caps total runner memory fleet-wide without choosing a node, and the scheduler places by the pod
+memory REQUEST plus the per-node churn-slot resource, which is what keeps runners off an overpacked gmktec. The cohort's
+total is the sum of the per-node headroom rows in the table above, 0 + 12 + 68 + 254 = 334Gi (gmktec 0Gi because its live
+factory, gates and repro already exceed it; gamingpc 68Gi because it carries one live factory pod; poweredge 254Gi from
+factory 67.5 at the ramp, gates 48 and repro 8). Each queue's nominal is its churn quota times floor(334 / 30) = 11Gi, so
+the 13 x86 queues sum to 330Gi, never promising more than the nodes can hold; the master lanes keep `lendingLimit: 0`
+exactly as on their churn slots. tests/spec/test_runner_memory_quota_derivation.py recomputes all of it.
 
 **Order.** One reviewed apply, inside a merge-quiet window, because the converge unit also carries yiko5d's runner
 memory requests, the ARC listener spread and the repro-flavor changes: `just ansible-apply ansible/ci-pool.yml --tags
-ci_converge_unit --limit poweredge-xubuntu`, then `--tags node_extended_resource --limit gamingpc-xubuntu,gmktec-xubuntu,
-hp-xubuntu,poweredge-xubuntu`. The quotas (30) land first while the nodes still advertise 34, so the quota sum
-never exceeds the slots that exist; the second step then lowers the advertised capacity to 30.
+ci_converge_unit --limit poweredge-xubuntu`, then `node_extended_resource` in two parts so capacity never dips below the
+quota: `--limit gamingpc-xubuntu,poweredge-xubuntu` first (6 and 22), then `--limit gmktec-xubuntu,hp-xubuntu` (0 and 2).
+The nodes advertise 32 live (gamingpc 4, gmktec 8, hp 3, poweredge 17) and the quotas land at 30 first, so the quota
+sum never exceeds the slots that exist; after the first part capacity reads 8 + 3 + 6 + 22 = 39, after the second 30.
 
-**Kill switch.** Restore gmktec 8, hp 3, poweredge 17, the four queues at 2, and the previous memory quotas (gmktec 22Gi,
-gamingpc 76Gi, poweredge 262Gi), then apply in the reverse order: `node_extended_resource`, then `ci_converge_unit`.
+**Standing revert trigger for poweredge at 22 (coordinator, 2026-11-19):** if poweredge DiskPressure turns True, or its
+root filesystem free space drops under about 40G (58G free, 70 percent used, on 2026-11-19), take poweredge back to 17
+through the same route and tell throughput-plans-coordinator. The earlier 2026-11-19 13:41Z DiskPressure window rejected
+crates-proxy and registry-mirror pods on poweredge.
+
+**Kill switch.** Roll back to the LIVE values read on 2026-11-19 (NOT to master 82ac90adc, which already commits gamingpc
+6): gamingpc 4, gmktec 8, hp 3, poweredge 17, cohort 32, and the four lowered queues (runtime, driver-pi, livespec,
+orchestrator-git-jsonl) at 2. Apply in the reverse order: `node_extended_resource` first, then `ci_converge_unit`.
+Capacity returns before the quotas so capacity is never below quota. The runner memory requests (livespec-dev-tooling-yiko5d),
+the repro-flavor changes and this memory flavor come back only through a revert pull request and the same
+`ci_converge_unit` apply; the pod memory requests are the part that protects the factory from overpacking, so reverting
+them is a deliberate step, not part of the capacity kill switch.
 
