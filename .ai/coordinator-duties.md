@@ -569,6 +569,10 @@ work to a seat named for a different plan; resume a parked plan in a reopened se
 session only after its owner, or the maintainer, is done in it; shutting a seat down closes its pane AND its tab and
 checks its process exited. Maintainer (2026-11-01): "You're in the wrong named session and tab."
 
+The tab goes in the workspace named for the plan's repository, with one exception, the throughput-improvements track
+(`.ai/herdr-tab-placement.md`, "Workspace placement"). Maintainer: "it should be in the space that matches its repo.
+That is the rule. Only excewption is tabs in throughput-improvements track." [6tgd2z 2026-11-19]
+
 **Kept seats:** legacy-dispatcher-agent, caam-anthropic-loop-runner, overseerd, token-spend-analysis and
 throughput-plans-coordinator [6tgd2z 2026-11-14T17:46:04Z, 18:24:20Z]. A kept seat's plan is not a ranked priority.
 

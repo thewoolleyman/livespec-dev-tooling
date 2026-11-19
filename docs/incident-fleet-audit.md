@@ -124,7 +124,7 @@ the fence that no entrance can skip.
 `config/incident-fleet-evidence.json` holds only claims backed by something read from the fleet
 (`livespec-dev-tooling-v46q5g`, `livespec-dev-tooling-ri2lwi`). Each claim names its disposition,
 owner, proof reference and the serving build read for its capability on the day its proof names,
-bound to core's manifest `59912fe1…`. A claim goes stale when that build moves (a pin bump, a
+bound to core's manifest identity, the sha256 of the committed fixture. A claim goes stale when that build moves (a pin bump, a
 plugin update, a release that touches a release-keyed surface) or when core's manifest changes;
 its row then prints `unclassified` and the finding names the build the claim expected against the
 one read. Refresh the claim from a new read; never copy the new serving value in without re-reading
