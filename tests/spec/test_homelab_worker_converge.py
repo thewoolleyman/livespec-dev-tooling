@@ -110,6 +110,12 @@ case "$1" in
       "cat /run/flannel/subnet.env") cat "$s/flannel-subnet.env" 2>/dev/null || exit 1 ;;
       "systemctl restart otel-collector") printf 'restart otel-collector\\n' >> "$s/collector.log" ;;
       "systemctl restart otel-collector-pods") printf 'restart otel-collector-pods\\n' >> "$s/collector.log" ;;
+      "sh -c cat >"*)
+        path="${3#cat >}"; path="${path%% &&*}"
+        mkdir -p "$s/pod-span"; cat > "$s/pod-span/${path##*/}" ;;
+      "cat /usr/local/sbin/homelab-pod-span-endpoint" | "cat /etc/systemd/system/homelab-pod-span-endpoint."*)
+        cat "$s/pod-span/${2##*/}" 2>/dev/null || exit 1 ;;
+      "systemctl enable --now homelab-pod-span-endpoint.path") printf 'enable follower\\n' >> "$s/follower.log" ;;
       *) exit 2 ;;
     esac ;;
   restart) : ;;
@@ -642,7 +648,8 @@ def test_the_pod_span_unit_gets_the_flannel_gateway_while_cni0_is_absent(vm: _Vm
     assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.5.1:4319\n"
 
 
-def test_cni0_takes_precedence_over_the_flannel_subnet_for_the_pod_span_bind(vm: _Vm) -> None:
+def test_the_flannel_subnet_takes_precedence_over_cni0_for_the_pod_span_endpoint(vm: _Vm) -> None:
+    """cni0 keeps an older subnet until its first pod; the endpoint names the flannel subnet's."""
     _deliver_telemetry(vm=vm)
     (vm.state / "flannel-subnet.env").write_text("FLANNEL_SUBNET=10.42.5.1/24\n", encoding="utf-8")
     (vm.state / "cni0").write_text(
@@ -651,7 +658,19 @@ def test_cni0_takes_precedence_over_the_flannel_subnet_for_the_pod_span_bind(vm:
     result = _run(vm=vm)
     assert result.returncode == 0, result.stdout + result.stderr
     node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
-    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.99.7.1:4319\n"
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.5.1:4319\n"
+    assert "10.42.5.1:4319 from the flannel subnet 10.42.5.1/24" in result.stdout
+
+
+def test_the_endpoint_is_the_first_usable_address_of_the_subnet_not_its_literal_address(
+    vm: _Vm,
+) -> None:
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text("FLANNEL_SUBNET=10.42.9.77/24\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    node_env = (vm.root / "telemetry" / "node.env").read_text(encoding="utf-8")
+    assert node_env == f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.9.1:4319\n"
 
 
 def test_a_worker_with_no_pod_network_gateway_yet_still_exports_host_metrics(vm: _Vm) -> None:
@@ -766,3 +785,117 @@ def test_a_current_system_slice_weight_is_not_rewritten_or_reloaded(vm: _Vm) -> 
     assert [
         c for c in _calls(vm=vm, verb="exec") if "daemon-reload" in c or "50-cpu-weight.conf'" in c
     ] == []
+
+
+def _converged_follower(*, vm: _Vm) -> Path:
+    """Converge a delivered, split-collector worker and return the installed follower script."""
+    _deliver_telemetry(vm=vm)
+    (vm.state / "flannel-subnet.env").write_text("FLANNEL_SUBNET=10.42.5.1/24\n", encoding="utf-8")
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    return vm.state / "pod-span" / "homelab-pod-span-endpoint"
+
+
+def test_converge_installs_and_enables_a_path_unit_that_follows_the_flannel_subnet(vm: _Vm) -> None:
+    script = _converged_follower(vm=vm)
+    units = vm.state / "pod-span"
+    assert "PathChanged=/run/flannel/subnet.env" in (
+        units / "homelab-pod-span-endpoint.path"
+    ).read_text(encoding="utf-8")
+    assert "Unit=homelab-pod-span-endpoint.service" in (
+        units / "homelab-pod-span-endpoint.path"
+    ).read_text(encoding="utf-8")
+    service = (units / "homelab-pod-span-endpoint.service").read_text(encoding="utf-8")
+    assert "ExecStart=/usr/local/sbin/homelab-pod-span-endpoint" in service
+    assert script.read_text(encoding="utf-8").startswith("#!/bin/sh")
+    assert (vm.state / "follower.log").read_text(encoding="utf-8") == "enable follower\n"
+
+
+def test_an_unchanged_follower_is_not_reinstalled_or_reloaded_on_a_rerun(vm: _Vm) -> None:
+    _converged_follower(vm=vm)
+    installs = len([c for c in _calls(vm=vm, verb="exec") if " sh -c cat >" in c])
+    reloads = (vm.state / "container-reloads").read_text(encoding="utf-8")
+    assert installs == 3
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len([c for c in _calls(vm=vm, verb="exec") if " sh -c cat >" in c]) == installs
+    assert (vm.state / "container-reloads").read_text(encoding="utf-8") == reloads
+
+
+def _follower_run(
+    *, script: Path, tmp: Path, subnet: str | None, node_env: str | None
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    bin_dir = tmp / "fbin"
+    bin_dir.mkdir(exist_ok=True)
+    log = tmp / "systemctl.log"
+    fake = bin_dir / "systemctl"
+    fake.write_text(f'#!/bin/sh\necho "$*" >> {log}\n', encoding="utf-8")
+    fake.chmod(0o755)
+    subnet_env = tmp / "subnet.env"
+    node = tmp / "node.env"
+    if subnet is not None:
+        subnet_env.write_text(
+            f"FLANNEL_NETWORK=10.42.0.0/16\nFLANNEL_SUBNET={subnet}\n", encoding="utf-8"
+        )
+    if node_env is not None:
+        node.write_text(node_env, encoding="utf-8")
+    result = subprocess.run(
+        ["/bin/sh", str(script)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "FLANNEL_SUBNET_ENV": str(subnet_env),
+            "POD_SPAN_NODE_ENV": str(node),
+        },
+    )
+    return result, node, log
+
+
+def test_the_follower_rewrites_node_env_and_restarts_the_collector_when_the_subnet_changes(
+    vm: _Vm, tmp_path: Path
+) -> None:
+    script = _converged_follower(vm=vm)
+    old = f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.5.1:4319\n"
+    result, node, log = _follower_run(
+        script=script, tmp=tmp_path, subnet="10.42.9.1/24", node_env=old
+    )
+    assert result.returncode == 0, result.stderr
+    assert node.read_text(encoding="utf-8") == (
+        f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.9.1:4319\n"
+    )
+    assert log.read_text(encoding="utf-8") == "restart otel-collector-pods\n"
+
+
+def test_the_follower_restarts_nothing_when_the_endpoint_already_names_the_subnet(
+    vm: _Vm, tmp_path: Path
+) -> None:
+    script = _converged_follower(vm=vm)
+    current = f"WORKER_NODE_NAME={_WORKER}\nOTLP_PODS_ENDPOINT=10.42.9.1:4319\n"
+    result, node, log = _follower_run(
+        script=script, tmp=tmp_path, subnet="10.42.9.1/24", node_env=current
+    )
+    assert result.returncode == 0, result.stderr
+    assert node.read_text(encoding="utf-8") == current
+    assert not log.exists()
+
+
+@pytest.mark.parametrize(("subnet", "node_env"), [(None, "x"), ("10.42.9.1/24", None)])
+def test_the_follower_changes_nothing_without_a_subnet_or_a_delivered_node_env(
+    vm: _Vm, tmp_path: Path, subnet: str | None, node_env: str | None
+) -> None:
+    script = _converged_follower(vm=vm)
+    result, node, log = _follower_run(script=script, tmp=tmp_path, subnet=subnet, node_env=node_env)
+    assert result.returncode == 0, result.stderr
+    assert not log.exists()
+    assert node.exists() == (node_env is not None)
+
+
+def test_the_pod_span_collector_retries_its_bind_until_cni0_carries_the_endpoint() -> None:
+    unit = (_SCRIPT.parents[1] / "image" / "systemd" / "otel-collector-pods.service").read_text(
+        encoding="utf-8"
+    )
+    assert "Restart=on-failure" in unit
+    assert "EnvironmentFile=/etc/otel-collector/node.env" in unit
+    assert "RestartSec=10" in unit

@@ -183,7 +183,7 @@ def test_the_worker_joins_the_fixture_through_the_production_path(mac: _Mac) -> 
             + (_HW / "image" / "ref").read_text(encoding="utf-8").splitlines()[-1]
             + " /mnt/lima-hwdata/fixture-worker k3d-hw-fixture"
         ]
-        * 2
+        * 3
     )
     assert (mac.state / "converge-stdin").read_text(encoding="utf-8") == (
         _HW / "vm" / "converge-worker-container.sh"
