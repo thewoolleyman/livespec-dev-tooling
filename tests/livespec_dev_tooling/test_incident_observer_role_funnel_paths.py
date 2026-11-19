@@ -51,7 +51,8 @@ _ROLE_VARIABLES = (
 # name and capability map, `funnel status --json` answers the recorded serve
 # configuration, and a `funnel --bg --yes --https=P --set-path=X URL` publish is
 # logged and, unless the node is recorded as discarding publishes, adds the
-# path's proxy handler and turns the funnel on for the port.
+# path's proxy handler and turns the funnel on for the port. A path-scoped
+# `off` removes that handler, as the real CLI does.
 _FAKE_TAILSCALE = r"""#!/usr/bin/env python3
 import json
 import os
@@ -70,9 +71,13 @@ elif argv == ["funnel", "status", "--json"]:
 else:
     with open(os.environ["FAKE_TAILSCALE_LOG"], "a", encoding="utf-8") as log:
         log.write(json.dumps(argv) + "\n")
-    port = argv[3].removeprefix("--https=")
-    path = argv[4].removeprefix("--set-path=")
-    if state["publishes"]:
+    port = next(argument.removeprefix("--https=") for argument in argv if argument.startswith("--https="))
+    path = next(argument.removeprefix("--set-path=") for argument in argv if argument.startswith("--set-path="))
+    if argv[-1] == "off":
+        state["serve"]["Web"][host + ":" + port]["Handlers"].pop(path, None)
+        with open(state_path, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+    elif state["publishes"]:
         serve = state["serve"]
         serve.setdefault("TCP", {})[port] = {"HTTPS": True}
         web = serve.setdefault("Web", {}).setdefault(host + ":" + port, {"Handlers": {}})
@@ -120,6 +125,7 @@ _NODES: dict[str, tuple[dict[str, Any], bool, bool]] = {
     ),
     "extra-root": (_serve(handlers={**_BOTH, "/": _PRODUCTION}), True, True),
     "extra-current": (_serve(handlers={**_BOTH, "/current": _PRODUCTION + "/current"}), True, True),
+    "stale-ci-publish": (_serve(handlers={**_BOTH, _PUBLISH: _PRODUCTION + _PUBLISH}), True, True),
     "discarding": (_serve(handlers={_CALLBACK: _PRODUCTION + _CALLBACK}), True, False),
     "ungranted": ({}, False, True),
 }
@@ -234,6 +240,10 @@ def _publish_argv(*, path: str) -> list[str]:
     return ["funnel", "--bg", "--yes", "--https=10000", "--set-path=" + path, _PRODUCTION + path]
 
 
+def _unpublish_argv(*, path: str) -> list[str]:
+    return ["funnel", "--https=10000", "--set-path=" + path, "off"]
+
+
 def test_the_committed_defaults_declare_the_callback_and_the_ordinary_action_paths() -> None:
     defaults = base.resolve(variables=base.production_variables())
 
@@ -275,6 +285,16 @@ def test_a_node_already_publishing_both_paths_publishes_nothing(
     assert outcome.failed is False, outcome.output
     assert outcome.published == []
     assert "are already public; nothing to do" in outcome.output
+
+
+def test_an_empty_publisher_list_unpublishes_a_previously_published_ci_publish_route(
+    outcomes: dict[str, _Outcome],
+) -> None:
+    outcome = outcomes["stale-ci-publish"]
+
+    assert outcome.failed is False, outcome.output
+    assert "CHANGED" in outcome.output
+    assert outcome.published == [_unpublish_argv(path=_PUBLISH)]
 
 
 def test_a_path_proxied_anywhere_but_productions_listener_is_published_again(

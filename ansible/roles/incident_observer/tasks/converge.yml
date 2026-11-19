@@ -1133,6 +1133,17 @@
             | map('regex_replace', ' proxy .*$', '') | list)
            if incident_observer_funnel_on
            else incident_observer_funnel_paths }}
+      # /ci/publish is conditionally declared by the production installation.
+      # When its publisher list becomes empty, it is a route this role
+      # previously declared and now owns the withdrawal of.  It is deliberately
+      # not folded into the union's generic extras: those are someone else's
+      # paths and must still refuse rather than be removed.
+      incident_observer_funnel_retired_published_now: >-
+        {{ (['/ci/publish']
+            if incident_observer_installation_name is not defined
+               and '/ci/publish' not in incident_observer_funnel_paths
+            else [])
+           | intersect(incident_observer_funnel_handlers | list) }}
       incident_observer_funnel_extra: >-
         {{ incident_observer_funnel_handlers | list | difference(incident_observer_funnel_union) }}
       incident_observer_funnel_mistargeted: >-
@@ -1146,6 +1157,8 @@
                       | default({}, true)) }}
     incident_observer_funnel_unpublished: "{{ incident_observer_funnel_pending }}"
     incident_observer_funnel_served: "{{ incident_observer_funnel_pending | length == 0 }}"
+    incident_observer_funnel_retired_published: >-
+      {{ incident_observer_funnel_retired_published_now }}
   when: >-
     not (incident_observer_scratch | bool)
     and incident_observer_scratch_name is not defined
@@ -1203,10 +1216,31 @@
     and incident_observer_funnel_granted and not incident_observer_funnel_served
   changed_when: true
 
+- name: Unpublish the retired CI publication route through the path-scoped funnel
+  # Unlike a generic undeclared path, /ci/publish was declared by this
+  # installation while its publisher list was non-empty.  Removing it when the
+  # list becomes empty keeps the public funnel in step with that declaration
+  # without touching another installation's routes.
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - funnel
+      - "--https={{ incident_observer_funnel_https_port }}"
+      - "--set-path={{ item }}"
+      - "off"
+  become: true
+  register: incident_observer_funnel_unpublish
+  loop: "{{ incident_observer_funnel_retired_published | default([]) }}"
+  when: >-
+    not (incident_observer_scratch | bool)
+    and incident_observer_scratch_name is not defined
+    and incident_observer_target_branch | default('', true) | length == 0
+  changed_when: true
+
 - name: Read the funnel configuration back after publishing
-  # Read on every production apply, whether or not anything was published, so
-  # the refusal of an undeclared public path below judges the port's state as
-  # this apply leaves it.
+  # Read on every production apply, whether or not anything was published or
+  # unpublished, so the refusal of an undeclared public path below judges the
+  # port's state as this apply leaves it.
   ansible.builtin.command:
     argv: [tailscale, funnel, status, --json]
   become: true
