@@ -64,6 +64,24 @@ spec:
               # on 2026-11-05. See DERIVATION.md "The fabro fork scale set
               # (2026-11-05)".
               nominalQuota: 1
+    - coveredResources: ["memory"]
+      flavors:
+        - name: runner-memory-gmktec-flavor
+          resources:
+            - name: memory
+              nominalQuota: 22Gi
+        - name: runner-memory-hp-flavor
+          resources:
+            - name: memory
+              nominalQuota: 12Gi
+        - name: runner-memory-poweredge-flavor
+          resources:
+            - name: memory
+              nominalQuota: 262Gi
+        - name: runner-memory-gamingpc-flavor
+          resources:
+            - name: memory
+              nominalQuota: 76Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

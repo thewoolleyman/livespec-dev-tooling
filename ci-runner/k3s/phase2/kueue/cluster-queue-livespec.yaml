@@ -61,6 +61,24 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: 0
+    - coveredResources: ["memory"]
+      flavors:
+        - name: runner-memory-gmktec-flavor
+          resources:
+            - name: memory
+              nominalQuota: 22Gi
+        - name: runner-memory-hp-flavor
+          resources:
+            - name: memory
+              nominalQuota: 12Gi
+        - name: runner-memory-poweredge-flavor
+          resources:
+            - name: memory
+              nominalQuota: 262Gi
+        - name: runner-memory-gamingpc-flavor
+          resources:
+            - name: memory
+              nominalQuota: 76Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

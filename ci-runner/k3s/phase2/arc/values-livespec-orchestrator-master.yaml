@@ -75,6 +75,7 @@ template:
         resources:
           requests:
             ci-runner.io/churn-slot: "1"
+            memory: 6Gi
           limits:
             ci-runner.io/churn-slot: "1"
 
