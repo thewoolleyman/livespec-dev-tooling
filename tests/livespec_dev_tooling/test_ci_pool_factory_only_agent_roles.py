@@ -136,6 +136,9 @@ _POWEREDGE_ROLES = (
     "registry_mirror_node",
     "agent_node_password",
     "node_sysctl",
+    # A size ceiling on the persistent journal; ungated, every pool node runs it
+    # (livespec-dev-tooling-u5efoi).
+    "node_journal_cap",
     # Self-gated on the NIC driver (bnx2x); a no-op elsewhere.
     "vxlan_tunnel_tso",
     "storage_layout",
@@ -226,6 +229,9 @@ _GMKTEC_ROLES = (
     "registry_mirror_node",
     "agent_rejoin",
     "node_sysctl",
+    # A size ceiling on the persistent journal; ungated, every pool node runs it
+    # (livespec-dev-tooling-u5efoi).
+    "node_journal_cap",
     # Self-gated on the NIC driver (bnx2x); a no-op elsewhere.
     "vxlan_tunnel_tso",
     "storage_layout",

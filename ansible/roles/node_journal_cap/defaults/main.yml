@@ -1,0 +1,9 @@
+---
+# The persistent journal's size ceiling on a CI pool node. Measured on
+# poweredge-xubuntu 2026-11-19: /var/log/journal held 4G with no cap, on a root
+# filesystem that kubelet evicts factory sandboxes from at 10.5G free.
+# REVERT: remove /etc/systemd/journald.conf.d/50-ci-pool-cap.conf (set
+# node_journal_cap_enabled: false and converge) and restart systemd-journald.
+node_journal_cap_enabled: true
+node_journal_cap_max_use: 1G
+node_journal_cap_dropin: /etc/systemd/journald.conf.d/50-ci-pool-cap.conf

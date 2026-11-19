@@ -1,0 +1,36 @@
+---
+# node_journal_cap — a size ceiling on the persistent journal of every node that
+# runs pods. A drop-in, not an edit of journald.conf, so the package file stays
+# stock and the cap is one removable file.
+
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: "{{ node_journal_cap_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: node_journal_cap_enabled | bool
+
+- name: Install the journal size cap
+  ansible.builtin.copy:
+    dest: "{{ node_journal_cap_dropin }}"
+    content: |
+      # Managed by ansible role node_journal_cap (livespec-dev-tooling).
+      [Journal]
+      SystemMaxUse={{ node_journal_cap_max_use }}
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: node_journal_cap_enabled | bool
+  notify: Apply the journal size cap
+
+- name: Remove the journal size cap when the role is disabled
+  ansible.builtin.file:
+    path: "{{ node_journal_cap_dropin }}"
+    state: absent
+  become: true
+  when: not (node_journal_cap_enabled | bool)
+  notify: Restart journald
