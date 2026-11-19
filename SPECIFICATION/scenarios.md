@@ -5485,6 +5485,20 @@ Then the Job's container MUST request 5 CPUs and request and limit memory `6Gi`
 
 And the Job MUST export `LIVESPEC_TEST_PARALLELISM` as `4`
 
+## Scenario: a delegated suite-green replay leg runs pytest with the Job's declared worker count, not one derived from the committing host's CPU count
+
+Given a consuming repository that sets `delegated_commit_tests = true` and declares `gate_parallelism = 6`, and a committing host that exposes 64 CPUs with `LIVESPEC_TEST_PARALLELISM` unset
+
+When the replay gate delegates a suite-green leg
+
+Then the pytest invocation the Job runs MUST carry `-n 6`
+
+And with `gate_parallelism` undeclared it MUST carry `-n 4`
+
+And with `LIVESPEC_TEST_PARALLELISM` set to `2` on the committing host it MUST carry `-n 2`
+
+And in every case the `-n` MUST NOT be `16`
+
 ## Scenario: a non-positive declared gate resource is refused before any gate Job is submitted
 
 Given a consuming repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true` and `gate_cpu = 0`

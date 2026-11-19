@@ -450,6 +450,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated suite-green replay leg runs pytest with the Job's declared worker count, not one derived from the committing host's CPU count",
+    "work_item": "livespec-dev-tooling-ovzmcn",
+    "first_seen": "2026-11-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev host that stops sending host metrics fires its no-data trigger",
     "work_item": "livespec-dev-tooling-exx6f5",
     "first_seen": "2026-11-13"
