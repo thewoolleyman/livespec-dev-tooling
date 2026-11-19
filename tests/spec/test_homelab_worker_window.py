@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tests.hang_guard import run_under_hang_guard
 
@@ -430,6 +431,34 @@ def _ansible_core_pin() -> str:
     return pin[0]
 
 
+_ROLE_DEFAULTS = _ROOT / "ansible" / "roles" / "homelab_worker_window" / "defaults" / "main.yml"
+
+
+def _required_commands() -> list[str]:
+    defaults = yaml.safe_load(_ROLE_DEFAULTS.read_text(encoding="utf-8"))
+    return list(defaults["homelab_worker_window_required_commands"])
+
+
+def _command_stubs(tmp_path: Path, *, omit: tuple[str, ...]) -> Path:
+    """A directory holding one executable per required command except `omit`.
+
+    Each forwards to the real tool when this host has one, so the stub window.sh can still use
+    `cat`; a tool this host lacks (limactl, tailscale) exits 0. The shell builtins (printf) resolve
+    without a file, so `omit` never names one.
+    """
+    stubs = tmp_path / "stubs"
+    stubs.mkdir(parents=True)
+    for name in _required_commands():
+        if name in omit:
+            continue
+        real = shutil.which(name, path="/usr/bin:/bin")
+        _exe(
+            path=stubs / name,
+            body=f'#!/bin/bash\nexec {real} "$@"\n' if real else "#!/bin/bash\nexit 0\n",
+        )
+    return stubs
+
+
 @dataclass(frozen=True, kw_only=True)
 class _Play:
     result: subprocess.CompletedProcess[str]
@@ -444,7 +473,9 @@ def _play(
     confirm: str,
     node_confirm: str,
     extra_vars: dict[str, str] | None = None,
+    omit_commands: tuple[str, ...] = (),
 ) -> _Play:
+    stubs = _command_stubs(tmp_path, omit=omit_commands)
     release = tmp_path / "release"
     state = tmp_path / "state"
     (release / "homelab-worker").mkdir(parents=True)
@@ -461,6 +492,7 @@ def _play(
     )
     _exe(path=release / "homelab-worker" / "remote-kubectl.sh", body="#!/bin/bash\n")
     values = {
+        "homelab_worker_window_path": f"{stubs}:/opt/homebrew/bin",
         "homelab_worker_window_release_dir": str(release),
         "homelab_worker_window_state_dir": str(state),
         "homelab_worker_window_remote_kubectl_target": "u@api.example",
@@ -549,12 +581,95 @@ def test_a_confirmed_join_runs_window_sh_with_the_inventory_path_route_and_join_
     assert play.result.returncode == 0, play.result.stdout + play.result.stderr
     out = play.log.read_text(encoding="utf-8")
     assert f"argv join {_M4}" in out
-    assert f"PATH={play.state}/bin:/opt/homebrew/bin:" in out
+    assert f"PATH={play.state}/bin:{tmp_path / 'stubs'}:/opt/homebrew/bin" in out
     assert "RKT=u@api.example" in out
     assert "API=https://api.example:6443" in out
     assert f"NODE={_M4_NODE}" in out
     assert "CA=PEM-BODY" in out
     assert (play.state / "bin" / "kubectl").is_symlink()
+
+
+def test_the_committed_inventory_puts_the_m4s_user_local_homebrew_first_on_the_path() -> None:
+    result = run_under_hang_guard(
+        [
+            "uvx",
+            "--from",
+            _ansible_core_pin(),
+            "ansible-inventory",
+            "-i",
+            str(_ROOT / "ansible" / "inventory" / "legacy.yml"),
+            "--host",
+            _M4,
+        ],
+        capture_output=True,
+        text=True,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key != "COVERAGE_PROCESS_START" and not key.startswith("COV_CORE_")
+        },
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    entries = json.loads(result.stdout)["homelab_worker_window_path"].split(":")
+    assert entries.index("/Users/cwoolley/homebrew/bin") < entries.index("/opt/homebrew/bin")
+    assert "/Users/cwoolley/.local/bin" in entries
+
+
+def test_preflight_passes_when_every_command_resolves_and_does_nothing_else(
+    tmp_path: Path,
+) -> None:
+    play = _play(tmp_path, action="preflight", confirm=_M4, node_confirm=_M4_NODE)
+    assert play.result.returncode == 0, play.result.stdout + play.result.stderr
+    assert "MISSING" not in play.result.stdout
+    for name in _required_commands():
+        assert f"OK      {name}" in play.result.stdout
+    assert not play.log.exists()
+    assert not play.state.exists()
+
+
+def test_preflight_names_every_missing_command_in_one_failure(tmp_path: Path) -> None:
+    play = _play(
+        tmp_path,
+        action="preflight",
+        confirm=_M4,
+        node_confirm=_M4_NODE,
+        omit_commands=("limactl", "tailscale"),
+    )
+    assert play.result.returncode != 0
+    output = play.result.stdout + play.result.stderr
+    assert "limactl, tailscale" in output
+    assert "MISSING limactl" in output
+    assert "MISSING tailscale" in output
+    assert not play.state.exists()
+
+
+def test_preflight_runs_before_a_write_action_and_stops_it(tmp_path: Path) -> None:
+    play = _play(
+        tmp_path,
+        action="join",
+        confirm=_M4,
+        node_confirm=_M4_NODE,
+        omit_commands=("limactl",),
+    )
+    assert play.result.returncode != 0
+    assert "MISSING limactl" in play.result.stdout + play.result.stderr
+    assert not play.log.exists()
+    assert not play.state.exists()
+
+
+def test_preflight_is_a_no_op_without_both_fences(tmp_path: Path) -> None:
+    for confirm, node_confirm in ((_M4, ""), ("", _M4_NODE), ("", "")):
+        play = _play(
+            tmp_path / (confirm or "x") / (node_confirm or "y"),
+            action="preflight",
+            confirm=confirm,
+            node_confirm=node_confirm,
+            omit_commands=("limactl",),
+        )
+        assert play.result.returncode == 0, play.result.stdout + play.result.stderr
+        assert "MISSING" not in play.result.stdout
+        assert not play.state.exists()
 
 
 def test_a_kubeconfig_in_inventory_replaces_the_remote_kubectl_shim(tmp_path: Path) -> None:
