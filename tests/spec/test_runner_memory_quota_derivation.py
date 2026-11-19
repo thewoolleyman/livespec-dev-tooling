@@ -106,7 +106,7 @@ def _derived_x86_memory_quotas() -> dict[str, str]:
         allocatable = float(match["allocatable"])
         used = float(match["factory"]) + float(match["gates"])
         quota = int(match["quota"])
-        assert quota == math.floor(allocatable - used), match.group(0)
+        assert quota == max(0, math.floor(allocatable - used)), match.group(0)
         quotas[match["flavor"]] = f"{quota}Gi"
     return quotas
 
@@ -129,10 +129,10 @@ def test_runner_queue_memory_quotas_match_the_documented_node_headroom() -> None
     """Every x86 runner queue covers the same computed per-node headroom."""
     expected = _derived_x86_memory_quotas()
     assert expected == {
-        "runner-memory-gamingpc-flavor": "76Gi",
-        "runner-memory-gmktec-flavor": "22Gi",
+        "runner-memory-gamingpc-flavor": "68Gi",
+        "runner-memory-gmktec-flavor": "0Gi",
         "runner-memory-hp-flavor": "12Gi",
-        "runner-memory-poweredge-flavor": "262Gi",
+        "runner-memory-poweredge-flavor": "254Gi",
     }
 
     queues = _cluster_queues()

@@ -8,7 +8,7 @@
 # "Is a generator worth building?" for why, and for the recomputation steps
 # when the host's churn-slot capacity changes.
 #
-# nominalQuota for THIS repo: 2, the churn-slot-flavor value below, which is
+# nominalQuota for THIS repo: 1, the churn-slot-flavor value below, which is
 # the authority. The cohort's churn-slot-flavor quotas sum to 30, equal to the
 # pool's registered churn-slot capacity: poweredge 17 + gmktec 6 + hp 4 +
 # gamingpc 3 (DERIVATION.md "Per-node CPU budget cut: cohort 30 (2026-11-13)").
@@ -51,13 +51,13 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # Measured-job-hours re-derivation, 2026-10-22: see DERIVATION.md.
-              nominalQuota: 2
+              nominalQuota: 1
     - coveredResources: ["memory"]
       flavors:
         - name: runner-memory-gmktec-flavor
           resources:
             - name: memory
-              nominalQuota: 22Gi
+              nominalQuota: 0Gi
         - name: runner-memory-hp-flavor
           resources:
             - name: memory
@@ -65,11 +65,11 @@ spec:
         - name: runner-memory-poweredge-flavor
           resources:
             - name: memory
-              nominalQuota: 262Gi
+              nominalQuota: 254Gi
         - name: runner-memory-gamingpc-flavor
           resources:
             - name: memory
-              nominalQuota: 76Gi
+              nominalQuota: 68Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
