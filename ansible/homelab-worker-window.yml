@@ -10,6 +10,9 @@
 #   homelab_worker_window_confirm=<inventory host>   e.g. macbook-m4-max
 #   homelab_worker_window_node_confirm=<host>-homelab-worker
 #
+#   preflight resolve every Mac-side command the route needs, under the route's
+#             own environment, and fail listing ALL the missing ones. Read-only;
+#             it does nothing else. Every other action runs it first.
 #   snapshot  record gates-cq before the window (refuses to overwrite)
 #   join      join the worker (--api-server and --server-ca come from inventory)
 #   drill     the departure drill on the node

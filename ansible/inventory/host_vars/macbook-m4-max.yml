@@ -1,0 +1,8 @@
+# macbook-m4-max -- per-host values for the legacy fleet inventory. Hand-written
+# (it is not collected from a role's HOST_VARS.md): the role default stays the
+# generic Homebrew PATH and this one machine overrides it.
+---
+# This host's Homebrew is user-local (/Users/cwoolley/homebrew), so limactl is
+# not under /opt/homebrew/bin; measured on the host, where join-worker.sh failed
+# with "limactl: command not found". The login PATH also has ~/.local/bin.
+homelab_worker_window_path: /Users/cwoolley/homebrew/bin:/Users/cwoolley/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin

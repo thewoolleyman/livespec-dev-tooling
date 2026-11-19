@@ -3,7 +3,7 @@
 homelab_worker_window_action: ""
 homelab_worker_window_confirm: ""
 homelab_worker_window_node_confirm: ""
-homelab_worker_window_actions: [snapshot, join, drill, check, revert, remove]
+homelab_worker_window_actions: [preflight, snapshot, join, drill, check, revert, remove]
 
 # The delivered release directory (role homelab_worker_scripts).
 homelab_worker_window_release_dir: /Users/cwoolley/homelab-worker-release/current
@@ -26,3 +26,45 @@ homelab_worker_window_api_server: ""
 homelab_worker_window_server_ca_pem: ""
 
 homelab_worker_window_bound_seconds: 600
+
+# The Mac-side commands the route needs, measured by grep over
+# homelab-worker/*.sh and converge-worker-queues.sh. The preflight resolves each
+# under the route's own environment and lists every missing one at once. kubectl
+# is the remote-kubectl.sh shim unless a kubeconfig is set; tailscale is called
+# by remote-kubectl.sh on this side.
+homelab_worker_window_required_commands:
+  - limactl
+  - kubectl
+  - python3
+  - tailscale
+  - ssh
+  - openssl
+  - base64
+  - awk
+  - sed
+  - grep
+  - date
+  - mktemp
+  - sleep
+  - tr
+  - sort
+  - cut
+  - tail
+  - head
+  - mv
+  - cp
+  - install
+  - chmod
+  - dirname
+  - basename
+  - cat
+  - rm
+  - mkdir
+  - env
+  - bash
+  - sh
+  - uniq
+  - wc
+  - readlink
+  - printf
+  - tee
