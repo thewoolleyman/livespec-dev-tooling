@@ -58,6 +58,27 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.225.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.224.0...v1.225.0) (2026-11-19)
+
+
+### Features
+
+* **ansible:** the control-node role is one inventory group, bound to a machine in one place and guarded (livespec-dev-tooling-voazyv) ([e759c08](https://github.com/livespec-ai/livespec-dev-tooling/commit/e759c0836c04420af62fcca3a344460c2fd56f97))
+* **ci:** the per-file coverage gate runs as four required parallel shard jobs that one existing job combines (livespec-dev-tooling-mxjbmi) ([987ce39](https://github.com/livespec-ai/livespec-dev-tooling/commit/987ce39849126609cd29af301286806fe25f2717))
+* red ([db07dc8](https://github.com/livespec-ai/livespec-dev-tooling/commit/db07dc803c22d89c69c9079f89dd1bdbff3020f6))
+* red ([e589349](https://github.com/livespec-ai/livespec-dev-tooling/commit/e58934943279d00a08fb54224a56cdf5af246917))
+* red ([5934362](https://github.com/livespec-ai/livespec-dev-tooling/commit/5934362b38ae3b658e196c3394b12c4115ba9c85))
+
+
+### Bug Fixes
+
+* **ci-runner:** the converge upgrades only scale sets whose inputs digest differs from the live release (livespec-dev-tooling-zl6gch) ([1569a69](https://github.com/livespec-ai/livespec-dev-tooling/commit/1569a69b6848585c2986a31ee7afc4e54cfd6a79))
+* **ci:** a coverage namespace's TMPDIR is owner-only whatever the umask (livespec-dev-tooling-o6u7jm) ([a5d834f](https://github.com/livespec-ai/livespec-dev-tooling/commit/a5d834f0565e82160bfc8b3957801fd33d130e89))
+* **gates:** the gate container defines its process-tree watchdog and stops it on exit (livespec-dev-tooling-jurlun) ([2220254](https://github.com/livespec-ai/livespec-dev-tooling/commit/2220254ddcd74c8eb7da54f372e8d9e041c15edd))
+* **incident:** the incident-merge runner runs only a root-owned authority build and its unit starts sandboxed (livespec-dev-tooling-o6u7jm) ([fd69235](https://github.com/livespec-ai/livespec-dev-tooling/commit/fd69235ab897ea1b528789bf98c8a09ed6e9b416))
+* **incident:** the root merge runner reads the ledger only from a root-owned tree for bd and for the authority (livespec-dev-tooling-o6u7jm) ([48a086b](https://github.com/livespec-ai/livespec-dev-tooling/commit/48a086ba22915664098ae9727257b5abe9040a1f))
+* **incident:** the root merge unit starts in a root-owned working directory, not the observer's reference clone (livespec-dev-tooling-o6u7jm) ([ca35ec8](https://github.com/livespec-ai/livespec-dev-tooling/commit/ca35ec8e0724b1d2d5ebf1da77bb52b5eb404443))
+
 ## [1.224.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.223.0...v1.224.0) (2026-11-18)
 
 
