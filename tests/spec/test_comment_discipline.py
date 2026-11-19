@@ -96,6 +96,9 @@ _SECTION_SIGN_CITATION = '§"'
 # Core's own exclusions, copied so this replica reads the same tree it does:
 # frozen history, vendored third-party code, byte caches, the git db, the
 # project virtualenv, node deps, and a consuming repo's vendored core checkout.
+# `tmp` is this replica's one addition: it is the untracked scratch tree that
+# concurrent tests create and delete files in (`tmp/breakage-pass-converge`), so
+# walking it races a file's removal between the listing and the read.
 _UNSCANNED_SEGMENTS = frozenset(
     {
         ".git",
@@ -105,6 +108,7 @@ _UNSCANNED_SEGMENTS = frozenset(
         "_vendor",
         "archive",
         "node_modules",
+        "tmp",
     },
 )
 
