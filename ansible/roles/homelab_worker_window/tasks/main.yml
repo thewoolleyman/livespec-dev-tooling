@@ -1,0 +1,93 @@
+---
+# See defaults/main.yml and ansible/homelab-worker-window.yml.
+
+- name: Say plainly that nothing is changed when a fence does not name this target
+  ansible.builtin.debug:
+    msg: >-
+      homelab_worker_window_action is {{ homelab_worker_window_action | quote }}, homelab_worker_window_confirm is
+      {{ homelab_worker_window_confirm | quote }}, homelab_worker_window_node_confirm is
+      {{ homelab_worker_window_node_confirm | quote }}: nothing was read and nothing was changed.
+  when: >-
+    homelab_worker_window_action not in homelab_worker_window_actions
+    or homelab_worker_window_confirm != inventory_hostname
+    or homelab_worker_window_node_confirm != homelab_worker_window_node
+
+- name: Stop this host here when a fence does not name this target
+  ansible.builtin.meta: end_host
+  when: >-
+    homelab_worker_window_action not in homelab_worker_window_actions
+    or homelab_worker_window_confirm != inventory_hostname
+    or homelab_worker_window_node_confirm != homelab_worker_window_node
+
+- name: Refuse a window with no kubectl route
+  ansible.builtin.assert:
+    that: homelab_worker_window_kubeconfig | length > 0 or homelab_worker_window_remote_kubectl_target | length > 0
+    fail_msg: set homelab_worker_window_remote_kubectl_target or homelab_worker_window_kubeconfig in inventory
+
+- name: Make the state directory
+  ansible.builtin.file:
+    path: "{{ homelab_worker_window_state_dir }}/bin"
+    state: directory
+    mode: "0700"
+
+- name: Make kubectl the remote-kubectl.sh shim when no kubeconfig is given
+  ansible.builtin.file:
+    src: "{{ homelab_worker_window_release_dir }}/homelab-worker/remote-kubectl.sh"
+    dest: "{{ homelab_worker_window_state_dir }}/bin/kubectl"
+    state: link
+    force: true
+  when: homelab_worker_window_kubeconfig | length == 0
+
+- name: Fix the environment every window command runs under
+  ansible.builtin.set_fact:
+    homelab_worker_window_env: >-
+      {{ {'PATH': (homelab_worker_window_state_dir ~ '/bin:' ~ homelab_worker_window_path
+                   if homelab_worker_window_kubeconfig | length == 0 else homelab_worker_window_path)}
+         | combine({'REMOTE_KUBECTL_TARGET': homelab_worker_window_remote_kubectl_target}
+                   if homelab_worker_window_kubeconfig | length == 0 else {})
+         | combine({'KUBECONFIG': homelab_worker_window_kubeconfig}
+                   if homelab_worker_window_kubeconfig | length > 0 else {})
+         | combine({'WINDOW_NODE_CONFIRM': homelab_worker_window_node,
+                    'WINDOW_STATE_DIR': homelab_worker_window_state_dir,
+                    'WINDOW_BOUND_SECONDS': homelab_worker_window_bound_seconds | string,
+                    'WINDOW_API_SERVER': homelab_worker_window_api_server,
+                    'WINDOW_SERVER_CA': homelab_worker_window_state_dir ~ '/server-ca.crt'}) }}
+
+- name: Deliver the cluster CA from inventory
+  ansible.builtin.copy:
+    content: "{{ homelab_worker_window_server_ca_pem }}\n"
+    dest: "{{ homelab_worker_window_state_dir }}/server-ca.crt"
+    mode: "0644"
+  when: homelab_worker_window_action == 'join' and homelab_worker_window_server_ca_pem | length > 0
+
+- name: Read the cluster CA from the cluster when inventory carries none
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      kubectl config view --raw --minify -o 'jsonpath={.clusters[0].cluster.certificate-authority-data}'
+      | base64 -d > {{ (homelab_worker_window_state_dir ~ '/server-ca.crt') | quote }}
+    executable: /bin/bash
+  environment: "{{ homelab_worker_window_env }}"
+  changed_when: true
+  when: homelab_worker_window_action == 'join' and homelab_worker_window_server_ca_pem | length == 0
+
+- name: Refuse a join with no API server
+  ansible.builtin.assert:
+    that: homelab_worker_window_api_server | length > 0
+    fail_msg: set homelab_worker_window_api_server in inventory
+  when: homelab_worker_window_action == 'join'
+
+- name: Run the window action
+  ansible.builtin.command:
+    argv:
+      - "{{ homelab_worker_window_release_dir }}/homelab-worker/window.sh"
+      - "{{ homelab_worker_window_action }}"
+      - "{{ inventory_hostname }}"
+  environment: "{{ homelab_worker_window_env }}"
+  register: homelab_worker_window_result
+  changed_when: true
+  failed_when: homelab_worker_window_result.rc != 0
+
+- name: Report the action
+  ansible.builtin.debug:
+    msg: "{{ homelab_worker_window_result.stdout_lines }}"

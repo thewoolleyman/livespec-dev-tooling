@@ -4,3 +4,11 @@
 # cwoolley; Apple's system python3 is what Ansible uses on a Mac.
 ansible_user: cwoolley
 ansible_python_interpreter: /usr/bin/python3
+
+# The M4 window route (livespec-dev-tooling-nn4yxt, ansible/homelab-worker-window.yml).
+# kubectl is the remote-kubectl.sh shim: the scripts run the API server node's
+# own `k3s kubectl` over `tailscale ssh`, so the Mac holds no kubeconfig. Clear
+# the target and set homelab_worker_window_kubeconfig to use a kubeconfig instead.
+homelab_worker_window_remote_kubectl_target: cwoolley@poweredge-xubuntu.perch-rudd.ts.net
+# The tailnet name is a SAN of the API server's certificate.
+homelab_worker_window_api_server: https://poweredge-xubuntu.perch-rudd.ts.net:6443
