@@ -1,8 +1,9 @@
 # Per-node CPU budget for the self-hosted pool
 
-This budget OWNS one cap: each gate lane's cpu quota. Its authority is
-`node-cpu-budget.yaml` beside this file, and `kueue/cluster-queue-gates.yaml`
-must equal it.
+This budget OWNS two caps: each gate lane's cpu quota and each node's repro lane
+(`repro_cpu`, the cpu quota of that node's flavor in
+`kueue/cluster-queue-repro-gates.yaml`). Its authority is
+`node-cpu-budget.yaml` beside this file, and both queue files must equal it.
 
 It CITES, and does not own, the pool's other CPU-bearing caps. Each lives only
 in its own file, with its own owner:
@@ -25,6 +26,7 @@ Each cap has one owner:
 |---|---|---|
 | Churn slots | ci-runtime-and-cost | `livespec-dev-tooling-6e5pyj` |
 | Gate lanes | this plan (`node-cpu-budget.yaml`) | `livespec-dev-tooling-wirn53` |
+| Repro lanes | this plan (`node-cpu-budget.yaml`, `repro_cpu`) | `livespec-dev-tooling-wirn53` |
 | Factory pod budgets | each node's host_vars owner (gmktec-factory-placement; homelab-k8s-worker-nodes for gamingpc) | — |
 
 ## The rule
@@ -32,12 +34,20 @@ Each cap has one owner:
 For each node:
 
     usable = allocatable CPU - measured system.slice share
-    usable >= runner use + gate use + factory use
+    usable >= runner use + gate use + factory use + repro lane
 
 - Each class's use is MEASURED (the tables below), not read from requests.
 - **Requests understate use.** CI pods request no CPU. A gate requesting 5 has
   used up to 26 cores (per-pod max, below). So the scheduler alone cannot keep a
   node inside its budget, and the budget sets the caps.
+- **A repro lane is a gate on the node.** A repro gate Job is a full gate Job, has no
+  cpu limit, and is outside the gate lane's quota, so an armed repro flavor adds its
+  quota to the node's use. Measured 2026-11-19: on hp-xubuntu (14.5 allocatable), a
+  10 cpu repro quota admitted two 5 cpu repro Jobs (gate-livespec-dev-tooling-j6hgj
+  at 15.38 cpu and -mzlkx at 10.96 cpu, Honeycomb `k8s.pod.cpu.usage` MAX, 04:30Z to
+  04:50Z) beside two petri factory sandboxes, host-wide cpu.some avg60 peaked at 76.7,
+  and the flavor went to zero (livespec-dev-tooling#5087). A flavor of N cpu admits
+  floor(N / request) concurrent repro Jobs, not one.
 - **The sum must fit at the peak hours, not only on the 24-hour average.** The
   pool's saturation rule is idle under 5% while the BestEffort CI slice's
   `cpu.pressure` `some` avg60 is over 30 (contracts §"Placement by node

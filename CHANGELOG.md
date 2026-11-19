@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.228.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.227.0...v1.228.0) (2026-11-19)
+
+
+### Features
+
+* **ansible:** a committed play delivers the homelab-worker scripts at the applied release tag to the worker host (livespec-dev-tooling-qpmzxa) ([76406c2](https://github.com/livespec-ai/livespec-dev-tooling/commit/76406c2799be08881325677d52258470c655716b))
+
+
+### Bug Fixes
+
+* **rate-limit-guard:** decision body and replay corpus no longer claim a --cache hit is a free 304 ([0537819](https://github.com/livespec-ai/livespec-dev-tooling/commit/053781972f81ebf6b44c0155b738ec8ed72bedf8))
+
 ## [1.227.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.226.0...v1.227.0) (2026-11-19)
 
 

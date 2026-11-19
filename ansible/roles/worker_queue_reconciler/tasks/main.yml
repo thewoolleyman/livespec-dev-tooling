@@ -4,33 +4,68 @@
 # readiness rule to gates, CI runner, and factory admission without naming a
 # worker, address, or host value.
 
+- name: Refuse an unknown state
+  ansible.builtin.assert:
+    that: worker_queue_reconciler_state in ['present', 'absent']
+    fail_msg: worker_queue_reconciler_state must be present or absent
+
 - name: Check whether the worker queue reconciler service is already installed
   ansible.builtin.stat:
     path: "{{ worker_queue_reconciler_unit_dir }}/{{ worker_queue_reconciler_service }}"
   register: worker_queue_reconciler_service_present
   become: true
 
-- name: Install the worker queue reconciler service and timer
-  ansible.builtin.copy:
-    src: >-
-      {{ worker_queue_reconciler_phase2_dir }}/kueue/{{ item }}
-    dest: "{{ worker_queue_reconciler_unit_dir }}/{{ item }}"
-    owner: root
-    group: root
-    mode: "0644"
-  loop:
-    - "{{ worker_queue_reconciler_service }}"
-    - "{{ worker_queue_reconciler_timer }}"
-  become: true
-  notify: Reload systemd for the worker queue reconciler
+- name: Install and arm the worker queue reconciler
+  when: worker_queue_reconciler_state == 'present'
+  block:
+    - name: Install the worker queue reconciler service and timer
+      ansible.builtin.copy:
+        src: >-
+          {{ worker_queue_reconciler_phase2_dir }}/kueue/{{ item }}
+        dest: "{{ worker_queue_reconciler_unit_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - "{{ worker_queue_reconciler_service }}"
+        - "{{ worker_queue_reconciler_timer }}"
+      become: true
+      notify: Reload systemd for the worker queue reconciler
 
-- name: Publish a changed worker queue unit before arming it
-  ansible.builtin.meta: flush_handlers
+    - name: Publish a changed worker queue unit before arming it
+      ansible.builtin.meta: flush_handlers
 
-- name: Enable and start the worker queue reconciler timer
-  ansible.builtin.systemd_service:
-    name: "{{ worker_queue_reconciler_timer }}"
-    enabled: true
-    state: started
-  become: true
-  when: not ansible_check_mode or worker_queue_reconciler_service_present.stat.exists
+    - name: Enable and start the worker queue reconciler timer
+      ansible.builtin.systemd_service:
+        name: "{{ worker_queue_reconciler_timer }}"
+        enabled: true
+        state: started
+      become: true
+      when: not ansible_check_mode or worker_queue_reconciler_service_present.stat.exists
+
+- name: Remove the worker queue reconciler (the committed revert)
+  when: worker_queue_reconciler_state == 'absent'
+  block:
+    - name: Stop and disable the timer and the service
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      become: true
+      loop:
+        - "{{ worker_queue_reconciler_timer }}"
+        - "{{ worker_queue_reconciler_service }}"
+      when: worker_queue_reconciler_service_present.stat.exists
+
+    - name: Remove both unit files
+      ansible.builtin.file:
+        path: "{{ worker_queue_reconciler_unit_dir }}/{{ item }}"
+        state: absent
+      become: true
+      loop:
+        - "{{ worker_queue_reconciler_timer }}"
+        - "{{ worker_queue_reconciler_service }}"
+      notify: Reload systemd for the worker queue reconciler
+
+    - name: Publish the removal
+      ansible.builtin.meta: flush_handlers

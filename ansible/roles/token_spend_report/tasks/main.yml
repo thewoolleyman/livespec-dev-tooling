@@ -104,10 +104,16 @@
 
 - name: Read back installed token-spend script digests
   # A host read, not a copy result: the bytes visible at the live destination.
+  #
+  # Not attempted in check mode. The copy above wrote nothing there, so the
+  # destination still holds the previous bytes and a reading taken now would
+  # fail against a pin that changed content, making `just ansible-drift` fail
+  # on every content-changing pin bump. A real apply always reads back.
   ansible.builtin.stat:
     path: "{{ token_spend_report_scripts_dir }}/{{ item.key }}"
     checksum_algorithm: sha256
   become: true
+  when: not ansible_check_mode
   loop: "{{ token_spend_report_scripts | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
@@ -122,7 +128,7 @@
       {{ item.item.key }} on {{ inventory_hostname }} differs from its pinned
       SHA-256 after apply.
     success_msg: "{{ item.item.key }} on {{ inventory_hostname }} matches its pinned SHA-256"
-  loop: "{{ token_spend_report_readback.results }}"
+  loop: "{{ token_spend_report_readback.results | rejectattr('skipped', 'defined') | list }}"
   loop_control:
     label: "{{ item.item.key }}"
 
