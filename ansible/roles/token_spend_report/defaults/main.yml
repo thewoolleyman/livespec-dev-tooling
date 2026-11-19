@@ -14,8 +14,8 @@ token_spend_report_scripts_dir: "{{ token_spend_report_root }}/scripts"
 # never over an unauthenticated URL.
 token_spend_report_source_checkout: "{{ lookup('ansible.builtin.env', 'HOME') }}/workspace/vps-info"
 token_spend_report_source_path: services/token-spend-report
-# vps-info master after PR 94 (rebase-merged 2026-11-19), read on origin.
-token_spend_report_source_sha: bd2b19b461b9c8ab0dc40fe8fce4d07f800f9a6f
+# vps-info master after PR 96 (rebase-merged 2026-11-19), read on origin.
+token_spend_report_source_sha: 8fcf7e492744843dda5b24202e6f1180d315fedc
 token_spend_report_scripts:
   attribution.py: b6a4d38afe5718d03f7b24fa00e9d0fee3146b29072bf58b5c02725b40a18463
   build_board.py: 4c0e12da89501618f42f586ffb8884ecb2dea5dbb743cc6b05b18693686177b0
@@ -25,3 +25,5 @@ token_spend_report_scripts:
   hcq.py: ba7dd698f446f40860d86b6e9669dae36dd3e5174bb264abf0f07bc8d583ea99
   spend_staleness.py: 0c2613177569b5a427d0232f40a608c5cf54833dde41306d7d2e1a5db8cede54
   tenant_watch.py: f6390c770cf9dbe699c66ef07744f096bf76b12b4995630bf656d0bb86285c67
+  quota_triggers.py: 1044f0cb6f995a6f2bb654ab09193548269a35854cda689920bdf47e6a937be8
+  build_triggers.py: decd28ef27940bbbe6be95269eda2dfded31a55fd1f8c0a886ab4ac6192803fd
