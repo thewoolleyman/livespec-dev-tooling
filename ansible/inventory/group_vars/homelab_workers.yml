@@ -1,0 +1,6 @@
+---
+# Group variables for `homelab_workers` -- the macOS hosts that run a homelab
+# worker VM (livespec-dev-tooling-qpmzxa). Ordinary ssh over the tailnet as
+# cwoolley; Apple's system python3 is what Ansible uses on a Mac.
+ansible_user: cwoolley
+ansible_python_interpreter: /usr/bin/python3

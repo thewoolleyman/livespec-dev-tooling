@@ -1,0 +1,24 @@
+---
+# homelab_worker_scripts -- deliver homelab-worker/ and the ci-runner/k3s/phase2
+# files the scripts source, at the release tag the play is applied from, to a
+# homelab worker's macOS host (livespec-dev-tooling-qpmzxa).
+
+# The single host this apply may act on: it must equal the host's inventory
+# name. Absent or another name changes nothing (exit 0), the same fence every
+# committed disruption play uses.
+homelab_worker_scripts_confirm: ""
+
+# The delivered trees, relative to the repository root. The scripts reach the
+# second through ../ci-runner/k3s/phase2/..., so both are delivered with
+# their paths intact.
+homelab_worker_scripts_paths:
+  - homelab-worker
+  - ci-runner/k3s/phase2
+
+# Where the tag directories live on the host. Never a git clone.
+homelab_worker_scripts_root: /Users/cwoolley/homelab-worker-release
+homelab_worker_scripts_owner: cwoolley
+homelab_worker_scripts_group: staff
+
+# Only a release tag may be delivered.
+homelab_worker_scripts_tag_pattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
