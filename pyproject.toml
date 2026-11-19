@@ -1328,7 +1328,7 @@ omit = [
     # SUBPROCESS executes, which the pth startup hook then instruments.
     # A Fabro sandbox installs a `/usr/bin/gh` WRAPPER that mints a fresh
     # GitHub App token by running `python3
-    # /workspace/.livespec-gh-refresh/bin/mint_app_token.py` before every
+    # <sandbox plugin root>/livespec-gh-refresh/bin/mint_app_token.py` before every
     # `gh` call; under `uv run pytest` that `python3` is the venv's, so the
     # helper is measured and its unexercised error branches drop the run to
     # 99.99%. Nothing here is first-party livespec-dev-tooling code, and the
@@ -1337,6 +1337,7 @@ omit = [
     # dispatcher's sandbox (unset COVERAGE_PROCESS_START in that wrapper);
     # revert this line once it lands there.
     "/workspace/.livespec-gh-refresh/*",
+    "/root/.claude/plugins/livespec-gh-refresh/*",
 ]
 
 [tool.coverage.report]
