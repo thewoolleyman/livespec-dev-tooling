@@ -1217,7 +1217,7 @@ Docker daemon is offered, which was accepted.
 | `minRunners` / `maxRunners` | 0 / **2**, a recorded exception (below) |
 | work volume request | **112Gi**, not enforced (below) |
 | placement | `nodeSelector: kubernetes.io/hostname: poweredge-xubuntu` |
-| cpu / memory requests | none, as every scale set |
+| cpu / memory requests | no cpu request; runner pod memory request **6Gi** (the orchestrator tier, `../arc/values-fabro.yaml`), covered by `fabro-cq`'s memory quotas; none on the workflow pod |
 
 **Prerequisite, measured.** The `thewoolleyman-ci-runners` App installation did
 NOT cover `thewoolleyman/fabro` at about 06:5xZ on 2026-11-05; the maintainer is
@@ -1317,25 +1317,32 @@ free space of poweredge's `ci-workvols` mount (`/var/lib/rancher/k3s/storage`),
 read on the node at converge time. The 1.5 TiB is the volume's size, not its
 free space.
 
-### CPU and memory: the churn slot alone, as for every lane
+### CPU and memory: the churn slot, plus the runner pod's memory request
 
-No cpu or memory request goes on the runner pod or the workflow pod. "Per-node
-churn slots derived from cores (2026-11-04)" above records why a request on the
-workflow pod cannot work here. The hook copies the runner's node into
-`spec.nodeName` and so bypasses the scheduler, which means contention would
-show up as `OutOfcpu` job failures, not as moved jobs. The workflow pod is also
-built from the SHARED `../arc/hook-pod-template.yaml`, which this lane must not
-change. The churn slot is the admission control. The per-job CPU bound is the
-shared template's `CARGO_BUILD_JOBS=3` and `NEXTEST_TEST_THREADS=3`. That is the
-same bound the console's Rust lane runs under, so a fabro job weighs about what
-one churn slot is sized for (about 2.73 CPUs per slot). The fork's workflow must
-not set `CARGO_BUILD_JOBS` itself, because a step-level value wins over the pod
-env.
+No cpu request goes on the runner pod or the workflow pod, and no memory
+request goes on the workflow pod. The runner pod requests **6Gi** of memory
+(`../arc/values-fabro.yaml`, the orchestrator tier of "Runner-pod memory
+admission" below), and `fabro-cq` covers `memory` beside the churn slot with
+the same per-node quotas as every other runner queue, so the request is
+admitted and counted against the node. "Per-node churn slots derived from
+cores (2026-11-04)" above records why a request on the workflow pod cannot
+work here. The hook copies the runner's node into `spec.nodeName` and so
+bypasses the scheduler, which means contention would show up as `OutOfcpu`
+job failures, not as moved jobs. The workflow pod is also built from the
+SHARED `../arc/hook-pod-template.yaml`, which this lane must not change. The
+churn slot is the admission control for cpu. The per-job CPU bound is the
+shared template's `CARGO_BUILD_JOBS=3` and `NEXTEST_TEST_THREADS=3`. That is
+the same bound the console's Rust lane runs under, so a fabro job weighs about
+what one churn slot is sized for (about 2.73 CPUs per slot). The fork's
+workflow must not set `CARGO_BUILD_JOBS` itself, because a step-level value
+wins over the pod env.
 
 **Not measured:** no fabro job has run on any pool node, so there is no figure
 for its CPU, its peak memory (rustc at `-j3` plus the link step), or its
-wall-clock time on the pool. No request is proposed, so no number is invented
-for one. The measurement that confirms the choice is the first cold run's
+wall-clock time on the pool. The 6Gi request is the orchestrator tier's
+measured per-pod ceiling, borrowed as a conservative figure rather than a
+fabro measurement, and is re-tuned with the other ceilings. The measurement
+that confirms the choice is the first cold run's
 workflow pod, read from the host collector's `kubeletstats` in Honeycomb:
 `k8s.pod.memory.working_set` and `k8s.pod.cpu.usage` for the
 `fabro-k3s-*-workflow` pod, the job's duration, and `du` of its target
