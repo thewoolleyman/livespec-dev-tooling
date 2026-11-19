@@ -37,7 +37,7 @@ _MEMORY_REQUESTS = {
     "values-poweredge-xubuntu-k3s.yaml": "512Mi",
 }
 _HEADROOM_ROW = re.compile(
-    r"^\| `(?P<flavor>runner-memory-[^`]+)` \| [^|]+ \| "
+    r"^\| `(?P<flavor>headroom-[^`]+)` \| [^|]+ \| "
     r"(?P<allocatable>[0-9.]+) \| (?P<factory>[0-9.]+) \| "
     r"(?P<gates>[0-9.]+) \| [^|]+ \| (?P<quota>[0-9]+)Gi \|$",
     re.MULTILINE,
@@ -125,22 +125,58 @@ def test_every_runner_values_file_requests_its_recorded_peak_without_a_limit() -
         assert "memory" not in resources.get("limits", {})
 
 
-def test_runner_queue_memory_quotas_match_the_documented_node_headroom() -> None:
-    """Every x86 runner queue covers the same computed per-node headroom."""
-    expected = _derived_x86_memory_quotas()
-    assert expected == {
-        "runner-memory-gamingpc-flavor": "68Gi",
-        "runner-memory-gmktec-flavor": "0Gi",
-        "runner-memory-hp-flavor": "12Gi",
-        "runner-memory-poweredge-flavor": "254Gi",
-    }
+def _churn_slots(document: dict[str, Any]) -> int:
+    """Return a ClusterQueue's nominal churn slots on the fleet flavor."""
+    return sum(
+        int(resource["nominalQuota"])
+        for group in document["spec"].get("resourceGroups", [])
+        if "ci-runner.io/churn-slot" in group.get("coveredResources", [])
+        for flavor in group.get("flavors", [])
+        if flavor["name"] == "churn-slot-flavor"
+        for resource in flavor.get("resources", [])
+    )
 
-    queues = _cluster_queues()
+
+def test_runner_queue_memory_quotas_are_slots_times_the_cohort_memory_per_slot() -> None:
+    """Every x86 runner queue covers ONE unpinned flavor sized from its churn slots.
+
+    A hostname-pinned memory flavor per node made Kueue pin runners to the first
+    flavor that fit while the churn slots live on the node, so the single flavor
+    carries no nodeLabels and the cohort total is the summed per-node headroom.
+    """
+    headroom = _derived_x86_memory_quotas()
+    assert set(headroom) == {
+        "headroom-gamingpc",
+        "headroom-gmktec",
+        "headroom-hp",
+        "headroom-poweredge",
+    }
+    assert headroom["headroom-gmktec"] == "0Gi"
+    cohort_gi = sum(int(value.removesuffix("Gi")) for value in headroom.values())
+
+    flavor = next(
+        document
+        for document in _documents(_KUEUE / "resource-flavor.yaml")
+        if document["metadata"]["name"] == "runner-memory-flavor"
+    )
+    assert "nodeLabels" not in flavor.get("spec", {})
+    assert not [
+        document
+        for document in _documents(_KUEUE / "resource-flavor.yaml")
+        if document["metadata"]["name"].startswith("runner-memory-")
+        and document["metadata"]["name"] != "runner-memory-flavor"
+    ]
+
+    queues = {name: queue for name, queue in _cluster_queues().items() if name != _WORKER_QUEUE}
     assert queues
+    total_slots = sum(_churn_slots(queue) for queue in queues.values())
+    per_slot_gi = cohort_gi // total_slots
+    assert per_slot_gi >= 1
     for name, queue in queues.items():
-        if name == _WORKER_QUEUE:
-            continue
-        assert _memory_quotas(queue) == expected, name
+        assert _memory_quotas(queue) == {
+            "runner-memory-flavor": f"{_churn_slots(queue) * per_slot_gi}Gi"
+        }, name
+    assert sum(_churn_slots(q) * per_slot_gi for q in queues.values()) <= cohort_gi
 
 
 def test_arm64_runner_queue_covers_one_recorded_runner_request() -> None:
