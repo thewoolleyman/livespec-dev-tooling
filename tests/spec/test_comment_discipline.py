@@ -65,6 +65,7 @@ import ast
 import fnmatch
 import io
 import re
+import subprocess
 import tokenize
 from pathlib import Path
 
@@ -190,12 +191,30 @@ def _prose_spans(*, source: str) -> list[tuple[int, str]]:
     return spans
 
 
+def _tracked_python_files() -> list[Path]:
+    """Every `.py` file git tracks (or has staged), as an existing path.
+
+    The walk reads TRACKED files only. An `rglob` also reaches repo-root `tmp/`,
+    where concurrent xdist tests create and delete scratch `.py` files, so a file
+    listed by the walk could be gone, or half written, by the time it is read:
+    a `FileNotFoundError`, or a `SyntaxError` at line 2 of a truncated file.
+    """
+    listing = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.py"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return [path for name in listing.split("\0") if name and (path := _REPO_ROOT / name).is_file()]
+
+
 def _scanned_sources() -> list[Path]:
-    """Every `.py` file pinned-core's citation check reads prose from."""
+    """Every tracked `.py` file pinned-core's citation check reads prose from."""
     return sorted(
         path
-        for path in _REPO_ROOT.rglob("*.py")
-        if not any(part in _UNSCANNED_SEGMENTS for part in path.parts)
+        for path in _tracked_python_files()
+        if not any(part in _UNSCANNED_SEGMENTS for part in path.relative_to(_REPO_ROOT).parts)
         and _SPEC_TREE not in path.parents
     )
 
@@ -264,3 +283,16 @@ def test_no_exclusion_disarms_the_ban_over_a_governed_file() -> None:
         f"the section deletes before commit, and a per-path carve-out re-admits them "
         f"where nobody is reading for them; carved={carved}"
     )
+
+
+def test_the_citation_scan_ignores_an_untracked_python_file_under_tmp() -> None:
+    """A scratch `.py` a concurrent test leaves in `tmp/` is never read by the scan."""
+    scratch = _REPO_ROOT / "tmp" / "comment-discipline-untracked-probe"
+    scratch.mkdir(parents=True, exist_ok=True)
+    probe = scratch / "probe.py"
+    probe.write_text("def f(:\n", encoding="utf-8")
+    try:
+        assert probe not in _scanned_sources()
+    finally:
+        probe.unlink()
+        scratch.rmdir()
