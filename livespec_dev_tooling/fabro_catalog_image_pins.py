@@ -23,6 +23,7 @@ _CATALOG_HOST_VARS_DIR = Path("ansible") / "inventory" / "host_vars"
 _WORKFLOW_PIN_MIRROR_PATH = Path("livespec_dev_tooling") / "data" / "fabro_workflow_image_pins.json"
 _SANDBOX_IMAGE_WORKFLOW_PATH = Path(".github") / "workflows" / "fabro-sandbox-image.yml"
 _CATALOG_HOLD_KEY = "image_pin_hold"
+_NO_HOLD_DECLARED = object()
 _SOURCE_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _ARCHITECTURE_SUFFIX = re.compile(
     r"^[ \t]*suffix=-(?P<architecture>[a-z0-9][a-z0-9-]*)[ \t]*$", re.MULTILINE
@@ -94,7 +95,7 @@ def _catalog_entries(*, instance: dict[str, Any]) -> list[tuple[str, str, object
                     (
                         f"environments.{environment_mapping.get('id', '<unnamed>')}",
                         image,
-                        environment_mapping.get(_CATALOG_HOLD_KEY),
+                        environment_mapping.get(_CATALOG_HOLD_KEY, _NO_HOLD_DECLARED),
                     )
                 )
     providers = instance.get("sandbox_providers", {})
@@ -113,10 +114,38 @@ def _catalog_entries(*, instance: dict[str, Any]) -> list[tuple[str, str, object
                     (
                         f"sandbox_providers.{provider_name}.process_spec",
                         image,
-                        process_spec_mapping.get(_CATALOG_HOLD_KEY),
+                        process_spec_mapping.get(_CATALOG_HOLD_KEY, _NO_HOLD_DECLARED),
                     )
                 )
     return entries
+
+
+def _declared_hold_issue(*, context: str, entry_name: str, hold: object) -> str | None:
+    if hold is _NO_HOLD_DECLARED:
+        return None
+    if isinstance(hold, str) and _WORK_ITEM_ID.fullmatch(hold):
+        return None
+    return f"{context} {entry_name}: declared {_CATALOG_HOLD_KEY} must name a work-item id"
+
+
+def _held_divergence_issue(
+    *, context: str, catalog_entry: tuple[str, str, object], workflow_tag: str
+) -> str | None:
+    entry_name, image, hold = catalog_entry
+    if hold is _NO_HOLD_DECLARED:
+        return (
+            f"{context} {entry_name}: catalog image {image!r} differs from "
+            f"workflow image pin {workflow_tag!r}; declare {_CATALOG_HOLD_KEY} "
+            "naming a work-item id to hold it"
+        )
+    structlog.get_logger("fabro_image_pin_lockstep").info(
+        "declared Fabro catalog image divergence",
+        catalog_entry=entry_name,
+        catalog_image=image,
+        workflow_image_pin=workflow_tag,
+        work_item_id=hold,
+    )
+    return None
 
 
 def _catalog_entry_issue(
@@ -146,22 +175,14 @@ def _catalog_entry_issue(
             f"{_WORKFLOW_PIN_MIRROR_PATH}: {member!r} pin {workflow_tag!r} "
             f"is not a {layer!r} image tag"
         )
+    hold_issue = _declared_hold_issue(context=context, entry_name=entry_name, hold=hold)
+    if hold_issue is not None:
+        return hold_issue
     if version == workflow_identity[1]:
         return None
-    divergence = (
-        f"{context} {entry_name}: catalog image {image!r} differs from "
-        f"workflow image pin {workflow_tag!r}"
+    return _held_divergence_issue(
+        context=context, catalog_entry=catalog_entry, workflow_tag=workflow_tag
     )
-    if not isinstance(hold, str) or not _WORK_ITEM_ID.fullmatch(hold):
-        return f"{divergence}; declared {_CATALOG_HOLD_KEY} must name a work-item id"
-    structlog.get_logger("fabro_image_pin_lockstep").info(
-        "declared Fabro catalog image divergence",
-        catalog_entry=entry_name,
-        catalog_image=image,
-        workflow_image_pin=workflow_tag,
-        work_item_id=hold,
-    )
-    return None
 
 
 def _instance_catalog_issues(
