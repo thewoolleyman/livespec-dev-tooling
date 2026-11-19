@@ -45,7 +45,8 @@ measured.
 | Failure class | Lawful repro route |
 |---|---|
 | Gate image (a delegated pre-commit or pre-push gate Job) | `mise exec -- just gate-repro <repo_root> …` (the `gate-repro` recipe in the `justfile`, `ci-runner/k3s/phase2/gates/gate-repro.sh`). It runs the gate client and a rendered Job on queue `gates-repro-lq`. It runs only on gamingpc-xubuntu and only with the GATE image. |
-| ARC runner image (a CI job) or factory SANDBOX image (a factory node) | No lawful same-image route from a seat exists today; see below. Measure the real run (the next row), or run the failing node's command inside the factory's own sandbox through a normal factory run of a diagnostic item. |
+| Factory SANDBOX image (a factory node) | `mise exec -- just gate-repro <repo_root> --image <name@sha256:digest> --node <node> -- <command…>` runs ONE command in that image, by digest, on that node, at the repository's committed tree (livespec-dev-tooling-z66x7t). Resolve the digest of the run's tag first; a run record names only the tag. The command form does not yet take a factory run's environment (`--env-from-run` is owed), so a failure that needs that environment is not yet reproducible this way. |
+| ARC runner image (a CI job) | No lawful same-image route from a seat exists today; see below. Measure the real run (the next row), or run the failing node's command inside the factory's own sandbox through a normal factory run of a diagnostic item. |
 | Node-specific performance (a job that is slow on one node only) | Measure the real run on that node: `sar` history for the job's disk, Honeycomb per-pod `k8s.pod.cpu.usage`, and the kubelet journal (`.ai/deleted-gate-pod-diagnosis.md`, `.ai/ci-node-capacity-reads.md`). A new pod elsewhere does not reproduce it. |
 
 **For ARC runner image and factory sandbox image failures, a seat has NO lawful same-image route today.**
