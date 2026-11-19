@@ -574,40 +574,40 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every scale set's listener pod runs on an always-on node",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. Its proof is host-captured on the live production cluster (the committed listener read-back exiting 0 with every listener on a labelled node); that read was captured and independently verified once on livespec-dev-tooling-crvvxt (closed 2026-11-13), and the listener-spread converge re-reads it. livespec-dev-tooling-zrsyfp owns it.",
+    "test": "tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_lists_each_listener_with_its_node_and_passes_when_all_are_placed",
+    "reason": "Integration-tier (`pytest.mark.integration`): runs the committed listener read-back end to end against a stub kubectl and proves every listener is Running on an always-on node. The production-cluster half remains host-captured after the converge that recreates the listener pods (livespec-dev-tooling-zrsyfp).",
     "work_item": "livespec-dev-tooling-zrsyfp"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the listener read-back fails when a listener is on a node that is not always on",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. The whole-scenario test already exists at the unit tier, tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_names_a_misplaced_listener_and_a_scale_set_with_no_listener_in_one_run (livespec-dev-tooling#4414), and runs the committed read-back end to end against a stub kubectl, but it does not carry the integration tier the scenario floor reads; this row maps to it once it does. livespec-dev-tooling-zrsyfp owns it, with the other read-back tests it adds.",
+    "test": "tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_names_a_misplaced_listener_and_a_scale_set_with_no_listener_in_one_run",
+    "reason": "Integration-tier (`pytest.mark.integration`): the committed read-back runs end to end against a stub kubectl with one listener on a node without the always-on label and another installed scale set without a listener; it names both and exits 1.",
     "work_item": "livespec-dev-tooling-zrsyfp"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the listener pods of the scale sets are spread across the always-on nodes",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading. Its proof is host-captured on the live production cluster, after a converge that re-creates the listener pods. livespec-dev-tooling-zrsyfp owns it.",
+    "test": "tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_counts_running_listener_pods_on_every_always_on_node",
+    "reason": "Integration-tier (`pytest.mark.integration`): the committed read-back runs end to end against a stub kubectl and counts listeners across three always-on nodes, including zero. The production spread after the converge that recreates the listener pods remains host-captured (livespec-dev-tooling-zrsyfp).",
     "work_item": "livespec-dev-tooling-zrsyfp"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the listener read-back counts the listener pods on each always-on node",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading: a stub-kubectl test that runs the committed ci-runner/k3s/phase2/arc/read-listener-placement.sh end to end and asserts the per-node counts and exit status 0. livespec-dev-tooling-zrsyfp owns it.",
+    "test": "tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_counts_running_listener_pods_on_every_always_on_node",
+    "reason": "Integration-tier (`pytest.mark.integration`): runs the committed read-back end to end against a stub kubectl with three always-on nodes, listener pods on two, and one node at zero; it asserts all count lines and exit status 0.",
     "work_item": "livespec-dev-tooling-zrsyfp"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the listener read-back prints no count when the read of the always-on nodes fails",
-    "test": "TODO",
-    "reason": "Spec-first (v215): a real test at the integration tier or above is owed for this heading: a stub-kubectl test that runs the committed ci-runner/k3s/phase2/arc/read-listener-placement.sh end to end with a failing labelled-nodes read and asserts exit status 2 and no per-node count. livespec-dev-tooling-zrsyfp owns it.",
+    "test": "tests.livespec_dev_tooling.test_always_on_node_label.test_the_read_back_prints_no_count_when_the_always_on_nodes_read_fails",
+    "reason": "Integration-tier (`pytest.mark.integration`): runs the committed read-back end to end against a stub kubectl whose always-on-node read fails; it asserts exit status 2 and no count line.",
     "work_item": "livespec-dev-tooling-zrsyfp"
   },
   {

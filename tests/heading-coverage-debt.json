@@ -1773,13 +1773,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: every scale set's listener pod runs on an always-on node",
-    "work_item": "livespec-dev-tooling-zrsyfp",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch",
     "work_item": "livespec-dev-tooling-s6go5s",
     "first_seen": "2026-10-24"
@@ -2021,34 +2014,6 @@
     "heading": "## Scenario: the legacy root exemption file authored in the change still admits during the transition",
     "work_item": "livespec-dev-tooling-oim422",
     "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the listener pods of the scale sets are spread across the always-on nodes",
-    "work_item": "livespec-dev-tooling-zrsyfp",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the listener read-back counts the listener pods on each always-on node",
-    "work_item": "livespec-dev-tooling-zrsyfp",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the listener read-back fails when a listener is on a node that is not always on",
-    "work_item": "livespec-dev-tooling-zrsyfp",
-    "first_seen": "2026-11-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the listener read-back prints no count when the read of the always-on nodes fails",
-    "work_item": "livespec-dev-tooling-zrsyfp",
-    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
