@@ -6,7 +6,11 @@
 # Usage (from a livespec-dev-tooling checkout, on a host that can delegate):
 #   just gate-repro <repo-root> [--queue gates-repro-lq] [--interval 300]
 #                               [--out DIR] [--image NAME@sha256:DIGEST]
-#                               [--node poweredge|gmktec|hp|gamingpc-xubuntu]
+#                               [--node NODE] [-- COMMAND...]
+#
+# NODE is the FULL node name: poweredge-xubuntu, gmktec-xubuntu, hp-xubuntu or
+# gamingpc-xubuntu. The renderer refuses a short label such as `gmktec`, and the
+# run's ending line names the valid ones. There are no aliases.
 #
 # WITHOUT --node the Job carries NO nodeSelector: Kueue admits it through the
 # FIRST repro flavor (gamingpc, poweredge, gmktec, hp, in that order) that has
