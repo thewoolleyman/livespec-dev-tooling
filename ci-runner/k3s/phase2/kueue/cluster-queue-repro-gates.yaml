@@ -179,8 +179,18 @@ spec:
             # same revert trigger applies; to undo only this raise, set cpu back
             # to 5. gmktec carries factory pods, so a tripped trigger also cuts
             # the fleet cap.
+            # LOWERED 10 -> 5 cpu 2026-11-19 (plan gate-job-resources, livespec-dev-tooling-
+            # wirn53; throughput-plans-coordinator ruling R301). A 10 cpu quota admits
+            # TWO concurrent 5 cpu repro Jobs and a gate Job has no cpu limit: that
+            # is the shape that overcommitted hp-xubuntu on 2026-11-19 (two repro Jobs
+            # at 15.38 and 10.96 cpu beside two factory sandboxes). gmktec carries
+            # factory pods, where the cpu.pressure avg60 tripwire cuts the fleet cap,
+            # so it holds ONE 5 cpu unit. A gate_cpu = 10 repository (the orchestrator)
+            # therefore reproduces only on poweredge, whose 72 allocatable cpu absorbs
+            # two bursting units; do not raise gmktec back to 10 for it. REVERT PATH:
+            # revert this pull request, which restores 10 cpu / 8Gi.
             - name: "cpu"
-              nominalQuota: 10
+              nominalQuota: 5
             - name: "memory"
               nominalQuota: 8Gi
         - name: gates-repro-hp-flavor

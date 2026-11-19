@@ -8,6 +8,11 @@
 #                               [--out DIR] [--image NAME@sha256:DIGEST]
 #                               [--node NODE] [-- COMMAND...]
 #
+# A repository that declares gate_cpu = 10 (the orchestrator) can reproduce ONLY with
+# --node poweredge-xubuntu: gmktec's repro flavor is one 5 cpu unit (it carries factory
+# pods), hp's and gamingpc's are zero, and a Job larger than its flavor is refused at
+# submit. Do not raise gmktec for it (ci-runner/k3s/phase2/NODE-CPU-BUDGET.md).
+#
 # NODE is the FULL node name: poweredge-xubuntu, gmktec-xubuntu, hp-xubuntu or
 # gamingpc-xubuntu. The renderer refuses a short label such as `gmktec`, and the
 # run's ending line names the valid ones. There are no aliases.

@@ -48,6 +48,11 @@ For each node:
   04:50Z) beside two petri factory sandboxes, host-wide cpu.some avg60 peaked at 76.7,
   and the flavor went to zero (livespec-dev-tooling#5087). A flavor of N cpu admits
   floor(N / request) concurrent repro Jobs, not one.
+- **A gate_cpu = 10 repository reproduces only on poweredge.** gmktec's repro lane is one
+  5 cpu unit (10 -> 5, 2026-11-19, throughput-plans-coordinator R301) because gmktec carries
+  factory pods and its cpu.pressure tripwire cuts the fleet cap. The orchestrator declares
+  gate_cpu = 10, so its repro Job fits only poweredge's 10 cpu flavor (72 allocatable). Do not
+  raise gmktec back to 10 for it (livespec-dev-tooling-z66x7t did, in 2daeb810e).
 - **The sum must fit at the peak hours, not only on the 24-hour average.** The
   pool's saturation rule is idle under 5% while the BestEffort CI slice's
   `cpu.pressure` `some` avg60 is over 30 (contracts §"Placement by node
