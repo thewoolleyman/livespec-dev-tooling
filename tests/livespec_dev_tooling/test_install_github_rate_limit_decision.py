@@ -465,3 +465,28 @@ def test_replay_corpus_carries_no_credentials_session_ids_or_private_paths() -> 
     text = _CORPUS_PATH.read_text(encoding="utf-8")
     assert _UNREDACTED_SECRET.search(text) is None
     assert _UNREDACTED_PRIVATE_PATH.search(text) is None
+
+
+_FALSE_CACHE_CLAIMS = (
+    "answers 304",
+    "spends no primary rate-limit",
+    "the remedy the guard prescribes",
+    "the very remedy",
+)
+
+
+def test_decision_body_does_not_claim_a_cache_read_earns_a_free_304() -> None:
+    """`gh api --cache` is a TTL-only local cache that sends no If-None-Match.
+
+    Every call after the TTL expires is a counted 200, so no text the body ships
+    may call a cached read a free 304 or the remedy regardless of TTL
+    (ruling R301, measured with GH_DEBUG=api on gh 2.96.0).
+    """
+    lowered = CANONICAL_GITHUB_RATE_LIMIT_DECISION_BODY.lower()
+    assert [c for c in _FALSE_CACHE_CLAIMS if c in lowered] == []
+
+
+def test_replay_corpus_notes_do_not_claim_a_cache_hit_answers_304() -> None:
+    """The cached-read vector's note must not repeat the retired 304 claim."""
+    lowered = _CORPUS_PATH.read_text(encoding="utf-8").lower()
+    assert [c for c in _FALSE_CACHE_CLAIMS if c in lowered] == []

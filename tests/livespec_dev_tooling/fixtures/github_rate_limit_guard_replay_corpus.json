@@ -88,7 +88,7 @@
       "expected_verdict": "allow",
       "pre_fix_verdict": "deny",
       "command": "for r in a b c; do gh api --cache 10m repos/o/$r --jq .name; done",
-      "note": "The very remedy `_READ_DENY_REASON` prescribes. A cache hit answers 304, which spends no primary rate-limit budget.",
+      "note": "A cached read is exempt. `--cache` is a TTL-only local cache: a hit inside the TTL is free, but gh sends no If-None-Match, so a call after the TTL is a counted request.",
       "provenance": "Real denial 2026-08-26, homelab planning session `steady-state-loop-hardening` (redacted)."
     },
     {
