@@ -115,7 +115,7 @@ WORKLOAD_ARCH_CONF="${WORKLOAD_ARCH_CONF:-${SCRIPT_DIR}/../workload-arch.conf}"
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
-queue="gates-lq"; repro_stack_interval=""; repro_image="@@unset@@"; repro_node="@@unset@@"
+queue="gates-lq"; repro_stack_interval=""; repro_image="@@unset@@"; repro_node="@@unset@@"; repro_command=""
 check_suite=()
 pytest_argv=()
 private_siblings=()
@@ -154,6 +154,7 @@ while [ $# -gt 0 ]; do
     --repro-stack-interval) repro_stack_interval="$2"; shift 2 ;;
     --image)             repro_image="$2"; shift 2 ;;
     --node)              repro_node="$2"; shift 2 ;;
+    --repro-command)     repro_command="$2"; shift 2 ;;
     --private-sibling)   private_siblings+=("$2"); shift 2 ;;
     --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
     --authority-skip-env)     authority_skip_env="$2"; shift 2 ;;
@@ -727,6 +728,23 @@ else
     gate_recipe_lines="${gate_recipe_lines:+${gate_recipe_lines}
 }just ${entry}"
   done
+fi
+
+# THE OPERATOR REPRODUCTION ROUTE MAY RUN ONE COMMAND instead of the gate's
+# recipes (livespec-dev-tooling-z66x7t): a failure that only the factory's image
+# shows is reproduced by running the failing command there, not by paying for the
+# repository's whole gate. The command arrives BASE64-ENCODED, so no quoting
+# survives this script's placeholder substitution; the Job decodes it and runs it
+# through bash. The recipe-existence preflight has nothing to check then, so its
+# list is emptied. The base64 alphabet carries no shell metacharacter, which is
+# what makes the encoded value safe to place inside single quotes.
+if [ -n "${repro_command}" ]; then
+  if ! [[ "${repro_command}" =~ ^[A-Za-z0-9+/]+=*$ ]]; then
+    echo "FATAL: --repro-command is not base64" >&2
+    exit 2
+  fi
+  quoted_recipe_names=""
+  gate_recipe_lines="bash -c \"\$(printf '%s' '${repro_command}' | base64 -d)\""
 fi
 
 # --- the members this Job must NOT run (livespec-dev-tooling-mex6ga) ---------

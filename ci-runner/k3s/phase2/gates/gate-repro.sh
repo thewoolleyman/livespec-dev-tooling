@@ -36,6 +36,10 @@
 #      client stopped waiting (its poll budget is 3600 s from admission) and
 #      deleted it. <out>/ending.txt records which, with the client's own line.
 #
+# `-- <command...>` runs that ONE command in the Job instead of the repository's
+# gate (livespec-dev-tooling-z66x7t): the failing command is reproduced in the
+# failing image without paying for the whole gate.
+#
 # Exit status is the client's: 0 Complete, 1 Failed, 3 no terminal condition.
 #
 # THE RENDERER IS THIS CHECKOUT'S, passed explicitly: the repository under test
@@ -47,7 +51,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLING_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 RENDERER="${SCRIPT_DIR}/render-gate-job.sh"
 
-repo_root=""; queue="gates-repro-lq"; interval="300"; out=""; image=""; node=""
+repo_root=""; queue="gates-repro-lq"; interval="300"; out=""; image=""; node=""; command=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root) repo_root="$2"; shift 2 ;;
@@ -56,6 +60,7 @@ while [ $# -gt 0 ]; do
     --out)       out="$2"; shift 2 ;;
     --image)     image="$2"; shift 2 ;;
     --node)      node="$2"; shift 2 ;;
+    --)          shift; command=("$@"); break ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -135,7 +140,8 @@ capture() {
     python -I -m livespec_dev_tooling.gate_repro \
     --repo-root "${repo_root}" --renderer "${RENDERER}" \
     --queue "${queue}" --stack-interval "${interval}" \
-    ${image:+--image "${image}"} ${node:+--node "${node}"} ) > "${out}/client.log" 2>&1 &
+    ${image:+--image "${image}"} ${node:+--node "${node}"} \
+    ${command[@]+-- "${command[@]}"} ) > "${out}/client.log" 2>&1 &
 client=$!
 
 # FIRES SLACK SECONDS EARLY: the loop wakes every 10 s and a capture takes time,

@@ -1612,6 +1612,37 @@ for bad_node in "" "gmktec" "macbook-m4-max-homelab-worker" "hp-xubuntu;x"; do
     pass "--node '${bad_node}' is refused"
   fi
 done
+echo "== ZC. the operator reproduction route's --repro-command (livespec-dev-tooling-z66x7t) =="
+CMD_B64="$(printf '%s' 'pytest tests/test_a.py -k "a b"' | base64 | tr -d '\n')"
+out_cmd="${SCRATCH}/repro-cmd.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" \
+     --repro-command "${CMD_B64}" > "${out_cmd}" 2>"${SCRATCH}/repro-cmd.err"; then
+  if grep -qF "printf '%s' '${CMD_B64}' | base64 -d" "${out_cmd}"; then
+    pass "--repro-command is decoded and run by the Job"
+  else
+    fail "--repro-command did not render its decode-and-run line"
+  fi
+  if grep -qE 'for recipe in ; do' "${out_cmd}"; then
+    pass "--repro-command empties the recipe-existence preflight"
+  else
+    fail "--repro-command left recipe names in the preflight"
+  fi
+else
+  fail "a render with --repro-command was refused: $(cat "${SCRATCH}/repro-cmd.err")"
+fi
+if grep -qF "printf '%s' '${CMD_B64}'" "${out_a}"; then
+  fail "a render with no --repro-command carries the command line"
+else
+  pass "a render with no --repro-command carries no command line"
+fi
+for bad_command in "a;b" "x y" "\$(id)" "'"; do
+  if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --repro-command "${bad_command}" \
+       > /dev/null 2>&1; then
+    fail "--repro-command '${bad_command}' was rendered rather than refused"
+  else
+    pass "--repro-command '${bad_command}' is refused"
+  fi
+done
 for bad_queue in "" "Gates-LQ" "gates lq" "-gates"; do
   if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" --queue "${bad_queue}" \
        > /dev/null 2>&1; then
