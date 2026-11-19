@@ -166,18 +166,42 @@ def _reason_acknowledges_tier(*, reason: str) -> bool:
     return any(keyword in lowered for keyword in _TIER_REASON_KEYWORDS)
 
 
-def _split_node_id(*, test_id: str) -> tuple[list[str], str] | None:
-    """Split a dotted node id into (module-path components, function name).
+def _split_node_id(*, test_id: str) -> tuple[Path, str | None] | None:
+    """Split a live test node id into its module path and optional function.
 
+    Dotted node ids retain the legacy spelling:
     `tests.e2e.test_happy_path.test_happy_path_minimal` →
-    `(["tests", "e2e", "test_happy_path"], "test_happy_path_minimal")`.
-    Returns `None` when the node id has no dot (cannot resolve to a
-    file/function) so the caller treats it as "no marker found".
+    `(Path("tests/e2e/test_happy_path.py"), "test_happy_path_minimal")`.
+
+    Pytest node ids use ``::`` to separate the module from the test name. A
+    module ending in `.py` is already a filesystem path, while a module without
+    that suffix is the dotted import spelling. A bare `.py` path identifies a
+    module-level marker, so it has no function name. Other undotted values name
+    no resolvable module.
     """
-    parts = test_id.split(".")
-    if len(parts) < _MIN_DOTTED_PARTS:
+    module_id, separator, func_name = test_id.partition("::")
+    if separator:
+        module_parts = module_id.split(".")
+        if (
+            module_id
+            and func_name
+            and (module_id.endswith(".py") or len(module_parts) >= _MIN_DOTTED_PARTS)
+        ):
+            module_path = (
+                Path(module_id)
+                if module_id.endswith(".py")
+                else Path(*module_parts).with_suffix(".py")
+            )
+            return module_path, func_name
         return None
-    return parts[:-1], parts[-1]
+    if test_id.endswith(".py"):
+        return Path(test_id), None
+    parts = test_id.split(".")
+    return (
+        (Path(*parts[:-1]).with_suffix(".py"), parts[-1])
+        if len(parts) >= _MIN_DOTTED_PARTS
+        else None
+    )
 
 
 def _decorator_marker_names(*, decorators: list[ast.expr]) -> set[str]:
@@ -215,15 +239,18 @@ def _module_pytestmark_names(*, tree: ast.Module) -> set[str]:
     return out
 
 
-def _function_has_integration_marker(*, tree: ast.Module, func_name: str) -> bool:
-    """Statically decide whether `func_name` carries an integration-tier marker.
+def _node_has_integration_marker(*, tree: ast.Module, func_name: str | None) -> bool:
+    """Statically decide whether a module or `func_name` carries a tier marker.
 
-    Accepts a function-level decorator, a class-level marker on the enclosing
-    class, or a module-level `pytestmark`. Never executes pytest.
+    A bare module path can pass only through module-level `pytestmark`. A named
+    test additionally accepts its function-level decorator or a class-level
+    marker on the enclosing class. Never executes pytest.
     """
     module_markers = _module_pytestmark_names(tree=tree)
     if module_markers & _INTEGRATION_TIER_MARKERS:
         return True
+    if func_name is None:
+        return False
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
             class_markers = _decorator_marker_names(decorators=list(node.decorator_list))
@@ -266,8 +293,8 @@ def _node_id_resolves_with_marker(
     split = _split_node_id(test_id=test_id)
     if split is None:
         return IOSuccess(_UNDOTTED_NODE_ID_RESOLVES_TO_NO_MODULE)
-    module_parts, func_name = split
-    candidate = repo_root / Path(*module_parts).with_suffix(".py")
+    module_path, func_name = split
+    candidate = repo_root / module_path
     # ONE `try` rather than `is_file()` then `read_text()`: the pre-check pair
     # fused absent with unreadable AND left a TOCTOU second arm no test could
     # reach. Splitting on `FileNotFoundError` separates them for free and makes
@@ -290,7 +317,7 @@ def _node_id_resolves_with_marker(
                 reason="test-file-unparseable", detail=f"{test_id} -> {candidate}: {unparseable}"
             )
         )
-    return IOSuccess(_function_has_integration_marker(tree=tree, func_name=func_name))
+    return IOSuccess(_node_has_integration_marker(tree=tree, func_name=func_name))
 
 
 def scenario_tier_violations(

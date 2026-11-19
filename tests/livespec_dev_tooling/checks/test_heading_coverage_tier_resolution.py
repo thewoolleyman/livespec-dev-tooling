@@ -108,6 +108,51 @@ def test_integration_marker_resolved_via_ast_is_compliant(*, tmp_path: Path) -> 
     assert _violations(repo_root=tmp_path, entries=entries) == []
 
 
+def test_pytest_style_node_ids_resolve_function_and_module_markers(*, tmp_path: Path) -> None:
+    """Dotted and path node IDs resolve explicit and module-level tier markers."""
+    function_marked = tmp_path / "tests" / "other" / "test_function_marked.py"
+    function_marked.parent.mkdir(parents=True)
+    _ = function_marked.write_text(
+        "import pytest\n\n\n@pytest.mark.integration\ndef test_y() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    module_marked = tmp_path / "tests" / "other" / "test_module_marked.py"
+    _ = module_marked.write_text(
+        "import pytest\n\npytestmark = pytest.mark.integration\n\n\ndef test_y() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    entries: list[dict[str, object]] = [
+        {"spec_file": "scenarios.md", "test": "tests.other.test_function_marked::test_y"},
+        {"spec_file": "scenarios.md", "test": "tests/other/test_function_marked.py::test_y"},
+        {"spec_file": "scenarios.md", "test": "tests/other/test_module_marked.py"},
+    ]
+
+    assert _violations(repo_root=tmp_path, entries=entries) == []
+
+
+def test_pytest_style_node_ids_without_tier_markers_fire(*, tmp_path: Path) -> None:
+    """No spelling bypasses direction 4 when its mapped test has no tier marker."""
+    test_file = tmp_path / "tests" / "other" / "test_unmarked.py"
+    test_file.parent.mkdir(parents=True)
+    _ = test_file.write_text("def test_y() -> None:\n    assert True\n", encoding="utf-8")
+    entries: list[dict[str, object]] = [
+        {"spec_file": "scenarios.md", "test": "tests.other.test_unmarked::test_y"},
+        {"spec_file": "scenarios.md", "test": "tests/other/test_unmarked.py::test_y"},
+        {"spec_file": "scenarios.md", "test": "tests/other/test_unmarked.py"},
+    ]
+
+    assert _violations(repo_root=tmp_path, entries=entries) == entries
+
+
+def test_malformed_pytest_node_id_is_a_tier_violation(*, tmp_path: Path) -> None:
+    """A node ID missing its `::` function name cannot claim a tier marker."""
+    entries: list[dict[str, object]] = [
+        {"spec_file": "scenarios.md", "test": "tests.other.test_unmarked::"}
+    ]
+
+    assert _violations(repo_root=tmp_path, entries=entries) == entries
+
+
 def test_non_string_test_field_is_skipped(*, tmp_path: Path) -> None:
     """A malformed entry whose `test` is not a string is skipped, not a violation."""
     entries: list[dict[str, object]] = [{"spec_file": "scenarios.md", "test": 123}]
