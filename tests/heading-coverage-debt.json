@@ -506,6 +506,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory workspace sweep keeps what it cannot prove finished and preserved",
+    "work_item": "livespec-dev-tooling-iwvy4u",
+    "first_seen": "2026-11-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a failed read of the runner scheduler changes nothing",
     "work_item": "livespec-dev-tooling-mtvxde",
     "first_seen": "2026-11-08"

@@ -6443,3 +6443,15 @@ When the change's workflow diff modifies six runs-on values and deletes no job, 
 Then check-no-workflow-edits admits the change at the additive tier
 
 And when the diff instead deletes one step, the check refuses it and names the deleted line
+
+## Scenario: a factory workspace sweep keeps what it cannot prove finished and preserved
+
+Given a factory host whose `/srv/factory-workspaces` holds a directory of a blocked item, a directory whose tenant cannot be read, a directory under 24 hours old, and a dirty directory of a finished item
+
+When the workspace sweep runs in apply mode
+
+Then it removes none of the first three directories
+
+And it archives the dirty directory with a verified sha256 and records the path and digest on the item before removing it
+
+And a run in report-only mode removes and archives nothing
