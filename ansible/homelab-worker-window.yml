@@ -1,0 +1,31 @@
+---
+# The M4 window route (livespec-dev-tooling-nn4yxt, plan homelab-k8s-worker-nodes):
+# run homelab-worker/window.sh, and through it join-worker.sh,
+# departure-drill.sh and remove-worker.sh, ON a homelab worker's Mac from the
+# release directory ansible/homelab-worker-scripts.yml delivered
+# (/Users/cwoolley/homelab-worker-release/current). No hand ssh and no hand git.
+#
+# ONE ACTION PER RUN, selected by homelab_worker_window_action, each a no-op unless
+# both fences name their target:
+#   homelab_worker_window_confirm=<inventory host>   e.g. macbook-m4-max
+#   homelab_worker_window_node_confirm=<host>-homelab-worker
+#
+#   snapshot  record gates-cq before the window (refuses to overwrite)
+#   join      join the worker (--api-server and --server-ca come from inventory)
+#   drill     the departure drill on the node
+#   check     the revert TRIGGER: node not Ready within the bound, or a pod no
+#             DaemonSet owns landed on it, runs revert and fails the play
+#   revert    cordon and depart the node, restore gates-cq from the snapshot
+#   remove    depart the node only
+#
+#   just ansible-apply ansible/homelab-worker-window.yml -e homelab_worker_window_action=snapshot \
+#     -e homelab_worker_window_confirm=macbook-m4-max -e homelab_worker_window_node_confirm=macbook-m4-max-homelab-worker
+#
+# PATH, the kubectl route (remote-kubectl.sh and its REMOTE_KUBECTL_TARGET, or
+# a kubeconfig) and the API server come from inventory/group_vars/homelab_workers.yml.
+- name: Run one M4 window action on the worker's Mac
+  hosts: homelab_workers
+  gather_facts: false
+  roles:
+    - role: homelab_worker_window
+      tags: [homelab_worker_window]

@@ -1,0 +1,28 @@
+---
+# homelab_worker_window -- see ansible/homelab-worker-window.yml.
+homelab_worker_window_action: ""
+homelab_worker_window_confirm: ""
+homelab_worker_window_node_confirm: ""
+homelab_worker_window_actions: [snapshot, join, drill, check, revert, remove]
+
+# The delivered release directory (role homelab_worker_scripts).
+homelab_worker_window_release_dir: /Users/cwoolley/homelab-worker-release/current
+homelab_worker_window_state_dir: /Users/cwoolley/homelab-worker-release/window
+homelab_worker_window_node: "{{ inventory_hostname }}-homelab-worker"
+
+# The PATH the scripts need: limactl, kubectl, python3 (Homebrew), and the
+# kubectl shim directory the route makes when no kubeconfig is given.
+homelab_worker_window_path: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+# kubectl route. A non-empty kubeconfig is exported as KUBECONFIG and the
+# kubectl on PATH is used. Otherwise `kubectl` is a shim to remote-kubectl.sh,
+# which needs the API server node's ssh target.
+homelab_worker_window_kubeconfig: ""
+homelab_worker_window_remote_kubectl_target: ""
+
+homelab_worker_window_api_server: ""
+# The cluster CA for join --server-ca: an inline PEM from inventory, else read
+# from the cluster (kubectl config view --raw --minify) through the same route.
+homelab_worker_window_server_ca_pem: ""
+
+homelab_worker_window_bound_seconds: 600
