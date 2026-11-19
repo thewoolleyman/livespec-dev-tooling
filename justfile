@@ -482,6 +482,12 @@ git-identity-audit output fabro_evidence:
 incident-fleet-audit:
     uv run --no-sync python -m livespec_dev_tooling.incident_fleet_cli audit
 
+# Refresh the committed core-manifest fixture and only bindings whose named
+# evidence independently re-proves against it.  Claims that need a consumer
+# re-read remain unchanged and make the command fail.
+incident-fleet-refresh:
+    uv run --no-sync python -m livespec_dev_tooling.incident_fleet_cli refresh
+
 # The one step that enables incident use for a repository. It runs its own
 # fresh audit against core's current master and enables the repository only if
 # that audit's ready list names it; otherwise it refuses, enables nothing and
