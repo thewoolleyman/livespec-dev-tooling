@@ -54,8 +54,8 @@ _ACTIONS_DIR = _REPO_ROOT / ".github" / "actions"
 _TOP_LEVEL_BLOCK = "^{key}:\n(?P<body>(?:[ \t].*\n|\n)*)"
 # An entry name is the sole two-space-indented key; `required:` / `default:`
 # sit one level deeper.
-_ENTRY_NAME = re.compile(r"^  (?P<name>[a-z0-9][a-z0-9-]*):$", re.MULTILINE)
-_ENTRY_LINE = re.compile(r"^  (?P<name>[a-z0-9][a-z0-9-]*):$")
+_ENTRY_NAME = re.compile(r"^  (?P<name>[A-Za-z_][A-Za-z0-9_-]*):$", re.MULTILINE)
+_ENTRY_LINE = re.compile(r"^  (?P<name>[A-Za-z_][A-Za-z0-9_-]*):$")
 _FIELD_LINE = re.compile(r"^    (?P<field>[a-z-]+): ?(?P<value>.*)$")
 
 # The invocation form `run-check`'s step list must still name.
