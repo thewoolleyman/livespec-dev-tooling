@@ -32,6 +32,14 @@ def test_coverage_omits_test_modules(monkeypatch) -> None:
     assert matcher.match(str(_REPO_ROOT / "tests" / "support" / "helper_module.py"))
 
 
+def test_coverage_omits_the_fabro_credential_helper_at_any_plugin_root(monkeypatch) -> None:
+    """The sandbox-only token helper is foreign code, wherever its plugin root is mounted."""
+    matcher = _omit_matcher(monkeypatch=monkeypatch)
+
+    assert matcher.match("/root/.claude/plugins/livespec-gh-refresh/bin/mint_app_token.py")
+    assert matcher.match("/workspace/.livespec-gh-refresh/bin/mint_app_token.py")
+
+
 def test_coverage_still_measures_first_party_source(monkeypatch) -> None:
     matcher = _omit_matcher(monkeypatch=monkeypatch)
 

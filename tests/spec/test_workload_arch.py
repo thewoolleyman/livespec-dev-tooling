@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.hang_guard import run_under_hang_guard
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -28,13 +30,12 @@ _CONF = _PHASE2 / "workload-arch.conf"
 
 def _render(*, tmp_path: Path, conf: str, kind: str, name: str) -> subprocess.CompletedProcess[str]:
     (tmp_path / "list.conf").write_text(conf, encoding="utf-8")
-    return subprocess.run(
+    return run_under_hang_guard(
         ["/bin/bash", str(_RENDER), kind, name, str(tmp_path / "out")],
         capture_output=True,
         text=True,
         env={"PATH": "/usr/bin:/bin", "WORKLOAD_ARCH_CONF": str(tmp_path / "list.conf")},
         check=False,
-        timeout=30,
     )
 
 
