@@ -852,6 +852,29 @@ def test_evacuate_refuses_when_no_other_node_is_ready(*, tmp_path: Path) -> None
     assert outcome.pods == _PODS
 
 
+def test_evacuate_refuses_before_deleting_when_no_ready_uncordoned_always_on_node_can_take_a_listener(
+    *, tmp_path: Path
+) -> None:
+    outcome = _run(
+        tmp_path=tmp_path,
+        action="evacuate",
+        node_state="true|True",
+        pods=_PODS,
+        # The node list is name, Ready, cordoned, always-on.  node-b is Ready,
+        # but cannot take the listener because it does not carry the always-on
+        # label; node-a is the cordoned node being evacuated.
+        nodes="node-a|True|true|true\nnode-b|True|false|\n",
+    )
+    assert outcome.returncode == 1, outcome
+    assert "arc-systems/overseer-listener" in outcome.stderr
+    assert "always-on" in outcome.stderr
+    assert outcome.deletes() == []
+    assert outcome.pods == _PODS
+    assert any(
+        line.startswith("left kube-system/coredns-5d78c:") for line in outcome.stdout.splitlines()
+    ), outcome
+
+
 _STATEFUL = _PODS + "node-a monitoring store-0 marked: owners:StatefulSet\n"
 
 
