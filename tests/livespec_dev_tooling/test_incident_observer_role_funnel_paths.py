@@ -139,21 +139,35 @@ _NODES: dict[str, tuple[dict[str, Any], bool, bool]] = {
         True,
         True,
     ),
+    "publishing-sibling": (
+        _serve(
+            handlers={
+                **_BOTH,
+                _PUBLISH: _PRODUCTION + _PUBLISH,
+                "/livespec/ci/publish": "http://127.0.0.1:8770/ci/publish",
+            }
+        ),
+        True,
+        True,
+    ),
     "discarding": (_serve(handlers={_CALLBACK: _PRODUCTION + _CALLBACK}), True, False),
     "ungranted": ({}, False, True),
 }
 
 
 def _node_variables(*, node: str) -> dict[str, Any]:
-    """The production apply has a publisher; a further installation does not."""
+    """The production apply has a publisher; a further installation has one only when it lists it."""
     variables: dict[str, Any] = base.production_variables()
-    if node == "empty-publisher-sibling":
+    if node in {"empty-publisher-sibling", "publishing-sibling"}:
+        sibling: dict[str, Any] = dict(_SECOND_INSTALLATION)
+        if node == "publishing-sibling":
+            sibling["ci_publisher_shas"] = [_PUBLISHER_SHA]
         variables.update(
             {
                 "incident_observer_ci_publisher_shas": [_PUBLISHER_SHA],
                 "incident_observer_installations": [
                     *variables["incident_observer_installations"],
-                    _SECOND_INSTALLATION,
+                    sibling,
                 ],
             }
         )
@@ -396,3 +410,12 @@ def test_a_funnel_port_publishing_a_siblings_ci_publish_path_without_its_publish
 
     assert outcome.failed is True
     assert "publishes /livespec/ci/publish, which the role does not declare" in outcome.output
+
+
+def test_a_funnel_port_publishing_a_siblings_ci_publish_path_with_its_publisher_is_accepted(
+    outcomes: dict[str, _Outcome],
+) -> None:
+    outcome = outcomes["publishing-sibling"]
+
+    assert outcome.failed is False, outcome.output
+    assert outcome.published == []
