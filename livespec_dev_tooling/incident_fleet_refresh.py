@@ -54,14 +54,24 @@ _DUPLICATE_REASON = (
 )
 
 
-def _atomic_write(*, path: Path, text: str) -> None:
+def _always_unchanged() -> bool:
+    return True
+
+
+def _atomic_write(
+    *, path: Path, text: str, unchanged: Callable[[], bool] = _always_unchanged
+) -> bool:
+    """Replace `path` with `text` unless `unchanged` fails right before the replace."""
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
         _ = temporary.write_text(text, encoding="utf-8")
+        if not unchanged():
+            return False
         _ = temporary.replace(path)
     finally:
         if temporary.exists():
             temporary.unlink()
+    return True
 
 
 def _document(*, path: Path) -> dict[str, object] | None:
@@ -128,6 +138,33 @@ def _claim_entries(
     return cast("list[dict[str, object]]", raw)
 
 
+def _write(
+    *,
+    claims_path: Path,
+    manifest_fixture_path: Path,
+    manifest_text: str,
+    document: dict[str, object] | None,
+    audited: dict[str, object] | None,
+    result: RefreshResult,
+) -> RefreshResult:
+    """Write the rebound claims, then the fixture, each only if nothing else moved."""
+    # Every claim field outside the rebound manifest bindings must still be the
+    # audited snapshot, or this write would revert a replacement nothing audited.
+    # The claims replace goes first and re-checks the snapshot immediately before
+    # it, so no other write can land between that check and the replace.
+    if result.rebound and not _atomic_write(
+        path=claims_path,
+        text=json.dumps(document, indent=2) + "\n",
+        unchanged=lambda: _document(path=claims_path) == audited,
+    ):
+        return _failed(reason="committed claims changed during refresh")
+
+    # The fixture records the exact committed core text that supplied the new
+    # identity.  It is updated even when some claims need a later consumer read.
+    _ = _atomic_write(path=manifest_fixture_path, text=manifest_text)
+    return result
+
+
 def refresh(
     *,
     claims_path: Path,
@@ -176,14 +213,11 @@ def refresh(
         row_keys=row_keys,
     )
 
-    # Every claim field outside the rebound manifest bindings must still be the
-    # audited snapshot, or this write would revert a replacement nothing audited.
-    if _document(path=claims_path) != audited:
-        return _failed(reason="committed claims changed during refresh")
-
-    # The fixture records the exact committed core text that supplied the new
-    # identity.  It is updated even when some claims need a later consumer read.
-    _atomic_write(path=manifest_fixture_path, text=manifest_text)
-    if rebound:
-        _atomic_write(path=claims_path, text=json.dumps(document, indent=2) + "\n")
-    return RefreshResult(rebound=tuple(rebound), needs_consumer_reread=tuple(rereads))
+    return _write(
+        claims_path=claims_path,
+        manifest_fixture_path=manifest_fixture_path,
+        manifest_text=manifest_text,
+        document=document,
+        audited=audited,
+        result=RefreshResult(rebound=tuple(rebound), needs_consumer_reread=tuple(rereads)),
+    )
