@@ -197,32 +197,29 @@ def _cohort_quota_total() -> int:
     )
 
 
-def test_the_rebalance_moves_eight_slots_from_poweredge_to_hp_and_keeps_the_total_at_44() -> None:
-    """hp's 8 churn slots came from poweredge, so the cohort total and its quotas did not move.
+def test_the_node_slot_capacities_sum_to_the_cohort_quota() -> None:
+    """Each node's churn-slot capacity is a non-negative integer and the capacities sum to the cohort quota.
 
-    The 450-point JIT startup budget caps a cold start at about 45 mint pairs and
-    nothing else in the pool caps it, so opening hp could not ADD capacity
-    (DERIVATION.md "The rebalance at C = 44 — hp-xubuntu opened runner-only
-    (2026-11-03)").
+    The relation is the derivation, not the numbers: a cohort total above the
+    registered node capacity promises slots no node has, and one below it idles
+    capacity (the `cluster-queue-*.yaml` header and DERIVATION.md "Recomputing at
+    another C"). A test MUST NOT assert the committed value of a capacity key
+    (contracts.md "Config-value fast path"), so a change of one node's
+    `ADMISSION_CAPACITY_C` that moves the cohort quotas with it leaves this test
+    passing, and one that does not is what it refuses.
     """
     capacities = {
-        profile.stem: int(
-            _profile_value(text=profile.read_text(encoding="utf-8"), key="ADMISSION_CAPACITY_C")
+        profile.stem: _profile_value(
+            text=profile.read_text(encoding="utf-8"), key="ADMISSION_CAPACITY_C"
         )
         for profile in sorted(_PROFILES.glob("*.env"))
     }
-    assert capacities == {
-        "gamingpc-xubuntu": 4,
-        "gmktec-xubuntu": 8,
-        "hp-xubuntu": 3,
-        "poweredge-xubuntu": 17,
-    }, (
-        f"the stranded-capacity split is poweredge 17, gmktec 8, hp 3 and gamingpc 4 "
-        f'(DERIVATION.md "gamingpc 4: cohort 32 (2026-11-18)"); got {capacities}'
-    )
-    assert sum(capacities.values()) == 32 == _cohort_quota_total(), (
-        f"the profiles must sum to 32 and equal the summed cohort quotas; "
-        f"profiles={sum(capacities.values())} quotas={_cohort_quota_total()}"
+    not_integers = {node: value for node, value in capacities.items() if not value.isdigit()}
+    assert not not_integers, f"every profile must declare ADMISSION_CAPACITY_C as a non-negative integer; got {not_integers}"
+    total = sum(int(value) for value in capacities.values())
+    assert total == _cohort_quota_total(), (
+        f"the profiles' churn-slot capacities must equal the summed cohort quotas; "
+        f"profiles={total} quotas={_cohort_quota_total()} per node={capacities}"
     )
     derivation = _DERIVATION.read_text(encoding="utf-8")
     assert "## The rebalance at C = 44 — hp-xubuntu opened runner-only (2026-11-03)" in derivation

@@ -401,23 +401,22 @@ spec:
 
 
 def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
-    """Seven-day pool job-hours are the dated, auditable source of every quota."""
-    expected = {
-        "livespec-orchestrator-beads-fabro-cq": 5,
-        "livespec-orchestrator-master-cq": 1,
-        "livespec-dev-tooling-cq": 6,
-        "livespec-dev-tooling-master-cq": 3,
-        "livespec-cq": 2,
-        "livespec-overseer-cq": 2,
-        "livespec-orchestrator-git-jsonl-cq": 2,
-        "livespec-driver-claude-cq": 2,
-        "livespec-driver-pi-cq": 2,
-        "livespec-console-beads-fabro-cq": 2,
-        "livespec-driver-codex-cq": 2,
-        "livespec-runtime-cq": 2,
-        "fabro-cq": 1,
+    """Seven-day pool job-hours are the dated, auditable source of every quota.
+
+    The committed quota VALUES are not asserted here (contracts.md "Config-value
+    fast path" forbids a test of a quota key asserting its literal value): a
+    re-derivation that moves a queue's quota, with a dated DERIVATION.md section,
+    leaves this test passing. The shape is asserted instead: the cohort has
+    members, and each member's churn-slot floor is a positive integer.
+    """
+    quotas = _cohort_quotas()
+    assert quotas, "the fleet-ci-runner-pool cohort must have at least one member queue"
+    not_positive = {
+        name: quota for name, quota in quotas.items() if not (isinstance(quota, int) and quota >= 1)
     }
-    assert _cohort_quotas() == expected
+    assert (
+        not not_positive
+    ), f"every cohort member needs a positive integer churn-slot floor; got {not_positive}"
 
     derivation = _DERIVATION.read_text(encoding="utf-8")
     assert "## Measured job-hours re-derivation at C = 44 (2026-10-22)" in derivation

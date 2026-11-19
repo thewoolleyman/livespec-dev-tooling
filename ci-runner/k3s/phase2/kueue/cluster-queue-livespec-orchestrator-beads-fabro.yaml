@@ -14,10 +14,10 @@
 # DERIVATION.md "Recomputation on the tenth repository (2026-09-04)" for the
 # full arithmetic; the summary is below.
 #
-# nominalQuota for THIS repo: 5, the churn-slot-flavor value below, which is
-# the authority. The cohort's churn-slot-flavor quotas sum to 32, equal to the
+# nominalQuota for THIS repo: 6, the churn-slot-flavor value below, which is
+# the authority. The cohort's churn-slot-flavor quotas sum to 34, equal to the
 # pool's registered churn-slot capacity: poweredge 17 + gmktec 8 + hp 3 +
-# gamingpc 4 (DERIVATION.md "gamingpc 4: cohort 32 (2026-11-18)").
+# gamingpc 6 (DERIVATION.md "gamingpc 6: cohort 34 (2026-11-19)").
 # The demand-weight apportionment at C = 44 that set the earlier values was
 # superseded by the measured re-derivations from 2026-10-22 on, and each change
 # since is a dated DERIVATION.md section. To change a quota, follow
@@ -91,7 +91,7 @@ spec:
               # "gmktec 8: cohort 31 (2026-11-16)".
               # 4 -> 5 on 2026-11-18: the unit follows gamingpc 3 -> 4, cohort 31 -> 32. See DERIVATION.md
               # "gamingpc 4: cohort 32 (2026-11-18)".
-              nominalQuota: 5
+              nominalQuota: 6
         # The arm64 container workers' churn slots (livespec-dev-tooling-eorpen), listed AFTER
         # the fleet flavor at nominalQuota 0: this repository reaches a worker only by borrowing
         # once the fleet flavor, its own quota and what it can borrow, has no slot left. Listed
