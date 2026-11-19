@@ -211,6 +211,9 @@
     # 2/10 — inotify, keyring and netlink receive-buffer sysctls (one role covers all three).
     - role: node_sysctl
       tags: [node_sysctl]
+    # 2/10 — a size ceiling on the persistent journal (poweredge DiskPressure, 2026-11-19).
+    - role: node_journal_cap
+      tags: [node_journal_cap]
     # 2a/10 — tso off on flannel.1 where the NIC mis-segments VXLAN TCP (bnx2x
     # today, i.e. poweredge). Ungated: the role self-gates on the NIC driver.
     - role: vxlan_tunnel_tso
