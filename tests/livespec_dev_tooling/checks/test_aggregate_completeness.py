@@ -162,13 +162,17 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 90-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 91-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 90 since livespec-dev-tooling-dpkz32 added the canonical
+    # 91 since livespec-dev-tooling-d2ysfg added the repo-private
+    # `check-ansible-recipes-load-config`, which runs the root-level drift and
+    # apply recipes and confirms their pinned ansible-core loads the provisioning
+    # configuration with pipelining enabled. The 90th was
+    # livespec-dev-tooling-dpkz32's canonical
     # `check-no-ambient-environment-loops`, which fails a test-tree loop over
     # os.environ, because its body runs only on a host carrying a matching variable.
     # The 89th was livespec-dev-tooling-sr46h2, which added the repo-private
@@ -229,7 +233,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 90
+    assert wired is not None and len(wired) == 91
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None
