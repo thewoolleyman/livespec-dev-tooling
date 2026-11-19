@@ -261,6 +261,10 @@ incident_observer_funnel_paths: >-
 #                     reference clone's `.beads/metadata.json` pointer)
 #   reader_env_var    the control-node environment variable that carries THAT
 #                     tenant's credential; an apply refuses when it is not projected
+#   ci_publisher_shas optional, a further entry only: that installation's approved
+#                     publisher commits. Non-empty makes a production converge accept
+#                     the installation's /<name>/ci/publish path on the funnel port;
+#                     absent or empty, that path is refused as undeclared.
 incident_observer_installations:
   - repository: livespec-ai/livespec-dev-tooling
     repository_id: 1245319543
