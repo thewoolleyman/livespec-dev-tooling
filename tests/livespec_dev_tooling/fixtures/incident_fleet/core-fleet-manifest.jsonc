@@ -51,8 +51,13 @@
 // explicitly.
 // `adopters` is empty until the first adopter registers. See
 // non-functional-requirements.md §"Fleet membership contract" → "Adopters".
+// `owner` names the owner of the `fleet` members only. `adopter_owner` is the default owner of
+// adopter repositories, and a per-adopter `owner` overrides it (livespec v247,
+// non-functional-requirements.md, "Every manifest consumer MUST resolve an adopter's repository as
+// <adopter.owner or adopter_owner or owner>/<repo>").
 {
-  "owner": "thewoolleyman",
+  "owner": "livespec-ai",
+  "adopter_owner": "thewoolleyman",
   "fleet": [
     { "repo": "livespec", "class": "core" },
     { "repo": "livespec-dev-tooling", "class": "enforcement-suite" },
@@ -91,11 +96,29 @@
     // App, beads tenant, per-tenant Fabro server) is DEFERRED to the post-seed
     // onboarding pass (the repo itself existed first, per the
     // registration-last birth rule).
-    { "repo": "homelab", "profile": ["baseline", "orchestrator-plugin", "app"], "posture": "released" },
-    // Host-specific interactive AI workstation. Seed and released plugin
+    { "repo": "homelab", "owner": "mi-homelab", "profile": ["baseline", "orchestrator-plugin", "app"], "posture": "released" },
+    // Host-specific interactive AI workstation that hosts the fleet's seats
+    // (fleet-infra) and runs the orchestrator with its own tenant
+    // (orchestrator-plugin); maintainer direction 2026-11-14. Seed and released plugin
     // wiring live in the adopter; its dedicated credentials and tenant are
     // established by its own first bootstrap plan, never by a fleet fallback.
-    { "repo": "hetzner-xubuntu-info", "profile": ["baseline"], "posture": "released" },
+    { "repo": "hetzner-xubuntu-info", "profile": ["baseline", "fleet-infra", "orchestrator-plugin"], "posture": "released" },
+    // livespec-website: the livespec project website (registered 2026-11-15,
+    // throughput-plans-coordinator direction). Its repository lives under the
+    // livespec-ai organization, not under the default adopter owner, so the
+    // entry carries its own `owner` (non-functional-requirements.md §"Fleet
+    // membership contract" → "Repository owners"). It carries the livespec
+    // toolchain (justfile, mise, `.livespec.jsonc` naming the
+    // livespec-orchestrator-beads-fabro plugin and its own beads tenant), so
+    // it declares `baseline` plus the `orchestrator-plugin` layer. Registered
+    // on `posture` none because its wiring has not yet passed the baseline
+    // checks: the sweep reports it by name as posture-excluded and never
+    // evaluates it; `posture` moves to `released` in a later manifest change
+    // once the wiring is committed (→ "Registration follows wiring for a
+    // released adopter"). The entry also makes the repo KNOWN to the
+    // discovery safety net, which flags any `livespec-*` repo under the fleet
+    // owner that the manifest does not declare.
+    { "repo": "livespec-website", "owner": "livespec-ai", "profile": ["baseline", "orchestrator-plugin"], "posture": "none" },
     // The seven host/deploy repos (registered 2026-10-21) are
     // `instruction-only` adopters: committed agent configuration is their
     // only livespec surface — no justfile, no mise configuration, no

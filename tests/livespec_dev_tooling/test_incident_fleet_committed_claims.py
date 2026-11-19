@@ -11,7 +11,7 @@ which name the enabled plugins (`<plugin>=<commit>`, comma-joined), exactly as t
 Another
 consumer's templates read as this library's commit, prefixed. Its gate readers read as a bare
 commit. Every claim also binds the committed manifest identity and one of its applicable
-consumers. The fixture is livespec core's `.livespec-fleet-manifest.jsonc` (sha256 59912fe1…),
+consumers. The fixture is livespec core's `.livespec-fleet-manifest.jsonc` (its sha256 is the identity every claim binds),
 which the audit hashes with the same digest.
 
 No test here names a claim's VALUE (livespec-dev-tooling-bqnzcm.1): a claim is refreshed
@@ -47,7 +47,7 @@ _DISPOSITIONS = {"implemented", "deliberately-normal", "not-applicable"}
 _RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
-_SELF = "thewoolleyman/livespec-dev-tooling"
+_SELF = "livespec-ai/livespec-dev-tooling"
 _CONTROLLER = re.compile(r"v\d+\.\d+\.\d+@[0-9a-f]{40}")
 _RECOVERY = re.compile(r"v\d+\.\d+\.\d+@[0-9a-f]{40}\+bypass-app-\d+")
 _DRIVER = re.compile(r"[^=,\s]+=[0-9a-f]{40}(,[^=,\s]+=[0-9a-f]{40})*")
@@ -238,7 +238,7 @@ def test_a_repeated_consumer_and_surface_is_refused(tmp_path: Path) -> None:
     repeated = tmp_path / "claims.json"
     repeated.write_text(json.dumps(document), encoding="utf-8")
     assert _failures(claims=_load(path=repeated)) == [
-        "thewoolleyman/livespec-driver-claude Generated projects: duplicate"
+        "livespec-ai/livespec-driver-claude Generated projects: duplicate"
     ]
 
 
