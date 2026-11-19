@@ -1367,6 +1367,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a workflow edit that modifies only runs-on values is admitted at the additive tier and one that deletes a step is refused",
+    "work_item": "livespec-dev-tooling-hz4dkk",
+    "first_seen": "2026-11-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a workflow naming two image versions fails the single-container-image check",
     "work_item": "livespec-dev-tooling-fsle5g",
     "first_seen": "2026-11-11"

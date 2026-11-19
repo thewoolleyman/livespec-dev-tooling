@@ -6433,3 +6433,13 @@ Then the aged terminal gate run in the readable checkout is removed
 And the run logs a `SKIP` line naming the unreadable path
 
 And the run continues without aborting
+
+## Scenario: a workflow edit that modifies only runs-on values is admitted at the additive tier and one that deletes a step is refused
+
+Given an exemption that carries change=additive and ci_runtime=no-significant-increase and names a work item labelled approval:workflow-edit-additive
+
+When the change's workflow diff modifies six runs-on values and deletes no job, step, run line, needs entry or with argument
+
+Then check-no-workflow-edits admits the change at the additive tier
+
+And when the diff instead deletes one step, the check refuses it and names the deleted line
