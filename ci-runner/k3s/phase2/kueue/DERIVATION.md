@@ -1503,7 +1503,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
 | `livespec-dev-tooling` | 6 | 12 | **20** | 2026-11-16 |
-| `livespec-orchestrator-beads-fabro` | 5 | 10 | **14** | 2026-11-18 |
+| `livespec-orchestrator-beads-fabro` | 6 | 12 | **14** | 2026-11-18 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
 of 6 is waived. The floor protects a small-quota repository with a 13–21-job
@@ -2667,6 +2667,26 @@ The budget document's averages at 6 slots already sum to about 30 of 32 (runners
 **Measured read.** +2 h after the apply, rerun the same steps on the same node over a window of similar load (work step `just coverage-shard N 4` for orchestrator shards, `just check-per-file-coverage` for dev-tooling), and compare per-slot turnover, not raw pod counts, since four slots raise raw counts by design. This is also the owed 3-to-4 read on plan ci-runtime-and-cost.
 
 **Revert.** Restore gamingpc 3 and orchestrator 4, then apply in reverse: `ci_converge_unit` first (quotas back to 31), then `node_extended_resource --limit gamingpc-xubuntu`.
+
+## gamingpc 6: cohort 34 (2026-11-19)
+
+**Why.** throughput-plans-coordinator ruled GO (2026-11-19, ~21:1xZ, FOCUS-TWO-LEVERS lever 2) on a measured packet from ci-runtime-and-cost, recorded on epic livespec-dev-tooling-ib3oe3 and summarized here because the caps are derived in this file. Over the 24 h to 21:05Z the fleet's `github-ci` job spans show 5,197 jobs with `ci.job.queue_ms` P50 12 s and P95 154 s; 659 of them (12.7 percent) waited over 60 s, a median of 120 s and about 31 job-hours of waiting a day, concentrated in livespec-orchestrator-beads-fabro (203 jobs, 38,013 s) and livespec-console-beads-fabro (117 jobs, 29,771 s, median 234 s). At 20:57Z the pending workloads read "insufficient unused quota for ci-runner.io/churn-slot in flavor churn-slot-flavor" with the cohort total (32) equal to the amd64 node capacity (32), so a quota raise alone adds nothing; capacity has to rise with it. gamingpc held 4 of 4 slots at 82.6 percent idle (BestEffort `cpu.pressure` avg60 1.78).
+
+**Measured before figures (cap 4).** 20:00-21:00Z, GitHub jobs joined to the gamingpc workflow-pod set from Honeycomb metrics (one hour, small n): queue wait gamingpc P50 11 s / P90 138 s against the other nodes' 16 s / 173 s. Like for like, on the 7 job names with at least 3 runs on both sides, gamingpc's median wall time is 0.50 times the other nodes' (check-per-file-coverage-shard 1: 287 s against 583 s; shard 2: 355 against 714; shard 4: 351 against 689; check-python-batch 38 against 80; check-types 28 against 78; check-coverage 22 against 30; incident-ci 20 against 29). The pooled gamingpc P50 over those names is 38 s (n=25). The raw P50 (30 s against 22 s) is a job-mix artifact and is not a trigger.
+
+**The sizing.** gamingpc allocatable is 12000m, beside a committed gate lane of 5 cpu (gates-cq) and one factory pod of 4. The measured per-pod CPU over 24 h (1,602 workflow pods) is P50 0.19 core, P95 1.79 core. With every slot at that P95: 4 slots 7.2 cores, 5 slots 9.0, 6 slots 10.7, 7 slots 12.5 (over 12 with no gate at all), 8 slots 14.3. The mean case at 6 slots is about 4 cores, 25 percent of the 16 threads. So 6 is the largest size that fits inside the allocatable at the P95 worst case; 7 does not. The runner memory flavor is not the limit: 6 runners at the orchestrator class's 6Gi request is 36Gi against the gamingpc memory quota of 76Gi.
+
+**The change.** gamingpc-xubuntu `ADMISSION_CAPACITY_C` 4 -> 6, so the pool's declared capacity is poweredge 17 + gmktec 8 + hp 3 + gamingpc 6 = 34. The two extra quota slots go where the waiting concentrates: livespec-orchestrator-beads-fabro-cq 5 -> 6 and livespec-console-beads-fabro-cq 2 -> 3. The sum stays equal to the capacity. `nominalQuota <= maxRunners` still holds for both (6 <= 14, 3 <= 6), so no ARC change.
+
+**What it buys.** At gamingpc's measured 4.1 slot turnovers per 10 minutes, two more slots is about 0.2 more jobs a minute against a fleet average of about 3.6, roughly 6 percent. The larger effect should be placement: the scheduler prefers the faster nodes and sends pods to poweredge (about 1.8 times slower) and hp only as overflow once their slots are full, so a full gamingpc is what pushes work onto hp. That effect is NOT measured here; the +2 h read must say whether hp's and poweredge's load moved.
+
+**Order of apply.** Capacity first, then quota, never above the applied capacity: `just ansible-apply ansible/ci-pool.yml --tags node_extended_resource --limit gamingpc-xubuntu`, read back `status.allocatable` and `status.capacity` for `ci-runner.io/churn-slot` on the node (6), then `just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit` for the quotas, read back the two ClusterQueues (6 and 3) and the cohort sum (34). A fresh independent second look gates the apply, with the check that rendered every command per host and parsed it.
+
+**Revert triggers (any one, read at +2 h and after).** gamingpc idle under about 5 percent AND the BestEffort slice `cpu.pressure` avg60 above about 30 (host PSI alone does not revert on a mixed node, `.ai/ci-node-capacity-reads.md`); OR the per-job-name gamingpc/other median ratio above 0.60 (baseline 0.50, the 20 percent rule), or the pooled gamingpc P50 over the same 7 names above 46 s (baseline 38 s), stating n each read.
+
+**Measured read.** +2 h after the apply, rerun the same steps over a window of similar load: the `github-ci` queue wait (P50, P95, the over-60 s count and sum against 659 jobs and 111,442 s a day), the gamingpc idle and BestEffort pressure, the per-job-name ratio, and the load on hp and poweredge.
+
+**Revert.** Restore gamingpc 4, orchestrator 5 and console 2, then apply in reverse: the quota converge first (cohort back to 32), then `node_extended_resource --limit gamingpc-xubuntu`.
 
 ## Runner-pod memory admission (2026-11-19)
 
