@@ -2725,10 +2725,10 @@ overpacking a node occupied by another queue.
 
 | ResourceFlavor | node | allocatable Gi | factory requests Gi | gates requests Gi | calculation | memory nominalQuota |
 | --- | --- | ---: | ---: | ---: | --- | ---: |
-| `runner-memory-gmktec-flavor` | gmktec-xubuntu | 62.4 | 24.4 | 16 | floor(62.4 - 24.4 - 16) | 22Gi |
+| `runner-memory-gmktec-flavor` | gmktec-xubuntu | 62.4 | 52.2 | 24 | max(0, floor(62.4 - 52.2 - 24)) | 0Gi |
 | `runner-memory-hp-flavor` | hp-xubuntu | 27.2 | 14.9 | 0 | floor(27.2 - 14.9 - 0) | 12Gi |
-| `runner-memory-poweredge-flavor` | poweredge-xubuntu | 378 | 67.1 | 48 | floor(378 - 67.1 - 48) | 262Gi |
-| `runner-memory-gamingpc-flavor` | gamingpc-xubuntu | 92.38 | 0 | 16 | floor(92.38 - 0 - 16) | 76Gi |
+| `runner-memory-poweredge-flavor` | poweredge-xubuntu | 378 | 67.5 | 56 | floor(378 - 67.5 - 56) | 254Gi |
+| `runner-memory-gamingpc-flavor` | gamingpc-xubuntu | 92.38 | 7.5 | 16 | floor(92.38 - 7.5 - 16) | 68Gi |
 
 The factory figures are the active per-node factory budgets at the 8GB (7.45
 Gi) sandbox request, except gmktec's measured 24.4Gi factory request.  The gate
@@ -2745,3 +2745,76 @@ slots render 8704Mi, and no number of slots leaves memory the binding resource.
 `tests/spec/test_runner_memory_quota_derivation.py` derives these four rounded
 headroom values from this table and checks every runner ClusterQueue's committed
 memory quota against them, in addition to checking the arm64 worker template.
+
+## Runner memory fit: gmktec 0, hp 2, poweredge 22, cohort 30 (2026-11-19)
+
+**Why.** The runner-pod memory admission above (livespec-dev-tooling-yiko5d) was checked against the LIVE factory
+requests on 2026-11-19 before its first roll, and the fit failed on two nodes. throughput-plans-coordinator ruled the
+remedy (ruling D, confirmed by legacy-coordinator-agent): fix the slot split in the same roll. The binding rule is that no
+runner slot is sized against less than the live factory request on its node at the factory's planned ramp.
+
+**The live footprint each number rests on** (sum of container memory requests of Running and Pending pods, measured
+2026-11-19 about 23:00Z; node MemoryPressure and DiskPressure were False on all five nodes):
+
+| Node | allocatable Gi | live factory Gi (pods) | gates quota Gi | repro quota Gi | free for runners Gi |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gmktec-xubuntu | 62.4 | 52.2 (6) | 16 | 8 | below 0 |
+| hp-xubuntu | 27.2 | 14.9 (2) | 0 | 0 | 12.3 |
+| gamingpc-xubuntu | 92.4 | 7.5 (1) | 16 | 0 | 68.9 |
+| poweredge-xubuntu | 378 | 59.6 (8 of a budget of 9: 67.5 at the ramp) | 48 | 8 | about 254 |
+
+The derivation DERIVATION.md "Runner-pod memory admission" first recorded for gmktec assumed 24.4Gi of factory requests; the
+measured figure is 52.2Gi, so that quota was stranded capacity: admitted runners would sit Pending while holding it.
+
+**Slots.** Memory slots are floor(free / 4.25Gi), the dev-tooling request, and CPU slots are as already derived; the smaller
+holds. gmktec has 0 memory slots. hp has 2 (two 4.25Gi runners, or two 6Gi, fit in 12.3Gi). gamingpc holds 6 (CPU decides:
+its P95 draw of 1.79 cores per slot). poweredge has about 59 memory slots, so CPU decides: 22 slots equal the 29.8-core CI
+load measured on 2026-11-08 beside a factory of 17 pods (idle 0.16 percent, CI cpu.pressure avg60 37.1 at 22 slots), and the
+factory budget is now 9 pods, so 22 is the largest step the evidence supports. 26 slots, which would hold the cohort at 34,
+reaches 70 to 100 of poweredge's 72 cores at the factory's limits, and is not taken.
+
+| Node | before | after | basis |
+| --- | ---: | ---: | --- |
+| gmktec-xubuntu | 8 | 0 | no memory left at the ramp; the node stays a factory node |
+| hp-xubuntu | 3 | 2 | 12.3Gi free |
+| gamingpc-xubuntu | 6 | 6 | unchanged, CPU bound |
+| poweredge-xubuntu | 17 | 22 | CPU, 2026-11-08 saturation evidence |
+| macbook-m4-max-homelab-worker | 1 | 1 | arm64 flavor, unchanged |
+
+**Honest accounting.** The 4-slot net cut (cohort 34 to 30) is accounting for overcommit, not lost real capacity: the 8
+runners gmktec advertised ran overcommitted against 52Gi of factory pods and were not capacity the node could hold.
+**Reopen condition:** if the +2 hour read shows poweredge idle above about 40 percent and BestEffort cpu.pressure avg60
+under about 10 with gated waits present, the next step is poweredge +2, measured.
+
+**The quota.** The churn-slot-flavor quotas sum to 30. Orchestrator-beads-fabro (6) and console-beads-fabro (3) keep the +1
+each that livespec-dev-tooling#5133 gave them: they carry the most waiting jobs (203 and the longest median wait, 234 s)
+in the 24 hour data. The 4-slot cut is one slot each from the four queues with the LOWEST measured 24 hour queue-wait cost
+(github-ci `ci.job.queue_ms`, 24 hours to 2026-11-19 ~23:20Z, Honeycomb MCP):
+
+| Queue | jobs | p50 s | p95 s | total wait s | quota |
+| --- | ---: | ---: | ---: | ---: | --- |
+| livespec-runtime-cq | 81 | 2 | 142 | 3,267 | 2 -> 1 |
+| livespec-driver-pi-cq | 91 | 2 | 162 | 3,973 | 2 -> 1 |
+| livespec-cq | 112 | 2 | 181 | 4,389 | 2 -> 1 |
+| livespec-orchestrator-git-jsonl-cq | 97 | 3 | 203 | 5,285 | 2 -> 1 |
+
+For comparison, the queues that keep their slots waited 63,532 s (orchestrator-beads-fabro), 46,562 s (dev-tooling),
+40,371 s (console-beads-fabro), 7,018 s (overseer), 6,925 s (driver-codex) and 6,030 s (driver-claude). **Limit of the
+measurement:** the peak ADMITTED workloads per queue were not read, because the Kueue admission metric carries no
+per-queue label in this dataset; the check "never below the current admitted peak" rests on the queues' 24 hour job volume
+(81 to 112 jobs, p50 wait 2 to 3 s) and on the cohort letting each queue borrow idle quota above nominal. The +2 hour read
+covers these four queues first. maxRunners is unchanged: `max(2 x nominalQuota, 6)` is still 6 for each.
+
+**Memory flavor quotas.** gmktec 0Gi, hp 12Gi, gamingpc 68Gi (it carries one live factory pod of 7.5Gi, so the earlier
+76Gi assumed a factory budget of 0 that the node does not hold), poweredge 254Gi (factory 67.5 at the ramp, gates 48 and
+repro 8 quota). tests/spec/test_runner_memory_quota_derivation.py recomputes each from the table above.
+
+**Order.** One reviewed apply, inside a merge-quiet window, because the converge unit also carries yiko5d's runner
+memory requests, the ARC listener spread and the repro-flavor changes: `just ansible-apply ansible/ci-pool.yml --tags
+ci_converge_unit --limit poweredge-xubuntu`, then `--tags node_extended_resource --limit gamingpc-xubuntu,gmktec-xubuntu,
+hp-xubuntu,poweredge-xubuntu`. The quotas (30) land first while the nodes still advertise 34, so the quota sum
+never exceeds the slots that exist; the second step then lowers the advertised capacity to 30.
+
+**Kill switch.** Restore gmktec 8, hp 3, poweredge 17, the four queues at 2, and the previous memory quotas (gmktec 22Gi,
+gamingpc 76Gi, poweredge 262Gi), then apply in the reverse order: `node_extended_resource`, then `ci_converge_unit`.
+
