@@ -22,3 +22,12 @@ def test_job_span_carries_ci_event_and_git_branch() -> None:
     assert '--arg branch "$run_branch" --arg event "$run_event"' in block
     assert '{key:"git.branch",value:{stringValue:$branch}}' in block
     assert '{key:"ci.event",value:{stringValue:$event}}' in block
+
+
+def test_job_span_carries_runner_name_from_the_rest_job_row() -> None:
+    script = _SCRIPT.read_text(encoding="utf-8")
+    block = _job_span_block(script)
+
+    assert "runner_name: .runner_name" in script
+    assert "--arg runner_name" in block
+    assert '{key:"ci.runner_name",value:{stringValue:$runner_name}}' in block
