@@ -30,4 +30,6 @@ def test_job_span_carries_runner_name_from_the_rest_job_row() -> None:
 
     assert "runner_name: .runner_name" in script
     assert "--arg runner_name" in block
+    assert "attributes:([" in block
     assert '{key:"ci.runner_name",value:{stringValue:$runner_name}}' in block
+    assert "end))," in block
