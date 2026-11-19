@@ -1105,3 +1105,10 @@ factory_pod_budget: 7
 # key the control node already trusted (a hand entry) equals the key the host
 # presented live; its info repository records no fingerprint.
 controller_known_hosts_ed25519: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINVacRASJc+Ig/M6TksRXd8VxTSpD613RIjexvhLRAo8"
+
+# --- pressure_telemetry (BestEffort slice, livespec-dev-tooling-d6ntx3) ---
+# Emit the BestEffort pod slice's cpu.pressure so every avg60 revert tripwire
+# (plan gate-job-resources) can be read over a window from Honeycomb.
+# Revert by setting the list to [] and re-applying --tags pressure_telemetry.
+pressure_telemetry_cgroups:
+  - kubepods.slice/kubepods-besteffort.slice

@@ -136,6 +136,40 @@ def test_the_values_file_set_is_not_empty_and_includes_the_template_and_a_worker
     assert len(names) > 2
 
 
+@pytest.mark.integration
+def test_every_scale_set_listener_template_spreads_and_tolerates_factory_pressure() -> None:
+    """Every checked values file names the soft listener spread and taint toleration."""
+    defects: list[str] = []
+    for path in _VALUES:
+        values: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
+        spec = _mapping(value=_mapping(value=values.get("listenerTemplate")).get("spec"))
+        constraints = _sequence(value=spec.get("topologySpreadConstraints"))
+        has_listener_spread = any(
+            constraint.get("topologyKey") == "kubernetes.io/hostname"
+            and constraint.get("whenUnsatisfiable") == "ScheduleAnyway"
+            and _mapping(value=constraint.get("labelSelector"))
+            .get("matchLabels", {})
+            .get("app.kubernetes.io/component")
+            == "runner-scale-set-listener"
+            for constraint in constraints
+        )
+        tolerations = _sequence(value=spec.get("tolerations"))
+        has_factory_pressure_toleration = any(
+            toleration.get("key") == "livespec.io/factory-pressure"
+            and toleration.get("operator") == "Exists"
+            and toleration.get("effect") == "PreferNoSchedule"
+            for toleration in tolerations
+        )
+        missing = []
+        if not has_listener_spread:
+            missing.append("listener topology spread")
+        if not has_factory_pressure_toleration:
+            missing.append("factory-pressure toleration")
+        if missing:
+            defects.append(f"{path.relative_to(_REPO_ROOT)}: missing {', '.join(missing)}")
+    assert not defects, "\n".join(defects)
+
+
 @pytest.mark.parametrize("path", _VALUES, ids=lambda p: p.relative_to(_K3S).as_posix())
 def test_every_scale_set_values_file_keeps_its_listener_on_always_on_nodes(*, path: Path) -> None:
     """The check-suite refusal: a values file without the placement fails, named."""
@@ -152,9 +186,14 @@ def test_every_scale_set_values_file_keeps_its_listener_on_always_on_nodes(*, pa
         "`- name: listener` entry, the same shape in every values file: a pod template with no "
         "containers is not a valid one, and the name is the chart's own listener container"
     )
-    assert "tolerations" not in values["listenerTemplate"]["spec"], (
-        f"{path.relative_to(_REPO_ROOT)}: the listener must tolerate nothing, so a tainted "
-        "worker can never host it"
+    assert any(
+        toleration.get("key") == "livespec.io/factory-pressure"
+        and toleration.get("operator") == "Exists"
+        and toleration.get("effect") == "PreferNoSchedule"
+        for toleration in _sequence(value=values["listenerTemplate"]["spec"].get("tolerations"))
+    ), (
+        f"{path.relative_to(_REPO_ROOT)}: the listener must tolerate the "
+        "livespec.io/factory-pressure PreferNoSchedule taint so the scheduler can spread it"
     )
 
 
@@ -688,6 +727,7 @@ def _run_read_back(
     return completed.returncode, completed.stdout + completed.stderr, invoked
 
 
+@pytest.mark.integration
 def test_the_read_back_lists_each_listener_with_its_node_and_passes_when_all_are_placed(
     *, tmp_path: Path
 ) -> None:
@@ -831,6 +871,50 @@ def test_the_read_back_fails_loudly_when_a_kubectl_read_fails(*, tmp_path: Path,
     assert code == 2, output
     assert "FATAL: could not read" in output
     assert "OK:" not in output
+
+
+@pytest.mark.integration
+def test_the_read_back_counts_running_listener_pods_on_every_always_on_node(
+    *, tmp_path: Path
+) -> None:
+    """Scenario "the listener read-back counts the listener pods on each always-on node"."""
+    code, output, _ = _run_read_back(
+        tmp_path=tmp_path,
+        pods=(
+            _pod(listener="livespec-k3s-listener", node="poweredge-xubuntu"),
+            _pod(listener="overseer-k3s-listener", node="gmktec-xubuntu"),
+        ),
+        labelled=("poweredge-xubuntu", "gmktec-xubuntu", "hp-xubuntu"),
+    )
+    assert code == 0, output
+    counts = {
+        match.group(1): int(match.group(2))
+        for match in re.finditer(
+            r"(?m)^listener pods running on always-on node (\S+): (\d+)$", output
+        )
+    }
+    assert counts == {
+        "poweredge-xubuntu": 1,
+        "gmktec-xubuntu": 1,
+        "hp-xubuntu": 0,
+    }
+
+
+@pytest.mark.integration
+def test_the_read_back_prints_no_count_when_the_always_on_nodes_read_fails(
+    *, tmp_path: Path
+) -> None:
+    """Scenario "the listener read-back prints no count when the read of the always-on nodes fails"."""
+    code, output, _ = _run_read_back(
+        tmp_path=tmp_path,
+        pods=(
+            _pod(listener="livespec-k3s-listener", node="poweredge-xubuntu"),
+            _pod(listener="overseer-k3s-listener", node="hp-xubuntu"),
+        ),
+        fail_read="nodes",
+    )
+    assert code == 2, output
+    assert "listener pods running on always-on node" not in output
 
 
 # --- 5. the install routes refuse when no node can host a listener -----------
@@ -1031,6 +1115,7 @@ def test_the_first_install_script_installs_the_scale_set_when_a_node_carries_the
 # --- 6. the read-back scenario, whole ---------------------------------------
 
 
+@pytest.mark.integration
 def test_the_read_back_names_a_misplaced_listener_and_a_scale_set_with_no_listener_in_one_run(
     *, tmp_path: Path
 ) -> None:

@@ -14,8 +14,8 @@ token_spend_report_scripts_dir: "{{ token_spend_report_root }}/scripts"
 # never over an unauthenticated URL.
 token_spend_report_source_checkout: "{{ lookup('ansible.builtin.env', 'HOME') }}/workspace/vps-info"
 token_spend_report_source_path: services/token-spend-report
-# vps-info master after PR 96 (rebase-merged 2026-11-19), read on origin.
-token_spend_report_source_sha: 8fcf7e492744843dda5b24202e6f1180d315fedc
+# vps-info master after PR 97 (rebase-merged 2026-11-19), read on origin.
+token_spend_report_source_sha: 12cf60f0d6bd0d7a85baef52c55741128778722f
 token_spend_report_scripts:
   attribution.py: b6a4d38afe5718d03f7b24fa00e9d0fee3146b29072bf58b5c02725b40a18463
   build_board.py: 4c0e12da89501618f42f586ffb8884ecb2dea5dbb743cc6b05b18693686177b0
@@ -25,5 +25,22 @@ token_spend_report_scripts:
   hcq.py: ba7dd698f446f40860d86b6e9669dae36dd3e5174bb264abf0f07bc8d583ea99
   spend_staleness.py: 0c2613177569b5a427d0232f40a608c5cf54833dde41306d7d2e1a5db8cede54
   tenant_watch.py: f6390c770cf9dbe699c66ef07744f096bf76b12b4995630bf656d0bb86285c67
-  quota_triggers.py: 1044f0cb6f995a6f2bb654ab09193548269a35854cda689920bdf47e6a937be8
+  quota_triggers.py: 95a682e18d3e2542a9e6784432ea33fbb566409cf86ff7f36c46ebefaa2fc4b3
+  quota_triggers_check.py: be1a4e975dbfef1f5b841b8aeea3be2cacbc0388c62f1f1896c48cd20388fb01
+  emit_spend_key.py: 8e4c20de17774767a235c337b2c293057ada24c488bd350e8276a099cfe29b22
   build_triggers.py: decd28ef27940bbbe6be95269eda2dfded31a55fd1f8c0a886ab4ac6192803fd
+
+# The Honeycomb trigger set (livespec-dev-tooling-caejh2).  A oneshot user unit PUTs
+# the triggers quota_triggers.py defines; it has no [Install] section and no timer, so
+# nothing runs it on a clock.  The role starts it only when one of the scripts it runs
+# changed in this apply (the PUT is idempotent by trigger name), then reads the live
+# triggers back with quota_triggers_check.py and fails on any difference.  The
+# credential is supplied by the wrapper below and is never written to the unit or here.
+token_spend_report_env_wrapper: /usr/local/bin/with-livespec-env.sh
+token_spend_report_python: /usr/bin/python3
+token_spend_report_triggers_unit: token-spend-quota-triggers.service
+token_spend_report_triggers_unit_dir: "/home/{{ token_spend_report_user }}/.config/systemd/user"
+token_spend_report_triggers_apply_scripts:
+  - quota_triggers.py
+  - build_triggers.py
+  - emit_spend_key.py

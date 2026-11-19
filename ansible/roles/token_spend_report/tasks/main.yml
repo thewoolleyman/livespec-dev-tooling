@@ -16,6 +16,21 @@
       64-hex SHA-256 per script must be declared.
     success_msg: token-spend report route is complete
 
+- name: Look for the credential wrapper the trigger unit runs through
+  ansible.builtin.stat:
+    path: "{{ token_spend_report_env_wrapper }}"
+  become: false
+  register: token_spend_report_wrapper_stat
+
+- name: Require the credential wrapper
+  # The unit and the read-back get the Honeycomb configuration key only from
+  # this wrapper; without it the unit would fail at exec after every change.
+  ansible.builtin.assert:
+    that:
+      - token_spend_report_wrapper_stat.stat.exists
+    fail_msg: "{{ token_spend_report_env_wrapper }} is missing; the trigger unit has no credential path."
+    success_msg: the credential wrapper is present
+
 - name: Create a scratch directory on the control node
   ansible.builtin.tempfile:
     state: directory
@@ -101,6 +116,7 @@
   loop: "{{ token_spend_report_scripts | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
+  register: token_spend_report_install
 
 - name: Read back installed token-spend script digests
   # A host read, not a copy result: the bytes visible at the live destination.
@@ -131,6 +147,106 @@
   loop: "{{ token_spend_report_readback.results | rejectattr('skipped', 'defined') | list }}"
   loop_control:
     label: "{{ item.item.key }}"
+
+- name: Resolve the trigger unit owner's uid
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ token_spend_report_user }}"
+  become: false
+
+- name: Create the user systemd unit directory
+  ansible.builtin.file:
+    path: "{{ token_spend_report_triggers_unit_dir }}"
+    state: directory
+    owner: "{{ token_spend_report_user }}"
+    group: "{{ token_spend_report_group }}"
+    mode: "0755"
+  # As the owner, so a missing ~/.config or ~/.config/systemd is created owned by
+  # the user, not by root (second-look finding 4, 2026-11-19).
+  become: true
+  become_user: "{{ token_spend_report_user }}"
+
+- name: Install the oneshot unit that applies the Honeycomb triggers
+  # Type=oneshot with no [Install] section and no timer: nothing starts it on
+  # a clock.  The credential comes from the wrapper at exec time; the unit
+  # holds no key.
+  ansible.builtin.copy:
+    dest: "{{ token_spend_report_triggers_unit_dir }}/{{ token_spend_report_triggers_unit }}"
+    owner: "{{ token_spend_report_user }}"
+    group: "{{ token_spend_report_group }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Apply the quota-guard Honeycomb triggers (plan token-spend-analysis, livespec-dev-tooling-caejh2)
+
+      [Service]
+      Type=oneshot
+      ExecStart={{ token_spend_report_env_wrapper }} -- {{ token_spend_report_python }} -I {{ token_spend_report_scripts_dir }}/quota_triggers.py
+  become: true
+  register: token_spend_report_unit
+
+- name: Reload the owner's user manager so it sees the unit
+  # Not in check mode: a drift run must change nothing.  A manager that is not
+  # running reads the unit directory afresh when it starts.
+  ansible.builtin.command:
+    argv: [systemctl, --user, daemon-reload]
+    removes: "/run/user/{{ ansible_facts.getent_passwd[token_spend_report_user][1] }}/systemd"
+  become: true
+  become_user: "{{ token_spend_report_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd[token_spend_report_user][1] }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - token_spend_report_unit is changed
+
+- name: Work out whether a script the trigger unit runs changed in this apply
+  ansible.builtin.set_fact:
+    token_spend_report_triggers_changed: >-
+      {{ token_spend_report_install.results
+         | selectattr('changed')
+         | selectattr('item.key', 'in', token_spend_report_triggers_apply_scripts)
+         | list | length > 0 or token_spend_report_unit is changed }}
+
+- name: Apply the Honeycomb triggers because a script they run changed
+  # Only on a changed pin or unit, so an unchanged re-apply never PUTs.  The PUT
+  # is idempotent by trigger name.  `systemctl start` on a oneshot waits for the
+  # run and fails on a non-zero exit; the output is in
+  # `journalctl --user -u {{ token_spend_report_triggers_unit }}`.
+  ansible.builtin.command:
+    argv: [systemctl, --user, start, "{{ token_spend_report_triggers_unit }}"]
+  become: true
+  become_user: "{{ token_spend_report_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd[token_spend_report_user][1] }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - token_spend_report_triggers_changed | bool
+
+- name: Read the live Honeycomb triggers back against the pinned script
+  # Read-only: quota_triggers_check.py only GETs.  It runs on every real apply,
+  # so drift in the live triggers, or a unit run that did not take, fails the
+  # play instead of passing silently.  Not attempted in check mode, for the
+  # reason the digest read-back above is not: the host still holds the old bytes.
+  ansible.builtin.command:
+    argv:
+      - "{{ token_spend_report_env_wrapper }}"
+      - --
+      - "{{ token_spend_report_python }}"
+      - -I
+      - "{{ token_spend_report_scripts_dir }}/quota_triggers_check.py"
+  become: true
+  become_user: "{{ token_spend_report_user }}"
+  changed_when: false
+  register: token_spend_report_triggers_check
+  failed_when: token_spend_report_triggers_check.rc != 0
+  when: not ansible_check_mode
+
+- name: Report the live trigger read-back
+  ansible.builtin.debug:
+    msg: "{{ token_spend_report_triggers_check.stdout_lines }}"
+  when: not ansible_check_mode
 
 - name: Remove the control-node scratch directory
   ansible.builtin.file:

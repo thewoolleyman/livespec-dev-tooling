@@ -118,7 +118,13 @@ def test_the_listener_runs_on_the_fleets_always_on_amd64_nodes(path: Path) -> No
         "kubernetes.io/arch": "amd64",
         "ci-runner.io/always-on": "true",
     }
-    assert not listener.get("tolerations")
+    assert listener["tolerations"] == [
+        {
+            "key": "livespec.io/factory-pressure",
+            "operator": "Exists",
+            "effect": "PreferNoSchedule",
+        }
+    ]
 
 
 # The fleet's container-mode reference set: the worker set runs CI jobs the way it does.
