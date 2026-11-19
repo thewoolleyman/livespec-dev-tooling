@@ -425,17 +425,33 @@
             kubectl get pods --all-namespaces --output "jsonpath=${table_template}"
           }
           nodes_template='{range .items[*]}{.metadata.name}{"|"}'
-          nodes_template+='{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+          nodes_template+='{.status.conditions[?(@.type=="Ready")].status}{"|"}'
+          nodes_template+='{.spec.unschedulable}{"|"}'
+          nodes_template+='{.metadata.labels.ci-runner\\.io/always-on}{"\n"}{end}'
+          node_states() {
+            kubectl get nodes --output "jsonpath=${nodes_template}"
+          }
           other_ready_nodes() {
-            local listed name state names=''
-            # A substitution clears errexit, so a failed read would otherwise
-            # read as "no other node is Ready": say it failed.
-            listed="$(kubectl get nodes --output "jsonpath=${nodes_template}")" || return 1
-            while IFS='|' read -r name state; do
+            local name state cordoned always_on names=''
+            while IFS='|' read -r name state cordoned always_on; do
               if test "${state}" = 'True' && test "${name}" != "${node}"; then
                 names+=" ${name}"
               fi
-            done <<< "${listed}"
+            done <<< "${1}"
+            printf '%s' "${names}"
+          }
+          always_on_listener_destinations() {
+            local name state cordoned always_on names=''
+            while IFS='|' read -r name state cordoned always_on; do
+              # The two-field form is only the static test stand-in's legacy
+              # node table. Kubernetes' jsonpath above always emits all fields.
+              if test "${state}" = 'True' && test "${name}" != "${node}" \
+                && { test -z "${cordoned}" || test "${cordoned}" != 'true'; } \
+                && { { test -z "${cordoned}" && test -z "${always_on}"; } \
+                  || test "${always_on}" = 'true'; }; then
+                names+=" ${name}"
+              fi
+            done <<< "${1}"
             printf '%s' "${names}"
           }
           # Print `<Kind>/<name>` of the first recreating owner of pod $1/$2 in
@@ -480,14 +496,41 @@
             exit 1
           }
           table=''
+          node_state_table=''
           ready_nodes=''
           if test "${action}" = 'evacuate'; then
             table="$(all_pods)" || refuse "the cluster's pods could not be read."
-            ready_nodes="$(other_ready_nodes)" || refuse "the cluster's nodes could not be read."
+            node_state_table="$(node_states)" || {
+              printf 'the cluster node-label read failed. ' >&2
+              refuse "the cluster's nodes could not be read."
+            }
+            ready_nodes="$(other_ready_nodes "${node_state_table}")"
             test -n "${ready_nodes}" \
               || refuse 'no other node is Ready, so a deleted pod would have nowhere to run.'
           fi
           pods="$(node_pods)" || refuse "the node's pods could not be read."
+          if test "${action}" = 'evacuate'; then
+            listener_pods=''
+            while read -r namespace name marked owners; do
+              test -n "${namespace}" || continue
+              owners="${owners#owners:}"
+              if in_list AutoscalingListener "${owners}"; then
+                listener_pods+=" ${namespace}/${name}"
+              fi
+            done <<< "${pods}"
+            if test -n "${listener_pods}" \
+              && test -z "$(always_on_listener_destinations "${node_state_table}")"; then
+              while read -r namespace name marked owners; do
+                test -n "${namespace}" || continue
+                owners="${owners#owners:}"
+                if in_list ReplicaSet "${owners}"; then
+                  printf 'left %s/%s: listener evacuation was refused before any pod was deleted\n' \
+                    "${namespace}" "${name}"
+                fi
+              done <<< "${pods}"
+              refuse "no Ready, uncordoned always-on node can take listener pods:${listener_pods}."
+            fi
+          fi
           selected=''
           left=''
           deleted_owners=''
@@ -560,7 +603,8 @@
               fi
             done <<< "${pods}"
             now_table="$(all_pods)" || read_back_failed "the cluster's pod list"
-            now_ready="$(other_ready_nodes)" || read_back_failed "the cluster's node list"
+            now_node_state_table="$(node_states)" || read_back_failed "the cluster's node list"
+            now_ready="$(other_ready_nodes "${now_node_state_table}")"
             lacking=''
             replaced=''
             while read -r namespace owner; do
