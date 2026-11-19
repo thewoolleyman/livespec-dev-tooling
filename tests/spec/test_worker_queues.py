@@ -89,7 +89,12 @@ def _worker_nodes(*, slots: str = "", shares: str = "") -> str:
 
 
 def _render(
-    *, tmp_path: Path, arm64: str, worker_nodes: str | None = None
+    *,
+    tmp_path: Path,
+    arm64: str,
+    worker_nodes: str | None = None,
+    template: str = _TEMPLATE,
+    filename: str = "cluster-queue-some-repo-arm64.yaml",
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -98,7 +103,7 @@ def _render(
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
     queues = tmp_path / "worker"
     queues.mkdir()
-    (queues / "cluster-queue-some-repo-arm64.yaml").write_text(_TEMPLATE, encoding="utf-8")
+    (queues / filename).write_text(template, encoding="utf-8")
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
     result = subprocess.run(
@@ -132,6 +137,41 @@ def test_the_quota_is_the_sum_of_the_enrolled_workers_of_the_templates_architect
     assert result.returncode == 0, result.stderr
     assert _quota(stdout=result.stdout) == total
     assert any("homelab-worker.livespec.dev/class=worker" in c for c in calls)
+
+
+@pytest.mark.parametrize(("slots", "total"), [("3\\n", 3), ("3\\n2\\n", 5), ("", 0)])
+def test_the_committed_arm64_memory_quota_scales_with_the_rendered_churn_slots(
+    tmp_path: Path, slots: str, total: int
+) -> None:
+    """Every rendered slot admits one 4352Mi runner, so memory never binds first."""
+    committed = (_KUEUE / "worker" / "cluster-queue-livespec-dev-tooling-arm64.yaml").read_text(
+        encoding="utf-8"
+    )
+    result, _ = _render(tmp_path=tmp_path, arm64=slots, template=committed)
+    assert result.returncode == 0, result.stderr
+    queue = next(
+        d
+        for d in yaml.safe_load_all(result.stdout.split("\n", 1)[1])
+        if d and d.get("kind") == "ClusterQueue"
+    )
+    [group] = queue["spec"]["resourceGroups"]
+    [flavor] = group["flavors"]
+    quotas = {r["name"]: r["nominalQuota"] for r in flavor["resources"]}
+    assert quotas == {"ci-runner.io/churn-slot": total, "memory": f"{total * 4352}Mi"}
+
+
+def test_a_memory_placeholder_with_no_recorded_per_slot_request_is_refused(
+    tmp_path: Path,
+) -> None:
+    template = (
+        _TEMPLATE
+        + "            - name: memory\n              nominalQuota: @WORKER_MEMORY_QUOTA@\n"
+    )
+    result, _ = _render(
+        tmp_path=tmp_path, arm64="", template=template, filename="cluster-queue-some-riscv.yaml"
+    )
+    assert result.returncode == 1
+    assert "no per-slot runner memory is recorded for the riscv workers" in result.stderr
 
 
 def test_a_dry_run_applies_nothing(tmp_path: Path) -> None:
@@ -198,7 +238,11 @@ def test_no_committed_worker_template_borrows_from_the_cohort() -> None:
     templates = sorted((_KUEUE / "worker").glob("cluster-queue-*.yaml"))
     assert templates
     for template in templates:
-        text = template.read_text(encoding="utf-8").replace("@WORKER_CHURN_SLOTS@", "0")
+        text = (
+            template.read_text(encoding="utf-8")
+            .replace("@WORKER_CHURN_SLOTS@", "0")
+            .replace("@WORKER_MEMORY_QUOTA@", "0Mi")
+        )
         queues = [d for d in yaml.safe_load_all(text) if d and d.get("kind") == "ClusterQueue"]
         assert queues, template.name
         for queue in queues:
