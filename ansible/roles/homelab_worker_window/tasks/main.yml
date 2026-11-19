@@ -1,6 +1,20 @@
 ---
 # See defaults/main.yml and ansible/homelab-worker-window.yml.
 
+- name: Refuse a confirmation or action that names something else
+  # An empty value is the deliberate no-op. A non-empty value that is not this
+  # host, its node or a known action is a typo or a wrong target: fail loudly
+  # rather than end as a green no-op.
+  ansible.builtin.assert:
+    that:
+      - homelab_worker_window_action in [''] + homelab_worker_window_actions
+      - homelab_worker_window_confirm in ['', inventory_hostname]
+      - homelab_worker_window_node_confirm in ['', homelab_worker_window_node]
+    fail_msg: >-
+      refused, nothing was changed: action {{ homelab_worker_window_action | quote }} must be one of
+      {{ homelab_worker_window_actions }}, confirm must be empty or {{ inventory_hostname }}, node confirm
+      must be empty or {{ homelab_worker_window_node }}
+
 - name: Say plainly that nothing is changed when a fence does not name this target
   ansible.builtin.debug:
     msg: >-

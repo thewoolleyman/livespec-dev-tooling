@@ -15,8 +15,17 @@
 #   drill     the departure drill on the node
 #   check     the revert TRIGGER: node not Ready within the bound, or a pod no
 #             DaemonSet owns landed on it, runs revert and fails the play
-#   revert    cordon and depart the node, restore gates-cq from the snapshot
+#   revert    cordon and depart the node, then restore gates-cq's cpu-group
+#             flavors from the snapshot and archive it. remove-worker.sh never
+#             evicts and refuses while a Running or Pending pod no DaemonSet
+#             owns is on the node: the revert then ends INCOMPLETE, fails the
+#             play and leaves gates-cq alone. Move the work (k3s-window-drain.yml
+#             action evacuate) and run revert again.
 #   remove    depart the node only
+#
+# join refuses without a snapshot taken for this window (younger than 24 h).
+# An empty confirmation is a no-op; a non-empty one naming another host, node or
+# action fails loudly.
 #
 #   just ansible-apply ansible/homelab-worker-window.yml -e homelab_worker_window_action=snapshot \
 #     -e homelab_worker_window_confirm=macbook-m4-max -e homelab_worker_window_node_confirm=macbook-m4-max-homelab-worker
