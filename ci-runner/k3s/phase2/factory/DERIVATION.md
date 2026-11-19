@@ -514,12 +514,16 @@ used: limits.cpu=126, limited: limits.cpu=126`. Read live at ~12:00Z: pods 21 of
 disagreed; `kubectl top` showed 7 of the 21 sandboxes under 50m cpu. The idle ones are
 ended-run sandboxes, kept while their item awaits a human or not yet deleted.
 
-**Why raising memory is safe on the nodes.** Every factory sandbox pod carries
+**Why raising memory is safe on the nodes.** A NEW factory sandbox pod carries
 `nodeSelector` `ci-runner.io/factory=true`, `ci-runner.io/factory-admit=true` and
-`kubernetes.io/arch=amd64` (read from pod petri-01m7st5a1ne3..., ~12:10Z). Among amd64
+`kubernetes.io/arch=amd64` (read from pod petri-01m7st5a1ne3..., ~12:10Z). Six older
+pods on gmktec, hp and gamingpc predate the `factory-admit` selector (14 of 20 carry it at
+the apply); they do not change where new slots land. Among amd64
 nodes `factory-admit` reads true only on `poweredge-xubuntu`; gmktec, hp and gamingpc read
 false, so a NEW sandbox lands on poweredge. Node read at ~12:00Z: poweredge cpu requests
-31350m of 72000m (43%) and memory requests 78680Mi (20%); gmktec memory requests 97% and
+31350m of 72000m (43%) and memory requests 78680Mi (20%). Corrected at the apply
+(~13:00Z, ci-runtime-and-cost's second look): 20 pods, `requests.cpu` 60 and poweredge cpu
+requests 38350m (53%), not the 21 pods, 63 and 43% read at ~12:00Z. Gmktec memory requests 97% and
 hp 84% hold only sandboxes admitted earlier. The scheduler's node fit on requests, not
 this quota, bounds what lands on a node.
 
@@ -531,8 +535,8 @@ this quota, bounds what lands on a node.
 | `limits.memory` | 25 slots x 7630Mi | **190750Mi** |
 | `pods` | unchanged | **42** |
 
-**Effect.** Four more sandboxes than today's 21 fit. On poweredge that moves cpu requests
-from about 43% to about 60% and memory requests from about 20% to about 29%. The fleet cap
+**Effect.** Four more sandboxes than the 21 read at ~12:00Z fit. On poweredge, +4 sandboxes
+moves cpu requests from 53% (read at the apply) to near 70%, and memory requests from about 20% to about 29%. The fleet cap
 of 20 still bounds live runs; the five extra slots are for retained ended-run sandboxes.
 
 **Revert trigger.** Memory limits at 100% on a node AND a sandbox OOMKilled or Pending on
