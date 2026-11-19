@@ -1,0 +1,27 @@
+---
+# The token-spend collector is user-scoped tooling.  Its source is the
+# `vps-info` repository (services/token-spend-report/), pinned below by commit
+# sha and by a SHA-256 per file; the role copies exactly those bytes to the vps
+# and refuses on any mismatch.  The scripts are not carried in this repository:
+# its Python gates reject them as written.
+token_spend_report_user: ubuntu
+token_spend_report_group: ubuntu
+token_spend_report_root: /home/ubuntu/token-spend-report
+token_spend_report_scripts_dir: "{{ token_spend_report_root }}/scripts"
+
+# The CONTROL NODE's clone of vps-info.  vps-info is private, so the bytes are
+# read from this clone at the pinned commit, never from a floating branch and
+# never over an unauthenticated URL.
+token_spend_report_source_checkout: "{{ lookup('ansible.builtin.env', 'HOME') }}/workspace/vps-info"
+token_spend_report_source_path: services/token-spend-report
+# vps-info master after PR 93 (rebase-merged 2026-11-19), read on origin.
+token_spend_report_source_sha: a10bfc2999cd00ed921bf8ece25c7716a605cba9
+token_spend_report_scripts:
+  attribution.py: b6a4d38afe5718d03f7b24fa00e9d0fee3146b29072bf58b5c02725b40a18463
+  build_board.py: 4c0e12da89501618f42f586ffb8884ecb2dea5dbb743cc6b05b18693686177b0
+  emit_factory.py: 5d8e6a2d5df5e6f4e8c60fc60befbf89d4f31f41d41f2120c9e82a567dcda0c3
+  emit_nodes.py: 2e14b60fea5e832406ffa9a2a5a64abdab49680797c8508eda42bae5c0577ff1
+  emit_spend.py: 0917f2af3f8b39c15e0af76061bcd6b17f6d9821202aa9e09724ec7f24283886
+  hcq.py: ba7dd698f446f40860d86b6e9669dae36dd3e5174bb264abf0f07bc8d583ea99
+  spend_staleness.py: 3c5fbf9ac1a9e5987d01b4eb14d9260113b198e3fa428b9fddc27c11f54c56f8
+  tenant_watch.py: 76bea422a6f1ebb658e7fc56112e1cb2848fc85bd7e06d58bdae005d4317c0fe
