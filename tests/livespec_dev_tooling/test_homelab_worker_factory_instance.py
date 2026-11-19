@@ -116,7 +116,7 @@ def _render(*, tmp_path: Path, overrides: dict[str, Any]) -> dict[str, Any]:
     return _toml.loads(rendered)
 
 
-def test_a_worker_instances_plugin_config_selects_the_class_and_architecture_and_no_host(
+def test_a_worker_instances_plugin_config_selects_class_architecture_and_admission_and_no_host(
     *, tmp_path: Path
 ) -> None:
     entry = _host_vars()["sandbox_driver_kubernetes_worker_config_homes"][0]
@@ -125,6 +125,7 @@ def test_a_worker_instances_plugin_config_selects_the_class_and_architecture_and
     assert config["node_selector"] == {
         "homelab-worker.livespec.dev/class": "worker",
         "kubernetes.io/arch": "arm64",
+        "ci-runner.io/factory-admit": "true",
     }
     assert "homelab-worker.livespec.dev/admission" not in [
         t.get("key") for t in config["tolerations"]
