@@ -54,7 +54,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_dev_tooling._gate_lane_capacity import repro_lane_refusal
 from livespec_dev_tooling._gate_remote_assembly import declared_gate_job_resources
+from livespec_dev_tooling.config import ConfigParseError, load_gate_job_resources
 from livespec_dev_tooling.gate_credential import with_wrapper_notices
 from livespec_dev_tooling.gate_remote_client import GateRunOutcome, run_gate
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request
@@ -100,9 +102,14 @@ REPRO_STACK_INTERVAL_SECONDS = 300
 REPRO_ENDED_COMPLETE = "complete"
 REPRO_ENDED_FAILED = "failed"
 REPRO_ENDED_NO_TERMINAL_CONDITION = "no-terminal-condition"
+REPRO_ENDED_REFUSED = "refused"
 
 _ENDED_BY_CONDITION = {COMPLETE_CONDITION: REPRO_ENDED_COMPLETE}
-_EXIT_BY_ENDING = {REPRO_ENDED_COMPLETE: 0, REPRO_ENDED_NO_TERMINAL_CONDITION: 3}
+_EXIT_BY_ENDING = {
+    REPRO_ENDED_COMPLETE: 0,
+    REPRO_ENDED_NO_TERMINAL_CONDITION: 3,
+    REPRO_ENDED_REFUSED: 4,
+}
 _EXIT_FAILED = 1
 
 
@@ -161,6 +168,26 @@ def _unended(*, failure: GateStepFailed) -> ReproOutcome:
     )
 
 
+def _unadmittable(*, repo_root: Path, renderer: Path, node: str | None) -> str | None:
+    """Why this repro could never be admitted by its node's committed flavor, or None.
+
+    The repro queue is read from the tooling checkout the renderer belongs to
+    (`<phase2>/kueue/`, a sibling of `<phase2>/gates/`). A declaration that
+    cannot be read owes no comparison here; `gate_remote_request` refuses it.
+    """
+    try:
+        declared = load_gate_job_resources(repo_root=repo_root)
+    except ConfigParseError:
+        return None
+    return repro_lane_refusal(
+        repo_root=repo_root,
+        declared=declared,
+        node=node,
+        queue=renderer.parent.parent / "kueue" / "cluster-queue-repro-gates.yaml",
+        renderer=renderer,
+    )
+
+
 def run_repro_gate(  # noqa: PLR0913 — every keyword is an independent input of the one reproduction Job.
     *,
     repo_root: Path,
@@ -181,6 +208,9 @@ def run_repro_gate(  # noqa: PLR0913 — every keyword is an independent input o
     # repository's own gate is. An unreadable declaration contributes nothing
     # here, and `gate_remote_request` refuses it on its own read.
     declared = declared_gate_job_resources(repo_root=repo_root).value_or(())
+    refusal = _unadmittable(repo_root=repo_root, renderer=renderer, node=node)
+    if refusal is not None:
+        return ReproOutcome(ended=REPRO_ENDED_REFUSED, job_name="", detail=refusal)
     built = gate_remote_request(
         repo_root=repo_root,
         renderer=renderer,

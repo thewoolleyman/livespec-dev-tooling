@@ -52,6 +52,7 @@ _RENDERER_IN_REPO = Path("ci-runner/k3s/phase2/gates/render-gate-job.sh")
 GATES_QUEUE_PACKAGED = Path(__file__).resolve().parent / "gates" / "cluster-queue-gates.yaml"
 RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gate-job.sh"
 _GATES_CQ = "gates-cq"
+_REPRO_CQ = "gates-repro-cq"
 _COMPARED_KEYS = ("gate_cpu", "gate_memory")
 # The renderer's defaults line, `cpu="5"; memory="6Gi"; parallelism="4"; ...`:
 # the default has ONE owner, so the comparison reads it rather than restating it.
@@ -90,8 +91,8 @@ def quantity(*, value: object) -> Fraction | None:
     return Fraction(match.group(1)) * _SCALE[match.group(2)]
 
 
-def committed_lanes(*, queue: Path) -> tuple[Lane, ...]:
-    """Every gates-cq flavor in `queue` with a readable cpu and memory quota, in file order."""
+def committed_lanes(*, queue: Path, cluster_queue: str = _GATES_CQ) -> tuple[Lane, ...]:
+    """Every `cluster_queue` flavor in `queue` with a readable cpu and memory quota."""
     text = _read(path=queue)
     if text is None:
         return ()
@@ -103,7 +104,7 @@ def committed_lanes(*, queue: Path) -> tuple[Lane, ...]:
         lane
         for document in documents
         if _mapping(value=document).get("kind") == "ClusterQueue"
-        and _mapping(value=_mapping(value=document).get("metadata")).get("name") == _GATES_CQ
+        and _mapping(value=_mapping(value=document).get("metadata")).get("name") == cluster_queue
         for group in _items(
             value=_mapping(value=_mapping(value=document).get("spec")).get("resourceGroups")
         )
@@ -147,6 +148,41 @@ def lane_capacity_refusal(*, repo_root: Path, declared: tuple[tuple[str, str], .
         f"no committed gates-cq lane in {queue} admits the declared {compared} "
         f"({repo_root}/pyproject.toml), so Kueue could never admit its gate Job; the largest "
         f"lane is {largest.name} with {largest.cpu_text} CPU and {largest.memory_text} memory"
+    )
+
+
+def repro_lane_refusal(
+    *,
+    repo_root: Path,
+    declared: tuple[tuple[str, str], ...],
+    node: str | None,
+    queue: Path,
+    renderer: Path,
+) -> str | None:
+    """Why the repro flavor for `node` could never admit this declaration; None when it can.
+
+    A repro Job whose request exceeds the committed quota of its node's flavor
+    stays Suspended forever, so the client refuses it at submit. With no node
+    the Job may land on any flavor, so it is refused only when no flavor admits
+    it. A flavor armed at zero admits nothing. An unreadable queue or renderer
+    default owes no comparison here: the renderer and Kueue still judge the Job.
+    """
+    values = dict(declared)
+    defaults = _renderer_defaults(renderer=renderer)
+    cpu = quantity(value=values.get("gate_cpu", defaults[0]))
+    memory = quantity(value=values.get("gate_memory", defaults[1]))
+    lanes = committed_lanes(queue=queue, cluster_queue=_REPRO_CQ)
+    if cpu is None or memory is None or not lanes:
+        return None
+    wanted = f"gates-repro-{node.removesuffix('-xubuntu')}-flavor" if node else None
+    candidates = tuple(lane for lane in lanes if wanted is None or lane.name == wanted)
+    if any(lane.cpu >= cpu and lane.memory >= memory for lane in candidates):
+        return None
+    held = ", ".join(f"{lane.name} {lane.cpu_text} cpu / {lane.memory_text}" for lane in candidates)
+    return (
+        f"the repro Job for {repo_root} asks {values.get('gate_cpu', defaults[0])} cpu and "
+        f"{values.get('gate_memory', defaults[1])} memory, but {held or 'no repro flavor'} in "
+        f"{queue} could never admit it, so Kueue would leave it Suspended forever"
     )
 
 
