@@ -48,7 +48,11 @@ _AMD64_WORKER = {**_ARM64_WORKER, "kubernetes.io/arch": "amd64"}
 
 
 def _documents(path: Path) -> list[dict[str, Any]]:
-    text = path.read_text(encoding="utf-8").replace("@WORKER_CHURN_SLOTS@", "0")
+    text = (
+        path.read_text(encoding="utf-8")
+        .replace("@WORKER_CHURN_SLOTS@", "0")
+        .replace("@WORKER_MEMORY_QUOTA@", "0Mi")
+    )
     return [d for d in yaml.safe_load_all(text) if d]
 
 

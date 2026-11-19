@@ -191,6 +191,7 @@ template:
           # Exactly ONE churn-slot per runner pod -- see values-livespec.yaml.
           requests:
             ci-runner.io/churn-slot: "1"
+            memory: 512Mi
           limits:
             ci-runner.io/churn-slot: "1"
 

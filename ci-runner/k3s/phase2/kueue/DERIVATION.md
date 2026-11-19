@@ -1217,7 +1217,7 @@ Docker daemon is offered, which was accepted.
 | `minRunners` / `maxRunners` | 0 / **2**, a recorded exception (below) |
 | work volume request | **112Gi**, not enforced (below) |
 | placement | `nodeSelector: kubernetes.io/hostname: poweredge-xubuntu` |
-| cpu / memory requests | none, as every scale set |
+| cpu / memory requests | no cpu request; runner pod memory request **6Gi** (the orchestrator tier, `../arc/values-fabro.yaml`), covered by `fabro-cq`'s memory quotas; none on the workflow pod |
 
 **Prerequisite, measured.** The `thewoolleyman-ci-runners` App installation did
 NOT cover `thewoolleyman/fabro` at about 06:5xZ on 2026-11-05; the maintainer is
@@ -1317,25 +1317,32 @@ free space of poweredge's `ci-workvols` mount (`/var/lib/rancher/k3s/storage`),
 read on the node at converge time. The 1.5 TiB is the volume's size, not its
 free space.
 
-### CPU and memory: the churn slot alone, as for every lane
+### CPU and memory: the churn slot, plus the runner pod's memory request
 
-No cpu or memory request goes on the runner pod or the workflow pod. "Per-node
-churn slots derived from cores (2026-11-04)" above records why a request on the
-workflow pod cannot work here. The hook copies the runner's node into
-`spec.nodeName` and so bypasses the scheduler, which means contention would
-show up as `OutOfcpu` job failures, not as moved jobs. The workflow pod is also
-built from the SHARED `../arc/hook-pod-template.yaml`, which this lane must not
-change. The churn slot is the admission control. The per-job CPU bound is the
-shared template's `CARGO_BUILD_JOBS=3` and `NEXTEST_TEST_THREADS=3`. That is the
-same bound the console's Rust lane runs under, so a fabro job weighs about what
-one churn slot is sized for (about 2.73 CPUs per slot). The fork's workflow must
-not set `CARGO_BUILD_JOBS` itself, because a step-level value wins over the pod
-env.
+No cpu request goes on the runner pod or the workflow pod, and no memory
+request goes on the workflow pod. The runner pod requests **6Gi** of memory
+(`../arc/values-fabro.yaml`, the orchestrator tier of "Runner-pod memory
+admission" below), and `fabro-cq` covers `memory` beside the churn slot with
+the same per-node quotas as every other runner queue, so the request is
+admitted and counted against the node. "Per-node churn slots derived from
+cores (2026-11-04)" above records why a request on the workflow pod cannot
+work here. The hook copies the runner's node into `spec.nodeName` and so
+bypasses the scheduler, which means contention would show up as `OutOfcpu`
+job failures, not as moved jobs. The workflow pod is also built from the
+SHARED `../arc/hook-pod-template.yaml`, which this lane must not change. The
+churn slot is the admission control for cpu. The per-job CPU bound is the
+shared template's `CARGO_BUILD_JOBS=3` and `NEXTEST_TEST_THREADS=3`. That is
+the same bound the console's Rust lane runs under, so a fabro job weighs about
+what one churn slot is sized for (about 2.73 CPUs per slot). The fork's
+workflow must not set `CARGO_BUILD_JOBS` itself, because a step-level value
+wins over the pod env.
 
 **Not measured:** no fabro job has run on any pool node, so there is no figure
 for its CPU, its peak memory (rustc at `-j3` plus the link step), or its
-wall-clock time on the pool. No request is proposed, so no number is invented
-for one. The measurement that confirms the choice is the first cold run's
+wall-clock time on the pool. The 6Gi request is the orchestrator tier's
+measured per-pod ceiling, borrowed as a conservative figure rather than a
+fabro measurement, and is re-tuned with the other ceilings. The measurement
+that confirms the choice is the first cold run's
 workflow pod, read from the host collector's `kubeletstats` in Honeycomb:
 `k8s.pod.memory.working_set` and `k8s.pod.cpu.usage` for the
 `fabro-k3s-*-workflow` pod, the job's duration, and `du` of its target
@@ -2660,3 +2667,61 @@ The budget document's averages at 6 slots already sum to about 30 of 32 (runners
 **Measured read.** +2 h after the apply, rerun the same steps on the same node over a window of similar load (work step `just coverage-shard N 4` for orchestrator shards, `just check-per-file-coverage` for dev-tooling), and compare per-slot turnover, not raw pod counts, since four slots raise raw counts by design. This is also the owed 3-to-4 read on plan ci-runtime-and-cost.
 
 **Revert.** Restore gamingpc 3 and orchestrator 4, then apply in reverse: `ci_converge_unit` first (quotas back to 31), then `node_extended_resource --limit gamingpc-xubuntu`.
+
+## Runner-pod memory admission (2026-11-19)
+
+ARC's runner pods previously requested only `ci-runner.io/churn-slot`.  The
+container-hook workflow pod follows its runner onto the same node, so a workflow
+memory request cannot move a workload elsewhere after runner admission.  The
+runner itself must reserve the measured working set before the Kubernetes
+scheduler selects a node.
+
+The measured per-pod peak p95 request sizes are:
+
+| Scale-set class | Runner values files | request |
+| --- | --- | ---: |
+| orchestrator | `values-fabro.yaml`, `values-livespec-orchestrator-beads-fabro.yaml`, `values-livespec-orchestrator-master.yaml` | 6Gi |
+| dev-tooling | `values-livespec-dev-tooling.yaml`, `values-livespec-dev-tooling-master.yaml`, `values-livespec-dev-tooling-arm64.yaml` | 4.25Gi |
+| console-beads | `values-livespec-console-beads-fabro.yaml` | 2.75Gi |
+| overseer | `values-livespec-overseer.yaml` | 2.25Gi |
+| local CI | `values-livespec.yaml` | 1.5Gi |
+| runtime | `values-livespec-runtime.yaml` | 1.25Gi |
+| orchestrator-git | `values-livespec-orchestrator-git-jsonl.yaml` | 1Gi |
+| drivers | `values-livespec-driver-claude.yaml`, `values-livespec-driver-codex.yaml`, `values-livespec-driver-pi.yaml` | 512Mi |
+| phase-1 proof | `values-poweredge-xubuntu-k3s.yaml` | 512Mi (unmeasured conservative request) |
+
+These are requests, not limits.  A runner can use more memory when the node
+has it; a limit would turn an underestimated p95 into an OOM kill.  The
+phase-1 proof set remains outside Kueue, so its 512Mi request is enforced only
+by the Kubernetes scheduler.
+
+Every Kueue-routed runner ClusterQueue covers `memory` with the four x86
+per-node ResourceFlavors in `resource-flavor.yaml`.  Kueue selects the flavor
+and adds its hostname selector; the scheduler then makes the final placement
+decision using the same runner request.  The quota is intentionally repeated
+for every per-repository queue: queues do not share a Kueue memory cohort, and
+the scheduler is the common node-local authority that prevents one queue from
+overpacking a node occupied by another queue.
+
+| ResourceFlavor | node | allocatable Gi | factory requests Gi | gates requests Gi | calculation | memory nominalQuota |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `runner-memory-gmktec-flavor` | gmktec-xubuntu | 62.4 | 24.4 | 16 | floor(62.4 - 24.4 - 16) | 22Gi |
+| `runner-memory-hp-flavor` | hp-xubuntu | 27.2 | 14.9 | 0 | floor(27.2 - 14.9 - 0) | 12Gi |
+| `runner-memory-poweredge-flavor` | poweredge-xubuntu | 378 | 67.1 | 48 | floor(378 - 67.1 - 48) | 262Gi |
+| `runner-memory-gamingpc-flavor` | gamingpc-xubuntu | 92.38 | 0 | 16 | floor(92.38 - 0 - 16) | 76Gi |
+
+The factory figures are the active per-node factory budgets at the 8GB (7.45
+Gi) sandbox request, except gmktec's measured 24.4Gi factory request.  The gate
+figures are the committed `gates-cq` memory quotas: 16Gi on gmktec and
+gamingpc, zero on hp, and 48Gi on poweredge.  Rounding down leaves the
+unallocated fraction as safety headroom.  The arm64 worker queue is not one of
+these x86 flavors: its churn-slot quota is rendered from enrolled worker
+capacity, and its memory nominalQuota is rendered beside it by
+`converge-worker-queues.sh` as `churn slots x 4352Mi`.  4352Mi is the dev-tooling
+runner request, 4.25Gi, for each churn slot the queue admits, so the memory
+quota scales with the slots exactly as the churn-slot quota does: two enrolled
+slots render 8704Mi, and no number of slots leaves memory the binding resource.
+
+`tests/spec/test_runner_memory_quota_derivation.py` derives these four rounded
+headroom values from this table and checks every runner ClusterQueue's committed
+memory quota against them, in addition to checking the arm64 worker template.

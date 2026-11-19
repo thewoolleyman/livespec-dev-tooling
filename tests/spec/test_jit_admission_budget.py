@@ -142,10 +142,18 @@ def _churn_slot_flavors(document: str, member: str) -> dict[str, tuple[str, str 
     for index, flavor in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(document)
         block = document[flavor.end() : end]
-        if _CHURN_RESOURCE_NAME.search(block) is None:
+        churn_resource = _CHURN_RESOURCE_NAME.search(block)
+        if churn_resource is None:
             continue
+        next_resource = re.search(r"^ {12}- name:\s*", block[churn_resource.end() :], re.MULTILINE)
+        resource_end = (
+            churn_resource.end() + next_resource.start()
+            if next_resource is not None
+            else len(block)
+        )
         fields = {
-            field.group("field"): field.group("value") for field in _RESOURCE_FIELD.finditer(block)
+            field.group("field"): field.group("value")
+            for field in _RESOURCE_FIELD.finditer(block[churn_resource.end() : resource_end])
         }
         assert "nominalQuota" in fields, (
             f"a `{_COHORT}` member's `{_CHURN_SLOT}` flavor needs a nominalQuota; "
