@@ -56,6 +56,35 @@ def test_factory_memory_is_derived_from_the_committed_ceiling_and_provider_reque
         assert f"| {expected:.1f}Gi |" in row
 
 
+def test_runner_memory_is_the_committed_slot_count_times_the_committed_runner_request() -> None:
+    report = _load()
+    budget = yaml.safe_load(_BUDGET.read_text(encoding="utf-8"))["nodes"]
+    rows, _ = report.report()
+    header = [cell.strip() for cell in rows[2].split("|")]
+    assert "runners" in header
+    column = header.index("runners")
+    request = report.runner_request_gib()
+    assert request > 0
+
+    for node, configured in budget.items():
+        if "runner_memory_gib" in configured:
+            continue
+        expected = report.runner_slots(node) * request
+        row = next(row for row in rows if row.startswith(f"{node} |"))
+        assert row.split("|")[column].strip() == f"{expected:.1f}Gi"
+
+
+def test_a_node_without_committed_slots_claims_no_runner_memory() -> None:
+    report = _load()
+    rows, _ = report.report()
+    header = [cell.strip() for cell in rows[2].split("|")]
+    assert "runners" in header
+    column = header.index("runners")
+    row = next(row for row in rows if row.startswith("gmktec-xubuntu |"))
+    assert report.runner_slots("gmktec-xubuntu") == 0
+    assert row.split("|")[column].strip() == "0.0Gi"
+
+
 def test_report_rejects_an_unreportable_committed_memory_unit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -72,6 +101,7 @@ nodes:
     factory_pod_budget: 0
     gate_flavor: fixture-gates
     repro_memory_gib: 0
+    runner_memory_gib: 0
 """,
         encoding="utf-8",
     )

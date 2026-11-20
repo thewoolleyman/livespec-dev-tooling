@@ -9,6 +9,7 @@ is presently larger than the node can hold beside its committed gate lanes.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -22,6 +23,10 @@ _GATES = _ROOT / "ci-runner/k3s/phase2/kueue/cluster-queue-gates.yaml"
 _REPRO = _ROOT / "ci-runner/k3s/phase2/kueue/cluster-queue-repro-gates.yaml"
 _FACTORY_HOST = _ROOT / "ansible/inventory/host_vars/gmktec-xubuntu.yml"
 _HOST_VARS = _ROOT / "ansible/inventory/host_vars"
+_PROFILES = _ROOT / "ci-runner/k3s/phase0-bare-metal/profiles"
+_QUEUES = _ROOT / "ci-runner/k3s/phase2/kueue"
+_RUNNER_VALUES = _ROOT / "ci-runner/k3s/phase2/arc"
+_SLOT_CAPACITY = re.compile(r"^ADMISSION_CAPACITY_C=(\d+)", re.MULTILINE)
 
 
 class MemoryQuantityError(ValueError):
@@ -74,6 +79,61 @@ def factory_pod_budget(node: str, configured: dict[str, Any]) -> int:
     return int(host_vars["factory_pod_budget"])
 
 
+def runner_slots(node: str) -> int:
+    """Read a node's committed churn-slot capacity from its phase0 profile."""
+    profile = (_PROFILES / f"{node}.env").read_text(encoding="utf-8")
+    (capacity,) = _SLOT_CAPACITY.findall(profile)
+    return int(capacity)
+
+
+def _queue_slots() -> tuple[dict[str, str], dict[str, int]]:
+    """Read each LocalQueue's ClusterQueue and each ClusterQueue's churn slots."""
+    local_queues: dict[str, str] = {}
+    churn_slots: dict[str, int] = {}
+    for path in _QUEUES.glob("cluster-queue-*.yaml"):
+        for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+            if document["kind"] == "LocalQueue":
+                local_queues[document["metadata"]["name"]] = document["spec"]["clusterQueue"]
+            if document["kind"] == "ClusterQueue":
+                for group in document["spec"].get("resourceGroups", []):
+                    for flavor in group["flavors"]:
+                        for resource in flavor["resources"]:
+                            if resource["name"] == "ci-runner.io/churn-slot":
+                                churn_slots[document["metadata"]["name"]] = resource["nominalQuota"]
+    return local_queues, churn_slots
+
+
+def runner_request_gib() -> float:
+    """Return a churn slot's expected runner memory request in GiB.
+
+    Each fleet queue's committed runner request is weighted by that queue's
+    committed churn-slot quota, so the figure follows the cohort's own mix.  A
+    runner is not the cohort's per-slot memory quota: that quota is a fleet-wide
+    cap, not a request any pod makes.
+    """
+    local_queues, churn_slots = _queue_slots()
+    weighted = 0.0
+    slots = 0
+    for path in _RUNNER_VALUES.glob("values-*.yaml"):
+        values = _load_yaml(path)
+        template = values.get("template", {})
+        queue = template.get("metadata", {}).get("labels", {}).get("kueue.x-k8s.io/queue-name")
+        quota = churn_slots.get(local_queues.get(queue, ""), 0)
+        if quota == 0:
+            continue
+        runner = next(c for c in template["spec"]["containers"] if c["name"] == "runner")
+        weighted += quota * _memory_gib(runner["resources"]["requests"]["memory"])
+        slots += quota
+    return weighted / slots
+
+
+def runner_memory_gib(node: str, configured: dict[str, Any]) -> float:
+    """Return a node's CI-runner claim: its committed slots times the request."""
+    if "runner_memory_gib" in configured:
+        return float(configured["runner_memory_gib"])
+    return runner_slots(node) * runner_request_gib()
+
+
 def report() -> tuple[list[str], list[tuple[str, float]]]:
     """Return human-readable rows and the committed over-commit findings."""
     budget = _load_yaml(_BUDGET)["nodes"]
@@ -81,8 +141,9 @@ def report() -> tuple[list[str], list[tuple[str, float]]]:
     factory_request = factory_pod_request_gib()
     rows = [
         "Memory budget report (REPORT-ONLY; no fleet admission check is armed).",
-        "Factory memory is the committed ceiling, not live pod demand.",
-        "node | allocatable | gates | repro | factory | system | total | status",
+        "Factory memory is the committed ceiling, not live pod demand; runners are "
+        "committed churn slots times the slot-weighted committed runner request.",
+        "node | allocatable | gates | repro | factory | runners | system | total | status",
     ]
     findings: list[tuple[str, float]] = []
     for node, configured in budget.items():
@@ -97,14 +158,15 @@ def report() -> tuple[list[str], list[tuple[str, float]]]:
             else flavors[configured["repro_flavor"]]
         )
         factory = factory_pod_budget(node, configured) * factory_request
+        runners = runner_memory_gib(node, configured)
         system = float(configured["system_memory_gib"])
         allocatable = float(configured["allocatable_memory_gib"])
-        total = gates + repro + factory + system
+        total = gates + repro + factory + runners + system
         shortfall = total - allocatable
         status = "fits" if shortfall <= 0 else f"OVER by {shortfall:.1f}Gi"
         rows.append(
             f"{node} | {allocatable:.2f}Gi | {gates:.1f}Gi | {repro:.1f}Gi | "
-            f"{factory:.1f}Gi | {system:.1f}Gi | {total:.1f}Gi | {status}"
+            f"{factory:.1f}Gi | {runners:.1f}Gi | {system:.1f}Gi | {total:.1f}Gi | {status}"
         )
         if shortfall > 0:
             findings.append((node, shortfall))

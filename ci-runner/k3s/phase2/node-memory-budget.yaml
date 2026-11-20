@@ -11,6 +11,13 @@
 # Factory pod counts are read from each x86 node's host_vars
 # `factory_pod_budget`; the sandbox request is read from the factory provider's
 # committed process_spec.  Thus neither quantity is copied into this file.
+#
+# CI-runner memory is each x86 node's churn-slot capacity
+# (phase0-bare-metal/profiles/<node>.env ADMISSION_CAPACITY_C) times the
+# slot-weighted mean of the committed runner memory requests (arc/values-*.yaml,
+# weighted by each queue's churn-slot quota in kueue/cluster-queue-*.yaml), so
+# gmktec's zero slots claim no runner memory.  The macbook worker's slots are
+# rendered at converge from the node, not committed, so its entry states 0.
 
 nodes:
   gmktec-xubuntu:
@@ -39,3 +46,4 @@ nodes:
     factory_pod_budget: 0
     gate_memory_gib: 0
     repro_memory_gib: 0
+    runner_memory_gib: 0
