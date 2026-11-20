@@ -19,9 +19,9 @@ Run FIRST every tick, before any peer message is answered. For priorities 1-5 of
 latest priorities-record on epic livespec-dev-tooling-6tgd2z it prints the epic status,
 its typed next_action, the age of its last ledger move (STALE past 60 minutes) and the
 newest epic comment, so an ask from a seat that cannot SendMessage (a Mac or Codex
-seat) is seen every tick (rule P3).
+seat) is seen every tick (rule P3). (The 2026-11-20 record ranks P1-P7; TOP lists them all.)
 
-TOP mirrors the priorities-record (scope events 2026-11-14T18:24:20Z and 18:37:20Z, and 2026-11-17T07:5xZ (DROP no-local-agent-memory)), and a KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
+TOP mirrors the priorities-record (the 2026-11-20T06:4xZ record on epic livespec-dev-tooling-6tgd2z, P1-P7), and a KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
 `bd show` and `bd comments`, through each tenant's credential wrapper, and local reads
 of the launch hold files.
@@ -60,10 +60,14 @@ import subprocess
 import sys
 
 TOP = [
-    ("1a bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab bootstrap-credentials-and-onboarding)", "hxi-vxsmdv"),
-    ("1b central-credential-service (livespec-overseer; hetzner-xubuntu, workspace livespec-overseer, tab central-credential-service)", "overseer-iyfjbo"),
-    ("2 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
-    ("3 stale-base-merge-options (GitHub org move to livespec-ai plus merge queue; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-xowhol"),
+    ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
+    ("2 central-credential-service (livespec-overseer; hetzner-xubuntu, workspace livespec-overseer, tab central-credential-service)", "overseer-iyfjbo"),
+    ("3 bootstrap-credentials-and-onboarding (hetzner-xubuntu-info; hetzner-xubuntu, workspace hetzner-xubuntu-info, tab bootstrap-credentials-and-onboarding)", "hxi-vxsmdv"),
+    ("4 stale-base-merge-options (seat closed; waits on the maintainer's retro attestation on o6mqy5)", "livespec-dev-tooling-xowhol"),
+    ("5 address-honeycomb-alerts", "bd-ib-xkwdap"),
+    ("6a implement-test-performance", "livespec-dev-tooling-sv6m5p"),
+    ("6b gate-job-resources", "livespec-dev-tooling-ukoeah"),
+    ("7 dev-host-disk-retention", "livespec-dev-tooling-qgwxo4"),
     ("KEPT throughput-plans-coordinator (owns every factory throughput problem; hetzner-xubuntu, workspace throughput-improvements)", "livespec-dev-tooling-r7iuj6"),
 ]
 # TOP5_LEDGER_WRAPPER is a test seam only: the scenario test points it at a pass-through stub.
