@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tests.livespec_dev_tooling import test_incident_ci_identity as identity_tests
 from tests.livespec_dev_tooling import test_incident_ci_publication as publication_tests
 
@@ -51,3 +53,33 @@ def test_an_attachment_the_signature_passed_is_journaled_with_the_attachment_rea
         "CI identity observations changed or unavailable)"
     ]
     assert token not in journal
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            b'{"unreadable-body-value":"must-not-reach-the-journal"}',
+            "ci-publish refused: publication-invalid "
+            "(detail: request body is unreadable or invalid)",
+        ),
+        (
+            lambda query: publication_tests.publication(query)
+            | {"query": {"repository": "other/repo"}},
+            "ci-publish refused: publication-invalid "
+            "(detail: request has no valid query for this repository)",
+        ),
+    ],
+)
+def test_publication_invalid_refusals_name_their_site_without_request_values(
+    published, capsys, body, expected
+):
+    application, query, token = published
+    body = body(query) if callable(body) else body
+
+    _status, reply = publication_tests.call(application, token, body)
+
+    journal = capsys.readouterr().err
+    assert reply["reason"] == "publication-invalid"
+    assert journal.splitlines() == [expected]
+    assert "must-not-reach-the-journal" not in journal
