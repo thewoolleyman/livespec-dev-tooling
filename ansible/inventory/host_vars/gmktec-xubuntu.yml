@@ -1119,7 +1119,11 @@ pressure_telemetry_cgroups:
 # factory_workspace_sweep_apply is true. Archives go to the ci-cache tier
 # (/var/cache/ci-runner, its own LV, not root). REVERT / KILL SWITCH: apply: false.
 factory_workspace_sweep_enabled: true
-factory_workspace_sweep_apply: true
+# SET FALSE 2026-11-20 (ci-runtime-and-cost, livespec-dev-tooling-3q3xma): the committed
+# one-shot manifest classes every run 'unmapped' with item null, and its apply removed a run
+# whose item was still open (bd-ib-5d5aue, orchestrator Scenario 281). Do not set true again
+# until the sweep maps each run to its item and skips runs whose items are not closed.
+factory_workspace_sweep_apply: false
 factory_workspace_sweep_manifest: manifest-gmktec.json
 factory_workspace_sweep_stop_free_gib: 100
 factory_workspace_sweep_kubectl: with-factory-kubeconfig kubectl

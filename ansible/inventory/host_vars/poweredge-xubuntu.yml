@@ -126,7 +126,11 @@ shared_credentials_host_probe_names:
 # until factory_workspace_sweep_apply is true. REVERT / KILL SWITCH: set apply
 # to false. Archives live under the role's archive dir; see the role defaults.
 factory_workspace_sweep_enabled: true
-factory_workspace_sweep_apply: true
+# SET FALSE 2026-11-20 (ci-runtime-and-cost, livespec-dev-tooling-3q3xma): the committed
+# one-shot manifest classes every run 'unmapped' with item null, and its apply removed a run
+# whose item was still open (bd-ib-5d5aue, orchestrator Scenario 281). Do not set true again
+# until the sweep maps each run to its item and skips runs whose items are not closed.
+factory_workspace_sweep_apply: false
 # Full eligible manifest (coordinator ruling): the 30 GiB target left a 1 GiB
 # margin over the ~29.4 GiB clear point, which running sandboxes erase in minutes.
 factory_workspace_sweep_stop_free_gib: 55
