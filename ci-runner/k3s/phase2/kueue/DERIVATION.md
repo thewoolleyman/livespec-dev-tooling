@@ -2768,7 +2768,7 @@ The derivation DERIVATION.md "Runner-pod memory admission" first recorded for gm
 measured figure is 52.2Gi, so that quota was stranded capacity: admitted runners would sit Pending while holding it.
 
 **Slots.** Memory slots are floor(free / 4.25Gi), the dev-tooling request, and CPU slots are as already derived; the smaller
-holds. gmktec has 0 memory slots. hp has 2 (two 4.25Gi runners, or two 6Gi, fit in 12.3Gi). gamingpc holds 6 (CPU decides:
+holds. gmktec has 0 memory slots. hp has 2 (two 4.25Gi runners fit; two 6Gi orchestrator-class runners need 12Gi against 11.7Gi free once hp's 0.6Gi of daemon pods (warm-cache, kube-system) are counted, so in that worst mix one runner can sit Pending on memory holding a cohort slot until another finishes; accepted knowingly, and the read-back checks for it). gamingpc holds 6 (CPU decides:
 its P95 draw of 1.79 cores per slot). poweredge has about 59 memory slots, so CPU decides: 22 slots equal the 29.8-core CI
 load measured on 2026-11-08 beside a factory of 17 pods (idle 0.16 percent, CI cpu.pressure avg60 37.1 at 22 slots), and the
 factory budget is now 9 pods, so 22 is the largest step the evidence supports. 26 slots, which would hold the cohort at 34,
@@ -2777,7 +2777,7 @@ reaches 70 to 100 of poweredge's 72 cores at the factory's limits, and is not ta
 | Node | before | after | basis |
 | --- | ---: | ---: | --- |
 | gmktec-xubuntu | 8 | 0 | no memory left at the ramp; the node stays a factory node |
-| hp-xubuntu | 3 | 2 | 12.3Gi free |
+| hp-xubuntu | 3 | 2 | 12.3Gi free before daemons, 11.7Gi after |
 | gamingpc-xubuntu | 6 | 6 | unchanged, CPU bound |
 | poweredge-xubuntu | 17 | 22 | CPU, 2026-11-08 saturation evidence |
 | macbook-m4-max-homelab-worker | 1 | 1 | arm64 flavor, unchanged |
@@ -2833,8 +2833,11 @@ through the same route and tell throughput-plans-coordinator. The earlier 2026-1
 crates-proxy and registry-mirror pods on poweredge.
 
 **Kill switch.** Roll back to the LIVE values read on 2026-11-19 (NOT to master 82ac90adc, which already commits gamingpc
-6): gamingpc 4, gmktec 8, hp 3, poweredge 17, cohort 32, and the four lowered queues (runtime, driver-pi, livespec,
-orchestrator-git-jsonl) at 2. Apply in the reverse order: `node_extended_resource` first, then `ci_converge_unit`.
+6): gamingpc 4, gmktec 8, hp 3, poweredge 17, cohort 32, the four lowered queues (runtime, driver-pi, livespec,
+orchestrator-git-jsonl) at 2, AND the two queues #5133 raised back down: console-beads-fabro 3 to 2 and
+orchestrator-beads-fabro 6 to 5 (live values 2 and 5; leaving them at 3 and 6 would put the quotas at 34 against 32 of
+capacity). If the gamingpc repro flavor has to come back too, set `gates-repro-gamingpc-flavor` to 5 cpu / 8Gi in
+cluster-queue-repro-gates.yaml (its live value before this roll) in the same revert. Apply in the reverse order: `node_extended_resource` first, then `ci_converge_unit`.
 Capacity returns before the quotas so capacity is never below quota. The runner memory requests (livespec-dev-tooling-yiko5d),
 the repro-flavor changes and this memory flavor come back only through a revert pull request and the same
 `ci_converge_unit` apply; the pod memory requests are the part that protects the factory from overpacking, so reverting
