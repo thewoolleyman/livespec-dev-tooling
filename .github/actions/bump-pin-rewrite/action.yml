@@ -101,6 +101,23 @@ inputs:
       fleet-release bump path keeps `--auto --rebase` enablement.
     required: false
     default: 'false'
+  refresh_branch:
+    description: >-
+      Stale-base refresh mode (SPECIFICATION/contracts.md §"Stale-base
+      refresh"). When non-empty, the Action rewrites the CURRENT work tree (the
+      caller has already reset it to the default branch's tip), commits the
+      result on this existing bot-owned bump branch, pushes it with
+      `--force-with-lease`, and does NOT open a PR (one is already open).
+      Empty (the default) keeps the open-a-new-bump-PR behaviour.
+    required: false
+    default: ''
+  refresh_expected_head:
+    description: >-
+      Refresh mode only: the bump-branch head SHA the caller read, used as the
+      `--force-with-lease` expectation so a concurrent push to the branch is
+      never overwritten. Empty falls back to a live `git ls-remote` probe.
+    required: false
+    default: ''
 
 outputs:
   changed:
@@ -132,8 +149,16 @@ runs:
         SOURCE_REPO: ${{ inputs.source_repo }}
         TAG: ${{ inputs.tag }}
         BRANCH_PREFIX: ${{ inputs.branch_prefix }}
+        REFRESH_BRANCH: ${{ inputs.refresh_branch }}
       run: |
         set -euo pipefail
+        if [[ -n "$REFRESH_BRANCH" ]]; then
+          # Stale-base refresh: the bump branch already exists and is bot-owned;
+          # re-point the local branch at the caller's reset tree.
+          git checkout -B "$REFRESH_BRANCH"
+          echo "name=$REFRESH_BRANCH" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         branch="${BRANCH_PREFIX}-${SOURCE_REPO}-${TAG}"
         git checkout -b "$branch"
         echo "name=$branch" >> "$GITHUB_OUTPUT"
@@ -449,6 +474,8 @@ runs:
         SOURCE_REPO: ${{ inputs.source_repo }}
         TAG: ${{ inputs.tag }}
         BRANCH: ${{ steps.branch.outputs.name }}
+        REFRESH_BRANCH: ${{ inputs.refresh_branch }}
+        REFRESH_EXPECTED_HEAD: ${{ inputs.refresh_expected_head }}
       run: |
         set -euo pipefail
         # Per §"PR commit-message convention": `chore(deps):` prefix is
@@ -543,7 +570,12 @@ runs:
         # silently never flagged), which would be strictly worse than the defect
         # it repairs.
         remote_head=$(git ls-remote --heads origin "refs/heads/${BRANCH}" | awk 'NR == 1 { print $1 }')
-        if [[ -n "$remote_head" ]]; then
+        if [[ -n "$REFRESH_BRANCH" && -n "$REFRESH_EXPECTED_HEAD" ]]; then
+          # Stale-base refresh: lease against the head the caller READ, not a
+          # fresh probe, so a push that landed after the read is not clobbered.
+          echo "::notice::refreshing bump branch ${BRANCH} (expected head ${REFRESH_EXPECTED_HEAD})"
+          git push --force-with-lease="${BRANCH}:${REFRESH_EXPECTED_HEAD}" -u origin "HEAD:refs/heads/${BRANCH}"
+        elif [[ -n "$remote_head" ]]; then
           echo "::notice::bump branch ${BRANCH} already exists on origin at ${remote_head}; resetting it to this sweep's rewrite"
           git push --force-with-lease="${BRANCH}:${remote_head}" -u origin "HEAD:refs/heads/${BRANCH}"
         else
@@ -555,7 +587,7 @@ runs:
       # produced no change the commit step pushed no branch and made no
       # commit, so there is nothing to open a PR from and `gh pr create` would
       # fail against a missing branch.
-      if: ${{ steps.commit.outputs.changed == 'true' }}
+      if: ${{ steps.commit.outputs.changed == 'true' && inputs.refresh_branch == '' }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.app_token }}

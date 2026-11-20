@@ -443,3 +443,84 @@ jobs:
             "/repos/$OWNER/livespec-orchestrator-beads-fabro/dispatches" \
             --input -
           echo "::notice::dispatched codex-acp-golden-master (version=$CODEX_ACP_VERSION pr=$pr_number head_sha=$head_sha)"
+
+  # Stale-base refresh backstop (SPECIFICATION/contracts.md "Stale-base
+  # refresh"): every sweep also refreshes each open bot-owned bump PR that is
+  # behind the default branch or whose head carries a discovered pin for its
+  # source_repo that does not name the PR's tag. The race the push-triggered
+  # refresh cannot close (the default branch gaining such a pin between a
+  # refresh and the merge) is closed here on the next sweep.
+  plan-refresh:
+    name: plan-refresh
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: List open bump PRs on bump-automation-owned branches
+        id: plan
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          targets=$(gh pr list --state open --limit 100 --json number,headRefName,title \
+            | jq -c '[.[]
+                | select(.headRefName | test("^chore/(freshness-)?bump-"))
+                | (.title | capture("^chore\\(deps\\): bump (?<source_repo>.+) pin to (?<tag>\\S+)$")?) as $key
+                | select($key != null)
+                | {number: .number, branch: .headRefName, source_repo: $key.source_repo, tag: $key.tag}]')
+          echo "::notice::open bump PRs to consider for refresh: ${targets}"
+          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
+
+  refresh-open-bump:
+    name: refresh-open-bump ${{ matrix.target.source_repo }} ${{ matrix.target.tag }}
+    needs: plan-refresh
+    if: ${{ needs.plan-refresh.outputs.targets != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        target: ${{ fromJSON(needs.plan-refresh.outputs.targets) }}
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout consumer repo with App token
+        uses: actions/checkout@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v5
+        with:
+          repository: livespec-ai/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v4
+
+      - name: Install Python deps via uv
+        run: uv sync --all-groups
+
+      - name: Refresh the bump PR branch when behind or carrying a non-matching pin
+        uses: ./.livespec-dev-tooling/.github/actions/bump-pin-refresh
+        with:
+          source_repo: ${{ matrix.target.source_repo }}
+          tag: ${{ matrix.target.tag }}
+          branch: ${{ matrix.target.branch }}
+          app_token: ${{ steps.app-token.outputs.token }}
+          app_slug: ${{ steps.app-token.outputs.app-slug }}

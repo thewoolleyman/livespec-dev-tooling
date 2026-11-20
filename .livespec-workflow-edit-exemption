@@ -1,14 +1,4 @@
-# Workflow-edit exemption — one exemption binds to one reviewed change.
-#
-# The change (mxjbmi): the per-file coverage gate runs as four parallel shards. A new
-# check-per-file-coverage-shard job (matrix 1..4) runs `just coverage-shard <n> 4` and logs
-# where it ran ($NODE_NAME when the runner exposes it, the runner pod, CPU quota and
-# pressure); every shard is required through ci-green's needs; the existing
-# check-per-file-coverage job adds the shards to its needs and combines their data instead
-# of running the suite. Two existing lines are modified (those two `needs:` lists), no line
-# is deleted, no gate is removed or reduced. That is the MAINTAINER tier: no change= line
-# and no ci_runtime attestation. The maintainer's pre-approval for exactly this scope is
-# recorded on livespec-dev-tooling-mxjbmi (comment by legacy-coordinator-agent,
-# 2026-11-18T09:55Z, carrying the maintainer's words).
-work_item=livespec-dev-tooling-mxjbmi
-reason=mxjbmi: shard check-per-file-coverage into four required parallel jobs and combine in the existing job; 2 existing needs lines modified, none deleted; maintainer pre-approval recorded on the item 2026-11-18T09:55Z
+work_item=livespec-dev-tooling-m5cpnl
+reason=Stale-base refresh of open bump PRs (spec v224): adds a plan-refresh job and a refresh-open-bump matrix job to reusable-bump-pin-from-dispatch.yml and reusable-pin-freshness.yml, and an if guard on the existing bump-pin job. Add-only; removes no step, check or gate.
+change=additive
+ci_runtime=no-significant-increase

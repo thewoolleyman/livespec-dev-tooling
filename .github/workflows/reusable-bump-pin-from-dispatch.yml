@@ -96,6 +96,9 @@ jobs:
   bump-pin:
     name: bump-pin
     runs-on: ubuntu-latest
+    # A `push` to the default branch invokes this workflow with no release
+    # payload (empty source_repo); that run takes the refresh path below.
+    if: ${{ inputs.source_repo != '' }}
     steps:
       - name: Mint App token
         id: app-token
@@ -259,5 +262,87 @@ jobs:
           records: ${{ steps.autodiscover.outputs.records }}
           branch_prefix: chore/bump
           pr_body: ${{ steps.pr_body.outputs.body }}
+          app_token: ${{ steps.app-token.outputs.token }}
+          app_slug: ${{ steps.app-token.outputs.app-slug }}
+
+  # Stale-base refresh (SPECIFICATION/contracts.md §"Cross-repo coordination
+  # automation surface", "Stale-base refresh"). The consumer's shim also runs on
+  # `push` to the default branch, which carries no source_repo/tag; on that
+  # trigger every open bot-owned bump PR is refreshed instead of a new one being
+  # opened. `plan-refresh` lists them; `refresh-open-bump` refreshes each one
+  # through the shared `bump-pin-refresh` composite Action.
+  plan-refresh:
+    name: plan-refresh
+    if: ${{ inputs.source_repo == '' }}
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: List open bump PRs on bump-automation-owned branches
+        id: plan
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          targets=$(gh pr list --state open --limit 100 --json number,headRefName,title \
+            | jq -c '[.[]
+                | select(.headRefName | test("^chore/(freshness-)?bump-"))
+                | (.title | capture("^chore\\(deps\\): bump (?<source_repo>.+) pin to (?<tag>\\S+)$")?) as $key
+                | select($key != null)
+                | {number: .number, branch: .headRefName, source_repo: $key.source_repo, tag: $key.tag}]')
+          echo "::notice::open bump PRs to consider for refresh: ${targets}"
+          echo "targets=${targets}" >> "$GITHUB_OUTPUT"
+
+  refresh-open-bump:
+    name: refresh-open-bump ${{ matrix.target.source_repo }} ${{ matrix.target.tag }}
+    needs: plan-refresh
+    if: ${{ needs.plan-refresh.outputs.targets != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        target: ${{ fromJSON(needs.plan-refresh.outputs.targets) }}
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout consumer repo with App token
+        uses: actions/checkout@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v5
+        with:
+          repository: livespec-ai/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v4
+
+      - name: Install Python deps via uv
+        run: uv sync --all-groups
+
+      - name: Refresh the bump PR branch when behind the default branch
+        uses: ./.livespec-dev-tooling/.github/actions/bump-pin-refresh
+        with:
+          source_repo: ${{ matrix.target.source_repo }}
+          tag: ${{ matrix.target.tag }}
+          branch: ${{ matrix.target.branch }}
           app_token: ${{ steps.app-token.outputs.token }}
           app_slug: ${{ steps.app-token.outputs.app-slug }}

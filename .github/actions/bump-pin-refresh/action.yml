@@ -1,0 +1,154 @@
+# bump-pin-refresh composite Action — stale-base refresh of ONE open bump PR.
+#
+# Authority: SPECIFICATION/contracts.md §"Cross-repo coordination automation
+#   surface", the "Stale-base refresh" clause. A bump PR is computed against the
+#   default branch as it stood when the PR was opened; the default branch can
+#   gain a new pin-bearing line before the PR merges. This Action brings ONE
+#   open, bot-owned bump branch back in line:
+#     1. read the bump branch head and the default branch tip;
+#     2. decide whether the branch needs a refresh — it is BEHIND the default
+#        branch, or its head carries a discovered pin for the source that does
+#        not name the PR's tag;
+#     3. when it does, reset the branch to the default tip, re-run the same pin
+#        autodiscovery + rewrite for (source_repo, tag) through the shared
+#        `bump-pin-rewrite` composite in refresh mode, and push the result with
+#        `--force-with-lease` against the head read in step 1;
+#     4. when it does not, or when the re-run rewrite changes nothing, leave the
+#        branch exactly as it is and push nothing.
+#
+# The caller job has already checked out the consumer with the App token and
+# full history (fetch-depth: 0), checked out this repo's support modules to
+# `.livespec-dev-tooling/`, and run mise + `uv sync --all-groups`.
+#
+# Inputs:
+#   source_repo (required) — the PR's publishing repository short name.
+#   tag (required) — the PR's target release tag.
+#   branch (required) — the PR's head branch (bot-owned `chore/bump-*` or
+#     `chore/freshness-bump-*`).
+#   app_token (required) — GitHub App installation token.
+#   app_slug (required) — GitHub App slug (committer identity).
+#
+# Outputs:
+#   refreshed — 'true' when a refreshed head was committed and pushed.
+
+name: bump-pin-refresh
+description: Refresh one open bot-owned bump PR branch against the default branch (reset, re-run the pin rewrite, force-with-lease push), or leave it untouched when current.
+
+inputs:
+  source_repo:
+    description: Publishing repository short name of the bump PR.
+    required: true
+  tag:
+    description: Target release tag of the bump PR.
+    required: true
+  branch:
+    description: Head branch of the bump PR (bot-owned).
+    required: true
+  app_token:
+    description: Minted GitHub App installation token.
+    required: true
+  app_slug:
+    description: GitHub App slug used for the committer identity.
+    required: true
+
+outputs:
+  refreshed:
+    description: "'true' when a refreshed head was committed and pushed; 'false' when the branch was left as it is."
+    value: ${{ steps.refresh.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read bump branch head and decide whether it needs a refresh
+      id: decide
+      shell: bash
+      env:
+        SOURCE_REPO: ${{ inputs.source_repo }}
+        TAG: ${{ inputs.tag }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        set -euo pipefail
+        case "$BRANCH" in
+          chore/bump-*|chore/freshness-bump-*) ;;
+          *)
+            # The refresh MUST NOT touch a branch the bump automation does not own.
+            echo "::error::refusing to refresh ${BRANCH}: not a bump-automation-owned branch"
+            exit 1
+            ;;
+        esac
+        default_branch=$(git ls-remote --symref origin HEAD | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')
+        if [[ -z "$default_branch" ]]; then
+          echo "::error::could not resolve the default branch of origin"
+          exit 1
+        fi
+        git fetch origin "+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}" "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+        head_sha=$(git rev-parse "refs/remotes/origin/${BRANCH}")
+        echo "default_branch=${default_branch}" >> "$GITHUB_OUTPUT"
+        echo "head_sha=${head_sha}" >> "$GITHUB_OUTPUT"
+        behind=false
+        if ! git merge-base --is-ancestor "refs/remotes/origin/${default_branch}" "$head_sha"; then
+          behind=true
+        fi
+        # Head audit: does the bump branch HEAD carry a discovered pin for this
+        # source that does not name the PR's tag? Discovery runs on a detached
+        # checkout of the head, from the support checkout (TOOL, not DATA).
+        git checkout --quiet --detach "$head_sha"
+        head_records=$(uv run --project .livespec-dev-tooling python -m \
+          livespec_dev_tooling.cross_repo.pin_autodiscovery --root . --source-repo "$SOURCE_REPO")
+        head_stale=false
+        while IFS= read -r current; do
+          [[ -n "$current" ]] || continue
+          currency=$(uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.cross_repo.pin_staleness --is-current "$current" "$TAG")
+          if ! [[ "$currency" =~ ^(true|false)$ ]]; then
+            echo "::error::currency verdict for ${SOURCE_REPO} is not a bare true/false: [$currency]"
+            exit 1
+          fi
+          if [[ "$currency" == "false" ]]; then
+            head_stale=true
+          fi
+        done < <(echo "$head_records" | jq -r '.[].current_value')
+        echo "behind=${behind}" >> "$GITHUB_OUTPUT"
+        echo "head_stale=${head_stale}" >> "$GITHUB_OUTPUT"
+        if [[ "$behind" == "true" || "$head_stale" == "true" ]]; then
+          echo "needs_refresh=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::${BRANCH} needs a refresh (behind=${behind}, head_stale=${head_stale})"
+        else
+          echo "needs_refresh=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::${BRANCH} is current with ${default_branch} and every ${SOURCE_REPO} pin names ${TAG}; leaving it as it is"
+        fi
+
+    - name: Reset to the default branch tip and re-run pin autodiscovery
+      id: autodiscover
+      if: ${{ steps.decide.outputs.needs_refresh == 'true' }}
+      shell: bash
+      env:
+        SOURCE_REPO: ${{ inputs.source_repo }}
+        BRANCH: ${{ inputs.branch }}
+        DEFAULT_BRANCH: ${{ steps.decide.outputs.default_branch }}
+      run: |
+        set -euo pipefail
+        git checkout --quiet -B "$BRANCH" "refs/remotes/origin/${DEFAULT_BRANCH}"
+        records=$(uv run --project .livespec-dev-tooling python -m \
+          livespec_dev_tooling.cross_repo.pin_autodiscovery \
+          --root . --source-repo "$SOURCE_REPO")
+        {
+          echo 'records<<JSONEOF'
+          echo "$records"
+          echo 'JSONEOF'
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Re-run the pin rewrite on the reset branch and push with a lease
+      id: refresh
+      if: ${{ steps.decide.outputs.needs_refresh == 'true' }}
+      uses: ./.livespec-dev-tooling/.github/actions/bump-pin-rewrite
+      with:
+        source_repo: ${{ inputs.source_repo }}
+        tag: ${{ inputs.tag }}
+        records: ${{ steps.autodiscover.outputs.records }}
+        branch_prefix: chore/bump
+        pr_body: refresh
+        app_token: ${{ inputs.app_token }}
+        app_slug: ${{ inputs.app_slug }}
+        refresh_branch: ${{ inputs.branch }}
+        refresh_expected_head: ${{ steps.decide.outputs.head_sha }}
