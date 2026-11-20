@@ -68,6 +68,12 @@ def _environ(*, tmp_path: Path, **pull_request: object) -> dict[str, str]:
     }
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CI exports GITHUB_REPOSITORY, which would make the process read the live forge."""
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+
+
 @pytest.fixture
 def observer(monkeypatch: pytest.MonkeyPatch) -> Mock:
     answer = Mock(return_value=True)
