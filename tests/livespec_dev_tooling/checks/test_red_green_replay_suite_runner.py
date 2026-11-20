@@ -538,3 +538,4 @@ def test_the_gate_runners_progress_stamp_is_one_of_the_scrubbed_gate_variables()
         if isinstance(element, ast.Constant)
     }
     assert "LIVESPEC_GATE_RUN_PROGRESS_STAMP" in scrubbed
+    assert "test_nprocs" in scrubbed
