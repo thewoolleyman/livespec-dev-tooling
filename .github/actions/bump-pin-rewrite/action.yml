@@ -570,7 +570,7 @@ runs:
         # silently never flagged), which would be strictly worse than the defect
         # it repairs.
         remote_head=$(git ls-remote --heads origin "refs/heads/${BRANCH}" | awk 'NR == 1 { print $1 }')
-        if [[ -n "$REFRESH_BRANCH" && -n "$REFRESH_EXPECTED_HEAD" ]]; then
+        if [[ -n "${REFRESH_BRANCH:-}" && -n "${REFRESH_EXPECTED_HEAD:-}" ]]; then
           # Stale-base refresh: lease against the head the caller READ, not a
           # fresh probe, so a push that landed after the read is not clobbered.
           echo "::notice::refreshing bump branch ${BRANCH} (expected head ${REFRESH_EXPECTED_HEAD})"
