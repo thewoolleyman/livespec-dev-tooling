@@ -9,8 +9,8 @@
 # restored with `zstd -dc <archive> | tar -C <the workspace root> -xf -`.
 factory_workspace_sweep_enabled: false
 factory_workspace_sweep_apply: false
-# The committed manifest this host applies (a file under files/); per-host manifests
-# are named manifest-<host>.json. Installed on the host as manifest.json.
+# A timer refreshes manifest.json from each declared Fabro instance and its
+# providers before every pass. This is deliberately not a committed snapshot.
 factory_workspace_sweep_manifest: manifest.json
 # The one declared path, never respelled here: the workspace-root naming guard
 # (test_factory_workspace_root_not_reclaimed) allows only the declaring role to name it.
@@ -30,3 +30,15 @@ factory_workspace_sweep_lib_dir: /usr/local/lib/factory-workspace-sweep
 # namespace where sandbox pods live. A failure to list keeps every directory.
 factory_workspace_sweep_kubectl: k3s kubectl
 factory_workspace_sweep_pod_scope: -A
+factory_workspace_sweep_fabro_bin: fabro
+factory_workspace_sweep_lithos_bin: lithos-sandbox
+# Host values may replace these with a credentialed controller wrapper. A
+# failed query becomes tenant-unreadable and is never a deletion candidate.
+factory_workspace_sweep_ledger_command: bd
+factory_workspace_sweep_archive_record_command: bd
+factory_workspace_sweep_service: livespec-factory-workspace-sweep.service
+factory_workspace_sweep_timer: livespec-factory-workspace-sweep.timer
+factory_workspace_sweep_unit_dir: /etc/systemd/system
+factory_workspace_sweep_on_calendar: hourly
+factory_workspace_sweep_randomized_delay_sec: 5min
+factory_workspace_sweep_timeout_start_sec: 30min

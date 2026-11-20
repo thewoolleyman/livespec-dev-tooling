@@ -1,0 +1,11 @@
+[Unit]
+Description=Build and consume the live factory workspace sweep manifest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 {{ factory_workspace_sweep_lib_dir }}/factory_workspace_manifest.py --config {{ factory_workspace_sweep_lib_dir }}/manifest-config.json
+ExecStart=/usr/bin/python3 {{ factory_workspace_sweep_lib_dir }}/factory_workspace_sweep.py --manifest {{ factory_workspace_sweep_lib_dir }}/manifest.json --root {{ factory_workspace_sweep_root }} --archive-dir {{ factory_workspace_sweep_archive_dir }} --stop-free-gib {{ factory_workspace_sweep_stop_free_gib }} --min-age-hours {{ factory_workspace_sweep_min_age_hours }} --kubectl {{ factory_workspace_sweep_kubectl | quote }} --pod-scope={{ factory_workspace_sweep_pod_scope | quote }}{% if factory_workspace_sweep_apply | bool %} --apply{% endif %}
+TimeoutStartSec={{ factory_workspace_sweep_timeout_start_sec }}

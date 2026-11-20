@@ -5,8 +5,8 @@ The node's root filesystem holds one directory per ended factory run. The
 kubelet evicts every sandbox once root free space falls under its eviction
 threshold plus minimum-reclaim, so ended-run workspaces must leave root.
 
-Every action comes from a COMMITTED manifest (controller-measured evidence: item
-state, preservation test, HEAD sha). The host re-verifies what it can before
+Every action comes from a freshly-written controller manifest (live item state,
+run preservation test, and HEAD sha). The host re-verifies what it can before
 touching a directory, and any doubt keeps the directory:
 
   * the directory is inside the root, is not a symlink, and is in the manifest;
@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,14 @@ import time
 from pathlib import Path
 
 GIB = 1024**3
+LIVE_MANIFEST_VERSION = 2
+
+# These classifications are intentionally strings rather than a permissive
+# default.  A manifest generator that cannot read a tenant or a run must name
+# that uncertainty; treating a missing/unknown classification as removable was
+# the failure mode that removed work still in acceptance.
+_UNFINISHED_ITEM_CLASSES = frozenset({"item-blocked", "item-needs-human", "item-acceptance"})
+_UNREADABLE_CLASSES = frozenset({"tenant-unreadable", "run-end-unreadable", "run-no-end-time"})
 
 
 def emit(message: str) -> None:
@@ -76,12 +85,23 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def keep_reason(*, row: dict, root: Path, refs: set[str] | None, min_age_s: float) -> str | None:
+def keep_reason(  # noqa: PLR0911
+    *, row: dict, root: Path, refs: set[str] | None, min_age_s: float
+) -> str | None:
     directory = root / row["dir"]
     if "/" in row["dir"] or directory.is_symlink() or not directory.is_dir():
         return "not-a-plain-directory"
     if refs is None:
         return "pod-list-unreadable"
+    classification = str(row.get("cls", ""))
+    if classification in _UNFINISHED_ITEM_CLASSES:
+        return "item-in-" + classification.removeprefix("item-")
+    if classification in _UNREADABLE_CLASSES:
+        return classification
+    # A live row must carry an end time.  Static compatibility manifests omit
+    # this field, but a controller manifest marks its version explicitly.
+    if row.get("manifest_version") == LIVE_MANIFEST_VERSION and not row.get("run_ended_at"):
+        return "run-no-end-time"
     if any(str(directory) == r or r.startswith(str(directory) + "/") for r in refs):
         return "referenced-by-a-pod"
     if time.time() - directory.stat().st_mtime < min_age_s:
@@ -101,6 +121,23 @@ def archive(*, root: Path, name: str, dest_dir: Path) -> tuple[Path, str] | str:
     if run(["zstd", "-q", "-t", str(target)]).returncode != 0:
         return "archive-failed-integrity-test"
     return target, sha256_file(target)
+
+
+def record_archive(*, row: dict, archive_path: Path, digest: str) -> str | None:
+    """Post archive evidence before deletion when a live manifest requires it.
+
+    The command is supplied by the credentialed controller path, not assembled
+    from an item id. A failed controller/ledger read is a preservation decision.
+    """
+    if row.get("manifest_version") != LIVE_MANIFEST_VERSION:
+        return None
+    command_text = str(row.get("archive_record_command") or "")
+    item = row.get("item")
+    if not command_text or not item:
+        return "archive-record-unavailable"
+    message = f"factory workspace archive: path={archive_path} sha256={digest}"
+    done = run([*shlex.split(command_text), "comment", str(item), message])
+    return None if done.returncode == 0 else "archive-record-failed"
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,19 +163,30 @@ def bump(counts: dict[str, int], key: str) -> None:
 
 def apply_row(*, row: dict, root: Path, dest: Path) -> tuple[dict | None, str | None]:
     """Archive (when the row says so), then remove; returns (record, keep-reason)."""
+    action = str(row["action"])
+    # A live manifest may never delete a dirty or unpublished checkout merely
+    # because a stale controller row called it clean.  Archive is the safe
+    # operation and its item receipt is posted before this function removes it.
+    if row.get("manifest_version") == LIVE_MANIFEST_VERSION and (
+        row.get("dirty") or row.get("evidence") != "head-on-origin-ref"
+    ):
+        action = "archive"
     record: dict = {
         "dir": row["dir"],
-        "action": row["action"],
+        "action": action,
         "kb": row["kb"],
         "item": row["item"],
         "head": row["head"],
         "class": row["cls"],
     }
-    if row["action"] == "archive":
+    if action == "archive":
         res = archive(root=root, name=row["dir"], dest_dir=dest)
         if isinstance(res, str):
             return None, res
         record["archive"], record["sha256"] = str(res[0]), res[1]
+        recorded = record_archive(row=row, archive_path=res[0], digest=res[1])
+        if recorded:
+            return None, recorded
     shutil.rmtree(root / row["dir"])
     with (dest / "results.jsonl").open("a") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")

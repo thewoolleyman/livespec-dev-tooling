@@ -1,0 +1,13 @@
+{
+  "root": {{ factory_workspace_sweep_root | to_json }},
+  "manifest": {{ (factory_workspace_sweep_lib_dir ~ '/manifest.json') | to_json }},
+  "fabro_bin": {{ factory_workspace_sweep_fabro_bin | to_json }},
+  "lithos_bin": {{ factory_workspace_sweep_lithos_bin | to_json }},
+  "ledger_command": {{ factory_workspace_sweep_ledger_command | to_json }},
+  "archive_record_command": {{ factory_workspace_sweep_archive_record_command | to_json }},
+  "instances": [
+  {% for instance in fabro_server_instances | default([]) %}
+    {"server": {{ instance.cli_target_url | to_json }}, "home": {{ (instance.home_env | default(instance.home_dir)) | to_json }}, "providers": [{% for provider in instance.sandbox_providers | default({}) %}{{ provider | to_json }}{% if not loop.last %}, {% endif %}{% endfor %}]}{% if not loop.last %},{% endif %}
+  {% endfor %}
+  ]
+}
