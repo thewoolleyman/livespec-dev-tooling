@@ -35,3 +35,15 @@ caam_delivery_push_stamp: ~/.local/state/caam-usage-rotate/caam-delivery-push.de
 # The file whose deployed bytes the read-back compares against the pinned commit's:
 # the keep-alive sweep the service ships to every listed host.
 caam_delivery_push_readback_path: overseer/remote_control_sweep.py
+
+# The caam binary the push service and the keep-alive sweep call (overseer-vzf4rs: the role
+# converged the service but never installed it). ONLY the binary is installed, into the
+# service user's ~/.local/bin; the role never creates, reads or writes caam's vault or
+# state, and the only invocation of the binary is `caam --version`. v0.1.25 is commit
+# 7694e79; the asset is the release's raw linux/amd64 executable (31744162 bytes), verified
+# against the sha256 in the release's own SHA256SUMS before it is moved into place.
+caam_delivery_push_caam_version: "0.1.25"
+caam_delivery_push_caam_url: >-
+  https://github.com/Dicklesworthstone/coding_agent_account_manager/releases/download/v0.1.25/caam
+caam_delivery_push_caam_sha256: 34df26526a097f90adbbe6ea10bbb6afe5e06e3be8d6a5785224a6803f4fc3af
+caam_delivery_push_caam_dest: ~/.local/bin/caam

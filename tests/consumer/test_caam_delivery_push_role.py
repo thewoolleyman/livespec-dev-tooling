@@ -8,6 +8,7 @@ state, and a stand-in launcher. Nothing touches a real host, service or credenti
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -108,9 +109,43 @@ def _playbook(*, root: Path, play: str, variables: dict[str, object]) -> str:
     return f"rc={done.returncode}\n{done.stdout}{done.stderr}"
 
 
-def _deploy(*, root: Path, checkout: Path, ref: str, unit: str = "active") -> tuple[str, Path]:
+_CAAM_VERSION = "0.1.25"
+_CAAM_BINARY = (
+    "#!/bin/sh\n"
+    'echo "$@" >> "$(dirname "$0")/caam-invocations"\n'
+    'echo "caam version {version} (fixture)"\n'
+)
+
+
+def _caam_asset(*, root: Path, version: str = _CAAM_VERSION) -> tuple[Path, str]:
+    """A stand-in release asset: a shell script that reports a version and logs its argv."""
+    asset = root / "release" / "caam"
+    asset.parent.mkdir(parents=True, exist_ok=True)
+    _ = asset.write_text(_CAAM_BINARY.replace("{version}", version), encoding="utf-8")
+    return asset, hashlib.sha256(asset.read_bytes()).hexdigest()
+
+
+def _caam_variables(*, root: Path, sha256: str | None = None) -> dict[str, object]:
+    asset, digest = _caam_asset(root=root)
+    return {
+        "caam_delivery_push_caam_version": _CAAM_VERSION,
+        "caam_delivery_push_caam_url": asset.as_uri(),
+        "caam_delivery_push_caam_sha256": sha256 or digest,
+        "caam_delivery_push_caam_dest": str(root / "home" / ".local" / "bin" / "caam"),
+    }
+
+
+def _deploy(
+    *,
+    root: Path,
+    checkout: Path,
+    ref: str,
+    unit: str = "active",
+    caam: dict[str, object] | None = None,
+) -> tuple[str, Path]:
     marker = root / "installs"
     variables: dict[str, object] = {
+        **(caam if caam is not None else _caam_variables(root=root)),
         "caam_delivery_push_ref": ref,
         "caam_delivery_push_checkout": str(checkout),
         "caam_delivery_push_install_command": ["sh", "-c", f"echo install >> {marker}"],
@@ -155,6 +190,14 @@ def test_an_apply_moves_the_checkout_installs_once_and_a_second_apply_changes_no
     assert _installs(marker=marker) == 1
 
 
+def _preinstall_caam(*, root: Path) -> None:
+    asset, _ = _caam_asset(root=root)
+    dest = root / "home" / ".local" / "bin" / "caam"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _ = dest.write_bytes(asset.read_bytes())
+    dest.chmod(0o755)
+
+
 def _stamp(*, root: Path, commit: str) -> None:
     path = root / "state" / "deployed"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,6 +208,7 @@ def test_a_checkout_past_the_pin_installed_from_its_head_is_left_alone(*, tmp_pa
     checkout, _, second, third = _fixture(root=tmp_path)
     _ = _git("merge", "-q", "--ff-only", third, cwd=checkout)
     _stamp(root=tmp_path, commit=third)
+    _preinstall_caam(root=tmp_path)
 
     output, marker = _deploy(root=tmp_path, checkout=checkout, ref=second)
 
@@ -330,3 +374,95 @@ def test_the_probe_fails_on_a_missing_variable_or_any_aws_variable(
 
     assert not output.startswith("rc=0\n"), output
     assert _SECRET not in output
+
+
+# EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-gtx5nl
+def _caam_dest(*, root: Path) -> Path:
+    return root / "home" / ".local" / "bin" / "caam"
+
+
+def test_the_pinned_caam_binary_is_installed_once_and_a_second_apply_changes_nothing(
+    *, tmp_path: Path
+) -> None:
+    checkout, _, second, _ = _fixture(root=tmp_path)
+    dest = _caam_dest(root=tmp_path)
+
+    output, _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+
+    assert _changed(output=output) > 0
+    assert dest.is_file() and os.access(dest, os.X_OK)
+    assert dest.read_bytes() == (tmp_path / "release" / "caam").read_bytes()
+
+    again, _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+    assert _changed(output=again) == 0
+
+
+def test_the_role_only_ever_asks_caam_for_its_version_and_touches_no_vault_or_state(
+    *, tmp_path: Path
+) -> None:
+    checkout, _, second, _ = _fixture(root=tmp_path)
+
+    output, _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+    _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+
+    assert _changed(output=output) > 0
+    invocations = (_caam_dest(root=tmp_path).parent / "caam-invocations").read_text(
+        encoding="utf-8"
+    )
+    assert set(invocations.split("\n")) == {"--version", ""}
+    assert sorted(path.name for path in (tmp_path / "home").rglob("*") if path.is_file()) == [
+        "caam",
+        "caam-invocations",
+    ]
+
+
+def test_a_caam_that_already_reports_the_pinned_version_is_not_downloaded_again(
+    *, tmp_path: Path
+) -> None:
+    checkout, _, second, _ = _fixture(root=tmp_path)
+    first, _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+    assert _changed(output=first) > 0
+    unreachable = _caam_variables(root=tmp_path) | {
+        "caam_delivery_push_caam_url": (tmp_path / "release" / "gone").as_uri()
+    }
+
+    output, _ = _deploy(root=tmp_path, checkout=checkout, ref=second, caam=unreachable)
+
+    assert _changed(output=output) == 0
+
+
+def test_a_caam_of_another_version_is_replaced_by_the_pinned_one(*, tmp_path: Path) -> None:
+    checkout, _, second, _ = _fixture(root=tmp_path)
+    dest = _caam_dest(root=tmp_path)
+    dest.parent.mkdir(parents=True)
+    _ = dest.write_text(_CAAM_BINARY.replace("{version}", "0.1.0"), encoding="utf-8")
+    dest.chmod(0o755)
+
+    output, _ = _deploy(root=tmp_path, checkout=checkout, ref=second)
+
+    assert _changed(output=output) > 0
+    assert (
+        "0.1.25"
+        in subprocess.run(
+            [str(dest), "--version"], capture_output=True, text=True, check=True
+        ).stdout
+    )
+
+
+@pytest.mark.parametrize("sha256", ["0" * 64, "not-a-sha"])
+def test_a_caam_asset_that_does_not_match_the_pinned_sha256_is_refused_and_not_installed(
+    *, tmp_path: Path, sha256: str
+) -> None:
+    checkout, first, second, _ = _fixture(root=tmp_path)
+
+    output, marker = _deploy(
+        root=tmp_path,
+        checkout=checkout,
+        ref=second,
+        caam=_caam_variables(root=tmp_path, sha256=sha256),
+    )
+
+    assert not output.startswith("rc=0\n"), output
+    assert not _caam_dest(root=tmp_path).exists()
+    assert _git("rev-parse", "HEAD", cwd=checkout) == first
+    assert _installs(marker=marker) == 0
