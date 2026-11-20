@@ -51,3 +51,28 @@ def test_an_attachment_the_signature_passed_is_journaled_with_the_attachment_rea
         "CI identity observations changed or unavailable)"
     ]
     assert token not in journal
+
+
+def test_publication_invalid_refusals_name_their_site_without_request_values(published, capsys):
+    application, _query, token = published
+    sentinel = "must-not-reach-the-journal"
+
+    _status, reply = publication_tests.call(
+        application, token, ('{"unreadable-body-value":"' + sentinel + '"').encode()
+    )
+    unreadable_journal = capsys.readouterr().err
+
+    _status, missing_query_reply = publication_tests.call(
+        application, token, {"body-value": sentinel}
+    )
+    missing_query_journal = capsys.readouterr().err
+
+    assert reply["reason"] == missing_query_reply["reason"] == "publication-invalid"
+    assert unreadable_journal.splitlines() == [
+        "ci-publish refused: publication-invalid " "(detail: request body is unreadable or invalid)"
+    ]
+    assert missing_query_journal.splitlines() == [
+        "ci-publish refused: publication-invalid "
+        "(detail: request has no valid query for this repository)"
+    ]
+    assert sentinel not in unreadable_journal + missing_query_journal
