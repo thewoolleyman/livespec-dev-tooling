@@ -143,6 +143,43 @@ executables, so a script that a listed script itself calls is not inventoried.
 
 This item did not verify the provisioning of the checkouts or the unreferenced paths beyond that grep.
 
+## Scope of the host-local survey
+
+Measured 2026-11-20 over read-only ssh: every `ExecStart` directive, with its backslash continuation lines, in
+`/etc/systemd/system/*.service` and `~/.config/systemd/user/*.service`, each executable path matched against
+`ansible/` on master with `git grep -l -F`. Two scoping rules, so the survey has an end:
+
+- **Out of scope by directory:** executables a distribution package or nix installs (`/usr/bin`, `/usr/sbin`, `/bin`,
+  `/sbin`, `/lib/systemd`, `/usr/lib/open-iscsi`, `/usr/lib/rsyslog`, `/usr/lib/systemd`, `/usr/share/samba`,
+  `/nix/store`, `/nix/var/nix/profiles`). The packaged `iscsi.service` is one of them.
+- **In scope:** everything else. The sections above and below classify each in-scope path as role-installed, run from a
+  git checkout, or referenced by no role. A script that one of these executables calls internally is not traced.
+
+## User units outside token-spend that run host-local executables
+
+None of these paths is named by a role under `ansible/` except where stated, so each is a hand-installed executable
+whose only copy is on the vps.
+
+| User unit | Executable | Role reference |
+| --- | --- | --- |
+| `caam-delivery-push.service` | `/data/projects/livespec-overseer/.venv/bin/caam-delivery-push` | role `caam_delivery_push` names the service; the venv path is not a literal match |
+| `claude-openai-gateway.service` | `~/.local/bin/cli-proxy-api` | none |
+| `codex-hook-trust.service` | `~/.local/lib/codex-hook-trust/venv/bin/python`, `reconcile-hook-trust.py` | none |
+| `codex-hook-trust-review.service` | `~/.local/lib/codex-hook-trust/review-hook-trust.py` | none |
+| `codex-remote-start.service` | `~/.local/bin/codex` | none |
+| `livespec-codex-cred-refresh.service` | `/data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py` | none (a different checkout path from the workspace one above) |
+| `livespec-codex-hook-cache-observer.service` | `~/.local/share/livespec-driver-codex/dev-tooling/codex_hook_cache_observe.py` | none |
+| `pkb.service` | `~/.local/bin/pkb` | none |
+| `release-guard.service` | `~/.local/share/release-guard/release_guard.py` | none |
+
+## System units whose executable no role path names
+
+`/usr/local/lib/beads-web/beads-web` (`beads-web.service`) has no match in `ansible/`. `/usr/local/bin/dolt`
+(`doltdb.service`) appears only in the `gha_runner` role's `HOST_VARS.md`. The Fabro binaries `~/.local/bin/fabro` and
+`~/.fabro/bin/fabro` and `/usr/local/bin/otelcol-contrib` are installed or referenced by roles (`fabro_client`,
+`gha_runner`, `otel_collector`). The `with-livespec-env.sh` and `with-homelab-env.sh` wrappers are referenced by several
+roles; `with-dolt-server-env.sh` is not (see above).
+
 ## Follow-ups this inventory names
 
 Per the item, pinning each script or adding a unit is filed per script. The ordered gap list is: the six unpinned
