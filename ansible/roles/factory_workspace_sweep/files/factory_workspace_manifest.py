@@ -90,7 +90,10 @@ def run_end(run: Mapping[str, object]) -> str | None:
     if status is None or status.get("kind") not in _TERMINAL:
         return None
     started, wall = run.get("start_time"), run.get("wall_time_ms")
-    if not isinstance(started, str) or not isinstance(wall, int | float):
+    # ``bool`` is an ``int`` subclass, but ``true`` is not an elapsed Fabro
+    # duration.  Reading it as one would turn uncertain run evidence into a
+    # removable row, so preserve the workspace instead.
+    if not isinstance(started, str) or isinstance(wall, bool) or not isinstance(wall, int | float):
         return None
     try:
         point = datetime.fromisoformat(started.replace("Z", "+00:00"))
