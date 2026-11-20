@@ -37,7 +37,7 @@ Opened 2026-11-14 by plan throughput-track-organization (livespec-dev-tooling-q2
 
 ## The role
 
-ONE seat for the maintainer's attention across the throughput track. It is to this track what legacy-coordinator-agent is to the fleet: it DIRECTS and never does the work itself, has no implementation children, never blocks, never raises a picker, and routes unowned work to an owning plan. Read `.ai/coordinator-duties.md` in full at every resume and apply it within the track. legacy-coordinator-agent (livespec-dev-tooling-6tgd2z, on vmi3006760) stays the fleet coordinator: this seat reports to it by a comment on this plan's epic prefixed `TO COORDINATOR:`, takes its rulings across plans, and never reorders the maintainer's priorities record. The track is priority three, after the expedited-incident and hetzner-move tracks.
+ONE seat for the maintainer's attention across the throughput track. It is to this track what legacy-coordinator-agent is to the fleet: it DIRECTS and never does the work itself, has no implementation children, never blocks, never raises a picker, and routes unowned work to an owning plan. Read `.ai/coordinator-duties.md` in full at every resume and apply it within the track. legacy-coordinator-agent (livespec-dev-tooling-6tgd2z, on vmi3006760) stays the fleet coordinator: this seat reports to it by a comment on this plan's epic prefixed `TO COORDINATOR:`, takes its rulings across plans, and never reorders the maintainer's priorities record.
 
 ## Resuming: straight into the loop
 
@@ -105,8 +105,6 @@ The fleet CI pool stall of 2026-11-13/14 is retold, with its causes and its guar
 - Every tick starts by reading BOTH this epic and legacy-coordinator-agent's epic (step 0). Added after this seat missed the 07:03Z QUIET OFF, posted only on livespec-dev-tooling-6tgd2z, and earlier told seats to `gh pr ready` during the window, which auto-arms in livespec-dev-tooling.
 - The author of an alarm or trigger PR, and any second look on it, checks the platform's limits (a Honeycomb trigger's frequency against its time range) and the bound of any exclusion; legacy-coordinator-agent caught both on #4650 and #4599 where this seat's reviewers had not.
 
-It also tracks G1-G8 to closure as inherited waits; G3 is withdrawn.
-
 ## Standing rule from 2026-11-15
 
 - Every tick reads every cluster node (step 1b). Measured at 07:50Z: poweredge 85%, hp 51%, M4 28% (tainted, homelab-worker class), gmktec 15%, gamingpc 5% (untainted), while this seat's tick read no nodes at all. The maintainer: "You need to understand the cluster."
@@ -165,17 +163,14 @@ Measured: no livespec-ai factory run had gone green since the org cutover (~10:x
 
 At 19:45:45Z this seat set ruleset 26758787's merge_queue `max_entries_to_build` from 4 to 1 as an interim for incident livespec-dev-tooling-zq2i4c. That broke check-branch-protection-alignment (`merge_queue_concurrency_below_floor`, floor 2), and every livespec-dev-tooling commit gate was refused for about 10 minutes, mzbt35's commit-1 included. legacy-coordinator-agent restored it to 2 (read back 19:56:35Z). LESSON: before changing any repo setting, grep the checks that read it (here check-branch-protection-alignment / `_branch_protection_queue_rules.py`). No maintainer words are recorded for this lesson; it is this seat's own correction.
 
-## The track's plans and their tabs (2026-11-14 ~01:0xZ)
+## The track's seats
 
-Workspace throughput-improvements on hetzner-xubuntu: throughput-metric (the emitter, the panel and, for now, the stopgap feed), kubernetes-observability (deliverer of the emitter), ci-runtime-and-cost, stale-base-merge-options, factory-run-yield, sandbox-commit-gate-follow-ups, implement-test-performance, gate-job-resources, github-request-budget-discipline. Elsewhere: fleet-mutation-testing-rule-26 (a Codex seat on gamingpc-xubuntu, by the maintainer's ruling), fleet-flaky-tests (workspace livespec-dev-tooling on hetzner-xubuntu; one row only).
-
-The ranked lever table, the baseline, what was moved out of the track, and the maintainer's rulings are in throughput-track-organization's research notes 003, 005 and 006 (under `plan/archive/throughput-track-organization/` once that plan archives). Note 006's table is this seat's starting state.
+The track's seats are whatever `herdr agent list` shows in workspace throughput-improvements on hetzner-xubuntu at each tick. No fixed roster is kept.
 
 ## Known conditions
 
 - A `bd` call from hetzner-xubuntu takes about 18 s (the Dolt server is on vmi3006760, 207 ms away): batch ledger reads, and prefer reading panes to reading epics.
-- The metric feed is a session-bound stopgap until livespec-dev-tooling-gaetnq converges; throughput-metric owns it.
-- The maintainer ruled on 2026-11-13 that the fleet moves to a GitHub organization and GitHub's merge queue will be usable; stale-base-merge-options carries it.
+- The metric feed is the detached stopgap `emit-loop.sh` under `~/.local/share/pr-throughput` until livespec-dev-tooling-gaetnq converges. The tick watches its staleness, and on staleness this seat reopens throughput-metric (plan livespec-dev-tooling-oe7cfw, seat closed 2026-11-20 ~06:3xZ).
 
 ## Standing rule from 2026-11-16 night
 
@@ -186,3 +181,11 @@ The ranked lever table, the baseline, what was moved out of the track, and the m
 - Master push CI keeps running in every repository that has a merge queue. Nobody proposes removing or skipping master CI because the queue exists.
 - A master red on a tree the queue already passed is a flake signal, and its root fix takes top priority under the flake rule (`.ai/coordinator-duties.md` §2).
 - Case: orchestrator e3190921b. merge_group run 43951860195 was green and master push run 43961760589 was red on the same commit; root fix bd-ib-gdt3qz.
+
+## Mandate reset (2026-11-20)
+
+The maintainer, ~06:1xZ, in this seat's pane:
+
+> "OK, now that the organization migrtation plan is done and parked pending retro, you need to resume your normal throughput coordinator duty.  Purge your plan and instructions and loop of any instructions specific to any plan, and go back to your original mandate of monitoring and improving throughput, with the original intent that I started your plan with and through the first initial evolutions before I had you focus on the organization migration and credential service plans."
+
+The plan-specific state at the reset is recorded on the epic's ~06:2xZ scope event (livespec-dev-tooling-r7iuj6) and lives with its owning seats.
