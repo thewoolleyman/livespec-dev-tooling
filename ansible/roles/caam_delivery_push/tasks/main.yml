@@ -23,6 +23,62 @@
       overwrites them. Nothing has been changed.
     quiet: true
 
+- name: Refuse a caam checksum that is not a full sha256
+  ansible.builtin.assert:
+    that:
+      - caam_delivery_push_caam_sha256 is match('^[0-9a-f]{64}$')
+    fail_msg: >-
+      caam_delivery_push_caam_sha256 must be the full 64-hex sha256 of the pinned caam
+      release asset. Nothing has been changed.
+    quiet: true
+
+- name: Look for an installed caam binary
+  ansible.builtin.stat:
+    path: "{{ caam_delivery_push_caam_dest | expanduser }}"
+  register: caam_delivery_push_caam_file
+
+- name: Read the installed caam version
+  ansible.builtin.command:
+    argv: ["{{ caam_delivery_push_caam_dest | expanduser }}", --version]
+  register: caam_delivery_push_caam_installed
+  changed_when: false
+  failed_when: false
+  when: caam_delivery_push_caam_file.stat.exists
+
+- name: Install the pinned caam binary
+  when: >-
+    not caam_delivery_push_caam_file.stat.exists
+    or caam_delivery_push_caam_version not in (caam_delivery_push_caam_installed.stdout | default(''))
+  block:
+    - name: Create the caam binary's directory
+      ansible.builtin.file:
+        path: "{{ caam_delivery_push_caam_dest | expanduser | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download the pinned caam binary, verified against its sha256
+      ansible.builtin.get_url:
+        url: "{{ caam_delivery_push_caam_url }}"
+        dest: "{{ caam_delivery_push_caam_dest | expanduser }}"
+        checksum: "sha256:{{ caam_delivery_push_caam_sha256 }}"
+        mode: "0755"
+        force: true
+
+    - name: Read the installed caam version after the install
+      ansible.builtin.command:
+        argv: ["{{ caam_delivery_push_caam_dest | expanduser }}", --version]
+      register: caam_delivery_push_caam_after
+      changed_when: false
+
+    - name: Refuse an installed caam that does not report the pinned version
+      ansible.builtin.assert:
+        that:
+          - caam_delivery_push_caam_version in caam_delivery_push_caam_after.stdout
+        fail_msg: >-
+          The caam installed at {{ caam_delivery_push_caam_dest }} does not report version
+          {{ caam_delivery_push_caam_version }}.
+        quiet: true
+
 - name: Read the checkout's commit
   ansible.builtin.command:
     argv: [git, -C, "{{ caam_delivery_push_checkout }}", rev-parse, HEAD]
