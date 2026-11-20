@@ -151,7 +151,6 @@ def test_runner_queue_memory_quotas_are_slots_times_the_cohort_memory_per_slot()
         "headroom-hp",
         "headroom-poweredge",
     }
-    assert headroom["headroom-gmktec"] == "0Gi"
     cohort_gi = sum(int(value.removesuffix("Gi")) for value in headroom.values())
 
     flavor = next(

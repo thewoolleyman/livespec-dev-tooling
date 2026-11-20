@@ -1502,7 +1502,7 @@ was deleted on 2026-10-22, when the rule itself exceeded it.
 |---|---|---|---|---|
 | `fabro` | 1 | 6 | **2** | 2026-11-05 |
 | `livespec-orchestrator-master` | 1 | 6 | **4** | 2026-11-12 |
-| `livespec-dev-tooling` | 6 | 12 | **20** | 2026-11-16 |
+| `livespec-dev-tooling` | 7 | 14 | **20** | 2026-11-20 |
 | `livespec-orchestrator-beads-fabro` | 6 | 12 | **14** | 2026-11-18 |
 
 **`fabro`, 6 to 2 (2026-11-05).** The rule's 2x multiple is kept and its floor
@@ -2843,3 +2843,80 @@ the repro-flavor changes and this memory flavor come back only through a revert 
 `ci_converge_unit` apply; the pod memory requests are the part that protects the factory from overpacking, so reverting
 them is a deliberate step, not part of the capacity kill switch.
 
+
+## gmktec 1: cohort 31 (2026-11-20)
+
+**Why.** Lever 2 of FOCUS-TWO-LEVERS, plan gate-job-resources (epic livespec-dev-tooling-ukoeah). throughput-plans-coordinator
+ruled on 2026-11-20 that gmktec-xubuntu's churn capacity rises from 0, to 2, or to 1 if one runner request exceeds the node's
+request headroom. The 2026-11-19 "Runner memory fit" section closed gmktec at 0 because the factory's 52.2Gi of requests,
+plus gates 16Gi and repro 8Gi reservations, left no memory. This section reopens it by ONE slot, on the live reading below.
+
+**The live reading** (`kubectl describe node gmktec-xubuntu` and `kubectl top node`, 2026-11-20 07:30Z):
+
+| Quantity | Value |
+| --- | ---: |
+| allocatable memory | 65466156Ki (62.4Gi) |
+| memory requests (all pods) | 55124Mi (53.8Gi, 86 percent) |
+| memory limits | 57044Mi (89 percent) |
+| memory use (`kubectl top`) | 14825Mi (14.5Gi, 23 percent) |
+| request headroom | 62.4 - 53.8 = about 8.6Gi |
+| cpu requests | 24100m (75 percent) of 32 |
+| cpu use | 2204m (6 percent) |
+| pods on node | 6 factory Running, 1 gates Running, 4 arc-systems, 1 kueue-system, 1 kube-system, 1 ci-warm-cache |
+| `ci-runner.io/churn-slot` advertised | 0 (the live node still carries the 0 until the separate apply) |
+
+The node uses a quarter of what its pods request, so the 2026-11-19 reading was a requests problem, not a use problem. The
+table above is the source for the revert triggers below.
+
+**Why 1 and not 2.** A churn slot is accounted at 11Gi (this file, "Runner memory fit": the cohort's memory per slot is
+floor(334 / 30) = 11Gi, covering a runner pod at 4.25 to 6Gi plus the job pod it starts). One slot fits the 8.6Gi request
+headroom for a runner pod; two slots want up to 22Gi of requests against 8.6Gi, and the second admitted job could sit
+Pending. The ruling's own condition ("C=1 if one runner request exceeds the node's request headroom") is met for the
+two-slot case, so the choice is 1. Had the figures shown that two fit, 1 would still be the first step: the node is a
+factory node, and the revert triggers below are read at +2 hours before a second slot is considered.
+
+**How Kueue's quota meets request-fit** (read from `../arc/values-livespec-dev-tooling.yaml` and the `cluster-queue-*.yaml`
+files): a runner pod requests `ci-runner.io/churn-slot: 1` and real memory (4.25Gi for dev-tooling), and carries no cpu
+request. Kueue admits a workload against the churn-slot extended resource and the cohort's memory quota. It does not know
+the node's request headroom. After admission the node scheduler fits the pod's REAL cpu and memory requests, so an admitted
+runner CAN sit Pending on gmktec if its requests do not fit. That is exactly why capacity is 1, and why the fifth revert
+trigger (an admitted runner Pending on gmktec over 5 minutes) exists.
+
+**The change.** gmktec 0 -> 1, cohort 30 -> 31 (poweredge 22 + gmktec 1 + hp 2 + gamingpc 6; the fleet-flavor quotas sum to 31). The new unit goes to livespec-dev-tooling-cq first (the rule of the earlier
+raises): 6 -> 7. Every other queue is unchanged, and `maxRunners` stays: dev-tooling 20 is a recorded exception (row now
+quota 7, rule value 14).
+
+**The memory quota.** One flavor, sized as the sum of per-node headroom. gmktec's row below is recomputed from the live
+reading: 62.4Gi allocatable, 53.8Gi requested by every pod on it (the factory and the gates pod now running included),
+so floor(62.4 - 53.8 - 0) = 8Gi (it was 0Gi). The cohort is 8 + 12 + 254 + 68 = 342Gi; floor(342 / 31) = 11Gi per slot, so
+each queue's memory nominal stays its churn slots x 11Gi and only dev-tooling changes: 66Gi to 77Gi. The 13 x86 queues sum
+to 341Gi against 342Gi. This row supersedes the gmktec row in the 2026-11-19 table above (its 24Gi gates figure was a
+reservation; the live pod requests already contain the running gate pod).
+
+| ResourceFlavor | node | allocatable Gi | factory requests Gi | gates requests Gi | calculation | memory nominalQuota |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `headroom-gmktec` | gmktec-xubuntu | 62.4 | 53.8 | 0 | max(0, floor(62.4 - 53.8 - 0)) | 8Gi |
+| `headroom-hp` | hp-xubuntu | 27.2 | 14.9 | 0 | floor(27.2 - 14.9 - 0) | 12Gi |
+| `headroom-poweredge` | poweredge-xubuntu | 378 | 67.5 | 56 | floor(378 - 67.5 - 56) | 254Gi |
+| `headroom-gamingpc` | gamingpc-xubuntu | 92.38 | 7.5 | 16 | floor(92.38 - 7.5 - 16) | 68Gi |
+
+**Revert triggers.** Any one of these on a gmktec read takes the node back to 0:
+
+1. gmktec memory use above 75 percent on a 5 minute read (23 percent at the baseline).
+2. gmktec cpu PSI `some` avg60 above 30.
+3. Any factory pod OOMKilled or Pending on gmktec.
+4. The factory ramp cap stalled by a memory admission refusal.
+5. A runner pod Kueue admitted to gmktec that stays Pending over 5 minutes (request-fit, see above).
+
+**REVERT** restores `ADMISSION_CAPACITY_C=0` in `../../phase0-bare-metal/profiles/gmktec-xubuntu.env`, livespec-dev-tooling-cq
+churn quota 7 -> 6 and memory 77Gi -> 66Gi, and the `headroom-gmktec` row to 52.2 / 24 / 0Gi, through the same files and the
+same apply route (`node_extended_resource` for capacity, `ci_converge_unit` for the quotas). On the way down apply the quota
+first, then the node, so the quota never exceeds the capacity.
+
+**Order of apply (a separate, reviewed step, not part of this change).** Raise the node capacity first
+(`node_extended_resource`, `--limit gmktec-xubuntu`), then `ci_converge_unit`, so the quota never promises a slot the node
+does not advertise.
+
+**The +2 hour read list.** gmktec churn-slot fill; gmktec `mpstat` idle; BestEffort `cpu.pressure` avg60; gmktec memory use;
+factory pod count on gmktec; Pending runners (and their age); poweredge idle and PSI avg60; queue wait per queue
+(`ci.job.queue_ms`); median job minutes per node.

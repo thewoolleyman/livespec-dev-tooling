@@ -64,7 +64,9 @@ spec:
               # 5 -> 6 on 2026-11-16: stranded-capacity raise, cohort 30 -> 33 (this queue held 11
               # pending at quota 5). See DERIVATION.md "Stranded-capacity raise: gmktec 9, cohort 33
               # (2026-11-16)".
-              nominalQuota: 6
+              # 6 -> 7 on 2026-11-20: gmktec-xubuntu 0 -> 1 churn slot, cohort 30 -> 31, the new slot
+              # to this queue first. See DERIVATION.md "gmktec 1: cohort 31 (2026-11-20)".
+              nominalQuota: 7
     # One memory flavor with NO nodeLabels: Kueue caps total runner memory fleet-wide without choosing a
     # node (a hostname-pinned flavor per node made Kueue pin runners to the first flavor that fit while
     # the slots live on the node). The scheduler places by the pod memory request and the per-node
@@ -74,7 +76,7 @@ spec:
         - name: runner-memory-flavor
           resources:
             - name: memory
-              nominalQuota: 66Gi
+              nominalQuota: 77Gi
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
