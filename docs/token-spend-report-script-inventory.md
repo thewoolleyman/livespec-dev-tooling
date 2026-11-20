@@ -59,11 +59,14 @@ first pass that read only top-of-file imports missed the function-level ones (fo
 | `prices` | `emit_spend`, `emit_factory`, `emit_nodes` | gap |
 | `accounts` | `emit_spend`, `emit_caam`, `emit_codex_credits`, `emit_factory`, `emit_nodes` | gap |
 | `node_join` | `cache_events`, `emit_factory`, `emit_nodes` | gap |
-| `caam_source` | `emit_caam`, `quota_guard`, `tenant_watch` | gap (also run by a unit) |
+| `caam_source` | `emit_caam`, `quota_guard`, `tenant_watch`, `accounts` | gap (also run by a unit) |
 | `codex_idle` | `emit_factory` | gap |
 | `journal_slots` | `emit_factory` | gap |
 | `tenant_usage_read` | `tenant_watch` (subprocess, not an import) | gap |
 | `codex_reset` | `quota_guard` (function level, two imports: the reset read and the consume path) | gap |
+
+Indirect edges among the unpinned dependencies, recorded by the independent replay: `accounts` imports `caam_source`, and
+`node_join` imports `hcq` (pinned) and `prices` (unpinned).
 
 The pinned `emit_spend.py`, `emit_factory.py`, `emit_nodes.py` and `tenant_watch.py` all depend on unpinned siblings
 (`prices`, `accounts`, `node_join`, `codex_idle`, `journal_slots`, `caam_source`, `tenant_usage_read`), so a role
@@ -125,7 +128,20 @@ that none is pinned, which makes them unrecoverable from a remote.
   (owned by the dolt-server repository's own checkout), `/usr/local/bin/homelab-reconcile-installed-scripts`, and
   `/var/lib/acfs/upgrade_resume.sh`.
 
-This item did not verify the provisioning of the checkouts or the three unreferenced paths beyond that grep.
+Two further findings from the independent replay of `/etc/systemd/system/*.service` (the glob also matches units the
+operating system packages place or link there):
+
+- `/usr/local/bin/with-dolt-server-env.sh` (`#!/bin/bash -p`) is the wrapper that `beads-web.service`,
+  `dolt-ledger-probe.service` and `fabro-dolt-server.service` invoke in `ExecStart`. No role under `ansible/` names it
+  (neither the path nor the basename matches), so it is hand-installed and, like the other unreferenced paths above, a gap.
+- `/etc/systemd/system/iscsi.service` runs `/usr/lib/open-iscsi/activate-storage.sh` and links into the packaged
+  `/usr/lib/systemd/system/open-iscsi.service`. It is a distribution unit, not fleet-authored, and is out of scope here;
+  no role references it.
+
+The scan covers each unit's direct `ExecStart` and its continuation lines. It does not trace into the bodies of the
+executables, so a script that a listed script itself calls is not inventoried.
+
+This item did not verify the provisioning of the checkouts or the unreferenced paths beyond that grep.
 
 ## Follow-ups this inventory names
 
