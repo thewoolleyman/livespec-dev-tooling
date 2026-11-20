@@ -1,0 +1,144 @@
+---
+# Fast-forward only. No reset, clean, stash, checkout or force appears anywhere here.
+- name: Fast-forward the checkout to the remote branch
+  when: dev_tooling_checkout_enabled | bool
+  block:
+    # The reads below are read-only, so they run in check mode too (check_mode: false)
+    # and let a --check report the true state rather than a guess.
+    - name: Read the checkout's uncommitted changes
+      ansible.builtin.command:
+        argv: [git, -C, "{{ dev_tooling_checkout_path }}", status, --porcelain]
+      register: dev_tooling_checkout_status
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse a checkout with uncommitted changes
+      ansible.builtin.assert:
+        that:
+          - dev_tooling_checkout_status.stdout | length == 0
+        fail_msg: >-
+          REFUSED dirty-tree: {{ dev_tooling_checkout_path }} has uncommitted changes;
+          the role never overwrites them. Nothing has been changed.
+        quiet: true
+
+    - name: Read the branch the checkout is on
+      ansible.builtin.command:
+        argv: [git, -C, "{{ dev_tooling_checkout_path }}", symbolic-ref, --short, HEAD]
+      register: dev_tooling_checkout_current_branch
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Refuse a checkout that is not on the followed branch
+      ansible.builtin.assert:
+        that:
+          - dev_tooling_checkout_current_branch.rc == 0
+          - dev_tooling_checkout_current_branch.stdout == dev_tooling_checkout_branch
+        fail_msg: >-
+          REFUSED wrong-branch: {{ dev_tooling_checkout_path }} is not on
+          {{ dev_tooling_checkout_branch }}; the role never switches branches.
+          Nothing has been changed.
+        quiet: true
+
+    - name: Read the checkout's commit
+      ansible.builtin.command:
+        argv: [git, -C, "{{ dev_tooling_checkout_path }}", rev-parse, HEAD]
+      register: dev_tooling_checkout_head
+      changed_when: false
+      check_mode: false
+
+    - name: Read the remote branch's tip
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ dev_tooling_checkout_path }}"
+          - ls-remote
+          - "{{ dev_tooling_checkout_remote }}"
+          - "refs/heads/{{ dev_tooling_checkout_branch }}"
+      register: dev_tooling_checkout_remote_tip
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse an unreadable remote branch
+      ansible.builtin.assert:
+        that:
+          - dev_tooling_checkout_remote_tip.stdout.split() | length >= 1
+          - dev_tooling_checkout_remote_tip.stdout.split()[0] is match('^[0-9a-f]{40}$')
+        fail_msg: >-
+          REFUSED remote-branch-unreadable: {{ dev_tooling_checkout_remote }}/{{ dev_tooling_checkout_branch }}
+          could not be read. Nothing has been changed.
+        quiet: true
+
+    - name: Remember the remote tip
+      ansible.builtin.set_fact:
+        dev_tooling_checkout_target: "{{ dev_tooling_checkout_remote_tip.stdout.split()[0] }}"
+
+    - name: Move the checkout to the remote tip
+      when: dev_tooling_checkout_head.stdout != dev_tooling_checkout_target
+      block:
+        # `git fetch` writes only objects and remote-tracking refs, never the working
+        # tree. Check mode skips it, so a --check never touches the checkout at all.
+        - name: Fetch the checkout's remote
+          ansible.builtin.command:
+            argv:
+              - git
+              - -C
+              - "{{ dev_tooling_checkout_path }}"
+              - fetch
+              - --quiet
+              - "{{ dev_tooling_checkout_remote }}"
+          changed_when: false
+
+        - name: Ask whether the checkout is an ancestor of the remote tip
+          ansible.builtin.command:
+            argv:
+              - git
+              - -C
+              - "{{ dev_tooling_checkout_path }}"
+              - merge-base
+              - --is-ancestor
+              - HEAD
+              - "{{ dev_tooling_checkout_target }}"
+          register: dev_tooling_checkout_ancestor
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        # rc 128 only means the tip's objects are not fetched yet, which is the normal
+        # state of a --check (the fetch above is skipped), so it is not a divergence.
+        - name: Refuse a diverged checkout
+          ansible.builtin.assert:
+            that:
+              - >-
+                dev_tooling_checkout_ancestor.rc == 0
+                or (ansible_check_mode and dev_tooling_checkout_ancestor.rc == 128)
+            fail_msg: >-
+              REFUSED diverged: HEAD ({{ dev_tooling_checkout_head.stdout }}) is not an
+              ancestor of {{ dev_tooling_checkout_remote }}/{{ dev_tooling_checkout_branch }}
+              ({{ dev_tooling_checkout_target }}), so it cannot fast-forward. Nothing has
+              been changed.
+            quiet: true
+
+        - name: Fast-forward the checkout
+          ansible.builtin.command:
+            argv:
+              - git
+              - -C
+              - "{{ dev_tooling_checkout_path }}"
+              - merge
+              - --ff-only
+              - --quiet
+              - "{{ dev_tooling_checkout_target }}"
+          # Runs only when HEAD differs from the tip, so a converged checkout reports
+          # nothing changed; this is the sole task that can change anything.
+          changed_when: true
+
+        # Check mode skips the merge above, which would hide the pending move. This
+        # read-only no-op stands in for it so a --check reports changed honestly.
+        - name: Report the fast-forward a check run would make
+          when: ansible_check_mode
+          ansible.builtin.command:
+            argv: [git, -C, "{{ dev_tooling_checkout_path }}", rev-parse, --verify, HEAD]
+          changed_when: true
+          check_mode: false

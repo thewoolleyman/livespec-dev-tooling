@@ -25,3 +25,8 @@
   roles:
     - role: caam_delivery_push
       tags: [caam_delivery_push]
+    # Opt-in per host (dev_tooling_checkout_enabled in host_vars, default false): keeps
+    # the host's own livespec-dev-tooling checkout fast-forwarded to origin/master. It
+    # refuses a dirty or diverged checkout and never resets, cleans or stashes.
+    - role: dev_tooling_checkout
+      tags: [dev_tooling_checkout]

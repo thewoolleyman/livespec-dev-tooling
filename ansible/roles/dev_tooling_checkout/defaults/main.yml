@@ -1,0 +1,19 @@
+---
+# dev_tooling_checkout -- keep a host's own livespec-dev-tooling checkout current by
+# fast-forwarding it to origin/master (the control node's checkout was ~22 commits
+# behind on 2026-11-20; fleet_host_guard refuses the by-hand `ssh <host> git pull`, so
+# the committed route is this role, applied with `just ansible-apply <playbook>`).
+#
+# PER-HOST OPT-IN. The role does nothing unless the host's inventory sets the flag
+# below true. KILL SWITCH / REVERT: set the flag false in the host's host_vars (or
+# revert the change that set it). The role only ever fast-forwards; it has no undo of
+# its own and never rewrites history.
+
+# Default false: a host converges its checkout only when its inventory says so.
+dev_tooling_checkout_enabled: false
+
+# The checkout, its remote and the branch it follows. The checkout must be ON this
+# branch, clean, and an ancestor of the remote's tip, or the role refuses.
+dev_tooling_checkout_path: /data/projects/livespec-dev-tooling
+dev_tooling_checkout_remote: origin
+dev_tooling_checkout_branch: master
