@@ -31,7 +31,7 @@
     --stop-free-gib {{ factory_workspace_sweep_stop_free_gib }}
     --min-age-hours {{ factory_workspace_sweep_min_age_hours }}
     --kubectl '{{ factory_workspace_sweep_kubectl }}'
-    --pod-scope '{{ factory_workspace_sweep_pod_scope }}'
+    --pod-scope='{{ factory_workspace_sweep_pod_scope }}'
   become: true
   register: factory_workspace_sweep_report
   changed_when: false
@@ -54,7 +54,7 @@
     --stop-free-gib {{ factory_workspace_sweep_stop_free_gib }}
     --min-age-hours {{ factory_workspace_sweep_min_age_hours }}
     --kubectl '{{ factory_workspace_sweep_kubectl }}'
-    --pod-scope '{{ factory_workspace_sweep_pod_scope }}'
+    --pod-scope='{{ factory_workspace_sweep_pod_scope }}'
     --apply
   become: true
   register: factory_workspace_sweep_applied

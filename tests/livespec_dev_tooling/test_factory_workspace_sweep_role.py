@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import sys
 import time
@@ -17,6 +18,8 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
+from jinja2 import Template
 
 __all__: list[str] = []
 
@@ -29,8 +32,72 @@ _SCRIPT = (
     / "files"
     / "factory_workspace_sweep.py"
 )
+_ROLE_TASKS = _REPO_ROOT / "ansible" / "roles" / "factory_workspace_sweep" / "tasks" / "main.yml"
+_ROLE_DEFAULTS = (
+    _REPO_ROOT / "ansible" / "roles" / "factory_workspace_sweep" / "defaults" / "main.yml"
+)
+_GMKTEC_HOST_VARS = _REPO_ROOT / "ansible" / "inventory" / "host_vars" / "gmktec-xubuntu.yml"
 _HEAD = "a" * 40
 _OLD = time.time() - 3 * 86400
+
+
+def _render_sweep_commands(*, pod_scope: str) -> list[tuple[str, list[str]]]:
+    """Render both role passes exactly as Ansible will tokenize their command strings."""
+    variables = {
+        "factory_workspace_sweep_lib_dir": "/srv/factory-workspace-sweep",
+        "factory_workspace_sweep_root": "/srv/factory-workspaces",
+        "factory_workspace_sweep_archive_dir": "/srv/factory-workspace-archive",
+        "factory_workspace_sweep_stop_free_gib": 30,
+        "factory_workspace_sweep_min_age_hours": 24,
+        "factory_workspace_sweep_kubectl": "k3s kubectl",
+        "factory_workspace_sweep_pod_scope": pod_scope,
+    }
+    tasks = yaml.safe_load(_ROLE_TASKS.read_text(encoding="utf-8"))
+    return [
+        (task["name"], shlex.split(Template(task["ansible.builtin.command"]).render(variables)))
+        for task in tasks
+        if task["name"].startswith(("Report-only pass", "Apply pass"))
+    ]
+
+
+def _parse_pod_scope(
+    *, sweep: ModuleType, argv: list[str], monkeypatch: pytest.MonkeyPatch
+) -> tuple[int, str | None]:
+    """Pass a rendered role argv through the sweep script's parser in process."""
+    monkeypatch.setattr(sys, "argv", [str(_SCRIPT), *argv[2:]])
+    try:
+        return 0, sweep.parse_args().pod_scope
+    except SystemExit as error:
+        return int(error.code), None
+
+
+@pytest.mark.parametrize(
+    ("host", "pod_scope"),
+    [
+        (
+            "poweredge-xubuntu",
+            yaml.safe_load(_ROLE_DEFAULTS.read_text(encoding="utf-8"))[
+                "factory_workspace_sweep_pod_scope"
+            ],
+        ),
+        (
+            "gmktec-xubuntu",
+            yaml.safe_load(_GMKTEC_HOST_VARS.read_text(encoding="utf-8"))[
+                "factory_workspace_sweep_pod_scope"
+            ],
+        ),
+    ],
+)
+def test_each_hosts_rendered_report_and_apply_commands_pass_their_pod_scope_to_the_parser(
+    *, host: str, pod_scope: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sweep = _load()
+    for task_name, argv in _render_sweep_commands(pod_scope=pod_scope):
+        status, parsed_scope = _parse_pod_scope(sweep=sweep, argv=argv, monkeypatch=monkeypatch)
+        assert (
+            status == 0
+        ), f"{host}'s {task_name} rendered {argv!r}, which the sweep parser rejected"
+        assert parsed_scope == pod_scope
 
 
 def _load() -> ModuleType:

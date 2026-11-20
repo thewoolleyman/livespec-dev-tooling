@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.229.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.229.0...v1.229.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **ansible:** the sandbox loss drill joins the wait's pod listing with a space so an indented kubectl listing parses and the drill prints its run, pod, UID and times (livespec-dev-tooling-5vlirk) ([4be76b9](https://github.com/livespec-ai/livespec-dev-tooling/commit/4be76b9718c5a0d7f853f775cb9c7e823c1ff2f3))
+* scope the incident commit hook to the attempt branch point, not the PR base (livespec-dev-tooling-ca6usr) ([3117303](https://github.com/livespec-ai/livespec-dev-tooling/commit/31173037943004302a72cbeb80034cb841f7bb9d))
+
 ## [1.229.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.228.0...v1.229.0) (2026-11-19)
 
 
