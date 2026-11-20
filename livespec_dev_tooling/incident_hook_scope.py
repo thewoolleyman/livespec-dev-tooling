@@ -191,11 +191,16 @@ def validate_scope(
     if not values or not all(isinstance(v, str) for v in values):
         _fail(detail="canonical cumulative scope is missing")
     original = cast("list[str]", values)
+    scope_base = mapping(value=attempt.get("carrier")).get("input_parent", attempt["base"])
     paths = set(
-        git_text(repo=repo, args=["diff", "--name-only", attempt["base"], tree, "--"]).splitlines()
+        git_text(repo=repo, args=["diff", "--name-only", scope_base, tree, "--"]).splitlines()
     )
-    if not paths or not paths.issubset(original):
-        _fail(detail="changed paths escape the canonical cumulative scope")
+    escaped = sorted(paths.difference(original))
+    if not paths or escaped:
+        _fail(
+            detail="changed paths escape the canonical cumulative scope: "
+            + (", ".join(escaped) or "no changed path")
+        )
     if any(path.startswith(".github/workflows/") for path in paths):
         _fail(detail="workflow publication requires separately scoped canonical authorization")
     if hook == "commit-msg" and (
