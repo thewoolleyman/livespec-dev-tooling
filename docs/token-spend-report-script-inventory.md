@@ -157,8 +157,9 @@ Measured 2026-11-20 over read-only ssh: every `ExecStart` directive, with its ba
 
 ## User units outside token-spend that run host-local executables
 
-None of these paths is named by a role under `ansible/` except where stated, so each is a hand-installed executable
-whose only copy is on the vps.
+None of these paths is a literal match in `ansible/` except where stated. Two are checkout paths, not hand-installed
+copies: `caam-delivery-push` (installed from its checkout by role `caam_delivery_push`) and the orchestrator checkout
+that `livespec-codex-cred-refresh.service` runs (a git checkout with an `origin` remote).
 
 | User unit | Executable | Role reference |
 | --- | --- | --- |
