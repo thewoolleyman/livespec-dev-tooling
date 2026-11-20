@@ -368,8 +368,12 @@
           ansible.builtin.set_fact:
             factory_sandbox_loss_drill_gone_time: >-
               {{ factory_sandbox_loss_drill_wait.stdout_lines[0] | regex_replace('^GONE_AT=', '') }}
+            # Join with a space, not '\n': ansible-core 2.21 passes the two characters
+            # backslash-n through a Jinja string literal inside a YAML folded scalar, so
+            # an indented, multi-line `kubectl --output json` listing failed from_json at
+            # char 1. JSON ignores the whitespace between tokens, so a space is safe.
             factory_sandbox_loss_drill_gone_items: >-
-              {{ (factory_sandbox_loss_drill_wait.stdout_lines[1:] | join('\n') | from_json)['items'] }}
+              {{ (factory_sandbox_loss_drill_wait.stdout_lines[1:] | join(' ') | from_json)['items'] }}
             factory_sandbox_loss_drill_delete_time: >-
               {{ factory_sandbox_loss_drill_delete.stdout | regex_search('DELETE_ISSUED_AT=[0-9TZ:-]+') | replace('DELETE_ISSUED_AT=', '') }}
 
