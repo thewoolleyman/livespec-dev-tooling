@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import os
+import re
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 
 from livespec_dev_tooling._gate_remote_assembly import refuses_declaration
-from livespec_dev_tooling.config import ConfigParseError, load_delegated_commit_tests
+from livespec_dev_tooling.config import (
+    ConfigParseError,
+    load_delegated_commit_tests,
+    load_gate_job_resources,
+)
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
 from livespec_dev_tooling.gate_remote_invocation import default_gate_command_runner
@@ -51,6 +58,15 @@ class ReplayVerdict:
 # Job size).
 _SINGLE_TEST_JOB_SIZE = ("--cpu", "2", "--memory", "3Gi", "--parallelism", "1")
 
+# The renderer remains the owner of its default Job parallelism.  The replay
+# client reads that default rather than carrying a second value that can drift.
+_RENDERER_DEFAULTS_LINE = re.compile(
+    r'^cpu="[^"]*"; memory="[^"]*"; parallelism="([^"]*)";', re.MULTILINE
+)
+_TEST_NPROCS_ENV = "test_nprocs"
+_CI_LANE_ENV = "LIVESPEC_CI_LANE"
+_PARALLELISM_ENV = "LIVESPEC_TEST_PARALLELISM"
+
 
 def run_replay(
     *, repo_root: Path, pytest_argv: list[str], single_test: bool = False
@@ -71,9 +87,14 @@ def run_replay(
     tree_hash = _staged_tree_hash(repo_root=repo_root)
     if not tree_hash:
         return ReplayVerdict(local=False, reason="the staged tree could not be read")
+    remote_pytest_argv: Sequence[str] = pytest_argv
+    if not single_test and "-n" in pytest_argv:
+        remote_pytest_argv = _delegated_suite_pytest_argv(
+            repo_root=repo_root, pytest_argv=pytest_argv
+        )
     return _run_remote(
         repo_root=repo_root,
-        pytest_argv=pytest_argv,
+        pytest_argv=remote_pytest_argv,
         tree_hash=tree_hash,
         resources=_SINGLE_TEST_JOB_SIZE if single_test else None,
     )
@@ -83,6 +104,38 @@ def run_replay(
 # contract's size. A suite-green leg calls run_replay itself and keeps the
 # repository's declared size.
 run_one_test = partial(run_replay, single_test=True)
+
+
+def _delegated_suite_pytest_argv(
+    *, repo_root: Path, pytest_argv: list[str]
+) -> list[str] | tuple[str, ...]:
+    """Replace a host-derived suite worker count with the delegated Job's count.
+
+    The suite builder runs before it knows whether this leg will delegate, so
+    its ``-n`` may reflect the committing host.  Explicit caller settings keep
+    their existing precedence; only the ordinary local CPU-derived value is
+    replaced for the Job.
+    """
+    worker_count = _delegated_suite_worker_count(repo_root=repo_root)
+    index = pytest_argv.index("-n")
+    return (*pytest_argv[: index + 1], worker_count, *pytest_argv[index + 2 :])
+
+
+def _delegated_suite_worker_count(*, repo_root: Path) -> str:
+    """Return the delegated suite's effective xdist count, when it can be read."""
+    explicit_counts = (
+        os.environ.get(_TEST_NPROCS_ENV, "").strip(),
+        "auto" if os.environ.get(_CI_LANE_ENV, "local") == "hosted" else "",
+        os.environ.get(_PARALLELISM_ENV, "").strip(),
+    )
+    if explicit := next((count for count in explicit_counts if count), None):
+        return explicit
+    resources = dict(load_gate_job_resources(repo_root=repo_root))
+    declared = resources.get("gate_parallelism")
+    if declared:
+        return declared
+    renderer = resolve_renderer(repo_root=repo_root).read_text(encoding="utf-8")
+    return _RENDERER_DEFAULTS_LINE.search(renderer).group(1)  # type: ignore[union-attr]
 
 
 def unrefused(*, verdict: ReplayVerdict) -> ReplayVerdict:
@@ -128,7 +181,7 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
 def _run_remote(
     *,
     repo_root: Path,
-    pytest_argv: list[str],
+    pytest_argv: Sequence[str],
     tree_hash: str,
     resources: tuple[str, ...] | None,
 ) -> ReplayVerdict:
