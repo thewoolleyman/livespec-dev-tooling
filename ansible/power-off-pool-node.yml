@@ -1,0 +1,232 @@
+---
+# power-off-pool-node.yml — the ONE sanctioned way to power off a k3s pool AGENT
+# node that has already been cordoned and emptied, while it stays a member of
+# the cluster.
+#
+# WHY IT EXISTS (maintainer request, 2026-11-20 ~07:2xZ). The maintainer asked
+# to power off the pool agent gamingpc-xubuntu TEMPORARILY so he can boot it
+# into Windows; it stays commissioned. The node was already cordoned and
+# evacuated through `k3s-window-drain.yml` (`cordon`, then `evacuate`). The
+# Driver's `fleet_host_guard.py` correctly refuses a hand `ssh gamingpc-xubuntu
+# sudo poweroff` as a hand change to a fleet host, and its own direction is that
+# a need the committed automation cannot meet is a gap in the playbooks to fix.
+# The only committed power path, `reboot-ci-server.yml`, reboots the pool's
+# SERVER and nothing else. This playbook is that gap closed, in the fenced shape
+# `reboot-ci-server.yml` and `restart-k3s-agent.yml` already use.
+#
+# THE FENCE IS A VARIABLE, NOT OMISSION FROM A LIST. Without
+# `pool_node_power_off_confirm=<this host's inventory name>` the play reads
+# nothing, changes nothing and exits 0, on an apply and under `--check` alike.
+# Consent is not sufficient: a confirmation that names a host whose inventory
+# `cluster_role` is not `agent` — the pool's `server`, poweredge-xubuntu, above
+# all — is REFUSED loudly with nothing read. The server keeps
+# `reboot-ci-server.yml`; powering off the control plane is a cluster outage.
+#
+# THE PRE-CHECKS, read on the server under its admin kubeconfig, refuse with
+# nothing changed when any fails:
+#   - the node is cordoned (`spec.unschedulable` is `true`), so nothing new can
+#     land on it between the read and the power-off;
+#   - no pod is bound to the node other than a DaemonSet's pod (it belongs to the
+#     node and returns with it) and a pod in a terminal phase (Succeeded or
+#     Failed). Everything else holds the power-off and is REPORTED BY NAME: a
+#     live EphemeralRunner / runner-workflow pod is a CI job, a Running gate Job
+#     pod is a gate, a factory-namespace pod is a factory run, and a Deployment
+#     replica left behind means `evacuate` was not run.
+#
+# THE ONE WAIVER IS AN OPERATOR-NAMED LIST (coordinator amendment, 2026-11-20).
+# `pool_node_power_off_waive_pods` is an optional list of `namespace/name` the
+# operator states may be taken down with the node — on the first use, the
+# leftover sandbox pod of a factory run that had already succeeded and whose
+# tree was preserved, which no committed route could remove. A blocking pod is
+# waived ONLY on an exact `namespace/name` match; every waived pod is reported
+# as `waived (operator-named)`, and a listed name that is not bound to the node
+# is reported rather than silently ignored. With no list, nothing is waived.
+# A waiver never covers the cordon check.
+# EVERY READ FAILS LOUDLY. A failed `kubectl` read is never taken for an empty
+# answer: an empty pod list would read as an empty node and power it off under a
+# running job. The read script carries no Jinja; its inputs arrive through
+# `environment`.
+#
+# THE POWER-OFF IS FIRED ASYNCHRONOUSLY AND NOTHING RUNS AFTER IT. `systemctl
+# poweroff` takes the ssh connection down with the host, so the task is
+# launched with `async`/`poll: 0` after a short delay, and the connection drop is
+# not a failure. It is the last task in this file: no handler, no `post_tasks`,
+# no follow-up play.
+#
+# THE NODE STAYS REGISTERED. This play never runs `kubectl delete node`; the
+# Node object stays in the cluster, cordoned and NotReady while the machine is
+# off. It returns by booting the host back into Linux — its k3s agent rejoins on
+# its own — and lifting the hold:
+#   just ansible-apply ansible/k3s-window-drain.yml -e k3s_window_action=uncordon
+#     -e k3s_window_confirm=uncordon -e k3s_window_node=<node>
+#     -e k3s_window_node_confirm=<node>
+# (one line).
+#
+# UNDER `--check` (`just ansible-drift`) the pre-checks run for real — they are
+# reads — and the play reports whether the power-off would go through; nothing
+# is powered off.
+#
+# Governing clause: `SPECIFICATION/non-functional-requirements.md`
+# §"Consent-gated pool-node disruption". Operator-facing description:
+# `README.md` §"The playbooks".
+
+- name: Power off one cordoned, empty pool agent node and leave it registered
+  hosts: ci_pool
+  # NO FACT GATHERING: an unconfirmed run touches the host with zero commands.
+  gather_facts: false
+  # ESCALATED AT THE PLAY, as `restart-k3s-agent.yml` is: the admin kubeconfig
+  # is root-owned on the server and a power-off is root's. A per-task grant is
+  # how `reboot-ci-server.yml`'s first confirmed run lost its reboot
+  # (livespec-dev-tooling-rh6io2). `debug` and `fail` reach no host.
+  become: true
+  vars:
+    pool_node_power_off_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    # The k3s server, resolved from the inventory and never named here.
+    pool_node_power_off_server_host: >-
+      {{ groups['ci_pool'] | map('extract', hostvars)
+         | selectattr('cluster_role', 'defined')
+         | selectattr('cluster_role', 'equalto', 'server')
+         | map(attribute='inventory_hostname') | first }}
+    # Seconds between the async launch returning and `systemctl poweroff`, so
+    # the launch reports back over a connection that is still up.
+    pool_node_power_off_delay_seconds: 5
+    # The operator-named waiver list (`namespace/name`); empty waives nothing.
+    pool_node_power_off_waive_pods: []
+    # `named` is consent; `refused` is policy. `| bool` on each is load-bearing:
+    # they resolve to the strings 'True' / 'False'.
+    pool_node_power_off_named: >-
+      {{ pool_node_power_off_confirm | default('') == inventory_hostname }}
+    pool_node_power_off_refused: >-
+      {{ cluster_role | default('') != 'agent' }}
+    pool_node_power_off_requested: >-
+      {{ (pool_node_power_off_named | bool) and not (pool_node_power_off_refused | bool) }}
+  tasks:
+    - name: Report a run that carries no power-off confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not powering off {{ inventory_hostname }}: this run does not carry
+          `pool_node_power_off_confirm={{ inventory_hostname }}` (it carries
+          `{{ pool_node_power_off_confirm | default('<unset>') }}`). Nothing was
+          read and nothing was changed. To power off this node once it is
+          cordoned and empty, run from the control node: just ansible-apply
+          ansible/power-off-pool-node.yml -e
+          pool_node_power_off_confirm={{ inventory_hostname }}
+      when: not (pool_node_power_off_named | bool)
+
+    - name: Refuse a power-off of a host that is not one of the pool's agents
+      ansible.builtin.fail:
+        msg: >-
+          Refusing to power off {{ inventory_hostname }}: its inventory
+          cluster_role is `{{ cluster_role | default('<unset>') }}` and this
+          playbook powers off only a pool AGENT. Powering off the pool's server
+          is a cluster outage — reboot it with ansible/reboot-ci-server.yml
+          instead. Nothing was read and nothing was changed.
+      when:
+        - pool_node_power_off_named | bool
+        - pool_node_power_off_refused | bool
+
+    - name: Power off the confirmed agent node once it reads cordoned and empty
+      when: pool_node_power_off_requested | bool
+      block:
+        - name: Read whether the node is cordoned and which pods hold it
+          ansible.builtin.shell:
+            executable: /bin/bash
+            # NO JINJA IN THIS SCRIPT: its inputs arrive through `environment`.
+            # Each read is its own assignment so a failed kubectl reaches
+            # `set -e` and fails the task, instead of reading as "cordoned" or
+            # as an empty pod list. Prints one `blocker:` line per blocker, one
+            # `waived (operator-named):` line per waived pod and one `waiver not
+            # used:` line per listed name not bound to the node; the power-off
+            # may go through only when no `blocker:` line is printed.
+            cmd: |
+              set -euo pipefail
+              node="${POOL_NODE_POWER_OFF_NODE}"
+              unschedulable="$(kubectl get node "${node}" \
+                --output 'jsonpath={.spec.unschedulable}')"
+              waive=" ${POOL_NODE_POWER_OFF_WAIVE_PODS} "
+              if test "${unschedulable}" != 'true'; then
+                printf 'blocker: node %s is not cordoned (spec.unschedulable=%s); run k3s-window-drain.yml cordon and evacuate first\n' \
+                  "${node}" "${unschedulable:-<unset>}"
+              fi
+              pod_template='{range .items[*]}{.metadata.namespace}/{.metadata.name}'
+              pod_template+='{" "}{.status.phase}{" "}{.metadata.ownerReferences[*].kind}{"\n"}{end}'
+              pods="$(kubectl get pods --all-namespaces \
+                --field-selector "spec.nodeName=${node}" \
+                --output "jsonpath=${pod_template}")"
+              bound=' '
+              while read -r pod phase owners; do
+                test -n "${pod}" || continue
+                bound+="${pod} "
+                case "${phase}" in Succeeded | Failed) continue ;; esac
+                case " ${owners} " in *' DaemonSet '*) continue ;; esac
+                case "${waive}" in
+                  *" ${pod} "*) verdict='waived (operator-named):' ;;
+                  *) verdict='blocker:' ;;
+                esac
+                printf '%s pod %s is bound to the node (phase %s, owners: %s)\n' \
+                  "${verdict}" "${pod}" "${phase:-<unset>}" "${owners:-none}"
+              done <<< "${pods}"
+              for listed in ${POOL_NODE_POWER_OFF_WAIVE_PODS}; do
+                case "${bound}" in
+                  *" ${listed} "*) ;;
+                  *) printf 'waiver not used: %s is not bound to node %s\n' "${listed}" "${node}" ;;
+                esac
+              done
+          delegate_to: "{{ pool_node_power_off_server_host }}"
+          environment:
+            KUBECONFIG: "{{ pool_node_power_off_admin_kubeconfig }}"
+            POOL_NODE_POWER_OFF_NODE: "{{ inventory_hostname }}"
+            # A bare string (one `-e name=ns/pod`) is taken as a one-item list,
+            # never joined character by character.
+            POOL_NODE_POWER_OFF_WAIVE_PODS: >-
+              {{ ([pool_node_power_off_waive_pods] if pool_node_power_off_waive_pods is string
+                  else pool_node_power_off_waive_pods) | join(' ') }}
+          register: pool_node_power_off_precheck
+          # A READ, so it runs under `--check` too: a drift report must say
+          # whether the power-off would go through.
+          check_mode: false
+          changed_when: false
+
+        - name: Refuse to power off a node that is not cordoned or still carries a pod
+          ansible.builtin.fail:
+            msg: >-
+              Refusing to power off {{ inventory_hostname }}:
+              {{ pool_node_power_off_precheck.stdout_lines | join('; ') }}.
+              Nothing was powered off and nothing was changed; re-run once the
+              node is cordoned and carries only DaemonSet pods (or pods the
+              operator names in `pool_node_power_off_waive_pods`).
+          when: >-
+            pool_node_power_off_precheck.stdout_lines
+            | select('match', '^blocker: ') | list | length > 0
+
+        - name: Report the pods the operator waived and any waiver that was not used
+          ansible.builtin.debug:
+            msg: "{{ pool_node_power_off_precheck.stdout_lines }}"
+          when: pool_node_power_off_precheck.stdout != ''
+
+        - name: Note that a check run withholds the power-off
+          ansible.builtin.debug:
+            msg: >-
+              `--check`: {{ inventory_hostname }} is cordoned and carries no pod
+              but DaemonSet pods, finished pods and operator-waived pods, so the power-off would go
+              through — but it is NOT being powered off. Re-run without
+              `--check` to power it off.
+          when: ansible_check_mode
+
+        - name: Power off the confirmed node and run nothing afterwards
+          # THE LAST TASK IN THIS FILE, AND IT MUST STAY THAT WAY. Fired with
+          # `async`/`poll: 0`, so ansible returns once the job is launched and
+          # the connection drop that follows is not a failure. The node stays
+          # registered: never `kubectl delete node`. It returns by booting the
+          # host and `k3s-window-drain.yml` `k3s_window_action=uncordon`.
+          ansible.builtin.command:
+            argv:
+              - /bin/sh
+              - -c
+              - sleep "$1"; exec systemctl poweroff
+              - power-off-pool-node
+              - "{{ pool_node_power_off_delay_seconds }}"
+          async: 120
+          poll: 0
+          changed_when: true
+          when: not ansible_check_mode

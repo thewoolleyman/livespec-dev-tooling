@@ -87,6 +87,7 @@ source of truth for how the tool is invoked.
 | `incident-observer-scratch.yml` | `vps` (`dev_hosts`), beside `dev-host.yml`'s production incident observer | nothing — a second, scratch-branch observer instance for a host proof, never production |
 | `incident-observer-scratch-teardown.yml` | `vps` (`dev_hosts`), the scratch instance alone | nothing — the committed removal of what `incident-observer-scratch.yml` installs |
 | `reboot-ci-server.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could reboot a pool node |
+| `power-off-pool-node.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could power off a cordoned, emptied pool agent node |
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
 | `restart-k3s-server.yml` | `ci_pool`, and only the SERVER host its confirmation names | nothing — no committed artifact could restart the pool server's k3s unit without rebooting the host |
@@ -197,6 +198,27 @@ and it runs nothing after the reboot, because the unattended recovery is the
 property a reboot drill exists to prove. See
 `../ci-runner/k3s/README.md` §"Rebooting the k3s server" and
 `livespec-dev-tooling-a3uvyu`.
+
+`power-off-pool-node.yml` is the ONE sanctioned way to power off a pool AGENT
+node — for example to boot the dual-boot `gamingpc-xubuntu` into Windows — while
+it stays a member of the cluster. It is an ordinary `just ansible-apply
+ansible/power-off-pool-node.yml -e pool_node_power_off_confirm=gamingpc-xubuntu`,
+and without a confirmation naming the host's own inventory entry it reads
+nothing and changes nothing, on an apply and under `--check` alike. It REFUSES a
+host whose `cluster_role` is not `agent` (the server keeps
+`reboot-ci-server.yml`). On the server, under the admin kubeconfig, it then
+refuses with nothing changed unless the node is cordoned and carries no pod but
+DaemonSet pods and finished (Succeeded/Failed) pods, naming each blocker; every
+read fails loudly. `pool_node_power_off_waive_pods` (a list of
+`namespace/name`) lets the operator name pods that may go down with the node:
+each is reported `waived (operator-named)`, only an exact match is waived, and a
+listed name not bound to the node is reported. Cordon and evacuate first with
+`k3s-window-drain.yml`. The power-off is `systemctl poweroff`, fired with
+`async`/`poll: 0` so the dropped connection is not a failure, and nothing runs
+after it. The Node is never deleted: it returns by booting the host and
+`k3s-window-drain.yml` `k3s_window_action=uncordon`. Under `--check` it reports
+whether the power-off would go through and powers nothing off. See
+`tests/livespec_dev_tooling/test_power_off_pool_node_playbook.py`.
 
 `node-loss-drill.yml` is the ONE sanctioned way to take a pool AGENT node's
 k3s agent down, hold the node NotReady for a configured window, and bring it
