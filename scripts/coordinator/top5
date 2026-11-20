@@ -36,6 +36,15 @@ legacy marker), prints DRAINED with its END CONDITION snippet and is not counted
 ends only when a priorities-record re-adds its plan, and about 30 of them printed STALE every
 tick buried the real stalls (coordinator 2026-11-15).
 
+The AGED section (rule AGING-ALARM, legacy-coordinator-agent 2026-11-20 ~07:3xZ on
+livespec-dev-tooling-6tgd2z, after about 1,020 item-hours of approved or graded work sat idle
+on plan expedited-incident-response-flag) prints, after HOLDS, every non-closed child of a
+TOP or KEPT epic that has sat over 6 h at pending-approval or acceptance, or whose recent
+comments say "awaiting grade". Children are the union of the dotted-id prefix and the parent
+field, read with one `bd list --status all` per tenant; age is now minus the newer of the
+item's updated_at and its newest comment. A tenant that cannot be read prints UNREAD. The
+green-unmerged-PR leg of the rule is not checked here.
+
 The OVERCOMMIT section (maintainer-approved 2026-11-13) prints, first in the header, every
 node fleet-utilization.sh --overcommit-only marks FLAGGED (idle under 5 % with the BestEffort
 CI slice's CPU pressure above 30: the classes sharing the node exceed its CPU) or UNREAD, for
@@ -218,6 +227,141 @@ def repo_for(epic):
     if epic.startswith("overseer-"):
         return os.path.join(WORKSPACE, "livespec-overseer"), WRAPPER
     return os.path.join(WORKSPACE, "livespec-dev-tooling"), WRAPPER
+
+
+# ---- AGED (rule AGING-ALARM, legacy-coordinator-agent 2026-11-20 on livespec-dev-tooling-6tgd2z) ----
+AGED_HOURS = 6
+AGED_TIMEOUT_S = 120
+AGED_STATUSES = ("pending-approval", "acceptance")
+AGED_GRADE_TEXT = "awaiting grade"
+AGED_RECENT_COMMENTS = 5  # "recent": the newest few comments of the item
+AGED_RESOLVE = "<<< press, merge or bounce THIS tick (rule AGING-ALARM)"
+AGED_ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_")
+
+
+def aged_bd(cwd, wrapper, args):
+    """(parsed JSON, None) of one bounded bd read in a tenant, or (None, reason)."""
+    try:
+        proc = subprocess.run(
+            wrapper + ["bd", *args], cwd=cwd, capture_output=True, text=True, timeout=AGED_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"bd {args[0]} timed out after {AGED_TIMEOUT_S} s"
+    except Exception as exc:
+        return None, str(exc)[:200]
+    try:
+        return json.loads(proc.stdout or "null"), None
+    except ValueError:
+        err = (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}").splitlines()[-1]
+        return None, err[:200]
+
+
+def aged_comment_stats(cwd, wrapper, ids):
+    """({id: (newest comment created_at, grade flag)}, None), from ONE `bd sql` read, or (None, reason).
+
+    The grade flag is set when one of the item's newest AGED_RECENT_COMMENTS comments
+    contains AGED_GRADE_TEXT, case-insensitively.
+    """
+    ids = sorted(i for i in ids if set(i) <= AGED_ID_CHARS)
+    if not ids:
+        return {}, None
+    quoted = ",".join(f"'{i}'" for i in ids)
+    sql = (
+        "SELECT issue_id, MAX(created_at) AS newest,"
+        f" MAX(CASE WHEN rn <= {AGED_RECENT_COMMENTS} AND LOWER(text) LIKE '%{AGED_GRADE_TEXT}%' THEN 1 ELSE 0 END)"
+        " AS grade FROM (SELECT issue_id, created_at, text,"
+        " ROW_NUMBER() OVER (PARTITION BY issue_id ORDER BY created_at DESC) AS rn"
+        f" FROM comments WHERE issue_id IN ({quoted})) AS recent GROUP BY issue_id"
+    )
+    data, why = aged_bd(cwd, wrapper, ["sql", "--json", sql])
+    if not isinstance(data, list):
+        return None, why or "bd sql returned no rows list"
+    return {row.get("issue_id"): (row.get("newest"), bool(row.get("grade"))) for row in data}, None
+
+
+def aged_tenant(cwd, wrapper, epics):
+    """(AGED lines, UNREAD lines) for the TOP/KEPT epics of one tenant: one bd list, one bd sql."""
+    name = os.path.basename(cwd)
+    records, why = aged_bd(cwd, wrapper, ["list", "--status", "all", "--limit", "0", "--json"])
+    if not isinstance(records, list):
+        return [], [f"UNREAD {name}: {why or 'bd list returned no list'}"]
+    cut = NOW - dt.timedelta(hours=AGED_HOURS)
+    children = []  # (plan slug, record): non-closed, by dotted-id prefix OR parent field
+    for slug, epic in epics:
+        for rec in records:
+            rid = rec.get("id", "")
+            if rec.get("status") == "closed" or rid == epic:
+                continue
+            if not (rid.startswith(epic + ".") or rec.get("parent") == epic):
+                continue
+            updated = parse_ts(rec.get("updated_at"))
+            if updated is not None and updated > cut:
+                continue  # touched inside the window: cannot be aged, whatever its comments say
+            if rec.get("status") in AGED_STATUSES or rec.get("comment_count"):
+                children.append((slug, rec))
+    stats, why = aged_comment_stats(cwd, wrapper, [r["id"] for _, r in children if r.get("comment_count")])
+    if stats is None:
+        return [], [f"UNREAD {name} comments: {why}"]
+    out = []
+    for slug, rec in children:
+        newest_raw, grade = stats.get(rec["id"], (None, False))
+        status = rec.get("status", "?")
+        if status not in AGED_STATUSES and not grade:
+            continue
+        updated, newest = parse_ts(rec.get("updated_at")), parse_ts(newest_raw)
+        if newest is not None and (updated is None or newest > updated):
+            last, source = newest, "newest comment"
+        else:
+            last, source = updated, "updated_at"
+        if last is None or last > cut:
+            continue
+        hours = (NOW - last).total_seconds() / 3600
+        shown = status + (" awaiting-grade" if grade else "")
+        title = " ".join((rec.get("title") or "").split())[:80]
+        out.append((hours, f"AGED {rec['id']} {shown} {hours:.0f}h since {source} ({slug}) {title}  {AGED_RESOLVE}"))
+    return out, []
+
+
+def aged_start():
+    """Start one ledger read per tenant in the background; aged_header() prints the result.
+
+    Started before the OVERCOMMIT and STRANDED reads, so its tenant reads (the hxi
+    credential wrapper alone takes about 23 s a call) overlap them and add no wall time.
+    """
+    import concurrent.futures
+
+    tenants = {}
+    for label, epic in TOP:
+        cwd, wrapper = repo_for(epic)
+        slug = label.split(" ", 2)[1] if " " in label else label
+        tenants.setdefault(cwd, (wrapper, []))[1].append((slug, epic))
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(tenants) or 1)
+    futures = [(cwd, pool.submit(aged_tenant, cwd, wrapper, epics)) for cwd, (wrapper, epics) in tenants.items()]
+    pool.shutdown(wait=False)
+    return futures
+
+
+def aged_header(futures):
+    """Children of every TOP/KEPT epic idle over AGED_HOURS at a valve (rule AGING-ALARM)."""
+    flagged, unread = [], []
+    for cwd, fut in futures:
+        try:
+            got, bad = fut.result()
+        except Exception as exc:
+            got, bad = [], [f"UNREAD {os.path.basename(cwd)}: {str(exc)[:200]}"]
+        flagged += got
+        unread += bad
+    if not flagged and not unread:
+        print("AGED: none")
+        print()
+        return
+    print(
+        f"AGED (items over {AGED_HOURS} h at pending-approval / acceptance / awaiting grade; press, merge or bounce"
+        " THIS tick):"
+    )
+    for line in [text for _, text in sorted(flagged, key=lambda pair: -pair[0])] + unread:
+        print(f"  {line}")
+    print()
 
 
 # ---- RULES-CHANGED (rule RULES-ACK, coordinator-duties §3) ----
@@ -508,10 +652,20 @@ print(
     " coordinator-duties §2). Not yet usable: livespec, orchestrator, overseer."
 )
 print()
+try:
+    AGED_FUTURES = aged_start()
+except Exception as exc:  # the AGED section never takes the rest of the header down
+    AGED_FUTURES = exc
 overcommit_header()
 stranded_header()
 holds_header()
-
+try:
+    if isinstance(AGED_FUTURES, Exception):
+        raise AGED_FUTURES
+    aged_header(AGED_FUTURES)
+except Exception as exc:  # the AGED section never takes the rest of the header down
+    print(f"AGED UNREAD: {str(exc)[:200]}")
+    print()
 
 for label, epic in TOP:
     cwd, wrapper = repo_for(epic)
