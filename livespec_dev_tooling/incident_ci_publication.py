@@ -96,15 +96,17 @@ _FALSE = {
     "normal_factory_proof": False,
 }
 _STATUSES = {"published": "202 Accepted", "retained": "202 Accepted", "conflict": "409 Conflict"}
+_UNREADABLE_BODY_DETAIL = "request body is unreadable or invalid"
+_NO_VALID_QUERY_DETAIL = "request has no valid query for this repository"
 _StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 
-def _journal(*, reason: str, detail: str | None) -> None:
+def _journal(*, reason: str, detail: tuple[str, str] | None) -> None:
     """One journal line for a refused publication: a reason code, never a secret.
 
-    The attachment detail is one of the attachment's own fixed reason strings.
+    Details name a fixed refusal site or an attachment's own fixed reason string.
     """
-    suffix = "" if detail is None else f" (attachment: {detail})"
+    suffix = "" if detail is None else f" ({detail[0]}: {detail[1]})"
     _ = sys.stderr.write(f"ci-publish refused: {reason}{suffix}\n")
 
 
@@ -142,7 +144,13 @@ def publication_reply(
     if status == "refused":
         _journal(
             reason=str(result.get("reason")),
-            detail=publication.detail[0] if publication.detail else None,
+            detail=(
+                publication.detail[0]
+                if publication.detail
+                else ("detail", _UNREADABLE_BODY_DETAIL)
+                if result.get("reason") == INVALID
+                else None
+            ),
         )
     return json_reply(
         start_response=start_response,
@@ -157,7 +165,7 @@ class CiPublication:
 
     installation: ControllerInstallation
     wake: Event
-    detail: list[str] = field(default_factory=list)
+    detail: list[tuple[str, str]] = field(default_factory=list)
 
     def execute(self, *, authorization: str, payload: dict[str, Any]) -> dict[str, Any]:
         policy = getattr(self.installation, "ci_identity_policy", None)
@@ -165,6 +173,7 @@ class CiPublication:
             return _reply(status="refused", reason=NOT_PROVISIONED)
         query = _query(payload=payload, repository=self.installation.repository)
         if query is None:
+            self.detail.append(("detail", _NO_VALID_QUERY_DETAIL))
             return _reply(status="refused", reason=INVALID)
         # The identity verifies before any controller state is read or written, so an
         # unverified publication is refused with no side effect at all.
@@ -182,7 +191,7 @@ class CiPublication:
         )
         try:
             if receipt["status"] != "attached":
-                self.detail.append(str(receipt.get("reason")))
+                self.detail.append(("attachment", str(receipt.get("reason"))))
                 return _reply(status="refused", reason=self._unattached(query=query))
             return self._retain(query=query, payload=payload, receipt=receipt)
         except (OSError, ValueError, IncidentJsonRefusalError, TypeError, KeyError):
