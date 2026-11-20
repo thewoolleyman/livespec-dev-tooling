@@ -180,6 +180,22 @@ def test_shim_content_templates_owner_and_repo() -> None:
     assert "${{ github.event.client_payload.source_repo }}" in generic
 
 
+def test_bump_pin_shim_refreshes_open_bumps_after_default_branch_push() -> None:
+    """The canonical shim wakes the bump automation when its base advances.
+
+    A default-branch push can introduce a pin-bearing line after an open bump
+    PR was computed.  The consumer's existing bump shim must therefore also
+    invoke the reusable automation for pushes to its default branch, rather
+    than waiting for a later release dispatch or freshness sweep.
+    """
+    body = shim_content(
+        path=BUMP_PIN_WORKFLOW, ctx=make_context(table={}, calls=[]), member=_MEMBER
+    )
+
+    assert "push:" in body
+    assert "branches: [master]" in body
+
+
 def test_reconcile_secrets_pushes_values_via_stdin_only(*, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_APP_ID", "12345")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "PEMPEM")
