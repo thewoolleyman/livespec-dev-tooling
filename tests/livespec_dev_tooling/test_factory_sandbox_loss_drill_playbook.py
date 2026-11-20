@@ -46,6 +46,7 @@ time.sleep(60)' "${2#--unix-socket=}" ;;
       test "$DRILL_MODE" != list_error || { printf 'Unable to connect to the server\n' >&2; exit 1; }
       case "$DRILL_MODE" in
         stuck) printf '{"items":[%s]}' "$pod" ;;
+        pretty) printf '{\n    "apiVersion": "v1",\n    "items": [],\n    "kind": "List"\n}\n' ;;
         replacement) printf '{"items":[{"metadata":{"name":"%s","uid":"uid-after","labels":{"petri.run":"%s","sandbox-driver-kubernetes/sandbox":"true"}}}]}' "$_POD" "$_RUN" ;;
         *) printf '{"items":[]}' ;;
       esac
@@ -247,6 +248,17 @@ def test_deletes_exactly_one_uid_and_reports_the_api_observed_times(*, scratch: 
     assert f"/api/v1/namespaces/factory/pods/{_POD}" in scratch.deletes[0], scratch.deletes
     assert '"preconditions":{"uid":"uid-before"}' in scratch.deletes[0], scratch.deletes
     assert not [line for line in scratch.commands if line.startswith("kubectl delete")]
+
+
+def test_a_pretty_printed_pod_listing_after_the_delete_still_reports_the_times(
+    *, scratch: _Scratch
+) -> None:
+    # Real `kubectl get pods --output json` prints indented, multi-line JSON, unlike the
+    # one-line listings the other modes serve; the wait's stdout is re-joined and parsed.
+    code, output = _run(scratch=scratch, mode="pretty")
+    assert code == 0, output
+    assert _REPORT.search(output) is not None, output
+    assert len(scratch.deletes) == 1, scratch.commands
 
 
 def test_replacement_ends_the_wait_without_deleting_the_new_uid(*, scratch: _Scratch) -> None:
