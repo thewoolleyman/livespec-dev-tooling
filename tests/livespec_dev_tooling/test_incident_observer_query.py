@@ -161,10 +161,12 @@ def _commit(*, root, message: str, timestamp: int) -> str:
 
 
 def test_admitted_accepts_a_recent_genesis_base_behind_the_event_base(tmp_path):
+    seed = tmp_path / "seed"
+    _ = subprocess.run(["git", "init", "--quiet", "--initial-branch=master", str(seed)], check=True)
+    genesis = _commit(root=seed, message="genesis", timestamp=1_700_000_000)
+    event_base = _commit(root=seed, message="advance", timestamp=1_700_000_060)
     root = tmp_path / "reference"
-    _ = subprocess.run(["git", "init", "--quiet", "--initial-branch=master", str(root)], check=True)
-    genesis = _commit(root=root, message="genesis", timestamp=1_700_000_000)
-    event_base = _commit(root=root, message="advance", timestamp=1_700_000_060)
+    _ = subprocess.run(["git", "clone", "--quiet", str(seed), str(root)], check=True)
     arm = ObserverArm(
         repository="owner/repo",
         incident_item_id="incident-1",
@@ -192,6 +194,7 @@ def test_admitted_accepts_a_recent_genesis_base_behind_the_event_base(tmp_path):
         webhook_secret=b"webhook" * 8,
         expedited_base_max_commits=2,
         expedited_base_max_minutes=2,
+        target_branch="master",
     )
     armed = arm_before_merge(
         directory=settings.state,

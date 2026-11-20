@@ -21,6 +21,7 @@ from livespec_dev_tooling._incident_observer_store import (
 )
 from livespec_dev_tooling._incident_observer_types import ObserverArm, ObserverArmQuery
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
+from livespec_dev_tooling.incident_default_branch_tip import default_branch_refusal
 from livespec_dev_tooling.incident_enablement import IdentitySource, production_identity_source
 from livespec_dev_tooling.incident_expedited_base import base_freshness_refusal
 from livespec_dev_tooling.incident_observer import route_reconciler_window
@@ -111,6 +112,13 @@ class ObserverQuery:
             )
             if base_refusal is not None:
                 return _refused(reason=base_refusal)
+            # A descendant of the genesis base is fresh but is not thereby the default
+            # branch: a retargeted pull request would report such a base.
+            tip_refusal = default_branch_refusal(
+                root=settings.repo, branch=settings.target_branch, event_base=event_base_sha
+            )
+            if tip_refusal is not None:
+                return _refused(reason=tip_refusal)
         # An armed enablement fence refuses here too, so an entrance that did not ask
         # is still fenced before CI omission and merge (livespec-dev-tooling-exdkra).
         _, refusal = controller_fence(
