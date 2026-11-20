@@ -118,6 +118,7 @@ case "$1" in
       "systemctl enable --now homelab-pod-span-endpoint.path") printf 'enable follower\\n' >> "$s/follower.log" ;;
       *) exit 2 ;;
     esac ;;
+  pull) [ -z "$PULL_FAILS" ] || { echo "pull access denied: not found" >&2; exit 1; } ;;
   restart) : ;;
   update) : ;;
 esac
@@ -197,7 +198,9 @@ def vm(tmp_path: Path) -> _Vm:
     return _Vm(state=state, bin_dir=bin_dir, root=tmp_path / "hwdata" / "worker")
 
 
-def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+def _run(
+    *, vm: _Vm, extra: tuple[str, ...] = (), pull_fails: bool = False
+) -> subprocess.CompletedProcess[str]:
     return run_under_hang_guard(
         ["/bin/bash", str(_SCRIPT), _WORKER, _HOST, _IMAGE, str(vm.root), *extra],
         capture_output=True,
@@ -210,6 +213,7 @@ def _run(*, vm: _Vm, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess
             "BRIDGE_NF_SYSCTL": str(vm.state / "proc-bridge" / "bridge-nf-call-iptables"),
             "TAILNET_LOGIN_TIMEOUT": "1",
             "POLL_SECONDS": "1",
+            "PULL_FAILS": "1" if pull_fails else "",
         },
         check=False,
     )
@@ -269,7 +273,7 @@ def test_an_image_not_pinned_by_digest_is_refused_before_any_container_change(
         (f"{_IMAGE} true", None, "already running"),
         (f"{_IMAGE} false", "start", "starting existing container"),
         (
-            "ghcr.io/livespec-ai/livespec-worker-node@sha256:" + "b" * 64 + " true",
+            "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "b" * 64 + " true",
             "rm",
             "replacing",
         ),
@@ -289,6 +293,56 @@ def test_a_rerun_reconciles_the_existing_container(
     else:
         assert len(_calls(vm=vm, verb=verb)) == 1
     assert (vm.state / "container").read_text(encoding="utf-8") == f"{_IMAGE} true\n"
+
+
+def _log(*, vm: _Vm) -> list[str]:
+    return (vm.state / "calls.log").read_text(encoding="utf-8").splitlines()
+
+
+def _on_another_image(*, vm: _Vm) -> None:
+    (vm.state / "container").write_text(
+        "ghcr.io/thewoolleyman/livespec-worker-node@sha256:" + "b" * 64 + " true\n",
+        encoding="utf-8",
+    )
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+
+
+def test_a_container_on_another_image_is_replaced_only_after_the_pinned_image_is_pulled(
+    vm: _Vm,
+) -> None:
+    _on_another_image(vm=vm)
+    result = _run(vm=vm)
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = _log(vm=vm)
+    pull = log.index(f"docker pull {_IMAGE}")
+    assert pull < log.index(f"docker rm -f {_WORKER}")
+    assert pull < next(i for i, c in enumerate(log) if c.startswith("docker run "))
+
+
+def test_a_failed_pull_leaves_the_running_container_untouched_and_names_the_image(
+    vm: _Vm,
+) -> None:
+    _on_another_image(vm=vm)
+    before = (vm.state / "container").read_text(encoding="utf-8")
+    result = _run(vm=vm, pull_fails=True)
+    assert result.returncode != 0
+    assert _IMAGE in result.stderr
+    assert "left untouched" in result.stderr
+    assert _calls(vm=vm, verb="rm") == []
+    assert _calls(vm=vm, verb="run") == []
+    assert (vm.state / "container").read_text(encoding="utf-8") == before
+
+
+def test_a_container_already_on_the_pinned_image_is_neither_pulled_for_nor_replaced(
+    vm: _Vm,
+) -> None:
+    (vm.state / "container").write_text(f"{_IMAGE} true\n", encoding="utf-8")
+    (vm.state / "mount").write_text(f"{vm.root}/enrollment\n", encoding="utf-8")
+    result = _run(vm=vm, pull_fails=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _calls(vm=vm, verb="pull") == []
+    assert _calls(vm=vm, verb="rm") == []
+    assert _calls(vm=vm, verb="run") == []
 
 
 def test_a_worker_needing_its_login_prints_the_url_and_joins_untagged_by_its_name(

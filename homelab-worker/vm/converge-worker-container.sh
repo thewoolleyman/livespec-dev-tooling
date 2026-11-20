@@ -15,7 +15,10 @@
 #      /lib/modules, stop signal SIGRTMIN+3. An absent container is created, a
 #      stopped one started, and one on another image replaced; its state stays
 #      on the data disk either way. A container of the same name whose
-#      enrollment is under another state root is refused, never adopted. No enrollment material is passed in an
+#      enrollment is under another state root is refused, never adopted. A
+#      container on another image is replaced only after the pinned image was
+#      pulled: a failed pull leaves it untouched and exits non-zero naming the
+#      image, and a container already on the pinned image is not pulled for. No enrollment material is passed in an
 #      argument or an environment variable.
 #   3. The worker joins the tailnet as <worker>, untagged. It never accepts
 #      subnet routes: the tailnet is its identity, not its pod-network
@@ -124,6 +127,7 @@ modules_dir="${MODULES_LOAD_DIR:-/etc/modules-load.d}"
 bridge_sysctl="${BRIDGE_NF_SYSCTL:-/proc/sys/net/bridge/bridge-nf-call-iptables}"
 login_timeout="${TAILNET_LOGIN_TIMEOUT:-900}"
 poll="${POLL_SECONDS:-5}"
+pull_timeout="${IMAGE_PULL_TIMEOUT_SECONDS:-900}"
 
 if [ "$(cat "$modules_dir/homelab-worker.conf" 2>/dev/null || true)" != "br_netfilter" ]; then
   mkdir -p "$modules_dir"
@@ -208,6 +212,15 @@ run_container() {
   docker run "$@" "$image" >/dev/null
 }
 
+# pull_image: fetch the pinned image BEFORE any running container is removed, so
+# a failed pull (an unresolvable reference, a registry outage) leaves the running
+# worker and its kubelet untouched. Bounded by IMAGE_PULL_TIMEOUT_SECONDS.
+pull_image() {
+  say "pulling $image before the running container is replaced"
+  timeout "$pull_timeout" docker pull "$image" >/dev/null ||
+    die "could not pull $image (within ${pull_timeout}s); the running worker container $worker was left untouched"
+}
+
 if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker" 2>/dev/null)"; then
   # A container of this name whose enrollment lives under another state root
   # (the fixture's, or production's when converging the fixture) is not this
@@ -221,6 +234,7 @@ if current="$(docker inspect -f '{{.Config.Image}} {{.State.Running}}' "$worker"
   # Each bind as "<destination> <read-write>".
   mounts="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.RW}}{{"\n"}}{{end}}' "$worker")"
   if [ "$current_image" != "$image" ]; then
+    pull_image
     say "replacing container $worker ($current_image) with $image; its state on the data disk is kept"
     docker rm -f "$worker" >/dev/null
     run_container
