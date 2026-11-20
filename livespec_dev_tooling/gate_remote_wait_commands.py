@@ -34,21 +34,36 @@ import time
 signal.signal(signal.SIGTERM, signal.SIG_DFL)
 parent = os.getppid()
 stamp = sys.argv[1]
+job_name = sys.argv[2]
+next_report = 0.0
 while os.getppid() == parent:
     if stamp:
         try:
             open(stamp, "w").close()
         except OSError:
             pass
+    if time.monotonic() >= next_report:
+        print(
+            f":: gate: {job_name} not finished yet, waiting on a cluster read",
+            file=sys.stderr,
+            flush=True,
+        )
+        next_report = time.monotonic() + 60
     # Renew the stamp every 30 seconds (sleep 30), far inside the 900-second stall window.
     time.sleep(30)
 '
-python3 -c "$heartbeat_program" "$progress_stamp" >/dev/null 2>&1 &
+# `:: gate: "$job_name" not finished yet` is the operator-facing form shared
+# with the waits between reads.
+python3 -c "$heartbeat_program" "$progress_stamp" "$job_name" &
 heartbeat_pid=$!
 """
 _RUN_WITH_PROGRESS_SCRIPT = (
     r"""
 set -eu
+job_name=
+for argument do
+    job_name=$argument
+done
 progress_stamp=${LIVESPEC_GATE_RUN_PROGRESS_STAMP:-}
 """
     + _HEARTBEAT_START
