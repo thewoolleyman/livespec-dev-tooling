@@ -233,7 +233,9 @@ def test_a_service_that_is_not_active_fails_the_converge(*, tmp_path: Path) -> N
 def test_the_play_selects_the_role_holder_by_its_inventory_group() -> None:
     """Moving the role is a group-membership change; no play names a machine."""
     play = yaml.safe_load((_ANSIBLE / "caam-role-holder.yml").read_text(encoding="utf-8"))
-    assert [entry["hosts"] for entry in play] == ["caam_role_holder"]
+    assert [entry["hosts"] for entry in play] == [
+        "{{ caam_role_holder_group | default('caam_role_holder') }}"
+    ]
     inventory = yaml.safe_load((_ANSIBLE / "inventory" / "legacy.yml").read_text(encoding="utf-8"))
     holders = inventory["all"]["children"]["caam_role_holder"]["hosts"]
     assert len(holders) == 1
@@ -241,6 +243,22 @@ def test_the_play_selects_the_role_holder_by_its_inventory_group() -> None:
         (_ANSIBLE / "inventory" / "group_vars" / "caam_role_holder.yml").read_text(encoding="utf-8")
     )
     assert re.fullmatch(r"[0-9a-f]{40}", pinned["caam_delivery_push_ref"])
+
+
+def test_the_staged_next_holder_is_a_separate_group_never_a_second_holder() -> None:
+    """The holder group stays one entry; the next holder is selected only by an explicit group."""
+    inventory = yaml.safe_load((_ANSIBLE / "inventory" / "legacy.yml").read_text(encoding="utf-8"))
+    children = inventory["all"]["children"]
+    assert set(children["caam_role_holder"]["hosts"]) == {"vps"}
+    staged = children["caam_role_holder_next"]["hosts"]
+    assert len(staged) == 1
+    entry = next(iter(staged.values()))
+    assert entry["caam_role_holder_machine_id"] == "0cba40e2d13946e8a1605ab5f0236046"
+    assert "REFUSED" in entry["ansible_connection"]
+    group_vars = _ANSIBLE / "inventory" / "group_vars"
+    link = group_vars / "caam_role_holder_next.yml"
+    assert link.is_symlink()
+    assert link.resolve() == (group_vars / "caam_role_holder.yml").resolve()
 
 
 def _probe(*, root: Path, child_env: dict[str, str], names: list[str]) -> str:

@@ -99,6 +99,34 @@ all:
     caam_role_holder:
       hosts:
         vps: {}
+    # THE STAGED NEXT ROLE HOLDER (plan central-credential-service, epic overseer-iyfjbo;
+    # contracts.md "Moving the role"). It is deliberately NOT a member of
+    # `caam_role_holder`: that group must resolve to exactly ONE holder and stays `vps`
+    # until the cutover PR, which moves this entry into it and deletes `vps` from it
+    # in one change. `ansible/caam-role-holder.yml` reaches this group only when run
+    # with `-e caam_role_holder_group=caam_role_holder_next` (the `dev_host_group`
+    # pattern), so the default play still selects exactly `vps`. Its group_vars is a
+    # symlink to caam_role_holder.yml so the two never diverge on the pinned ref.
+    #
+    # The entry is an alias keyed by hetzner-xubuntu's machine-id: its connection is
+    # `local`, valid only where the controller's /etc/machine-id equals
+    # caam_role_holder_machine_id. On any other controller (the vps included) the play
+    # REFUSES for this entry before its first task and names both machine-ids, exactly
+    # as the `vps` and `control-node` entries do. So neither staged selection can
+    # converge the wrong machine: the default group's only entry is valid on the vps
+    # alone, this group's only entry on hetzner-xubuntu alone.
+    caam_role_holder_next:
+      hosts:
+        caam-role-holder-hetzner:
+          caam_role_holder_machine_id: 0cba40e2d13946e8a1605ab5f0236046
+          caam_role_holder_identity_found: >-
+            {{ lookup('ansible.builtin.file', control_node_identity_file | default('/etc/machine-id')) | trim }}
+          ansible_connection: >-
+            {{ 'local' if caam_role_holder_identity_found == caam_role_holder_machine_id
+            else undef(hint='REFUSED: the caam_role_holder_next entry uses a local connection, which is valid'
+            ~ ' only on hetzner-xubuntu (machine-id ' ~ caam_role_holder_machine_id
+            ~ '), and this controller has machine-id ' ~ caam_role_holder_identity_found
+            ~ '. Run the play selecting caam_role_holder_next from hetzner-xubuntu.') }}
     # THE CONTROL-NODE ROLE (livespec-dev-tooling bd-ib-voazyv S3, with ctete5's
     # converge trigger, on the maintainer's 2026-11-18 VPS migration ruling: the VPS
     # keeps only overseerd and caam-anthropic-loop-runner). The control node is the

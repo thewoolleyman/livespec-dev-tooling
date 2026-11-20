@@ -17,8 +17,10 @@
 # left where it is. To go back, revert the offending livespec-overseer change upstream
 # and pin the revert.
 # Run from the control node: the vps entry uses a local connection valid only there.
+# STAGED MOVE: `-e caam_role_holder_group=caam_role_holder_next` selects the next holder
+# (hetzner-xubuntu), whose local connection is valid only on that machine; see legacy.yml.
 - name: Credential-rotation role holder push service
-  hosts: caam_role_holder
+  hosts: "{{ caam_role_holder_group | default('caam_role_holder') }}"
   gather_facts: false
   roles:
     - role: caam_delivery_push
