@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.230.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.229.1...v1.230.0) (2026-11-20)
+
+
+### Features
+
+* **ansible:** stage hetzner-xubuntu as the next credential-rotation role holder (overseer-iyfjbo) ([e305985](https://github.com/livespec-ai/livespec-dev-tooling/commit/e305985411a7e4dbe665efa9a0b506506cf60128))
+
+
+### Bug Fixes
+
+* an unusable gate resource declaration still refuses a delegated suite-green leg (livespec-dev-tooling-ovzmcn) ([08caf22](https://github.com/livespec-ai/livespec-dev-tooling/commit/08caf22f71679f7554472cab825653a2d260fc55))
+
 ## [1.229.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.229.0...v1.229.1) (2026-11-20)
 
 
