@@ -33,6 +33,11 @@ container_reclaim_canonical_host: vps.perch-rudd.ts.net
 # targets.
 container_reclaim_system_hostname: vmi3006760
 
+# --- dev_tooling_checkout ---
+# Keeps the control node's own livespec-dev-tooling checkout fast-forwarded to
+# origin/master (played by ansible/caam-role-holder.yml). Kill switch: set false.
+dev_tooling_checkout_enabled: true
+
 # --- dev_host_retention ---
 # The uv cache the retention prunes and the checkouts whose gate runs it sweeps
 # are this login's, not root's; a root run would prune root's empty cache and
