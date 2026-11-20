@@ -152,7 +152,18 @@ def test_hook_ci_entrance_and_replay_gate_admit_the_same_pr_bound_generation(
 def test_ci_entrance_and_replay_gate_refuse_the_branch_point_as_the_pr_base(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    plan, _queries = ci_entrance(base=hook_test.BRANCH_POINT)
+    # The entrance no longer compares the event base itself: the independent observer
+    # judges a moved base against the controller's freshness bound.
+    plan = select_ci_plan(
+        event=event(base=hook_test.BRANCH_POINT),
+        targets=(CiTarget(name="check-fast", classification="fast"),),
+        authority=authority(),
+        trust=CiTrust(
+            current=lambda _authority: True,
+            observer=lambda _authority, seen: seen.base_sha != hook_test.BRANCH_POINT,
+        ),
+        environ={},
+    )
     assert not isinstance(plan, CiPlan)
 
     asked = install_replay(monkeypatch, tmp_path, base=hook_test.BRANCH_POINT)
