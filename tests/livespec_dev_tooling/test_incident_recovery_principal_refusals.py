@@ -33,8 +33,7 @@ def _master_untouched(world):
     return world.forge.master() == world.merge and world.forge.count("PATCH", "master") == 0
 
 
-@pytest.mark.parametrize("operation", ["landed", "authorize", "head", "publish", "conflict"])
-def test_forge_operations_refuse_by_name_without_the_recovery_app(world, operation):
+def test_forge_operations_refuse_by_name_without_the_recovery_app(world):
     payloads = {
         "landed": lambda: {"intent": asdict(world.intent)},
         "authorize": lambda: {"intent": asdict(world.intent), "scope": asdict(_scope(world))},
@@ -42,10 +41,14 @@ def test_forge_operations_refuse_by_name_without_the_recovery_app(world, operati
         "publish": lambda: {"request": asdict(publish_request(world, plan_for(world)))},
         "conflict": lambda: {"request": asdict(conflict_request(world, head=world.merge))},
     }
-    reply = world.call(operation, payloads[operation](), connect=no_app)
-    assert reply["status"] == "refused"
-    assert reply["code"] == "recovery-app-credential-absent"
-    assert _master_untouched(world)
+    # All operations are read-only when the app credential is absent.  Keep them in
+    # one prepared world: rebuilding five git-backed worlds per assertion amplified
+    # runner contention without adding coverage of the refusal contract.
+    for operation, payload in payloads.items():
+        reply = world.call(operation, payload(), connect=no_app)
+        assert reply["status"] == "refused"
+        assert reply["code"] == "recovery-app-credential-absent"
+        assert _master_untouched(world)
 
 
 def test_landed_refuses_an_action_the_observer_never_retained(world):
