@@ -1,4 +1,5 @@
-# Homelab worker node image: ghcr.io/livespec-ai/livespec-worker-node.
+# Homelab worker node image: ghcr.io/thewoolleyman/livespec-worker-node (the old owner's
+# path, which serves the pinned digest; see homelab-worker/image/ref).
 #
 # Governed by SPECIFICATION/non-functional-requirements.md, "Homelab worker
 # nodes": "Worker image" — built from this repository's sources as a native

@@ -2,4 +2,8 @@
 # 61920e47 (livespec-dev-tooling#4509, livespec-dev-tooling-rz23sl: the image
 # carries otel-collector-pods.service, the separate pod-span collector unit the
 # split collector pin in telemetry/collector.ref needs), tag sha-61920e4.
-ghcr.io/livespec-ai/livespec-worker-node@sha256:8a9de2631ef815d5f67a21df35b72ae27578f3e7d5ffa2b7cbfb837bd7860141
+# The path is the OLD owner's on purpose (livespec-dev-tooling-jarug7): this digest
+# was built there and was never published under ghcr.io/livespec-ai, which
+# returns 404 for it, so the M4 could not pull it. The path stays until an image
+# built at the new owner is repinned by digest in a separate, proven change.
+ghcr.io/thewoolleyman/livespec-worker-node@sha256:8a9de2631ef815d5f67a21df35b72ae27578f3e7d5ffa2b7cbfb837bd7860141
