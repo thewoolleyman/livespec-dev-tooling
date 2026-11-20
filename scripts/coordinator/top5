@@ -41,6 +41,12 @@ node fleet-utilization.sh --overcommit-only marks FLAGGED (idle under 5 % with t
 CI slice's CPU pressure above 30: the classes sharing the node exceed its CPU) or UNREAD, for
 routing to the per-node CPU budget owner the same tick.
 
+The FROZEN-SEATS section (rule PERMISSION-PROMPT, after the 2026-11-20 fleet freeze of about 14 h at a Remote
+Control "Enter to select" dialog) prints before everything else: every herdr seat on this and every saved machine
+whose last 12 screen lines carry the dialog footer ("Enter to select" with "Esc"), read with `herdr pane read`
+(it types nothing). It skips the seat running top5 and resume-updates, bounds each call to 20 s and the section to
+60 s, and prints UNREAD for what it could not read. An IDLE-FLEET line follows: the oldest last turn end over 60 min.
+
 The RULES-CHANGED section (rule RULES-ACK, coordinator-duties §3; after the 2026-11-16
 RULES-REREAD records, when a seat acted on a stale copy of its own rules) prints FIRST,
 before INCIDENT MODE. Since the seat's last `--ack` it shows the diff of
@@ -53,11 +59,13 @@ pending. Its only writes are the per-seat state files under the user's state dir
 the `git fetch` of origin/master.
 """
 import argparse
+import concurrent.futures
 import datetime as dt
 import json
 import os
 import subprocess
 import sys
+import time
 
 TOP = [
     ("1 expedited-incident-response-flag", "livespec-dev-tooling-bqnzcm"),
@@ -500,9 +508,144 @@ def rules_ack(seat):
     return 0
 
 
+# ---- FROZEN-SEATS (rule PERMISSION-PROMPT; after the 2026-11-20 fleet freeze at a Remote Control dialog) ----
+FROZEN_CALL_TIMEOUT_S = float(os.environ.get("TOP5_FROZEN_CALL_TIMEOUT_S") or 20)  # env: test seam
+FROZEN_SECTION_TIMEOUT_S = float(os.environ.get("TOP5_FROZEN_SECTION_TIMEOUT_S") or 60)  # env: test seam
+FROZEN_SCREEN_LINES = 12
+FROZEN_FOOTER = "Enter to select"
+FROZEN_SKIP_TABS = ("resume-updates",)
+FROZEN_HEAD = (
+    'FROZEN-SEATS (a seat at an "Enter to select" dialog is frozen; press it THIS tick, rule PERMISSION-PROMPT):'
+)
+
+
+def herdr_call(machine, *args):
+    """Parsed `result` of one herdr JSON command (`machine` None is the local machine); raises on failure."""
+    cmd = ["herdr"] + (["--machine", machine] if machine else []) + list(args)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=FROZEN_CALL_TIMEOUT_S)
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}")[:160])
+    return json.loads(proc.stdout)["result"]
+
+
+def frozen_machines():
+    """Saved machine labels (second column of `herdr machine list`), enabled ones only."""
+    proc = subprocess.run(["herdr", "machine", "list"], capture_output=True, text=True, timeout=FROZEN_CALL_TIMEOUT_S)
+    rows = [ln.split("\t") for ln in proc.stdout.splitlines() if ln.strip()]
+    return [r[1] for r in rows if len(r) > 1 and (len(r) < 5 or r[4].strip() == "enabled")]
+
+
+def frozen_survey(machine):
+    """(machine, [(agent record, workspace label, tab label)]) for one machine."""
+    agents = herdr_call(machine, "agent", "list")["agents"]
+    tabs = {t["tab_id"]: t.get("label") for t in herdr_call(machine, "tab", "list")["tabs"]}
+    spaces = {w["workspace_id"]: w.get("label") for w in herdr_call(machine, "workspace", "list")["workspaces"]}
+    return machine, [
+        (a, spaces.get(a.get("workspace_id")) or a.get("workspace_id"), tabs.get(a.get("tab_id")) or a.get("terminal_title_stripped"))
+        for a in agents
+    ]
+
+
+def frozen_skipped(machine, agent, tab, seat):
+    """The seat running top5 (by label, and by HERDR_PANE_ID locally) and resume-updates are not read."""
+    if tab == seat or agent.get("terminal_title_stripped") == seat or tab in FROZEN_SKIP_TABS:
+        return True
+    return machine is None and agent.get("pane_id") == os.environ.get("HERDR_PANE_ID")
+
+
+def frozen_dialog_line(machine, pane_id):
+    """The dialog footer line within the last 12 screen lines of one pane, or None. Reading types nothing."""
+    out = subprocess.run(
+        ["herdr"] + (["--machine", machine] if machine else [])
+        + ["pane", "read", pane_id, "--source", "recent-unwrapped", "--lines", str(FROZEN_SCREEN_LINES)],
+        capture_output=True, text=True, timeout=FROZEN_CALL_TIMEOUT_S,
+    ).stdout
+    screen = out.rstrip().splitlines()[-FROZEN_SCREEN_LINES:]
+    return next((ln.strip() for ln in reversed(screen) if FROZEN_FOOTER in ln and "Esc" in ln), None)
+
+
+def agent_idle_minutes(agent):
+    """Minutes since a herdr-reported ISO timestamp (any `*_at` key) on an agent record, or None."""
+    stamps = [parse_ts(v) for k, v in agent.items() if k.endswith("_at") and isinstance(v, str)]
+    stamps = [s for s in stamps if s is not None and s.tzinfo is not None]
+    return (NOW - max(stamps)).total_seconds() / 60 if stamps else None
+
+
+def frozen_seats_header(seat):
+    """FROZEN seat lines (and UNREAD ones) plus the IDLE-FLEET line; never raises."""
+    deadline = time.monotonic() + FROZEN_SECTION_TIMEOUT_S
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+    frozen, unread, idle = [], [], []
+
+    def left():
+        return max(0.0, deadline - time.monotonic())
+
+    try:
+        try:
+            machines = [None] + frozen_machines()
+        except Exception as exc:
+            machines = [None]
+            unread.append(f"UNREAD saved machines: {type(exc).__name__} {str(exc)[:120]}")
+        surveys = {pool.submit(frozen_survey, m): m for m in machines}
+        done, late = concurrent.futures.wait(surveys, timeout=left())
+        reads = {}
+        for fut in done:
+            machine = surveys[fut]
+            try:
+                _, rows = fut.result()
+            except Exception as exc:
+                unread.append(f"UNREAD {machine or 'local'}: {type(exc).__name__} {str(exc)[:120]}")
+                continue
+            for agent, space, tab in rows:
+                if frozen_skipped(machine, agent, tab, seat):
+                    continue
+                idle.append(agent)
+                reads[pool.submit(frozen_dialog_line, machine, agent["pane_id"])] = (machine, space, tab, agent["pane_id"])
+        unread += [f"UNREAD {surveys[f] or 'local'}: timed out after {FROZEN_SECTION_TIMEOUT_S:.0f} s" for f in late]
+        done, late = concurrent.futures.wait(reads, timeout=left())
+        for fut in done:
+            machine, space, tab, pane = reads[fut]
+            try:
+                line = fut.result()
+            except Exception as exc:
+                unread.append(f"UNREAD {machine or 'local'}/{space}/{tab} ({pane}): {type(exc).__name__} {str(exc)[:120]}")
+                continue
+            if line:
+                frozen.append(f"FROZEN {machine or 'local'}/{space}/{tab} ({pane}) last screen: {line}")
+        for fut in late:
+            machine, space, tab, pane = reads[fut]
+            unread.append(f"UNREAD {machine or 'local'}/{space}/{tab} ({pane}): read timed out")
+    except Exception as exc:  # never crash the rest of top5
+        unread.append(f"UNREAD frozen-seats: {type(exc).__name__} {str(exc)[:120]}")
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    if frozen:
+        print(FROZEN_HEAD)
+        for line in sorted(frozen):
+            print(f"  {line}")
+    else:
+        print("FROZEN-SEATS: none")
+    for line in sorted(unread):
+        print(f"  {line}")
+    resting = [(agent_idle_minutes(a), a) for a in idle if a.get("agent_status") != "working"]
+    ages = [(m, a) for m, a in resting if m is not None]
+    if not ages:
+        print("IDLE-FLEET: UNREAD no timestamp in herdr agent list")
+    else:
+        mins, agent = max(ages, key=lambda p: p[0])
+        who = agent.get("terminal_title_stripped") or agent.get("pane_id")
+        if mins > STALE_MINUTES:
+            print(f"IDLE-FLEET: oldest last turn ended {mins:.0f} min ago ({who})  <<< a fleet idle over 60 min is the other half of a freeze")
+        else:
+            print(f"IDLE-FLEET: ok (oldest {mins:.0f} min)")
+    print()
+
+
 ARGS = parse_args()
 if ARGS.ack:
     sys.exit(rules_ack(ARGS.seat))
+if not ARGS.rules_only:
+    frozen_seats_header(ARGS.seat)
 RULES_EXIT = rules_changed(ARGS.seat)
 if ARGS.rules_only:
     sys.exit(RULES_EXIT)
