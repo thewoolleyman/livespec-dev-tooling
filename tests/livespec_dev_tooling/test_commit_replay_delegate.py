@@ -410,6 +410,48 @@ def test_an_unrefused_replay_verdict_passes_through_unchanged() -> None:
     assert module.unrefused(verdict=verdict) is verdict
 
 
+@pytest.mark.parametrize(
+    ("declaration", "renderer_parallelism", "expected"),
+    [
+        ("gate_parallelism = 6\n", "unused", "6"),
+        ("", "4", "4"),
+    ],
+)
+def test_a_delegated_suite_worker_count_uses_the_job_declaration_or_renderer_default(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    declaration: str,
+    renderer_parallelism: str,
+    expected: str,
+) -> None:
+    """The delegated Job, rather than the committing host, owns suite xdist size."""
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n" + declaration,
+        encoding="utf-8",
+    )
+    renderer = tmp_path / "render-gate-job.sh"
+    _ = renderer.write_text(
+        f'cpu="2"; memory="8Gi"; parallelism="{renderer_parallelism}";\n',
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: renderer)
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(
+        module,
+        "_run_remote",
+        lambda **kwargs: captured.update(kwargs)
+        or module.ReplayVerdict(local=False, reason="delegated"),
+    )
+
+    _ = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "-n", "16"])
+
+    assert captured["pytest_argv"] == ("pytest", "-n", expected)
+
+
 def test_a_one_file_replay_job_is_sized_by_the_replay_contract_and_suite_green_by_the_declaration(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
