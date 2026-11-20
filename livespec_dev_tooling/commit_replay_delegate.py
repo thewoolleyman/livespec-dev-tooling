@@ -116,7 +116,12 @@ def _delegated_suite_pytest_argv(
     their existing precedence; only the ordinary local CPU-derived value is
     replaced for the Job.
     """
-    worker_count = _delegated_suite_worker_count(repo_root=repo_root)
+    try:
+        worker_count = _delegated_suite_worker_count(repo_root=repo_root)
+    except ConfigParseError:
+        # An unusable resource declaration is refused by the remote assembly,
+        # naming the key; keep the argv so that refusal is the one reached.
+        return pytest_argv
     index = pytest_argv.index("-n")
     return (*pytest_argv[: index + 1], worker_count, *pytest_argv[index + 2 :])
 
