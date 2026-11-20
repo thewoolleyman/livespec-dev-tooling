@@ -1329,14 +1329,16 @@ omit = [
     # A Fabro sandbox installs a `/usr/bin/gh` WRAPPER that mints a fresh
     # GitHub App token by running `python3
     # /workspace/.livespec-gh-refresh/bin/mint_app_token.py` before every
-    # `gh` call; under `uv run pytest` that `python3` is the venv's, so the
-    # helper is measured and its unexercised error branches drop the run to
-    # 99.99%. Nothing here is first-party livespec-dev-tooling code, and the
-    # path does not exist outside a sandbox, so the entry is inert in CI and
-    # on a developer machine. The DURABLE fix belongs upstream in the
-    # dispatcher's sandbox (unset COVERAGE_PROCESS_START in that wrapper);
-    # revert this line once it lands there.
+    # `gh` call. The Codex sandbox materializes the same injected helper under
+    # /root/.claude/plugins/livespec-gh-refresh/. Under `uv run pytest` its
+    # `python3` is the venv's, so the helper is measured and its unexercised
+    # error branches drop the run to 99.99%. Nothing here is first-party
+    # livespec-dev-tooling code, and the paths do not exist outside a sandbox,
+    # so these entries are inert in CI and on a developer machine. The DURABLE
+    # fix belongs upstream in the dispatcher's sandbox (unset
+    # COVERAGE_PROCESS_START in that wrapper); revert these lines once it lands.
     "/workspace/.livespec-gh-refresh/*",
+    "/root/.claude/plugins/livespec-gh-refresh/*",
 ]
 
 [tool.coverage.report]
