@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.230.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.230.0...v1.230.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* an expedited event base off the protected default branch is refused (livespec-dev-tooling-3u5rzz) ([8974a41](https://github.com/livespec-ai/livespec-dev-tooling/commit/8974a41752a6e0a191e200c582de3c803e076d07))
+
 ## [1.230.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.229.1...v1.230.0) (2026-11-20)
 
 
