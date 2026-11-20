@@ -93,7 +93,9 @@ def run_end(run: Mapping[str, object]) -> str | None:
     # ``bool`` is an ``int`` subclass, but ``true`` is not an elapsed Fabro
     # duration.  Reading it as one would turn uncertain run evidence into a
     # removable row, so preserve the workspace instead.
-    if not isinstance(started, str) or not isinstance(wall, int | float) or isinstance(wall, bool):
+    if not isinstance(started, str):
+        return None
+    if isinstance(wall, bool) or not isinstance(wall, int | float):
         return None
     try:
         point = datetime.fromisoformat(started.replace("Z", "+00:00"))
