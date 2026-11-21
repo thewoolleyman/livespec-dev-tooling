@@ -68,6 +68,23 @@ class InstallationScope:
     accepted: tuple[dict[str, str], ...]
 
 
+class _RecordingTransport:
+    """The injected transport, remembering the last response it answered.
+
+    The budgeted client turns a 403 that carries rate-limit headers into a failure
+    that holds no status and no body. The merge principal must name the forge's own
+    status and message, so the response is kept here and `_call` reads it back.
+    """
+
+    def __init__(self, *, transport: Callable[..., GithubBudgetResponse]) -> None:
+        self._transport = transport
+        self.last: GithubBudgetResponse | None = None
+
+    def __call__(self, *, request: object) -> GithubBudgetResponse:
+        self.last = self._transport(request=request)
+        return self.last
+
+
 def _segment(*, value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -83,7 +100,9 @@ def mint_installation_token(  # noqa: PLR0913 — the App identity, its scope an
     signer: Callable[..., bytes],
 ) -> tuple[str, GithubBudgetedClient] | AppRefusal:
     """Mint one installation token on `repository` holding exactly a grant `scope` accepts."""
-    client = GithubBudgetedClient(transport=transport, max_attempts=1)
+    client = GithubBudgetedClient(
+        transport=_RecordingTransport(transport=transport), max_attempts=1
+    )
     now = int(clock())
     claims = {
         "iat": now - _JWT_BACKDATE_SECONDS,
@@ -161,7 +180,12 @@ def _call(
 ) -> tuple[int, object]:
     outcome = client.request(method=method, resource=resource, headers=headers, value=value)
     if isinstance(outcome, IOFailure):
-        return 0, None
+        # The client failed the call; the forge's own answer, when one was recorded, is
+        # the status and message the caller must see. With none, 0 names the cause.
+        last = getattr(client.transport, "last", None)
+        if last is not None:
+            return last.status_code, last.value
+        return 0, {"message": str(outcome.failure())}
     response = outcome.unwrap()
     # A revalidated read answers 304 with the retained body: to a caller that is the
     # resource as it stands, so it reads as an ordinary 200 (measured live, 2026-11-07).
