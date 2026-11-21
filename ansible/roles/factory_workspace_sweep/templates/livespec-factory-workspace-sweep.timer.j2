@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule the live factory workspace sweep
+
+[Timer]
+OnCalendar={{ factory_workspace_sweep_on_calendar }}
+RandomizedDelaySec={{ factory_workspace_sweep_randomized_delay_sec }}
+Persistent=true
+Unit={{ factory_workspace_sweep_service }}
+
+[Install]
+WantedBy=timers.target
