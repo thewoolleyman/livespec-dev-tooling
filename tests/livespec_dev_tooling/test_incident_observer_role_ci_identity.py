@@ -18,7 +18,7 @@ from tests.livespec_dev_tooling import test_incident_observer_role_production_un
 
 # EXPEDITED_INCIDENT_RESPONSE flag: livespec-dev-tooling-bqnzcm.4
 _SHA = "1" * 40
-_PRODUCTION_PUBLISHER_SHA = "f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21"
+_PRODUCTION_PUBLISHER_SHA = "92debdb271bb6ad9292ea5f64d9d3d7527352278"
 _DEV_HOST_PLAY = Path(__file__).resolve().parents[2] / "ansible" / "dev-host.yml"
 _RENDER_POLICY = "Render this installation's CI identity policy from its inventory entry"
 _INSTALL_POLICY = "Install the CI identity policy, private to the controller account"

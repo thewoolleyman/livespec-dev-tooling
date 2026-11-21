@@ -137,7 +137,7 @@
         # (livespec-dev-tooling-bqnzcm.4). Non-empty provisions the CI identity
         # policy and publishes POST /ci/publish on the funnel port.
         incident_observer_ci_publisher_shas:
-          - f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21
+          - 92debdb271bb6ad9292ea5f64d9d3d7527352278
       tags: [incident_observer]
     - role: tailscale_serve
       tags: [tailscale_serve]

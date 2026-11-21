@@ -1499,10 +1499,9 @@ jobs:
   incident-ci-publish:
     name: incident-ci-publish
     needs: [merge-group-guard, incident-ci]
-    if: ${{ !cancelled() && needs.incident-ci.outputs.aggregate != '' }}
     permissions:
       id-token: write
-    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-incident-ci-publish.yml@f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21
+    uses: livespec-ai/livespec-dev-tooling/.github/workflows/reusable-incident-ci-publish.yml@92debdb271bb6ad9292ea5f64d9d3d7527352278
     with:
       release: ${{ needs.incident-ci.outputs.release }}
       aggregate: ${{ needs.incident-ci.outputs.aggregate }}
