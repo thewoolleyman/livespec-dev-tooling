@@ -1053,11 +1053,13 @@ jobs:
           # The range gate asks the observer whether the incident chain records an
           # expedited commit (work-item livespec-dev-tooling-zbzls2). ONLY the
           # check-red-green-replay leg, on a same-repository pull_request event,
-          # gets these; every other case sees empty values and fails closed. The
-          # query token reads and cannot arm, bind or revert.
-          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.LIVESPEC_INCIDENT_OBSERVER_URL || '' }}
-          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || '' }}
-          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ (matrix.target == 'check-red-green-replay' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) && secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN || '' }}
+          # gets these (a merge_group run too: its queue commit is attributed to the
+          # recorded pull request by patch-id, and only when merge-group-guard reports every
+          # entry same-repository and allowlisted); every other case sees empty values and
+          # fails closed. The query token reads and cannot arm, bind or revert.
+          LIVESPEC_INCIDENT_OBSERVER_URL: ${{ (matrix.target == 'check-red-green-replay' && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'merge_group' && needs.merge-group-guard.outputs.trusted == 'true'))) && vars.LIVESPEC_INCIDENT_OBSERVER_URL || '' }}
+          LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR: ${{ (matrix.target == 'check-red-green-replay' && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'merge_group' && needs.merge-group-guard.outputs.trusted == 'true'))) && vars.LIVESPEC_INCIDENT_OBSERVER_CONNECT_ADDR || '' }}
+          LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ (matrix.target == 'check-red-green-replay' && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'merge_group' && needs.merge-group-guard.outputs.trusted == 'true'))) && secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN || '' }}
         run: just ${{ matrix.target }}
 
       # ci-green reads this result per job and attempt (livespec-dev-tooling-bk2d73).
