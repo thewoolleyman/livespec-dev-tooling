@@ -1,4 +1,2 @@
-work_item=livespec-dev-tooling-m5cpnl
-reason=Stale-base refresh of open bump PRs (spec v224): adds a plan-refresh job and a refresh-open-bump matrix job to reusable-bump-pin-from-dispatch.yml and reusable-pin-freshness.yml, and an if guard on the existing bump-pin job. Add-only; removes no step, check or gate.
-change=additive
-ci_runtime=no-significant-increase
+work_item=livespec-dev-tooling-kefuik
+reason=Release-currency fix: open-bump-pr, plan-refresh, refresh-open-bump, bump-pin and dispatch report a no-op as success through an early-exit step instead of a by-condition skip; a real target runs exactly as before. Maintainer tier, approval:workflow-edit.

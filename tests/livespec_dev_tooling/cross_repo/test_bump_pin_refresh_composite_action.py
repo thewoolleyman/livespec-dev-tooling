@@ -415,10 +415,8 @@ def test_rewrite_action_opens_no_pr_in_refresh_mode() -> None:
 def test_dispatch_workflow_refreshes_open_bump_prs_when_there_is_no_release_payload() -> None:
     """A push to the default branch carries no source_repo; it refreshes instead of opening."""
     text = _read(path=_DISPATCH_WORKFLOW)
-    assert "    if: ${{ inputs.source_repo != '' }}" in text
-    assert (
-        "  plan-refresh:\n    name: plan-refresh\n    if: ${{ inputs.source_repo == '' }}" in text
-    )
+    assert "        if: ${{ inputs.source_repo != '' }}" in text
+    assert "        if: ${{ inputs.source_repo == '' }}" in text
     assert "  refresh-open-bump:" in text
     assert "uses: ./.livespec-dev-tooling/.github/actions/bump-pin-refresh" in text
 
@@ -429,3 +427,20 @@ def test_freshness_workflow_refreshes_stale_open_bump_prs_each_sweep() -> None:
     assert "  plan-refresh:" in text
     assert "  refresh-open-bump:" in text
     assert "uses: ./.livespec-dev-tooling/.github/actions/bump-pin-refresh" in text
+
+
+def test_conditional_jobs_never_skip_by_job_level_condition() -> None:
+    """A no-op reports success through an early-exit step, never a by-condition skip.
+
+    A matrix job whose job-level `if` is false is skipped before the matrix expands, so GitHub
+    reports a skipped check named with the unrendered template, which the release-currency
+    grader reads as not green (livespec-dev-tooling-kefuik).
+    """
+    for path, jobs in (
+        (_DISPATCH_WORKFLOW, ("bump-pin", "plan-refresh", "refresh-open-bump")),
+        (_FRESHNESS_WORKFLOW, ("open-bump-pr", "refresh-open-bump")),
+    ):
+        text = _read(path=path)
+        for job in jobs:
+            block = text.split(f"\n  {job}:\n", 1)[1].split("\n    steps:\n", 1)[0]
+            assert "\n    if:" not in block, f"{job} still skips by job-level condition"

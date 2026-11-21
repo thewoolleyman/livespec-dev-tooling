@@ -98,9 +98,13 @@ jobs:
     runs-on: ubuntu-latest
     # A `push` to the default branch invokes this workflow with no release
     # payload (empty source_repo); that run takes the refresh path below.
-    if: ${{ inputs.source_repo != '' }}
     steps:
+      - name: Early exit when the run carries no release payload
+        if: ${{ inputs.source_repo == '' }}
+        run: echo "::notice::no release payload (push trigger); the plan-refresh path owns this run, reporting success instead of skipping the job"
+
       - name: Mint App token
+        if: ${{ inputs.source_repo != '' }}
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -108,6 +112,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout consumer repo with App token
+        if: ${{ inputs.source_repo != '' }}
         uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -124,7 +129,7 @@ jobs:
         # fresh-dispatch command so the operator can issue the correct retry.
         # Flake reruns where the branch is unmoved proceed normally.
         # Same fail-loud-with-remedy pattern as the 8ml stray-gitlink guard.
-        if: ${{ github.run_attempt > 1 }}
+        if: ${{ inputs.source_repo != '' && (github.run_attempt > 1) }}
         env:
           EVENT_SHA: ${{ github.sha }}
           SOURCE_REPO: ${{ inputs.source_repo }}
@@ -152,6 +157,7 @@ jobs:
           exit 1
 
       - name: Checkout livespec-dev-tooling support modules
+        if: ${{ inputs.source_repo != '' }}
         uses: actions/checkout@v5
         with:
           repository: livespec-ai/livespec-dev-tooling
@@ -159,9 +165,11 @@ jobs:
           fetch-depth: 1
 
       - name: Install pinned binaries via mise
+        if: ${{ inputs.source_repo != '' }}
         uses: jdx/mise-action@v4
 
       - name: Install Python deps via uv
+        if: ${{ inputs.source_repo != '' }}
         run: uv sync --all-groups
 
       # Incident pin screen (livespec-dev-tooling-wbvbj6): refuse to bump a
@@ -175,7 +183,7 @@ jobs:
       # silently passed. With the URL unset the step is skipped and the bump
       # runs as before.
       - name: Screen the pinned release against retained incident recovery
-        if: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL != '' }}
+        if: ${{ inputs.source_repo != '' && (vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL != '') }}
         env:
           LIVESPEC_INCIDENT_OBSERVER_URL: ${{ vars.LIVESPEC_INCIDENT_RELEASE_SCREEN_URL }}
           LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN: ${{ secrets.LIVESPEC_INCIDENT_OBSERVER_QUERY_TOKEN }}
@@ -201,6 +209,7 @@ jobs:
             --tag "$TAG"
 
       - name: Run pin-autodiscovery for ${{ inputs.source_repo }}
+        if: ${{ inputs.source_repo != '' }}
         id: autodiscover
         env:
           SOURCE_REPO: ${{ inputs.source_repo }}
@@ -221,14 +230,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: No-op when zero matching pins
-        if: steps.autodiscover.outputs.count == '0'
+        if: ${{ inputs.source_repo != '' && (steps.autodiscover.outputs.count == '0') }}
         env:
           SOURCE_REPO: ${{ inputs.source_repo }}
         run: |
           echo "::notice::no pins for $SOURCE_REPO found in this consumer; nothing to bump (spec §reusable-bump-pin-from-dispatch.yml no-op clause)"
 
       - name: Compose PR body
-        if: steps.autodiscover.outputs.count != '0'
+        if: ${{ inputs.source_repo != '' && (steps.autodiscover.outputs.count != '0') }}
         id: pr_body
         env:
           SOURCE_REPO: ${{ inputs.source_repo }}
@@ -248,7 +257,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Rewrite pins + commit + open auto-merge PR
-        if: steps.autodiscover.outputs.count != '0'
+        if: ${{ inputs.source_repo != '' && (steps.autodiscover.outputs.count != '0') }}
         # Per the `Checkout livespec-dev-tooling support modules` step
         # above: this repo is checked out at `.livespec-dev-tooling/`,
         # which is where the composite Action source lives. The `./`
@@ -273,12 +282,16 @@ jobs:
   # through the shared `bump-pin-refresh` composite Action.
   plan-refresh:
     name: plan-refresh
-    if: ${{ inputs.source_repo == '' }}
     runs-on: ubuntu-latest
     outputs:
-      targets: ${{ steps.plan.outputs.targets }}
+      targets: ${{ steps.plan.outputs.targets || '[]' }}
     steps:
+      - name: Early exit when the run carries a release payload
+        if: ${{ inputs.source_repo != '' }}
+        run: echo "::notice::release payload present; the bump-pin path owns this run, reporting success instead of skipping the job"
+
       - name: Mint App token
+        if: ${{ inputs.source_repo == '' }}
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -286,6 +299,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: List open bump PRs on bump-automation-owned branches
+        if: ${{ inputs.source_repo == '' }}
         id: plan
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -304,15 +318,19 @@ jobs:
   refresh-open-bump:
     name: refresh-open-bump ${{ matrix.target.source_repo }} ${{ matrix.target.tag }}
     needs: plan-refresh
-    if: ${{ needs.plan-refresh.outputs.targets != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        target: ${{ fromJSON(needs.plan-refresh.outputs.targets) }}
+        target: ${{ fromJSON(needs.plan-refresh.outputs.targets != '[]' && needs.plan-refresh.outputs.targets || '[{"noop":"true","source_repo":"none","tag":"none"}]') }}
     steps:
+      - name: Early exit when no open bump PR needs a refresh
+        if: ${{ matrix.target.noop == 'true' }}
+        run: echo "::notice::no open bump PR to refresh; reporting success instead of skipping the job"
+
       - name: Mint App token
+        if: ${{ matrix.target.noop != 'true' }}
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -320,12 +338,14 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout consumer repo with App token
+        if: ${{ matrix.target.noop != 'true' }}
         uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       - name: Checkout livespec-dev-tooling support modules
+        if: ${{ matrix.target.noop != 'true' }}
         uses: actions/checkout@v5
         with:
           repository: livespec-ai/livespec-dev-tooling
@@ -333,12 +353,15 @@ jobs:
           fetch-depth: 1
 
       - name: Install pinned binaries via mise
+        if: ${{ matrix.target.noop != 'true' }}
         uses: jdx/mise-action@v4
 
       - name: Install Python deps via uv
+        if: ${{ matrix.target.noop != 'true' }}
         run: uv sync --all-groups
 
       - name: Refresh the bump PR branch when behind the default branch
+        if: ${{ matrix.target.noop != 'true' }}
         uses: ./.livespec-dev-tooling/.github/actions/bump-pin-refresh
         with:
           source_repo: ${{ matrix.target.source_repo }}
