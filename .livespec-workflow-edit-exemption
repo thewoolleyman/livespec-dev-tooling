@@ -1,3 +1,3 @@
-work_item=livespec-dev-tooling-afousj
-reason=Release-currency fix, step 2 of 2: ci.yml incident-ci-publish re-pins to the merged step-1 reusable SHA and drops its job-level if, so the job runs on more commits, never fewer; the reusable now concludes a no-op as success. The same SHA moves in ansible/dev-host.yml and both tests. One line removed, one re-pinned, nothing else.
+work_item=livespec-dev-tooling-2chu3g
+reason=The check-red-green-replay leg receives the incident observer env on a merge_group run too, only when merge-group-guard reports every queue entry same-repository and allowlisted, so an incident commit can pass the merge queue. Logically additive per the coordinator ruling recorded on the item: the leg runs on more events and no gate is removed or reduced. Three env lines re-expressed, comment reworded.
 ci_runtime=no-significant-increase
