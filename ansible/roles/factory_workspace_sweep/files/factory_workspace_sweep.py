@@ -44,6 +44,7 @@ LIVE_MANIFEST_VERSION = 2
 # the failure mode that removed work still in acceptance.
 _UNFINISHED_ITEM_CLASSES = frozenset({"item-blocked", "item-needs-human", "item-acceptance"})
 _UNREADABLE_CLASSES = frozenset({"tenant-unreadable", "run-end-unreadable", "run-no-end-time"})
+_CLOSED_ITEM_CLASS = "item-closed"
 
 
 def emit(message: str) -> None:
@@ -102,6 +103,15 @@ def keep_reason(  # noqa: PLR0911
     # this field, but a controller manifest marks its version explicitly.
     if row.get("manifest_version") == LIVE_MANIFEST_VERSION and not row.get("run_ended_at"):
         return "run-no-end-time"
+    # A terminal sandbox run does not prove that its work item finished.  Live
+    # manifests are removable only after the controller has read that the
+    # ledger item is explicitly closed; every other state is preservation
+    # evidence.
+    if (
+        row.get("manifest_version") == LIVE_MANIFEST_VERSION
+        and classification != _CLOSED_ITEM_CLASS
+    ):
+        return "item-not-closed"
     if any(str(directory) == r or r.startswith(str(directory) + "/") for r in refs):
         return "referenced-by-a-pod"
     if time.time() - directory.stat().st_mtime < min_age_s:

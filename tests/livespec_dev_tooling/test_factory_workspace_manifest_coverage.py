@@ -195,3 +195,25 @@ def test_sweep_live_manifest_keep_and_archive_receipt_fail_closed(
         )
         == "archive-record-unavailable"
     )
+
+
+def test_live_manifest_requires_an_explicitly_closed_item_before_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sweep = _load(_SWEEP, "factory_workspace_sweep_closed_item_coverage")
+    root = tmp_path / "root"
+    directory = root / "petri-run-l0"
+    root.mkdir()
+    directory.mkdir()
+    monkeypatch.setattr(sweep, "head_of", lambda _directory: "h")
+    row = {
+        "manifest_version": 2,
+        "dir": directory.name,
+        "cls": "item-ready",
+        "head": "h",
+        "run_ended_at": "2026-11-19T00:00:00+00:00",
+    }
+
+    assert sweep.keep_reason(row=row, root=root, refs=set(), min_age_s=0) == "item-not-closed"
+    row["cls"] = "item-closed"
+    assert sweep.keep_reason(row=row, root=root, refs=set(), min_age_s=0) is None
