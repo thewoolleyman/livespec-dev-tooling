@@ -197,7 +197,12 @@
               manifest+='"restartPolicy":"Never","automountServiceAccountToken":false,"tolerations":['
               manifest+='{"key":"node.kubernetes.io/not-ready","operator":"Exists","effect":"NoExecute"},'
               manifest+='{"key":"node.kubernetes.io/unreachable","operator":"Exists","effect":"NoExecute"}],'
-              manifest+='"containers":[{"name":"drill","image":"'"${image}"'","command":["sleep","3600"]}]}}'
+              # Requests and limits are REQUIRED: the factory namespace's ResourceQuota
+              # (factory-runs) constrains requests/limits cpu and memory and the cluster
+              # has no LimitRange, so a pod declaring none is refused at admission. They
+              # are tiny, so the fixture never competes with a real run for the quota.
+              manifest+='"containers":[{"name":"drill","image":"'"${image}"'","command":["sleep","3600"],'
+              manifest+='"resources":{"requests":{"cpu":"10m","memory":"16Mi"},"limits":{"cpu":"10m","memory":"16Mi"}}}]}}'
               printf '%s' "${manifest}" | kubectl create --filename - >/dev/null
               printf 'created pod %s on not-Ready cordoned node %s (petri.run=%s)\n' "${object}" "${node}" "${run_id}"
               ;;
