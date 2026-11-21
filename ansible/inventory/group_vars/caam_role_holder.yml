@@ -3,11 +3,10 @@
 
 # The livespec-overseer commit the role holder's checkout must contain. Changing it is
 # a deploy: a reviewed change here, then `just ansible-apply ansible/caam-role-holder.yml`
-# from the control node. 758e2114 is the newest of the three overseer-fdwat6 v119 fixes
-# (e2481078 the keep-alive sweep continues the not-connected panel then reconnects,
-# c1fd26fe a continued pane honours the ten-minute limit and the typing budget, 758e2114
-# Enter goes only on the selected Continue row); it contains #3099 (6fa9b40f, SPECIFICATION
-# v116) and all three (SPECIFICATION v119; DoD 4 carrier overseer-fdwat6).
+# from the control node. f21f455f is livespec-overseer origin/master and carries the
+# caam-strip-refresh-tokens vault-tarball fix (9cab114f, livespec-overseer#3186) that the
+# role holder's checkout must have before the credential role move; it descends from
+# 822128e3 and still contains 758e2114 and #3099 (6fa9b40f, SPECIFICATION v116).
 # ROLLBACK: pin 6fa9b40f60161750801b6f7f35bd36b9245a1f32 again via the same reviewed
 # route and re-apply.
-caam_delivery_push_ref: 758e21147a974b724a137af446752f1ec6f85122
+caam_delivery_push_ref: f21f455fa2d2d22f24f65ba824947c5eddb268df
