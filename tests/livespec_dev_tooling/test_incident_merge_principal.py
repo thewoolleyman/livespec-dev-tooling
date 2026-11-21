@@ -57,7 +57,7 @@ def _attempt() -> dict[str, object]:
 
 def _chain(*, incident_id: str) -> Result[dict[str, Any], AuthorityRefusal]:
     assert incident_id == "inc-1"
-    return Success({"genesis_writer": "file-incident", "attempt": _attempt(), "is_current": True})
+    return Success({"genesis_writer": "publish-genesis", "attempt": _attempt(), "is_current": True})
 
 
 def _pull(**over: object) -> dict[str, object]:
