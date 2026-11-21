@@ -1,0 +1,312 @@
+---
+# stuck-object-drill.yml — the committed, REVERSIBLE way to produce the two
+# live objects that the host-captured proof of k3s-window-drain.yml's
+# `delete-factory-pod` and `delete-gate-job` actions needs
+# (livespec-dev-tooling-cgb2l2; legacy-coordinator-agent ruling R301).
+#
+# WHY IT EXISTS. Those two actions delete one NAMED object each: (1) a pod of a
+# factory namespace that sits bound to a NotReady, cordoned node while its petri
+# run is terminal, and (2) a gate Job whose only pod the
+# batch.kubernetes.io/job-tracking finalizer holds Terminating on a NotReady
+# node. Neither object exists any longer, and a hand `kubectl create` is a hand
+# change the Driver's `fleet_host_guard.py` refuses. A pod with `spec.nodeName`
+# set bypasses the scheduler and the cordon, so it binds to the dead node and
+# never starts: that is how this play builds both objects without disturbing
+# any live node.
+#
+# THREE ACTIONS, ONE CONFIRMATION EACH. `stuck_object_drill_action` selects one,
+# and `stuck_object_drill_confirm` must repeat it exactly; otherwise the play
+# reads nothing and changes nothing. It acts once, on the pool's server (the
+# host that holds the admin kubeconfig), under that kubeconfig.
+#   create-factory-pod     — create ONE pod in namespace `factory` or
+#                            `factory-mi-homelab`, named `petri-<run-id>-l<n>`,
+#                            bound to the confirmed node, from the busybox image
+#                            container-termination-drill.yml already uses. It
+#                            carries the petri labels (`petri.run`,
+#                            `sandbox-driver-kubernetes/sandbox`) and tolerates
+#                            the not-ready / unreachable taints without a time
+#                            limit, so the taint manager does not evict it.
+#   create-stuck-gate-job  — create ONE Job in namespace `gates` (backoffLimit
+#                            0) whose pod template names the confirmed node,
+#                            wait until its pod exists and is bound there, then
+#                            delete the Job with background propagation, so the
+#                            pod sits Terminating under the job-tracking
+#                            finalizer. It reports the pod's deletionTimestamp
+#                            and finalizers once it reads Terminating.
+#   remove-drill-fixtures  — delete the ONE object the operator names
+#                            (`<namespace>/<name>`, confirmed by
+#                            `stuck_object_drill_object_confirm`), and only if it
+#                            carries the label `livespec.dev/drill-fixture:
+#                            stuck-object`. An unlabelled object is refused. For
+#                            a gate Job it also force-deletes the Job's pods that
+#                            carry that label, each by the name the API returned
+#                            (a read scoped to that one Job name, never a sweep).
+#
+# THE NODE FENCE. The create actions also need `stuck_object_drill_node` and
+# `stuck_object_drill_node_confirm` naming the same node, and REFUSE, creating
+# nothing, a node that cannot be read, whose Ready condition is anything but
+# False or Unknown, or that is not cordoned. A drill object can never land on a
+# live node. `remove-drill-fixtures` takes no node: it must still work after the
+# node has recovered, and the fixture label is its fence.
+#
+# EVERY CREATE REFUSES AN EXISTING OBJECT of the same name, so the drill can
+# never overwrite a real pod or Job. The name rules refuse `*`, a selector, a
+# list or another namespace (create-factory-pod: the factory namespaces;
+# create-stuck-gate-job: `gates`; remove: those three). Under `--check` every
+# action reads, reports what it WOULD do, and changes nothing.
+#
+# EVIDENCE FOR THE PROOF. This play supplies the OBJECT only. The preserve ref
+# and the terminal-run evidence that `delete-factory-pod` needs are supplied by
+# the operator at apply time from a REAL finished run
+# (`k3s_window_run_terminal_evidence` read from the petri server, and
+# `k3s_window_preserve_evidence` from `git ls-remote origin <ref>`); name the
+# drill pod `petri-<that run id lowercase>-l0` and pass that run id as
+# `stuck_object_drill_run_id`. A drill pod is never evidence about a run.
+#
+# AFTER THE PROOF the drill objects MUST be confirmed gone: run
+# `remove-drill-fixtures` for each object, then
+# `kubectl get pod,job -A -l livespec.dev/drill-fixture=stuck-object` must list
+# nothing (the Driver's read surface; no hand change is needed for that read).
+#
+# APPLY, each on one line:
+#   just ansible-apply ansible/stuck-object-drill.yml
+#     -e stuck_object_drill_action=create-factory-pod -e stuck_object_drill_confirm=create-factory-pod
+#     -e stuck_object_drill_node=gamingpc-xubuntu -e stuck_object_drill_node_confirm=gamingpc-xubuntu
+#     -e stuck_object_drill_object=factory/petri-<run-id>-l0 -e stuck_object_drill_run_id=<RUN-ID>
+#   just ansible-apply ansible/stuck-object-drill.yml
+#     -e stuck_object_drill_action=create-stuck-gate-job -e stuck_object_drill_confirm=create-stuck-gate-job
+#     -e stuck_object_drill_node=gamingpc-xubuntu -e stuck_object_drill_node_confirm=gamingpc-xubuntu
+#     -e stuck_object_drill_object=gates/<job-name>
+#   just ansible-apply ansible/stuck-object-drill.yml
+#     -e stuck_object_drill_action=remove-drill-fixtures -e stuck_object_drill_confirm=remove-drill-fixtures
+#     -e stuck_object_drill_object=<namespace>/<name> -e stuck_object_drill_object_confirm=<namespace>/<name>
+
+- name: Create or remove a stuck factory pod or gate Job on a NotReady, cordoned node
+  hosts: ci_pool
+  gather_facts: false
+  become: true
+  vars:
+    stuck_object_drill_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    stuck_object_drill_actions: [create-factory-pod, create-stuck-gate-job, remove-drill-fixtures]
+    stuck_object_drill_node_actions: [create-factory-pod, create-stuck-gate-job]
+    stuck_object_drill_factory_namespaces: [factory, factory-mi-homelab]
+    stuck_object_drill_image: busybox:1.37.0
+    stuck_object_drill_fixture_key: livespec.dev/drill-fixture
+    stuck_object_drill_fixture_value: stuck-object
+    stuck_object_drill_wait_retries: 30
+    stuck_object_drill_wait_interval: 2
+    stuck_object_drill_requested: >-
+      {{ stuck_object_drill_action | default('') in stuck_object_drill_actions
+         and stuck_object_drill_confirm | default('') == stuck_object_drill_action | default('')
+         and cluster_role | default('') == 'server' }}
+    stuck_object_drill_node_confirmed: >-
+      {{ stuck_object_drill_action | default('') not in stuck_object_drill_node_actions
+         or (stuck_object_drill_node | default('') | length > 0
+             and stuck_object_drill_node_confirm | default('') == stuck_object_drill_node | default('')) }}
+    stuck_object_drill_object_confirmed: >-
+      {{ stuck_object_drill_object | default('') | length > 0
+         and (stuck_object_drill_action | default('') != 'remove-drill-fixtures'
+              or stuck_object_drill_object_confirm | default('') == stuck_object_drill_object | default('')) }}
+  tasks:
+    - name: Report a run that carries no matching confirmation
+      ansible.builtin.debug:
+        msg: >-
+          Not acting on {{ inventory_hostname }}: this run needs
+          `stuck_object_drill_action` set to one of
+          {{ stuck_object_drill_actions | join(', ') }}, `stuck_object_drill_confirm`
+          naming the same action, a named object and, for the create actions, a
+          node confirmed by `stuck_object_drill_node_confirm` (it carries action
+          `{{ stuck_object_drill_action | default('<unset>') }}`, confirm
+          `{{ stuck_object_drill_confirm | default('<unset>') }}`). It acts only
+          on the pool's server. Nothing was read and nothing was changed.
+      when:
+        - cluster_role | default('') == 'server'
+        - not ((stuck_object_drill_requested | bool)
+                and (stuck_object_drill_node_confirmed | bool)
+                and (stuck_object_drill_object_confirmed | bool))
+
+    - name: Create or remove the one named drill object
+      when:
+        - stuck_object_drill_requested | bool
+        - stuck_object_drill_node_confirmed | bool
+        - stuck_object_drill_object_confirmed | bool
+      ansible.builtin.shell:
+        executable: /bin/bash
+        # NO JINJA IN THIS SCRIPT: every input arrives through `environment`.
+        cmd: |
+          set -euo pipefail
+          action="${DRILL_ACTION}"
+          object="${DRILL_OBJECT}"
+          node="${DRILL_NODE}"
+          run_id="${DRILL_RUN_ID}"
+          image="${DRILL_IMAGE}"
+          fixture_key="${DRILL_FIXTURE_KEY}"
+          fixture_value="${DRILL_FIXTURE_VALUE}"
+          dry_run="${DRILL_DRY_RUN}"
+          refuse() {
+            printf 'refusing %s of %s: %s Nothing was changed.\n' "${action}" "${object}" "${1}" >&2
+            exit 1
+          }
+          name_re='^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+          namespace="${object%%/*}"
+          name="${object#*/}"
+          [[ "${object}" == */* && "${name}" != */* && "${namespace}" =~ ${name_re} && "${name}" =~ ${name_re} ]] \
+            || refuse 'the object is not exactly one <namespace>/<name>.'
+          in_factory() {
+            case " ${DRILL_FACTORY_NAMESPACES} " in *" ${namespace} "*) return 0 ;; *) return 1 ;; esac
+          }
+          require_dead_cordoned_node() {
+            [[ "${node}" =~ ${name_re} ]] || refuse 'the node is not a valid node name.'
+            local fields
+            if ! fields="$(kubectl get node "${node}" --output \
+              'jsonpath=ready={.status.conditions[?(@.type=="Ready")].status} unschedulable={.spec.unschedulable}')"; then
+              refuse "node ${node} could not be read."
+            fi
+            local ready="${fields#ready=}"
+            ready="${ready%% unschedulable=*}"
+            local unschedulable="${fields##* unschedulable=}"
+            case "${ready}" in
+              False | Unknown) ;;
+              *) refuse "node ${node} Ready condition is '${ready}', not False or Unknown: a drill object must never land on a live node." ;;
+            esac
+            test "${unschedulable}" = 'true' || refuse "node ${node} is not cordoned."
+          }
+          refuse_existing() {
+            local existing
+            if ! existing="$(kubectl get "${1}" --namespace "${namespace}" "${name}" --ignore-not-found --output name)"; then
+              refuse "the ${1} could not be read."
+            fi
+            test -z "${existing}" || refuse "${1} ${object} already exists; the drill never overwrites an object."
+          }
+          case "${action}" in
+            create-factory-pod)
+              in_factory || refuse "namespace ${namespace} is not a factory namespace (${DRILL_FACTORY_NAMESPACES})."
+              [[ "${name}" =~ ^petri-[0-9a-z]+-l[0-9]+$ ]] \
+                || refuse 'the pod name is not petri-<lowercase run id>-l<n>.'
+              [[ "${run_id}" =~ ^[A-Za-z0-9]([A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$ ]] \
+                || refuse 'stuck_object_drill_run_id is absent or not a valid label value.'
+              require_dead_cordoned_node
+              refuse_existing pod
+              if test "${dry_run}" != 'false'; then
+                printf 'would create pod %s on not-Ready cordoned node %s (petri.run=%s)\n' "${object}" "${node}" "${run_id}"
+                exit 0
+              fi
+              manifest='{"apiVersion":"v1","kind":"Pod","metadata":{"name":"'"${name}"'","namespace":"'"${namespace}"'",'
+              manifest+='"labels":{"'"${fixture_key}"'":"'"${fixture_value}"'","petri.run":"'"${run_id}"'",'
+              manifest+='"sandbox-driver-kubernetes/sandbox":"true"}},"spec":{"nodeName":"'"${node}"'",'
+              manifest+='"restartPolicy":"Never","automountServiceAccountToken":false,"tolerations":['
+              manifest+='{"key":"node.kubernetes.io/not-ready","operator":"Exists","effect":"NoExecute"},'
+              manifest+='{"key":"node.kubernetes.io/unreachable","operator":"Exists","effect":"NoExecute"}],'
+              manifest+='"containers":[{"name":"drill","image":"'"${image}"'","command":["sleep","3600"]}]}}'
+              printf '%s' "${manifest}" | kubectl create --filename - >/dev/null
+              printf 'created pod %s on not-Ready cordoned node %s (petri.run=%s)\n' "${object}" "${node}" "${run_id}"
+              ;;
+            create-stuck-gate-job)
+              test "${namespace}" = 'gates' || refuse "namespace ${namespace} is not gates."
+              require_dead_cordoned_node
+              refuse_existing job
+              if test "${dry_run}" != 'false'; then
+                printf 'would create job %s on not-Ready cordoned node %s, wait for its pod, then delete the Job\n' "${object}" "${node}"
+                exit 0
+              fi
+              manifest='{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"'"${name}"'","namespace":"gates",'
+              manifest+='"labels":{"'"${fixture_key}"'":"'"${fixture_value}"'"}},"spec":{"backoffLimit":0,'
+              manifest+='"template":{"metadata":{"labels":{"'"${fixture_key}"'":"'"${fixture_value}"'"}},'
+              manifest+='"spec":{"nodeName":"'"${node}"'","restartPolicy":"Never","automountServiceAccountToken":false,'
+              manifest+='"containers":[{"name":"drill","image":"'"${image}"'","command":["sleep","3600"]}]}}}}'
+              printf '%s' "${manifest}" | kubectl create --filename - >/dev/null
+              pod_template='{range .items[*]}{.metadata.name}{" "}{.spec.nodeName}'
+              pod_template+='{" marked:"}{.metadata.deletionTimestamp}'
+              pod_template+='{" finalizers:"}{.metadata.finalizers[*]}{"\n"}{end}'
+              read_pods() {
+                kubectl get pods --namespace gates --selector "batch.kubernetes.io/job-name=${name}" \
+                  --output "jsonpath=${pod_template}" | grep -v '^$' || true
+              }
+              attempt=0
+              pods=''
+              until [[ "${pods}" == *" ${node} "* ]]; do
+                attempt=$((attempt + 1))
+                if test "${attempt}" -gt "${DRILL_WAIT_RETRIES}"; then
+                  printf 'job %s created, but its pod never bound to %s; the Job is left in place ' "${object}" "${node}" >&2
+                  printf '(remove it with remove-drill-fixtures). Observed: %s\n' "${pods:-no pod}" >&2
+                  exit 1
+                fi
+                pods="$(read_pods)"
+                [[ "${pods}" == *" ${node} "* ]] || sleep "${DRILL_WAIT_INTERVAL}"
+              done
+              kubectl delete job --namespace gates "${name}" --cascade=background --wait=false >/dev/null
+              attempt=0
+              until [[ "${pods}" == *" marked:"[0-9]* ]]; do
+                attempt=$((attempt + 1))
+                if test "${attempt}" -gt "${DRILL_WAIT_RETRIES}"; then
+                  printf 'job %s deleted, but its pod never read Terminating. Observed: %s\n' "${object}" "${pods:-no pod}" >&2
+                  exit 1
+                fi
+                sleep "${DRILL_WAIT_INTERVAL}"
+                pods="$(read_pods)"
+              done
+              printf 'created stuck job %s on not-Ready cordoned node %s; pod state: %s\n' "${object}" "${node}" "${pods}"
+              ;;
+            remove-drill-fixtures)
+              if in_factory; then kind=pod
+              elif test "${namespace}" = 'gates'; then kind=job
+              else refuse "namespace ${namespace} is not a factory namespace or gates."
+              fi
+              if ! existing="$(kubectl get "${kind}" --namespace "${namespace}" "${name}" --ignore-not-found --output name)"; then
+                refuse "the ${kind} could not be read."
+              fi
+              if test -z "${existing}"; then
+                printf 'already absent %s %s\n' "${kind}" "${object}"
+                exit 0
+              fi
+              if ! label="$(kubectl get "${kind}" --namespace "${namespace}" "${name}" --output \
+                "jsonpath={.metadata.labels.livespec\\.dev/drill-fixture}")"; then
+                refuse "the ${kind}'s labels could not be read."
+              fi
+              test "${label}" = "${fixture_value}" \
+                || refuse "${kind} ${object} does not carry label ${fixture_key}=${fixture_value}, so it is not a drill fixture."
+              if test "${dry_run}" != 'false'; then
+                printf 'would remove %s %s\n' "${kind}" "${object}"
+                exit 0
+              fi
+              if test "${kind}" = 'pod'; then
+                kubectl delete pod --namespace "${namespace}" "${name}" --wait=false --grace-period=0 --force </dev/null >/dev/null
+              else
+                kubectl delete job --namespace gates "${name}" --ignore-not-found --cascade=background --wait=false </dev/null >/dev/null
+                if ! leftover="$(kubectl get pods --namespace gates \
+                  --selector "batch.kubernetes.io/job-name=${name},${fixture_key}=${fixture_value}" \
+                  --output 'jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}')"; then
+                  refuse "the Job's drill pods could not be read."
+                fi
+                while read -r pod; do
+                  test -n "${pod}" || continue
+                  kubectl delete pod --namespace gates "${pod}" --wait=false --grace-period=0 --force </dev/null >/dev/null
+                  printf 'removed pod gates/%s\n' "${pod}"
+                done <<< "${leftover}"
+              fi
+              printf 'removed %s %s\n' "${kind}" "${object}"
+              ;;
+          esac
+      environment:
+        KUBECONFIG: "{{ stuck_object_drill_admin_kubeconfig }}"
+        DRILL_ACTION: "{{ stuck_object_drill_action }}"
+        DRILL_OBJECT: "{{ stuck_object_drill_object }}"
+        DRILL_NODE: "{{ stuck_object_drill_node | default('') }}"
+        DRILL_RUN_ID: "{{ stuck_object_drill_run_id | default('') }}"
+        DRILL_IMAGE: "{{ stuck_object_drill_image }}"
+        DRILL_FIXTURE_KEY: "{{ stuck_object_drill_fixture_key }}"
+        DRILL_FIXTURE_VALUE: "{{ stuck_object_drill_fixture_value }}"
+        DRILL_FACTORY_NAMESPACES: "{{ stuck_object_drill_factory_namespaces | join(' ') }}"
+        DRILL_WAIT_RETRIES: "{{ stuck_object_drill_wait_retries }}"
+        DRILL_WAIT_INTERVAL: "{{ stuck_object_drill_wait_interval }}"
+        DRILL_DRY_RUN: "{{ ansible_check_mode | ternary('true', 'false') }}"
+      register: stuck_object_drill_result
+      # Run under `--check` too: the script reads and reports, and
+      # `DRILL_DRY_RUN` withholds every write.
+      check_mode: false
+      changed_when: stuck_object_drill_result.stdout is search('(?m)^(created|removed) ')
+
+    - name: Report what the drill did
+      when: stuck_object_drill_result is defined and stuck_object_drill_result.stdout_lines is defined
+      ansible.builtin.debug:
+        msg: "{{ stuck_object_drill_action }}: {{ stuck_object_drill_result.stdout_lines }}"
