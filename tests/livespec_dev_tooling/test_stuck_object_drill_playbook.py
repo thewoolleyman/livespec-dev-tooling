@@ -269,6 +269,15 @@ def test_create_factory_pod_creates_one_labelled_pod_bound_to_the_node(
     assert "busybox:1.37.0" in scratch.created
 
 
+def test_create_factory_pod_declares_requests_and_limits_the_quota_requires(
+    *, scratch: _Scratch
+) -> None:
+    code, output = _run(scratch=scratch)
+    assert code == 0, output
+    assert '"requests":{"cpu":"10m","memory":"16Mi"}' in scratch.created
+    assert '"limits":{"cpu":"10m","memory":"16Mi"}' in scratch.created
+
+
 def test_create_stuck_gate_job_creates_then_deletes_the_job_in_the_background(
     *, scratch: _Scratch
 ) -> None:
