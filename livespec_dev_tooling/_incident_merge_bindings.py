@@ -27,14 +27,14 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from livespec_runtime_budget.github_budget import GhInvocation  # noqa: E402 — vendor path.
-from returns.result import Failure  # noqa: E402 — vendor-path-aware import.
+from returns.result import Failure, Success  # noqa: E402 — vendor-path-aware import.
 
 from livespec_dev_tooling._incident_observer_store import (  # noqa: E402
     load_record,
@@ -73,6 +73,10 @@ __all__: list[str] = [
 ]
 
 _WRAPPER = "/usr/local/bin/with-livespec-env.sh"
+# The marker the incident authority writer's `publish-genesis` action puts first in the genesis
+# comment it adds to the incident work item; `file-incident` writes no such comment.
+_GENESIS_MARKER = "livespec-incident-authority-v1\n"
+_GENESIS_WRITER = "publish-genesis"
 _TIMEOUT_SECONDS = 60
 _QUERY = (
     "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {"
@@ -142,10 +146,56 @@ def authority_command(*, interpreter: Path, script: Path) -> list[str]:
     return [_WRAPPER, "--", str(interpreter), str(script)]
 
 
+def _object(*, value: object) -> dict[str, Any] | None:
+    """`value` as a JSON object, or None when it is anything else."""
+    return cast("dict[str, Any]", value) if isinstance(value, dict) else None
+
+
+def _ledger_json(*, run: TextRunner, argv: Sequence[str]) -> object:
+    """The JSON the ledger answered for one fixed argv, or None when it did not answer one."""
+    code, text = run(argv=[_WRAPPER, "--", "bd", *argv])
+    if code != 0:
+        return None
+    try:
+        return cast("object", strict_json(text=text, limit=None))
+    except IncidentJsonRefusalError:
+        return None
+
+
+def _genesis_comment_published(
+    *, comments: list[object], incident_id: str, repository: str
+) -> bool:
+    """Whether one comment is the genesis record `publish-genesis` wrote for this incident."""
+    for comment in comments:
+        entry = _object(value=comment) or {}
+        text = entry.get("text")
+        if not isinstance(text, str) or not text.startswith(_GENESIS_MARKER):
+            continue
+        try:
+            body = _object(value=strict_json(text=text[len(_GENESIS_MARKER) :], limit=None)) or {}
+        except IncidentJsonRefusalError:
+            continue
+        if body.get("item_id") == incident_id and body.get("repository") == repository:
+            return True
+    return False
+
+
 def authority_chain_reader(
-    *, command: Sequence[str], repository: str, repo: Path, identity: ArmIdentity
+    *,
+    command: Sequence[str],
+    repository: str,
+    repo: Path,
+    identity: ArmIdentity,
+    run: TextRunner = run_text,
 ) -> MergeChainReader:
-    """`read-current` for the armed attempt through the registered canonical process."""
+    """`read-current` for the armed attempt through the registered canonical process.
+
+    The canonical reply carries the attempt and its currency but neither the writer of the
+    item's genesis nor the item's stored status, which the merge decision also reads. They are
+    added here from the ledger: the status from the work item, and `publish-genesis` only when
+    the item carries the genesis record that action writes for this repository and item. A
+    refused chain read passes through untouched, and an unreadable ledger refuses by name.
+    """
 
     def read(*, incident_id: str) -> Any:
         if incident_id != identity.incident_id:
@@ -165,7 +215,28 @@ def authority_chain_reader(
             "generation": str(identity.generation),
             "owner": identity.owner,
         }
-        return call_authority(command=command, action="read-current", flags=flags, cwd=repo)
+        reply = call_authority(command=command, action="read-current", flags=flags, cwd=repo)
+        chain = _object(value=reply.unwrap()) if isinstance(reply, Success) else None
+        if chain is None:
+            return reply
+        shown = _ledger_json(run=run, argv=["show", incident_id, "--json"])
+        comments = _ledger_json(run=run, argv=["comments", incident_id, "--json"])
+        listed = cast("list[object]", shown) if isinstance(shown, list) else []
+        record = _object(value=listed[0]) if listed else None
+        if record is None or not isinstance(comments, list):
+            return Failure(
+                AuthorityRefusal(
+                    code="incident-merge-runner-ledger-unreadable",
+                    detail=f"the ledger did not answer for {incident_id}",
+                )
+            )
+        reading = dict(chain)
+        reading["item_status"] = record.get("status")
+        if _genesis_comment_published(
+            comments=cast("list[object]", comments), incident_id=incident_id, repository=repository
+        ):
+            reading["genesis_writer"] = _GENESIS_WRITER
+        return Success(reading)
 
     return read
 
