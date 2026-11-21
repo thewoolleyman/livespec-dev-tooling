@@ -1,0 +1,7 @@
+---
+- name: Restart the seat dialog watchdog
+  ansible.builtin.systemd:
+    name: "{{ seat_dialog_watchdog_unit }}"
+    state: restarted
+    daemon_reload: true
+  when: seat_dialog_watchdog_enabled and not ansible_check_mode

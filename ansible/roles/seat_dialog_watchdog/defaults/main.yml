@@ -1,0 +1,16 @@
+---
+# seat_dialog_watchdog -- out-of-band watchdog for seats stuck at an Enter-to-select dialog
+# (plan remote-control-retirement, epic livespec-dev-tooling-s63cb5, item
+# livespec-dev-tooling-fwtuxo). SOURCE OF TRUTH for the script is files/seat-dialog-watchdog
+# here. hetzner-xubuntu-info vendors the same bytes in its role hxi_seat_watchdog; the
+# digest below is the fleet constant that makes a divergence visible (same pattern as
+# btop_loop). Changing the script means re-recording the digest in both repositories.
+seat_dialog_watchdog_enabled: true
+seat_dialog_watchdog_user: ubuntu
+seat_dialog_watchdog_home: "/home/{{ seat_dialog_watchdog_user }}"
+seat_dialog_watchdog_unit: seat-dialog-watchdog.service
+seat_dialog_watchdog_command: /usr/local/bin/seat-dialog-watchdog
+seat_dialog_watchdog_dwell_seconds: 120
+seat_dialog_watchdog_alarm_file: "{{ seat_dialog_watchdog_home }}/.local/state/seat-dialog-watchdog/alarms.jsonl"
+seat_dialog_watchdog_ledger_cwd: "{{ seat_dialog_watchdog_home }}/workspace/livespec-dev-tooling"
+seat_dialog_watchdog_pinned_sha256: db78f249218489ca0e65ab799bc657a9c4d66d7ed5f76866fce526df5646f250

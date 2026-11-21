@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Out-of-band watchdog: a seat stuck at an Enter-to-select dialog for over 2 minutes.
+
+Plan remote-control-retirement (livespec-dev-tooling-s63cb5, item livespec-dev-tooling-fwtuxo).
+Runs as a host service OUTSIDE any agent session, so a freeze that stops every seat's loop
+(2026-11-20 ~14 h; 2026-11-21 ~00:09Z) cannot stop it. stdlib only.
+
+Each pass lists the panes of every herdr session on this host, reads each pane's visible
+text, and looks for a Claude Code selection dialog (the line `Enter to select`). A dialog seen
+unchanged for DWELL_SECONDS is stuck:
+  * a dialog whose selected option is `Continue` is cleared by pressing Enter -- the known,
+    harmless Remote-Control-not-connected panel;
+  * any other dialog is NEVER answered, only alarmed (a log line plus an optional notify
+    command), because pressing Enter on an unknown picker could approve something.
+It never types text and never types a slash command into a seat.
+
+Usage: seat-dialog-watchdog.py [--once] [--dwell S] [--interval S] [--herdr PATH] [--dry-run]
+       seat-dialog-watchdog.py --self-test
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+DWELL_SECONDS = 120
+INTERVAL_SECONDS = 15
+MARKER = "Enter to select"
+CONTINUE_SELECTED = re.compile(r"^\s*[❯>]\s*(?:\d+\.\s*)?Continue\b", re.MULTILINE)
+# The ONE dialog that gets an Enter: the Remote Control not-connected panel, whose options are
+# `Continue` and `Disconnect this session`. Anything else (tool permission, /login, usage
+# limit, an unknown picker) is alarmed, never answered.
+RC_PANEL = re.compile(r"Remote Control", re.IGNORECASE)
+RC_DISCONNECT = "Disconnect this session"
+ALARM_FILE = os.environ.get("SEAT_WATCHDOG_ALARM_FILE", os.path.expanduser("~/.local/state/seat-dialog-watchdog/alarms.jsonl"))
+
+
+def log(event, **fields):
+    print(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": event, **fields}), flush=True)
+
+
+def alarm_record(path, **fields):
+    """Append the alarm where a coordinator tick can read it without Remote Control."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as handle:
+            handle.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **fields}) + "\n")
+    except OSError as error:
+        log("alarm_file_error", error=str(error))
+
+
+LEDGER_EPIC = os.environ.get("SEAT_WATCHDOG_LEDGER_EPIC", "livespec-dev-tooling-6tgd2z")
+LEDGER_CWD = os.environ.get("SEAT_WATCHDOG_LEDGER_CWD", os.path.expanduser("~/workspace/livespec-dev-tooling"))
+LEDGER_WRAPPER = "/usr/local/bin/with-livespec-env.sh"
+LEDGER_MIN_GAP = 600  # one ledger comment per pane per 10 minutes
+_ledger_last = {}
+
+
+def ledger_alarm(*, host, session, pane, seat, age, now):
+    """Write one SEAT-WATCHDOG-ALARM comment on the coordinator epic; the journal keeps the alarm if bd fails."""
+    key = (host, session, pane)
+    if now - _ledger_last.get(key, -LEDGER_MIN_GAP) < LEDGER_MIN_GAP:
+        return False
+    _ledger_last[key] = now
+    text = f"SEAT-WATCHDOG-ALARM host={host} seat={seat} pane={pane} session={session or 'default'} stuck {age}s at an Enter-to-select dialog the watchdog does not clear"
+    try:
+        done = subprocess.run([LEDGER_WRAPPER, "--", "bd", "comment", LEDGER_EPIC, text], cwd=LEDGER_CWD,
+                              capture_output=True, text=True, timeout=60)
+        if done.returncode != 0:
+            log("ledger_alarm_failed", pane=pane, rc=done.returncode, err=done.stderr[-200:])
+            return False
+    except (OSError, subprocess.SubprocessError) as error:
+        log("ledger_alarm_failed", pane=pane, err=str(error))
+        return False
+    return True
+
+
+def herdr_json(herdr, session, *args):
+    cmd = [herdr] + (["--session", session] if session else []) + list(args)
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    return out.returncode, out.stdout
+
+
+def sessions(herdr):
+    """Every herdr session on this host; the default session is session None."""
+    code, out = herdr_json(herdr, None, "session", "list")
+    found = [None]
+    if code == 0:
+        for line in out.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] != "default" and parts[1] == "running":
+                found.append(parts[0])
+    return found
+
+
+def panes(herdr, session):
+    code, out = herdr_json(herdr, session, "pane", "list")
+    if code != 0:
+        return []
+    try:
+        return json.loads(out)["result"]["panes"]
+    except (ValueError, KeyError):
+        return []
+
+
+def read_visible(herdr, session, pane_id):
+    code, out = herdr_json(herdr, session, "pane", "read", pane_id, "--source", "visible")
+    return out if code == 0 else ""
+
+
+def stuck_dialog(text):
+    """None when no selection dialog is showing, else (kind, digest) of the dialog."""
+    if MARKER not in text:
+        return None
+    is_rc = RC_PANEL.search(text) and RC_DISCONNECT in text and CONTINUE_SELECTED.search(text)
+    kind = "continue" if is_rc else "unknown"
+    return kind, hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def one_pass(*, herdr, seen, now, dwell, dry_run, notify):
+    """Scan once. `seen` maps (session, pane) -> (digest, first_seen). Returns actions taken."""
+    actions = []
+    live = set()
+    for session in sessions(herdr):
+        for pane in panes(herdr, session):
+            key = (session, pane["pane_id"])
+            found = stuck_dialog(read_visible(herdr, session, pane["pane_id"]))
+            if found is None:
+                continue
+            kind, digest = found
+            live.add(key)
+            if key not in seen or seen[key][0] != digest:
+                seen[key] = (digest, now)
+                continue
+            age = now - seen[key][1]
+            if age < dwell:
+                continue
+            name = pane.get("terminal_title_stripped", "")
+            if kind == "continue":
+                if not dry_run:
+                    herdr_json(herdr, session, "pane", "send-keys", pane["pane_id"], "enter")
+                log("cleared", session=session, pane=pane["pane_id"], seat=name, age=int(age))
+                seen[key] = (digest, now)
+                actions.append(("cleared", key))
+            else:
+                log("alarm", session=session, pane=pane["pane_id"], seat=name, age=int(age))
+                if not dry_run:
+                    alarm_record(ALARM_FILE, event="alarm", session=session, pane=pane["pane_id"], seat=name, age=int(age))
+                    ledger_alarm(host=os.uname().nodename, session=session, pane=pane["pane_id"], seat=name, age=int(age), now=now)
+                if notify and not dry_run:
+                    subprocess.run([*notify.split(), f"seat {name} stuck at a dialog for {int(age)}s"], timeout=30, check=False)
+                seen[key] = (digest, now + dwell)  # re-alarm every further dwell, not every pass
+                actions.append(("alarm", key))
+    for key in [k for k in seen if k not in live]:
+        del seen[key]
+    return actions
+
+
+def self_test():
+    """Offline control: a stub herdr serving a staged Continue dialog and an unknown dialog."""
+    import tempfile
+    global ALARM_FILE, LEDGER_WRAPPER, LEDGER_CWD
+    d = tempfile.mkdtemp()
+    LEDGER_WRAPPER = os.path.join(d, "wrapper")
+    LEDGER_CWD = d
+    open(LEDGER_WRAPPER, "w").write(f"#!/bin/sh\necho \"$@\" >> {d}/ledger.log\n")
+    os.chmod(LEDGER_WRAPPER, 0o755)
+    ALARM_FILE = os.path.join(d, "alarms.jsonl")
+    stub = os.path.join(d, "herdr")
+    state = os.path.join(d, "keys.log")
+    open(stub, "w").write(f"""#!/bin/sh
+args="$*"
+case "$args" in
+  *"session list"*) printf 'name status directory socket\\ndefault running /x /y\\n' ;;
+  *"pane list"*) echo '{{"result":{{"panes":[{{"pane_id":"p1","terminal_title_stripped":"seatA"}},{{"pane_id":"p2","terminal_title_stripped":"seatB"}},{{"pane_id":"p3","terminal_title_stripped":"seatC"}},{{"pane_id":"p4","terminal_title_stripped":"seatD"}},{{"pane_id":"p5","terminal_title_stripped":"seatE"}},{{"pane_id":"p6","terminal_title_stripped":"seatF"}}]}}}}' ;;
+  *"pane read p1"*) printf 'Remote Control isn'"'"'t connected\\n ❯ 1. Continue\\n   2. Disconnect this session\\nEnter to select\\n' ;;
+  *"pane read p4"*) printf 'Do you want to proceed?\\n ❯ 1. Continue\\n   2. No\\nEnter to select\\n' ;;
+  *"pane read p5"*) printf 'Select login method:\\n ❯ 1. Claude account\\nEnter to select\\n' ;;
+  *"pane read p6"*) printf 'Usage limit reached\\n ❯ 1. Continue\\n   2. Stop and wait\\nEnter to select\\n' ;;
+  *"pane read p2"*) printf 'Allow this tool?\\n ❯ 1. Yes\\n   2. No\\nEnter to select\\n' ;;
+  *"pane read p3"*) printf 'just a prompt\\n' ;;
+  *"send-keys"*) echo "$args" >> {state} ;;
+esac
+""")
+    os.chmod(stub, 0o755)
+    seen = {}
+    one_pass(herdr=stub, seen=seen, now=1000, dwell=120, dry_run=False, notify=None)
+    assert not os.path.exists(state), "pressed a key before the dwell"
+    early = one_pass(herdr=stub, seen=seen, now=1100, dwell=120, dry_run=False, notify=None)
+    assert early == [], early
+    acts = one_pass(herdr=stub, seen=seen, now=1121, dwell=120, dry_run=False, notify=None)
+    assert sorted(a[0] for a in acts) == ["alarm", "alarm", "alarm", "alarm", "cleared"], acts
+    keys = open(state).read().splitlines()
+    assert len(keys) == 1 and "p1" in keys[0] and "enter" in keys[0], keys  # only the Continue dialog, only Enter
+    assert not any(x in k for k in keys for x in ("p2", "p3", "p4", "p5", "p6")), keys
+    alarms = [json.loads(l)["pane"] for l in open(ALARM_FILE).read().splitlines()]
+    assert sorted(set(alarms)) == ["p2", "p4", "p5", "p6"], alarms
+    ledger = open(os.path.join(d, "ledger.log")).read().splitlines()
+    assert len(ledger) == 4 and all("SEAT-WATCHDOG-ALARM" in l and "bd comment livespec-dev-tooling-6tgd2z" in l for l in ledger), ledger
+    one_pass(herdr=stub, seen=seen, now=1125 + 125, dwell=120, dry_run=False, notify=None)  # inside 10 min: no repeat
+    assert len(open(os.path.join(d, "ledger.log")).read().splitlines()) == 4, "ledger alarm not rate limited"
+    print("seat-dialog-watchdog self-test passed: Continue cleared with Enter after the dwell, tool-permission, /login, usage-limit and unknown dialogs alarmed to the alarm file and never answered, prompt-only pane ignored")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--dwell", type=int, default=DWELL_SECONDS)
+    ap.add_argument("--interval", type=int, default=INTERVAL_SECONDS)
+    ap.add_argument("--herdr", default="herdr")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--notify", default=os.environ.get("SEAT_WATCHDOG_NOTIFY"))
+    ap.add_argument("--self-test", action="store_true")
+    a = ap.parse_args()
+    if a.self_test:
+        return self_test()
+    seen = {}
+    while True:
+        one_pass(herdr=a.herdr, seen=seen, now=time.time(), dwell=a.dwell, dry_run=a.dry_run, notify=a.notify)
+        if a.once:
+            return
+        time.sleep(a.interval)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
