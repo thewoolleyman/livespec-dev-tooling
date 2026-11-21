@@ -1,0 +1,41 @@
+# Per-node memory budget for the execution pool.  This is deliberately a
+# sibling of node-cpu-budget.yaml: the runner-memory-slot work owns that file's
+# CPU/runner-slot derivation, while this report reads committed memory inputs
+# without making the two capacity authorities contend for one file.
+#
+# The report is report-only until the fleet adopts this budget.  In particular,
+# gmktec-xubuntu remains over-committed on its committed seven-pod ceiling; do
+# not lower that ceiling here merely to make this report quiet.
+#
+# Gate and repro allocations are read from the named Kueue ResourceFlavors.
+# Factory pod counts are read from each x86 node's host_vars
+# `factory_pod_budget`; the sandbox request is read from the factory provider's
+# committed process_spec.  Thus those committed values are never copied here.
+
+nodes:
+  gmktec-xubuntu:
+    allocatable_memory_gib: 62.43
+    system_memory_gib: 1.10
+    gate_flavor: gates-flavor
+    repro_flavor: gates-repro-gmktec-flavor
+  poweredge-xubuntu:
+    allocatable_memory_gib: 377.0
+    system_memory_gib: 1.10
+    gate_flavor: gates-poweredge-flavor
+    repro_flavor: gates-repro-poweredge-flavor
+  hp-xubuntu:
+    allocatable_memory_gib: 27.2
+    system_memory_gib: 0.60
+    gate_flavor: gates-hp-flavor
+    repro_flavor: gates-repro-hp-flavor
+  gamingpc-xubuntu:
+    allocatable_memory_gib: 92.38
+    system_memory_gib: 16.0
+    gate_flavor: gates-gamingpc-flavor
+    repro_flavor: gates-repro-gamingpc-flavor
+  macbook-m4-max-homelab-worker:
+    allocatable_memory_gib: 64.0
+    system_memory_gib: 10.0
+    factory_pod_budget: 0
+    gate_memory_gib: 0
+    repro_memory_gib: 0
