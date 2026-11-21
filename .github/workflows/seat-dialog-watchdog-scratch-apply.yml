@@ -1,0 +1,94 @@
+# seat-dialog-watchdog-scratch-apply — applies the seat_dialog_watchdog role to a throwaway
+# systemd container as a NON-ROOT sudo user, twice, so the failures a check-mode drift cannot
+# see are caught before a host apply: a missing `become`, and a sha256 pin passed to copy's
+# SHA-1 `checksum:` (livespec-dev-tooling-fwtuxo, the two failed vps applies of 2026-11-21).
+#
+# NON-GATING and ADDITIVE: it runs only on workflow_dispatch and on pull requests that touch the
+# role or this file, is not a required check, and moves no existing traffic. A container is not
+# a host mutation. The second run must report changed=0 (idempotence).
+name: seat-dialog-watchdog-scratch-apply (non-gating)
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "ansible/roles/seat_dialog_watchdog/**"
+      - ".github/workflows/seat-dialog-watchdog-scratch-apply.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  scratch-apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build a systemd-enabled Ubuntu image with a non-root sudo user
+        run: |
+          mkdir -p /tmp/scratch-image
+          cat > /tmp/scratch-image/Dockerfile <<'EOF'
+          FROM ubuntu:25.10
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv sudo python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+          RUN useradd -m -s /bin/bash tester && echo 'tester ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/tester && chmod 0440 /etc/sudoers.d/tester
+          CMD ["/sbin/init"]
+          EOF
+          docker build -t fwtuxo-scratch-image /tmp/scratch-image
+
+      - name: Start the throwaway container
+        run: |
+          docker run -d --name fwtuxo-scratch --privileged --cgroupns=host \
+            -v /sys/fs/cgroup:/sys/fs/cgroup:rw fwtuxo-scratch-image
+          for _ in $(seq 1 30); do
+            state="$(docker exec fwtuxo-scratch systemctl is-system-running 2>/dev/null || true)"
+            case "$state" in running|degraded) break ;; esac
+            sleep 2
+          done
+          echo "systemd state: ${state:-unknown}"
+
+      - name: Install ansible and the docker connection plugin
+        run: |
+          python3 -m pip install --user ansible-core==2.18.1
+          export PATH="$HOME/.local/bin:$PATH"
+          ansible-galaxy collection install community.docker
+
+      - name: Write the scratch play
+        run: |
+          cat > /tmp/scratch-play.yml <<'EOF'
+          - hosts: scratch
+            gather_facts: true
+            vars:
+              seat_dialog_watchdog_user: tester
+              seat_dialog_watchdog_home: /home/tester
+            roles:
+              - seat_dialog_watchdog
+          EOF
+          cat > /tmp/scratch-inventory.ini <<'EOF'
+          [scratch]
+          fwtuxo-scratch ansible_connection=community.docker.docker ansible_user=tester ansible_python_interpreter=/usr/bin/python3
+          EOF
+
+      - name: Apply the role (first run)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          ANSIBLE_ROLES_PATH="$GITHUB_WORKSPACE/ansible/roles" \
+            ansible-playbook -i /tmp/scratch-inventory.ini /tmp/scratch-play.yml --diff | tee /tmp/run1.log
+          grep -E "failed=0" /tmp/run1.log
+
+      - name: Apply the role again (must report changed=0)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          ANSIBLE_ROLES_PATH="$GITHUB_WORKSPACE/ansible/roles" \
+            ansible-playbook -i /tmp/scratch-inventory.ini /tmp/scratch-play.yml --diff | tee /tmp/run2.log
+          grep -E "changed=0 .*failed=0" /tmp/run2.log
+
+      - name: Read back the installed program and unit
+        run: |
+          docker exec fwtuxo-scratch sha256sum /usr/local/bin/seat-dialog-watchdog
+          docker exec fwtuxo-scratch systemctl is-enabled seat-dialog-watchdog.service
+
+      - name: Remove the container
+        if: always()
+        run: docker rm -f fwtuxo-scratch || true

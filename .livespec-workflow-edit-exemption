@@ -1,2 +1,4 @@
-work_item=livespec-dev-tooling-kefuik
-reason=Release-currency fix: open-bump-pr, plan-refresh, refresh-open-bump, bump-pin and dispatch report a no-op as success through an early-exit step instead of a by-condition skip; a real target runs exactly as before. Maintainer tier, approval:workflow-edit.
+work_item=livespec-dev-tooling-fwtuxo
+reason=Additive non-gating workflow seat-dialog-watchdog-scratch-apply: applies the seat_dialog_watchdog role to a throwaway systemd container as a non-root sudo user, twice, to catch what a check-mode drift cannot (missing become; sha256 on copy checksum). Adds a new file only; deletes and modifies nothing under .github/workflows/.
+change=additive
+ci_runtime=no-significant-increase
