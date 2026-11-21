@@ -50,7 +50,7 @@ jobs:
 
       - name: Install ansible and the docker connection plugin
         run: |
-          python3 -m pip install --user ansible-core==2.18.1
+          pip3 install --user --break-system-packages ansible-core==2.18.1
           export PATH="$HOME/.local/bin:$PATH"
           ansible-galaxy collection install community.docker
 
