@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.231.2](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.231.1...v1.231.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* an installation call reports the forge's own status and message, not HTTP 0 (livespec-dev-tooling-eimhed) ([7c475db](https://github.com/livespec-ai/livespec-dev-tooling/commit/7c475db70adc688a291d2a19dff7103a6eab9e79))
+* **ansible:** seat-dialog-watchdog matches the dialog footer as a whole line, not a substring (px7gvb) ([63e45cc](https://github.com/livespec-ai/livespec-dev-tooling/commit/63e45cc357d2d1f58a536eb0d9c73356434e4957))
+* make memory budget the committed authority ([2482e36](https://github.com/livespec-ai/livespec-dev-tooling/commit/2482e3686b500b28f9231f8686f53a2a41df36df))
+* report a no-op incident-ci-publish as success, not skipped (livespec-dev-tooling-afousj) ([92debdb](https://github.com/livespec-ai/livespec-dev-tooling/commit/92debdb271bb6ad9292ea5f64d9d3d7527352278))
+* report committed per-node memory budgets ([dadca4b](https://github.com/livespec-ai/livespec-dev-tooling/commit/dadca4b2f8b6d35585f2c190dc7e2f031b35c261))
+
 ## [1.231.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.231.0...v1.231.1) (2026-11-21)
 
 
