@@ -293,14 +293,18 @@ jobs:
   open-bump-pr:
     name: open-bump-pr ${{ matrix.target.source_repo }}
     needs: scan
-    if: needs.scan.outputs.stale != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.scan.outputs.stale) }}
+        target: ${{ fromJSON(needs.scan.outputs.stale != '[]' && needs.scan.outputs.stale || '[{"noop":"true","source_repo":"none","tag":"none"}]') }}
     steps:
+      - name: Early exit when no pin is stale
+        if: ${{ matrix.target.noop == 'true' }}
+        run: echo "::notice::no stale pin to bump; reporting success instead of skipping the job"
+
       - name: Mint App token
+        if: ${{ matrix.target.noop != 'true' }}
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -308,12 +312,14 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout consumer repo with App token
+        if: ${{ matrix.target.noop != 'true' }}
         uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       - name: Checkout livespec-dev-tooling support modules
+        if: ${{ matrix.target.noop != 'true' }}
         uses: actions/checkout@v5
         with:
           repository: livespec-ai/livespec-dev-tooling
@@ -321,12 +327,15 @@ jobs:
           fetch-depth: 1
 
       - name: Install pinned binaries via mise
+        if: ${{ matrix.target.noop != 'true' }}
         uses: jdx/mise-action@v4
 
       - name: Install Python deps via uv
+        if: ${{ matrix.target.noop != 'true' }}
         run: uv sync --all-groups
 
       - name: Re-run pin-autodiscovery for ${{ matrix.target.source_repo }}
+        if: ${{ matrix.target.noop != 'true' }}
         id: autodiscover
         env:
           SOURCE_REPO: ${{ matrix.target.source_repo }}
@@ -342,6 +351,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Compose PR body
+        if: ${{ matrix.target.noop != 'true' }}
         id: pr_body
         env:
           SOURCE_REPO: ${{ matrix.target.source_repo }}
@@ -357,6 +367,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Rewrite pins + commit + open auto-merge PR
+        if: ${{ matrix.target.noop != 'true' }}
         # `id` is load-bearing: the codex-acp gate steps below gate on this
         # step's `changed` output (livespec-dev-tooling-bmf). On the no-op
         # path the composite pushes no branch and opens no PR, so a
@@ -482,15 +493,19 @@ jobs:
   refresh-open-bump:
     name: refresh-open-bump ${{ matrix.target.source_repo }} ${{ matrix.target.tag }}
     needs: plan-refresh
-    if: ${{ needs.plan-refresh.outputs.targets != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        target: ${{ fromJSON(needs.plan-refresh.outputs.targets) }}
+        target: ${{ fromJSON(needs.plan-refresh.outputs.targets != '[]' && needs.plan-refresh.outputs.targets || '[{"noop":"true","source_repo":"none","tag":"none"}]') }}
     steps:
+      - name: Early exit when no open bump PR needs a refresh
+        if: ${{ matrix.target.noop == 'true' }}
+        run: echo "::notice::no open bump PR to refresh; reporting success instead of skipping the job"
+
       - name: Mint App token
+        if: ${{ matrix.target.noop != 'true' }}
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -498,12 +513,14 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout consumer repo with App token
+        if: ${{ matrix.target.noop != 'true' }}
         uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       - name: Checkout livespec-dev-tooling support modules
+        if: ${{ matrix.target.noop != 'true' }}
         uses: actions/checkout@v5
         with:
           repository: livespec-ai/livespec-dev-tooling
@@ -511,12 +528,15 @@ jobs:
           fetch-depth: 1
 
       - name: Install pinned binaries via mise
+        if: ${{ matrix.target.noop != 'true' }}
         uses: jdx/mise-action@v4
 
       - name: Install Python deps via uv
+        if: ${{ matrix.target.noop != 'true' }}
         run: uv sync --all-groups
 
       - name: Refresh the bump PR branch when behind or carrying a non-matching pin
+        if: ${{ matrix.target.noop != 'true' }}
         uses: ./.livespec-dev-tooling/.github/actions/bump-pin-refresh
         with:
           source_repo: ${{ matrix.target.source_repo }}

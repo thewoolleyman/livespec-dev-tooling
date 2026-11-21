@@ -310,14 +310,18 @@ jobs:
   dispatch:
     name: dispatch ${{ matrix.sibling.name }}
     needs: [discover-siblings, fleet-preflight, await-sandbox-image]
-    if: needs.fleet-preflight.outputs.filtered_siblings != '[]' && needs.fleet-preflight.outputs.filtered_siblings != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        sibling: ${{ fromJSON(needs.fleet-preflight.outputs.filtered_siblings) }}
+        sibling: ${{ fromJSON(needs.fleet-preflight.outputs.filtered_siblings != '[]' && needs.fleet-preflight.outputs.filtered_siblings != '' && needs.fleet-preflight.outputs.filtered_siblings || '[{"noop":"true","name":"none"}]') }}
     steps:
+      - name: Early exit when no sibling needs a dispatch
+        if: ${{ matrix.sibling.noop == 'true' }}
+        run: echo "::notice::no sibling to dispatch to; reporting success instead of skipping the job"
+
       - name: Mint App token (contents+PRs write for dispatch)
+        if: ${{ matrix.sibling.noop != 'true' }}
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -327,6 +331,7 @@ jobs:
           repositories: ${{ matrix.sibling.name }}
 
       - name: gh api repository_dispatch
+        if: ${{ matrix.sibling.noop != 'true' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           OWNER: ${{ github.repository_owner }}
