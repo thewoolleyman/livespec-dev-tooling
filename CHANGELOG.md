@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.231.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.230.1...v1.231.0) (2026-11-21)
+
+
+### Features
+
+* seat_dialog_watchdog role for the vps (livespec-dev-tooling-fwtuxo) ([54e702b](https://github.com/livespec-ai/livespec-dev-tooling/commit/54e702bebbfb9991724bd08c76ef8d14cb78a4d0))
+
+
+### Bug Fixes
+
+* report no-op conditional jobs as success, not skipped (livespec-dev-tooling-kefuik) ([c8336d9](https://github.com/livespec-ai/livespec-dev-tooling/commit/c8336d92e0d54af94cb960f7eb9810c4cfce5bb0))
+* watchdog digest pin is a sha256 assert, not copy checksum (livespec-dev-tooling-fwtuxo) ([be2b435](https://github.com/livespec-ai/livespec-dev-tooling/commit/be2b4352141a683e5f5b38187f04c22e02bf6ce2))
+
 ## [1.230.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.230.0...v1.230.1) (2026-11-20)
 
 
