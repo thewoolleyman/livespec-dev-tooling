@@ -8,8 +8,8 @@ counting `__pycache__` and `systemd/`) and the user units under `~/.config/syste
 
 The `token_spend_report` role (`ansible/roles/token_spend_report/defaults/main.yml`) copies a script to the vps only
 when it appears in `token_spend_report_scripts`, which names a SHA-256 per file under one vps-info commit
-(`12cf60f0d6bd`, vps-info#97). A script outside that map is hand-installed: the vps copy is the only copy, and the
-directory is a local git repository with no remote, so nothing outside the vps can recover it.
+(`12cf60f0d6bd`, vps-info#97). A script outside that map is not installed by the role. The directory is a local git repository with no remote, so
+no remote copy of an unpinned script exists.
 
 Pinned by the role (12 files): `attribution.py`, `build_board.py`, `build_triggers.py`, `emit_factory.py`,
 `emit_nodes.py`, `emit_spend.py`, `emit_spend_key.py`, `hcq.py`, `quota_triggers.py`, `quota_triggers_check.py`,
@@ -75,10 +75,13 @@ sibling module. `spend_staleness` (pinned) imports `build_triggers` and `quota_t
 Unpinned dependencies number eight: `prices`, `accounts`, `node_join`, `caam_source`, `codex_idle`, `journal_slots`,
 `tenant_usage_read` and `codex_reset`.
 
-## Scripts that no unit runs and nothing imports
+## Scripts that no unit runs and no unit-run script imports
 
 These are analysis, backfill and one-off tools. None is run by a timer or imported by a unit-run script, and none
-is pinned except `spend_staleness.py`, which is pinned and imported lazily by `tenant_watch.py`.
+is pinned except `spend_staleness.py`, which is pinned and imported lazily by `tenant_watch.py`. Two shell scripts in the
+directory do run some of them, by source-level call (read from the scripts, not executed): `burn_hour.sh` runs
+`burn.py`; `regenerate.sh` runs `parse.py`, `runs.py`, `collect.py`, `agg.py`, `factory_join.py`, `tables.py` and
+`build_page.py`. Neither shell script is run by a unit.
 
 - Analysis and reporting: `agg.py`, `board_capture.py`, `build_page.py`, `burn.py`, `burn_levers_q.py`,
   `cache_rewrite_q.py`, `cache_rewrite_report.py`, `codex_allowance.py`, `codex_join_check.py`,
@@ -87,22 +90,22 @@ is pinned except `spend_staleness.py`, which is pinned and imported lazily by `t
   `hc_board.py`, `hc_columns.py`, `hc_url.py`, `hc_urls.py`, `node_report.py`, `parse.py`, `reconcile_local.py`,
   `restate_hc.py`, `restate_sonnet_cache.py`, `runs.py`, `spend_watch.py`, `tables.py`, `wait_lag_clear.py`.
 - Backfills: `backfill_caam_drops.py`, `backfill_consumer_repair.py`.
-- Shell: `regenerate.sh` (rebuilds the static report page from `data/`; run by hand) and `burn_hour.sh`
-  (waits for a fresh caam read and re-snapshots; run by hand).
+- Shell: `regenerate.sh` (rebuilds the static report page from `data/`) and `burn_hour.sh` (waits for a fresh caam read
+  and re-snapshots). No unit runs either.
 - Notes: `board-notes.md`.
-- `systemd/`: copies of the three hand-installed `token-spend-*` units and timers; nothing reads them.
+- `systemd/`: copies of the three `token-spend-*` units and timers that no role installs; no unit-run script reads them.
 - `__pycache__/`: bytecode.
 
-Some of these may still be used by hand. This inventory records that no unit or unit-run script reaches them, and
-that none is pinned, which makes them unrecoverable from a remote.
+This inventory records that no unit or unit-run script reaches them except through the two shell scripts above, and that
+none is pinned, so no remote holds a copy.
 
 ## User units under `~/.config/systemd/user`
 
 | Unit | Provisioned by |
 | --- | --- |
-| `token-spend-events.service`, `token-spend-events.timer` | hand-installed |
-| `token-spend-fast.service`, `token-spend-fast.timer` | hand-installed |
-| `token-spend-local.service`, `token-spend-local.timer` | hand-installed |
+| `token-spend-events.service`, `token-spend-events.timer` | not installed by any role |
+| `token-spend-fast.service`, `token-spend-fast.timer` | not installed by any role |
+| `token-spend-local.service`, `token-spend-local.timer` | not installed by any role |
 | `token-spend-quota-triggers.service` | installed by the role (livespec-dev-tooling-caejh2); no timer, no `[Install]` |
 
 ## Other host-local script locations that a fleet unit executes from
@@ -132,8 +135,10 @@ Two further findings from the independent replay of `/etc/systemd/system/*.servi
 operating system packages place or link there):
 
 - `/usr/local/bin/with-dolt-server-env.sh` (`#!/bin/bash -p`) is the wrapper that `beads-web.service`,
-  `dolt-ledger-probe.service` and `fabro-dolt-server.service` invoke in `ExecStart`. No role under `ansible/` names it
-  (neither the path nor the basename matches), so it is hand-installed and, like the other unreferenced paths above, a gap.
+  `dolt-ledger-probe.service` and `fabro-dolt-server.service` invoke in `ExecStart`. No role under `ansible/` references it
+  (neither the path nor the basename matches). The dolt-server checkout holds a byte-identical copy and an
+  `install-credential-wrapper` recipe, and vps-info's `dolt-server-claude-credentials` README says dolt-server installs
+  its own wrapper; this inventory did not establish who last ran that installer.
 - `/etc/systemd/system/iscsi.service` runs `/usr/lib/open-iscsi/activate-storage.sh` and links into the packaged
   `/usr/lib/systemd/system/open-iscsi.service`. It is a distribution unit, not fleet-authored, and is out of scope here;
   no role references it.
@@ -157,8 +162,8 @@ Measured 2026-11-20 over read-only ssh: every `ExecStart` directive, with its ba
 
 ## User units outside token-spend that run host-local executables
 
-None of these paths is a literal match in `ansible/` except where stated. Two are checkout paths, not hand-installed
-copies: `caam-delivery-push` (installed from its checkout by role `caam_delivery_push`) and the orchestrator checkout
+None of these paths is a literal match in `ansible/` except where stated, and this inventory does not claim how any of
+them was installed. Two are checkout paths: `caam-delivery-push` (installed from its checkout by role `caam_delivery_push`) and the orchestrator checkout
 that `livespec-codex-cred-refresh.service` runs (a git checkout with an `origin` remote).
 
 | User unit | Executable | Role reference |
@@ -184,5 +189,5 @@ roles; `with-dolt-server-env.sh` is not (see above).
 ## Follow-ups this inventory names
 
 Per the item, pinning each script or adding a unit is filed per script. The ordered gap list is: the six unpinned
-timer-run scripts above, the eight unpinned dependencies, the three hand-installed unit pairs, and the unpinned
+timer-run scripts above, the eight unpinned dependencies, the three unit pairs no role installs, and the unpinned
 manual tools.
