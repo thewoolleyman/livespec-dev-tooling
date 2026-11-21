@@ -340,7 +340,7 @@ right ledger."
 
 **Rule PANE-TYPING-ALLOWED: a coordinator may type into any seat's pane.** legacy-coordinator-agent,
 throughput-plans-coordinator and any seat that directs others MAY type into any seat's pane on any machine (`herdr pane
-send-text`, `send-keys`, `run`): slash commands such as `/model`, `/rename`, `/remote-control` and `/reload-plugins`,
+send-text`, `send-keys`, `run`): slash commands such as `/model`, `/rename` and `/reload-plugins`,
 picker answers, and nudges. A coordinator never waits on, or routes around, a seat it can reach by typing. Use
 SendMessage when it reaches the seat and the content is a message (read `ListAgents` fresh: the listed name is the
 address); type when faster or necessary, after checking the pane is idle, keeping it short and sending `Enter`
@@ -471,9 +471,11 @@ coordinator's R301/R493 delegation, records the basis, and reads the tier and Re
 refuses the seat on authority is posted as an ESCALATION on `livespec-dev-tooling-6tgd2z`, and the coordinator presses
 it within its next turn. Maintainer [6tgd2z 2026-11-15T17:36:44Z]: "… YOU ARE TURNING INTO A BOTTLE NECK. …"
 
-**Rule SLASH: a seat slash command is never a maintainer ask.** `/remote-control`, `/reload-plugins`, `/mcp`
+**Rule SLASH: a seat slash command is never a maintainer ask.** `/reload-plugins`, `/mcp`
 reconnects and similar commands are sent seat to seat or typed by the coordinator into an idle pane. A seat needing a
-fresh process writes its handoff and is relaunched with `claude -n <slug> --remote-control <slug> "<brief>"`. Maintainer
+fresh process writes its handoff and is relaunched with `claude -n <slug> "<brief>"`. No launcher or brief passes
+`--remote-control`, and nothing types `/remote-control` into a seat (plan remote-control-retirement,
+livespec-dev-tooling-s63cb5). Maintainer
 [6tgd2z 2026-11-14T19:01:43Z]: "… Any of these slash commands, you should tell the sessions to do themselves or do for
 them." Credential or secret creation or deletion, OAuth re-authorization the coordinator cannot complete, and caam
 reserve settings stay the maintainer's.

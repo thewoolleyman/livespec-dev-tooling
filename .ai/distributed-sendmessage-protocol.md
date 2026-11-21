@@ -25,7 +25,7 @@ time it can do the job.
 
 **Typing into a pane is NOT forbidden and nothing blocks it.** It is sometimes
 necessary, and then it is the right tool: a slash command such as
-`/remote-control` or `/reload-plugins`, answering a picker or dialog, a session
+`/reload-plugins`, answering a picker or dialog, a session
 that SendMessage cannot reach, or a Codex or pi seat. When you type, check the
 pane is idle first (`herdr pane read`), keep the text short, and send `Enter`
 separately. The maintainer ruled this on 2026-11-14 (plan
@@ -126,7 +126,7 @@ recipe is in the header of `ansible/claude-messaging.yml`.
 
 - **It is not listed.** A session on another machine appears only when both
   sides are connected to Remote Control. A session started before the rollout
-  needs a restart, or `/remote-control` run inside it. A session authenticated
+  needs a restart. A session authenticated
   by `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`, a
   non-Anthropic `ANTHROPIC_BASE_URL` or
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` cannot join Remote Control. That
@@ -145,18 +145,14 @@ recipe is in the header of `ansible/claude-messaging.yml`.
 
 - **Its Remote Control dropped.** When the claude.ai login on a host changes,
   running sessions print "Remote Control disconnected" and drop off the
-  network. You normally do nothing: livespec-overseer's `caam-delivery-push`
-  service sweeps every herdr pane on vps, hetzner-xubuntu and gamingpc-xubuntu
-  every 30 seconds (its contracts.md "Remote Control keep-alive sweep"). It
-  reads each session's own record (`~/.claude/sessions/<pid>.json`,
-  `bridgeSessionId`) to see whether it is on Remote Control, re-runs
-  `/remote-control` in an idle disconnected seat whose input box is empty (at
-  most once per ten minutes), presses Enter on the "Enable Remote Control"
-  dialog and Escape on the Remote Control status panel, and sends an ntfy push
-  when a seat stays off for more than five minutes. Seats in tmux and on the
-  Macs are outside it. If a seat is still off after that, typing
-  `/remote-control` into its idle pane and approving the dialog is a correct
-  use of pane input.
+  network. Nothing re-enables it: livespec-overseer's `caam-delivery-push`
+  keep-alive re-issue and sweep are retired (plan remote-control-retirement,
+  livespec-dev-tooling-s63cb5; overseer #3191 and #3197), and nothing types
+  `/remote-control` into a seat. Reach the seat through its pane (a picker or a
+  short nudge) or a ledger comment on the item or plan it owns. A seat stuck at
+  an Enter-to-select dialog is cleared or alarmed by the out-of-band
+  seat-dialog watchdog on each host. The replacement cross-machine channel is
+  designed in `plan/remote-control-retirement/research/002-ledger-mailbox-design.md`.
 
 If SendMessage cannot reach a session, typing into its pane is allowed. Check
 it is idle, keep it short, and say who you are.

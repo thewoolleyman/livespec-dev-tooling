@@ -19,7 +19,7 @@
 #
 # Run from the control node (the dev host). A session already running keeps
 # the settings it loaded; the guard hook is read per call, but Remote Control
-# reaches a session only once it is restarted (or runs /remote-control).
+# reaches a session only once it is restarted.
 - name: Claude Code distributed SendMessage
   hosts: interactive_claude_hosts
   gather_facts: false
