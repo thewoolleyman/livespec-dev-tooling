@@ -693,7 +693,19 @@
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.393-613add19c/fabro",
           "secret_channel": "native_secrets",
-          "environment": "factory-python"
+          "environment": "factory-python",
+          // The org App pair, as `petri` names it, so a livespec-ai repository run on
+          // the candidate publishes as livespec-ai-factory-bot. Measured 2026-11-21:
+          // the sandbox-driver v0.8.6 canary's first run on the candidate (run
+          // 01M7Z5F05515GG3DB340924ZQ9) failed at environment acquire with
+          // "github refresh failed: token resolution failed", because this entry
+          // named no pair. The candidate instance's vault must also hold the pair
+          // (livespec-dev-tooling-qen2bi declares it in gmktec's host_vars). Inert
+          // for any dispatch that does not choose `--factory candidate`.
+          "github_app": {
+            "app_id_secret": "ORG_GITHUB_APP_ID",
+            "private_key_secret": "/livespec-ai/github/livespec-ai-factory-bot/private-key"
+          }
         },
         // `homelab-worker-arm64` is gmktec's fabro-server-homelab-worker-arm64
         // (:32279): the factory of the arm64 container workers (plan
