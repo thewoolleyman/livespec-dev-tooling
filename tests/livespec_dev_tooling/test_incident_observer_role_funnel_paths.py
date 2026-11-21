@@ -342,7 +342,7 @@ def test_an_ungranted_node_publishes_nothing_and_does_not_fail(
     assert "cannot be published" in outcome.output
 
 
-_PUBLISHER_SHA = "f08e94d9e533a6b6d5cd8c3c8bcaf6930581cb21"
+_PUBLISHER_SHA = "92debdb271bb6ad9292ea5f64d9d3d7527352278"
 
 
 def test_a_non_empty_publisher_list_publishes_the_ci_publish_route_at_its_exact_path() -> None:
