@@ -10,9 +10,10 @@ After=network.target
 Type=simple
 User={{ seat_dialog_watchdog_user }}
 Environment=HOME={{ seat_dialog_watchdog_home }}
+Environment=PATH={{ seat_dialog_watchdog_home }}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=SEAT_WATCHDOG_ALARM_FILE={{ seat_dialog_watchdog_alarm_file }}
 Environment=SEAT_WATCHDOG_LEDGER_CWD={{ seat_dialog_watchdog_ledger_cwd }}
-ExecStart={{ seat_dialog_watchdog_command }} --dwell {{ seat_dialog_watchdog_dwell_seconds }}
+ExecStart={{ seat_dialog_watchdog_command }} --dwell {{ seat_dialog_watchdog_dwell_seconds }} --herdr {{ seat_dialog_watchdog_herdr }}
 Restart=always
 RestartSec=5
 
