@@ -49,6 +49,9 @@
       tags: [keyring_quota]
     - role: tmux_config
       tags: [tmux_config]
+    # Out-of-band stuck-dialog watchdog (plan remote-control-retirement, fwtuxo).
+    - role: seat_dialog_watchdog
+      tags: [seat_dialog_watchdog]
     # The git credential helper shim every fleet clone here names in its
     # .git/config (livespec-orslcm Pillar 3). Clones whose committed
     # .livespec.jsonc remaps to the livespec-ai org App mint through their

@@ -1,0 +1,37 @@
+---
+- name: Stop the seat dialog watchdog when switched off
+  ansible.builtin.systemd:
+    name: "{{ seat_dialog_watchdog_unit }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+  when: not seat_dialog_watchdog_enabled
+
+- name: Install the seat dialog watchdog program
+  ansible.builtin.copy:
+    src: seat-dialog-watchdog
+    dest: "{{ seat_dialog_watchdog_command }}"
+    owner: root
+    group: root
+    mode: "0755"
+    checksum: "{{ seat_dialog_watchdog_pinned_sha256 }}"
+  when: seat_dialog_watchdog_enabled
+  notify: Restart the seat dialog watchdog
+
+- name: Install the seat dialog watchdog unit
+  ansible.builtin.template:
+    src: seat-dialog-watchdog.service.j2
+    dest: "/etc/systemd/system/{{ seat_dialog_watchdog_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: seat_dialog_watchdog_enabled
+  notify: Restart the seat dialog watchdog
+
+- name: Enable and start the seat dialog watchdog
+  ansible.builtin.systemd:
+    name: "{{ seat_dialog_watchdog_unit }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: seat_dialog_watchdog_enabled and not ansible_check_mode

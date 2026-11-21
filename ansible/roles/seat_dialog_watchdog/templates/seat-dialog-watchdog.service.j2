@@ -1,0 +1,20 @@
+# Managed by livespec-dev-tooling (role seat_dialog_watchdog).
+# Presses Enter on the Remote Control "Continue / Disconnect this session" dialog after
+# {{ seat_dialog_watchdog_dwell_seconds }} s; alarms (journal, alarm file, SEAT-WATCHDOG-ALARM ledger comment) on every
+# other Enter-to-select dialog. Never types text into a seat.
+[Unit]
+Description=Out-of-band watchdog for seats stuck at an Enter-to-select dialog
+After=network.target
+
+[Service]
+Type=simple
+User={{ seat_dialog_watchdog_user }}
+Environment=HOME={{ seat_dialog_watchdog_home }}
+Environment=SEAT_WATCHDOG_ALARM_FILE={{ seat_dialog_watchdog_alarm_file }}
+Environment=SEAT_WATCHDOG_LEDGER_CWD={{ seat_dialog_watchdog_ledger_cwd }}
+ExecStart={{ seat_dialog_watchdog_command }} --dwell {{ seat_dialog_watchdog_dwell_seconds }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
