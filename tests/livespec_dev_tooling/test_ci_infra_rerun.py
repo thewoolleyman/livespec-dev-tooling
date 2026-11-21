@@ -278,6 +278,40 @@ def test_initialize_containers_registry_network_failures_rerun_once_before_any_l
     assert "already re-run 1 times" in retry_summary
 
 
+def test_a_post_init_github_connect_timeout_is_rerun_once() -> None:
+    """A failed Prepare workspace git connection gets the bounded infrastructure recovery."""
+    jobs = parse_jobs(
+        payload=[
+            _job(
+                attempt=1,
+                job_id=108,
+                name="check-per-file-coverage (nonroot)",
+                failed_step="Prepare workspace (git trust, mise trust + install, uv sync)",
+            ),
+            _job(
+                attempt=2,
+                job_id=109,
+                name="check-per-file-coverage (nonroot)",
+                failed_step="Prepare workspace (git trust, mise trust + install, uv sync)",
+            ),
+        ]
+    )
+    assert jobs is not None
+    timeout = (
+        "fatal: unable to access 'https://github.com/livespec-ai/livespec-dev-tooling.git/': "
+        "Failed to connect to github.com port 443 after 135602 ms\n"
+    )
+
+    first_attempt = plan_reruns(jobs=jobs, run_attempt=1, logs={108: timeout, 109: timeout})
+    second_attempt = plan_reruns(jobs=jobs, run_attempt=2, logs={108: timeout, 109: timeout})
+
+    assert [
+        (rerun.job_id, rerun.signature, rerun.max_attempts) for rerun in first_attempt.reruns
+    ] == [(108, "github-connect-timeout", 1)]
+    assert second_attempt.reruns == ()
+    assert "already re-run 1 times" in second_attempt.left[0].reason
+
+
 def test_a_setup_job_failure_without_the_signature_or_its_log_is_left() -> None:
     jobs = parse_jobs(
         payload=[
