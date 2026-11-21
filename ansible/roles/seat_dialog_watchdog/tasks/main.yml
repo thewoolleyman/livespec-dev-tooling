@@ -5,6 +5,7 @@
     state: stopped
     enabled: false
   failed_when: false
+  become: true
   when: not seat_dialog_watchdog_enabled
 
 - name: Measure the digest of the watchdog script this role ships
@@ -36,6 +37,7 @@
     owner: root
     group: root
     mode: "0755"
+  become: true
   when: seat_dialog_watchdog_enabled
   notify: Restart the seat dialog watchdog
 
@@ -46,6 +48,7 @@
     owner: root
     group: root
     mode: "0644"
+  become: true
   when: seat_dialog_watchdog_enabled
   notify: Restart the seat dialog watchdog
 
@@ -55,4 +58,5 @@
     enabled: true
     state: started
     daemon_reload: true
+  become: true
   when: seat_dialog_watchdog_enabled and not ansible_check_mode
