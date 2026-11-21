@@ -84,6 +84,15 @@ jobs:
             ansible-playbook -i /tmp/scratch-inventory.ini /tmp/scratch-play.yml --diff | tee /tmp/run2.log
           grep -E "changed=0 .*failed=0" /tmp/run2.log
 
+      - name: Give the scratch user a stub herdr, restart, and require the service to stay active
+        run: |
+          docker exec fwtuxo-scratch sh -c 'mkdir -p /home/tester/.local/bin && printf "#!/bin/sh\\nexit 1\\n" > /home/tester/.local/bin/herdr && chmod 0755 /home/tester/.local/bin/herdr && chown -R tester /home/tester/.local'
+          docker exec fwtuxo-scratch systemctl restart seat-dialog-watchdog.service
+          sleep 25
+          docker exec fwtuxo-scratch systemctl is-active seat-dialog-watchdog.service
+          docker exec fwtuxo-scratch journalctl -u seat-dialog-watchdog.service --no-pager -n 5
+          test "$(docker exec fwtuxo-scratch systemctl show -p NRestarts --value seat-dialog-watchdog.service)" = "0"
+
       - name: Read back the installed program and unit
         run: |
           docker exec fwtuxo-scratch sha256sum /usr/local/bin/seat-dialog-watchdog
