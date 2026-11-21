@@ -966,7 +966,11 @@ Since 2026-11-11 that path is the versioned
 for v0.8.4 (orchestrator bd-ib-ko5kxf: a quota 403 is retryable capacity), with
 v0.8.3 as the REVERT target, after the candidate's one-pod canary passed its
 environment-parity read. The candidate's `kubernetes` kind pinned each of v0.8.3
-(2026-11-11) and v0.8.4 (2026-11-12) first, for that release's one-pod canary. `fabro-server-mi-homelab` keeps
+(2026-11-11) and v0.8.4 (2026-11-12) first, for that release's one-pod canary,
+and since 2026-11-14 pins the versioned v0.8.5 for its own one-pod canary
+(orchestrator bd-ib-l7br6c and bd-ib-p3g5tp: the idle PID 1 ignores TERM and INT,
+and the pod's CPU limit sizes the tools that count CPUs), with v0.8.4 as its REVERT
+target. `fabro-server-mi-homelab` keeps
 the shared `/usr/local/bin/sandbox-driver-kubernetes` at the role's default
 release. Either
 way the pin and the binary the role stages at that path move together, so the
