@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# READ-ONLY report of fleet_host_guard escape-valve uses whose same-day backfill PR is owed.
+# Usage: scripts/coordinator/host-guard-backfills [--days N] [--json]
+#   --days N  only look at labelled items updated in the last N days (default 14)
+# Exit status: 0 nothing overdue; 3 at least one backfill is overdue.
+# Plan fleet-host-guard-escape-valve (livespec-dev-tooling-twdyzy). An escape is recorded as a
+# ledger comment `HOST-GUARD-ESCAPE: command=... reason=... backfill-due=YYYY-MM-DD` BEFORE the
+# guarded command runs; the backfill PR is recorded by a LATER comment on the same item that
+# starts with `HOST-GUARD-BACKFILL: pr=<repo>#<n>`. This lists every escape with no backfill and
+# marks one whose due date has passed OVERDUE. The recorder ALSO labels the item
+# `host-guard-escape` (`bd label add <id> host-guard-escape`): the label is what makes the scan one
+# server-side query per tenant instead of reading every item's comments. Only `bd list` and `bd comments` run, through each
+# tenant's credential wrapper; nothing is written.
+# Test seams: HGB_LEDGER_WRAPPER, HGB_ROOTS (colon separated), HGB_TODAY (YYYY-MM-DD).
+# Shell entry point with embedded stdlib Python, like scripts/coordinator/top5.
+set -euo pipefail
+exec python3 -I - "$@" <<'PY'
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+
+WRAPPER = [os.environ.get("HGB_LEDGER_WRAPPER") or "/usr/local/bin/with-livespec-env.sh", "--"]
+ROOTS = (os.environ.get("HGB_ROOTS") or "").split(":") if os.environ.get("HGB_ROOTS") else [
+    os.path.expanduser("~/workspace"), "/data/projects"]
+ESCAPE = re.compile(r"^HOST-GUARD-ESCAPE:.*?backfill-due=(\d{4}-\d{2}-\d{2})", re.DOTALL)
+BACKFILL = "HOST-GUARD-BACKFILL:"
+LABEL = "host-guard-escape"
+CALL_TIMEOUT_S = 60
+
+
+def today():
+    given = os.environ.get("HGB_TODAY")
+    if given:
+        return datetime.date.fromisoformat(given)
+    return datetime.datetime.now(datetime.timezone.utc).date()
+
+
+def bd(*, cwd, args):
+    done = subprocess.run(WRAPPER + ["bd", *args], cwd=cwd, capture_output=True, text=True,
+                          check=False, timeout=CALL_TIMEOUT_S)
+    if done.returncode != 0:
+        raise RuntimeError(f"bd {' '.join(args)} in {cwd}: {done.stderr.strip()[:200]}")
+    return json.loads(done.stdout or "[]")
+
+
+def tenants():
+    seen = set()
+    for root in ROOTS:
+        try:
+            names = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(root, name)
+            real = os.path.realpath(path)
+            if real in seen or not os.path.isfile(os.path.join(path, ".beads", "config.yaml")):
+                continue
+            seen.add(real)
+            yield path
+
+
+def open_escapes(*, comments):
+    """Escapes in `comments` (oldest first) that no later BACKFILL comment answers."""
+    owed = []
+    for comment in comments:
+        text = (comment.get("text") or comment.get("body") or "").lstrip()
+        match = ESCAPE.match(text)
+        if match:
+            owed.append((match.group(1), text.splitlines()[0][:160]))
+        elif text.startswith(BACKFILL) and owed:
+            owed.pop(0)
+    return owed
+
+
+def main():
+    days = 14
+    args = sys.argv[1:]
+    if "--days" in args:
+        days = int(args[args.index("--days") + 1])
+    as_json = "--json" in args
+    cutoff = (today() - datetime.timedelta(days=days)).isoformat()
+    rows, unread = [], []
+    for tenant in tenants():
+        try:
+            items = bd(cwd=tenant, args=["list", "--status", "all", "--label", LABEL, "--limit", "0", "--json"])
+            for item in items:
+                if str(item.get("updated_at") or "") < cutoff:
+                    continue
+                comments = bd(cwd=tenant, args=["comments", item["id"], "--json"])
+                for due, head in open_escapes(comments=comments):
+                    rows.append({"item": item["id"], "due": due, "overdue": due < today().isoformat(),
+                                 "escape": head})
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
+            unread.append(f"{tenant}: {error}")
+    overdue = [row for row in rows if row["overdue"]]
+    if as_json:
+        print(json.dumps({"owed": rows, "unread": unread}))
+    else:
+        print(f"HOST-GUARD BACKFILLS: {len(rows)} owed, {len(overdue)} overdue, {len(unread)} tenant(s) UNREAD")
+        for row in rows:
+            print(f"  {'OVERDUE' if row['overdue'] else 'owed'} {row['item']} due {row['due']}: {row['escape']}")
+        for line in unread:
+            print(f"  UNREAD {line}")
+    return 3 if overdue else 0
+
+
+sys.exit(main())
+PY
