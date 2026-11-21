@@ -805,6 +805,21 @@ fabro_server_instances:
         type: file
         description: GitHub App 4688510 (mi-homelab-factory-bot) private key, selected per run
         from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
+      # The livespec-ai org App pair, declared on EVERY instance that may launch a
+      # livespec-ai repository (livespec-dev-tooling-qen2bi): petri alone declared it, so
+      # a livespec-ai run routed here was refused at start with "ORG_GITHUB_APP_ID is
+      # absent or empty in the server's vault". Same shape as fabro-server above: the id
+      # is not a secret; the key is a `file` entry named by an absolute path and comes
+      # from the control node's credential wrapper as GITHUB_PRIVATE_KEY_ORG. Inert until
+      # a repository config names this pair.
+      - name: ORG_GITHUB_APP_ID
+        type: token
+        description: GitHub App id of the livespec-ai org App (livespec-ai-factory-bot); an id, not a secret
+        value: "5761962"
+      - name: /livespec-ai/github/livespec-ai-factory-bot/private-key
+        type: file
+        description: GitHub App 5761962 (livespec-ai-factory-bot) private key, selected per run
+        from_controller_env: GITHUB_PRIVATE_KEY_ORG
       - name: OPENAI_API_KEY
         type: token
         description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
@@ -882,6 +897,21 @@ fabro_server_instances:
         type: file
         description: GitHub App 3668528 private key
         from_controller_env: GITHUB_PRIVATE_KEY
+      # The livespec-ai org App pair, declared on EVERY instance that may launch a
+      # livespec-ai repository (livespec-dev-tooling-qen2bi): petri alone declared it, so
+      # a livespec-ai run routed here was refused at start with "ORG_GITHUB_APP_ID is
+      # absent or empty in the server's vault". Same shape as fabro-server above: the id
+      # is not a secret; the key is a `file` entry named by an absolute path and comes
+      # from the control node's credential wrapper as GITHUB_PRIVATE_KEY_ORG. Inert until
+      # a repository config names this pair.
+      - name: ORG_GITHUB_APP_ID
+        type: token
+        description: GitHub App id of the livespec-ai org App (livespec-ai-factory-bot); an id, not a secret
+        value: "5761962"
+      - name: /livespec-ai/github/livespec-ai-factory-bot/private-key
+        type: file
+        description: GitHub App 5761962 (livespec-ai-factory-bot) private key, selected per run
+        from_controller_env: GITHUB_PRIVATE_KEY_ORG
       - name: OPENAI_API_KEY
         type: token
         description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
@@ -1021,6 +1051,21 @@ fabro_server_instances:
         type: file
         description: GitHub App 4688510 (mi-homelab-factory-bot) private key
         from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
+      # The livespec-ai org App pair, declared on EVERY instance that may launch a
+      # livespec-ai repository (livespec-dev-tooling-qen2bi): petri alone declared it, so
+      # a livespec-ai run routed here was refused at start with "ORG_GITHUB_APP_ID is
+      # absent or empty in the server's vault". Same shape as fabro-server above: the id
+      # is not a secret; the key is a `file` entry named by an absolute path and comes
+      # from the control node's credential wrapper as GITHUB_PRIVATE_KEY_ORG. Inert until
+      # a repository config names this pair.
+      - name: ORG_GITHUB_APP_ID
+        type: token
+        description: GitHub App id of the livespec-ai org App (livespec-ai-factory-bot); an id, not a secret
+        value: "5761962"
+      - name: /livespec-ai/github/livespec-ai-factory-bot/private-key
+        type: file
+        description: GitHub App 5761962 (livespec-ai-factory-bot) private key, selected per run
+        from_controller_env: GITHUB_PRIVATE_KEY_ORG
       - name: OPENAI_API_KEY
         type: token
         description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
