@@ -1,0 +1,13 @@
+---
+# Group variables for every host in the inventory.
+
+# --- caam_role_key ---
+#
+# The PUBLIC half (not a secret) of the dedicated credential-rotation role key, generated on
+# hetzner-xubuntu by hetzner-xubuntu-info's hxi_credential_role on 2026-11-21.
+# Fingerprint: SHA256:WK2lSXpQe1SkfFkrySoy1c3/FZfH10XMs1+hHR0vh9E.
+# `ansible/credential-role-key.yml` (role `caam_role_key`) authorizes it as one
+# `restrict` authorized_keys entry per listed host once applied from the control node.
+# Rollback: set `caam_role_key_state: absent` here and re-apply; deleting this variable
+# only stops managing the entry, it does not remove it from any host.
+caam_role_key_public: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXtl3BgGa+8jMFYjEwyl1JANiAQCbLOBWvx9Mx3iRnA caam-role-key@credential-rotation-role"
