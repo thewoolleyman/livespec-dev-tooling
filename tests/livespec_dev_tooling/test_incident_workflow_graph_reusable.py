@@ -5,6 +5,7 @@ livespec-dev-tooling-jw4a4v: the publisher job ci.yml calls at a master commit S
 Every other reusable-workflow call still refuses by name.
 """
 
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -188,3 +189,21 @@ def test_the_declared_graph_reads_the_called_workflow_at_its_pin_from_the_clone(
         ["cat-file", "blob", f"{_SHA}:{_PATH}"] in reads,
     ]
     assert all(facts), (names, reads)
+
+
+def test_the_publisher_reports_a_no_op_as_success_through_guarded_steps() -> None:
+    """An empty aggregate exits through a notice step; every real step is guarded (afousj).
+
+    A skipped call reports a skipped check the release-currency grader reads as not green, so
+    the publisher runs always and decides at step level.
+    """
+    text = Path(_PATH).read_text(encoding="utf-8")
+    steps = text.split("\n    steps:\n", 1)[1].split("\n      - name: ")[1:]
+    noop, real = steps[0], steps[1:]
+    facts = [
+        "\n    if:" not in text.split("\n    steps:\n", 1)[0].split("\njobs:\n", 1)[1],
+        noop.startswith("Nothing to publish") and "if: ${{ inputs.aggregate == '' }}" in noop,
+        len(real) == 3,
+        all("if: ${{ inputs.aggregate != '' }}" in step for step in real),
+    ]
+    assert all(facts), facts

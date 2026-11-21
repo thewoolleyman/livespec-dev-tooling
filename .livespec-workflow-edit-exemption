@@ -1,4 +1,4 @@
-work_item=livespec-dev-tooling-fwtuxo
-reason=Additive non-gating workflow seat-dialog-watchdog-scratch-apply: applies the seat_dialog_watchdog role to a throwaway systemd container as a non-root sudo user, twice, to catch what a check-mode drift cannot (missing become; sha256 on copy checksum). Adds a new file only; deletes and modifies nothing under .github/workflows/.
+work_item=livespec-dev-tooling-afousj
+reason=Release-currency fix, step 1 of 2: reusable-incident-ci-publish.yml gains a first no-op notice step and an if guard on each existing step so an empty aggregate input concludes success; a non-empty aggregate runs exactly as before. Add-only; removes no step, check or gate.
 change=additive
 ci_runtime=no-significant-increase
