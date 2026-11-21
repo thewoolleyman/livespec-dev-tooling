@@ -21,7 +21,7 @@ its typed next_action, the age of its last ledger move (STALE past 60 minutes) a
 newest epic comment, so an ask from a seat that cannot SendMessage (a Mac or Codex
 seat) is seen every tick (rule P3). (The 2026-11-20 record ranks P1-P7; TOP lists them all.)
 
-TOP mirrors the priorities-record (the 2026-11-20T06:4xZ record on epic livespec-dev-tooling-6tgd2z, P1-P7), and a KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
+TOP is only the FALLBACK (printed after an UNREAD priorities-record line) and the source of the KEPT rows; the P-list is parsed from the newest PRIORITIES now scope event on epic livespec-dev-tooling-6tgd2z. A KEPT row is a standing seat, not a ranked priority. When the record changes, change TOP in the same
 docs PR; the record wins over this list until then. Nothing here mutates: only
 `bd show` and `bd comments`, through each tenant's credential wrapper, and local reads
 of the launch hold files.
@@ -63,6 +63,7 @@ import concurrent.futures
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -641,6 +642,174 @@ def frozen_seats_header(seat):
     print()
 
 
+# ---- HOST-GUARD BACKFILLS, SEAT-WATCHDOG ALARMS and the priorities-record parser ----
+COORDINATOR_EPIC = "livespec-dev-tooling-6tgd2z"
+BACKFILL_TIMEOUT_S = 120
+BACKFILL_OVERDUE_EXIT = 3
+ALARM_MARK = "SEAT-WATCHDOG-ALARM"
+ALARM_COUNT = 3
+ALARM_CHARS = 200
+PRIORITY_DESC_CHARS = 110
+PREFIX = "livespec-dev-tooling-"
+FULL_ID = re.compile(r"\b((?:livespec-dev-tooling|overseer|bd-ib|hxi)-[a-z0-9]{5,7})\b")
+SHORT_ID = re.compile(r"\(([a-z0-9]{6})\)")
+ENTRY_START = re.compile(r"(?:^|[;,]\s+|\bthen\s+|:\s+)(\d+[ab]?)\s+(?=[A-Za-z])", re.M)
+UNCHANGED = re.compile(r"(?:rest|follows|remainder|remaining)[^.\n]{0,20}unchanged", re.I)
+NAME_ID = re.compile(r"\b([a-z][a-z0-9]*(?:-[a-z0-9]+){1,})\s+\(((?:livespec-dev-tooling|overseer|bd-ib|hxi)-[a-z0-9]{5,7})\)")
+
+
+def host_guard_backfills_header():
+    """First line of host-guard-backfills, marked OVERDUE when it exits 3; UNREAD when it cannot be read."""
+    script = os.path.join(os.environ.get("COORDINATOR_DIR", "."), "host-guard-backfills")
+    print("HOST-GUARD BACKFILLS (host-guard-backfills; an OVERDUE backfill is resolved THIS tick):")
+    if not os.path.isfile(script):
+        print(f"  UNREAD host-guard-backfills is absent at {script}")
+        print()
+        return
+    try:
+        proc = subprocess.run(["bash", script], capture_output=True, text=True, timeout=BACKFILL_TIMEOUT_S)
+    except Exception as exc:
+        print(f"  UNREAD host-guard-backfills could not run: {str(exc)[:160]}")
+        print()
+        return
+    lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
+    first = lines[0] if lines else ""
+    if proc.returncode == BACKFILL_OVERDUE_EXIT:
+        print(f"  OVERDUE {first or '(no output)'}")
+    elif proc.returncode != 0:
+        err = (proc.stderr.strip() or first or f"exit {proc.returncode}").splitlines()[-1]
+        print(f"  UNREAD host-guard-backfills exit {proc.returncode}: {err[:160]}")
+    elif not first:
+        print("  UNREAD host-guard-backfills printed nothing")
+    else:
+        print(f"  {first}")
+    print()
+
+
+def watchdog_alarms_header(comments):
+    """The newest SEAT-WATCHDOG-ALARM comments on the coordinator epic, one line each."""
+    print(f"SEAT-WATCHDOG ALARMS (newest {ALARM_COUNT} {ALARM_MARK} comments on {COORDINATOR_EPIC}):")
+    if comments is None:
+        print(f"  UNREAD ledger read failed for {COORDINATOR_EPIC}")
+        print()
+        return
+    alarms = [c for c in comments if (c.get("text") or "").lstrip().startswith(ALARM_MARK)]
+    if not alarms:
+        print(f"  none ({len(comments)} comments read, none carry {ALARM_MARK})")
+    for c in alarms[-ALARM_COUNT:]:
+        text = " | ".join(ln.strip() for ln in (c.get("text") or "").splitlines() if ln.strip())
+        print(f"  {c.get('created_at')} {text[:ALARM_CHARS]}")
+    print()
+
+
+def priority_section(text):
+    """The lines of a scope event's `PRIORITIES now` block, joined by newlines, or None."""
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        pos = ln.find("PRIORITIES now")
+        if pos < 0:
+            continue
+        indent = len(ln) - len(ln.lstrip())
+        inline = re.match(r"PRIORITIES now:\s*(.*)", ln[pos:])
+        block = [inline.group(1)] if inline and inline.group(1) else []
+        for nxt in lines[i + 1:]:
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith("KEPT") or (len(nxt) - len(nxt.lstrip())) <= indent:
+                break
+            block.append(stripped)
+        return "\n".join(block)
+    return None
+
+
+def entry_epic(text, names):
+    """The work-item id a priorities entry names, by full id, short id, bare id word or known plan name."""
+    found = FULL_ID.search(text)
+    if found:
+        return found.group(1)
+    short = SHORT_ID.search(text)
+    if short:
+        return PREFIX + short.group(1)
+    word = text.strip(",;:() ")
+    if re.fullmatch(r"[a-z0-9]{6}", word):
+        return PREFIX + word
+    first = text.split(None, 1)[0].strip(",;:()") if text.split() else ""
+    word = first
+    return names.get(word) or plan_epic(word)
+
+
+def plan_epic(slug):
+    """The epic id a plan slug carries in plan/<slug>/associated_work_item_id, or None."""
+    if not re.fullmatch(r"[a-z][a-z0-9-]{3,}", slug):
+        return None
+    path = os.path.join(WORKSPACE, "livespec-dev-tooling", "plan", slug, "associated_work_item_id")
+    try:
+        found = FULL_ID.search(open(path, encoding="utf-8").read())
+    except OSError:
+        return None
+    return found.group(1) if found else None
+
+
+def parse_entries(section, names):
+    """[(label number, description, epic or None)] in the order a priorities block lists them."""
+    marks = list(ENTRY_START.finditer(section))
+    out = []
+    for idx, mark in enumerate(marks):
+        end = marks[idx + 1].start() if idx + 1 < len(marks) else len(section)
+        body = " ".join(section[mark.end():end].split()).rstrip(";, ")
+        body = re.sub(r",? and the rest unchanged\.?$", "", body).rstrip(".;, ")
+        out.append((mark.group(1), body, entry_epic(body, names)))
+    return out
+
+
+def parse_priorities(comments):
+    """(entries, record timestamp) from the newest priorities-record scope event, or (None, reason).
+
+    A record that says the rest is unchanged chains to the next older record; an entry the
+    newer record already names (by work item id) keeps its newer rank and wording.
+    """
+    names = dict(NAME_ID.findall("\n".join(c.get("text") or "" for c in comments)))
+    records = [
+        (c.get("created_at") or "", priority_section(c.get("text") or ""), c.get("text") or "")
+        for c in comments
+        if (c.get("text") or "").startswith("plan-scope-event")
+    ]
+    records = [r for r in records if r[1] is not None]
+    if not records:
+        return None, "no scope event with a PRIORITIES now block"
+    records.sort(key=lambda r: r[0])
+    merged, seen = [], set()
+    for stamp, section, full in reversed(records):
+        got = parse_entries(section, names)
+        if not got:
+            return None, f"the {stamp} record has a PRIORITIES now block with no numbered entries"
+        for label, body, epic in got:
+            if (epic is not None and epic in seen) or (epic is None and merged and stamp != records[-1][0]):
+                continue
+            if epic is not None:
+                seen.add(epic)
+            merged.append((label, body, epic))
+        if not UNCHANGED.search(full):
+            break
+    return merged, records[-1][0]
+
+
+def label_key(label):
+    digits = re.match(r"\d+", label)
+    return (int(digits.group(0)) if digits else 0, label)
+
+
+def priorities_list(comments):
+    """The (label, description, epic) rows the P-list prints, newest record first, or a fallback TOP with a reason."""
+    if comments is None:
+        return [(lab.split(" ", 1)[0], lab.split(" ", 1)[1], epic) for lab, epic in TOP], "UNREAD priorities-record: ledger read failed"
+    rows, info = parse_priorities(comments)
+    if rows is None:
+        fallback = [(lab.split(" ", 1)[0], lab.split(" ", 1)[1], epic) for lab, epic in TOP]
+        return fallback, f"UNREAD priorities-record: {info}"
+    rows.sort(key=lambda r: label_key(r[0]))
+    return rows, f"priorities-record {info} (newest PRIORITIES now scope event on {COORDINATOR_EPIC})"
+
+
 ARGS = parse_args()
 if ARGS.ack:
     sys.exit(rules_ack(ARGS.seat))
@@ -658,14 +827,23 @@ print()
 overcommit_header()
 stranded_header()
 holds_header()
+host_guard_backfills_header()
+COORD_COMMENTS = read_comments(COORDINATOR_EPIC)
+watchdog_alarms_header(COORD_COMMENTS)
 
-
-for label, epic in TOP:
+PRIORITY_ROWS, PRIORITY_SOURCE = priorities_list(COORD_COMMENTS)
+print(PRIORITY_SOURCE)
+for number, desc, epic in PRIORITY_ROWS:
+    shown = re.sub(r"\s*\(?\b(?:(?:livespec-dev-tooling|overseer|bd-ib|hxi)-[a-z0-9]{5,7}|[a-z0-9]{6})\b\)?\s*$", "", desc) or desc
+    label = f"{number} {shown[:PRIORITY_DESC_CHARS]}"
+    if epic is None:
+        print(f"P{label} (no work item id on the record; resolve THIS tick: name its owner and next action)")
+        continue
     cwd, wrapper = repo_for(epic)
     rec = run(["bd", "show", epic, "--json"], cwd, wrapper)
     comments = run(["bd", "comments", epic, "--json"], cwd, wrapper) or []
     if not rec:
-        print(f"{'P' if label[:1].isdigit() else ''}{label}: LEDGER READ FAILED ({epic})")
+        print(f"P{label}: LEDGER READ FAILED ({epic})")
         continue
     r = rec[0]
     na = (r.get("metadata") or {}).get("next_action") or {}
@@ -674,12 +852,30 @@ for label, epic in TOP:
     flag = ""
     if age > STALE_MINUTES:
         flag = "  <<< STALE: name the ONE next action and its holder; if it is the coordinator's, do it NOW"
-    tag = "P" if label[:1].isdigit() else ""  # a KEPT seat is not a ranked priority
-    print(f"{tag}{label} ({epic}) [{r['status']}] last ledger move {age:.0f} min ago{flag}")
+    print(f"P{label} ({epic}) [{r['status']}] last ledger move {age:.0f} min ago{flag}")
     print(f"    next_action({na.get('kind')}): {na.get('text', '')[:220]}")
     if comments:
         newest = comments[-1]
         print(f"    newest comment {newest['created_at']}: {newest['text'][:220].replace(chr(10), ' ')}")
+
+for label, epic in TOP:
+    if not label.startswith("KEPT"):
+        continue
+    cwd, wrapper = repo_for(epic)
+    rec = run(["bd", "show", epic, "--json"], cwd, wrapper)
+    comments = run(["bd", "comments", epic, "--json"], cwd, wrapper) or []
+    if not rec:
+        print(f"{label}: LEDGER READ FAILED ({epic})")
+        continue
+    r = rec[0]
+    na = (r.get("metadata") or {}).get("next_action") or {}
+    last = max([r.get("updated_at", "")] + [c.get("created_at", "") for c in comments])
+    age = (NOW - dt.datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() / 60 if last else 1e9
+    flag = ""
+    if age > STALE_MINUTES:
+        flag = "  <<< STALE: name the ONE next action and its holder; if it is the coordinator's, do it NOW"
+    print(f"{label} ({epic}) [{r['status']}] last ledger move {age:.0f} min ago{flag}")
+    print(f"    next_action({na.get('kind')}): {na.get('text', '')[:220]}")
 
 # Rule RULES-ACK: the full header is printed first, then the exit status carries RULES-CHANGED.
 sys.exit(RULES_EXIT)
