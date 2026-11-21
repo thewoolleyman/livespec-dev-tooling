@@ -32,7 +32,7 @@ def _run(
     *, tmp_path: Path, comments: list[str], today: str, extra: list[str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     tenant = tmp_path / "roots" / "demo"
-    (tenant / ".beads").mkdir(parents=True)
+    (tenant / ".beads").mkdir(parents=True, exist_ok=True)
     _ = (tenant / ".beads" / "config.yaml").write_text("dolt.prefix: demo\n", encoding="utf-8")
     items = [{"id": "demo-abc123", "updated_at": "2026-11-21T01:00:00Z"}]
     rows = [{"text": text} for text in comments]
