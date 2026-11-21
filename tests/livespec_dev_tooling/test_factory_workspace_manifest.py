@@ -186,6 +186,7 @@ def test_read_runs_queries_each_instance_and_provider_and_marks_bad_evidence_unr
     ("run", "expected"),
     [
         ({"status": {"kind": "running"}}, None),
+        ({"status": {"kind": "succeeded"}, "start_time": None, "wall_time_ms": 1}, None),
         ({"status": {"kind": "succeeded"}, "start_time": "bad", "wall_time_ms": 1}, None),
         (
             {"status": {"kind": "failed"}, "start_time": "2026-11-19T00:00:00", "wall_time_ms": 2},
