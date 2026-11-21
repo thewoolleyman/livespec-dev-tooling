@@ -26,11 +26,19 @@ import re
 import subprocess
 import sys
 
-WRAPPER = [os.environ.get("HGB_LEDGER_WRAPPER") or "/usr/local/bin/with-livespec-env.sh", "--"]
+DEFAULT_WRAPPER = [os.environ.get("HGB_DEFAULT_WRAPPER") or "/usr/local/bin/with-livespec-env.sh", "--"]
+WRAPPER = [os.environ.get("HGB_LEDGER_WRAPPER") or DEFAULT_WRAPPER[0], "--"]
 ROOTS = (os.environ.get("HGB_ROOTS") or "").split(":") if os.environ.get("HGB_ROOTS") else [
     os.path.expanduser("~/workspace"), "/data/projects"]
 ESCAPE = re.compile(r"^HOST-GUARD-ESCAPE:.*?backfill-due=(\d{4}-\d{2}-\d{2})", re.DOTALL)
 BACKFILL = "HOST-GUARD-BACKFILL:"
+# Tenants whose launcher lives on another host, read THERE and not here (legacy-coordinator-agent ruling
+# 2026-11-21): tenant directory name -> (host, owner). A failed read of one is reported as read elsewhere.
+READ_ELSEWHERE = {
+    "homelab": ("vps", "vps-control-node-ops"),
+    "openbrain": ("vps", "vps-control-node-ops"),
+}
+NO_DATABASE = "no beads database found"
 LABEL = "host-guard-escape"
 CALL_TIMEOUT_S = 60
 
@@ -42,8 +50,61 @@ def today():
     return datetime.datetime.now(datetime.timezone.utc).date()
 
 
+def _strip_jsonc(text):
+    """Drop // and /* */ comments outside strings, then trailing commas, so json.loads reads .livespec.jsonc."""
+    out, i, in_string = [], 0, False
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(text):
+                out.append(text[i + 1])
+                i += 1
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+        elif text.startswith("//", i):
+            while i < len(text) and text[i] != "\n":
+                i += 1
+            continue
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = len(text) if end < 0 else end + 2
+            continue
+        else:
+            out.append(ch)
+        i += 1
+    return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
+
+
+def tenant_wrapper(*, cwd):
+    """The tenant's own launcher: its `.livespec.jsonc` credential_wrapper up to and including the first `--`.
+
+    A tenant such as hetzner-xubuntu-info is read through its own scoped launcher; the fleet default
+    wrapper answers it with a credential refusal (1045), which is a wrong-wrapper read, not missing data.
+    HGB_LEDGER_WRAPPER (test seam) forces one wrapper for every tenant. A tenant that declares none, or
+    whose declared launcher is not installed on this host, is read through the fleet default
+    (HGB_DEFAULT_WRAPPER, test seam).
+    """
+    if os.environ.get("HGB_LEDGER_WRAPPER"):
+        return WRAPPER
+    try:
+        with open(os.path.join(cwd, ".livespec.jsonc"), encoding="utf-8") as handle:
+            declared = json.loads(_strip_jsonc(handle.read())).get("credential_wrapper")
+    except (OSError, ValueError):
+        return DEFAULT_WRAPPER
+    if not isinstance(declared, list) or "--" not in declared or not all(isinstance(x, str) for x in declared):
+        return DEFAULT_WRAPPER
+    prefix = declared[: declared.index("--") + 1]
+    if prefix[0].startswith("."):
+        prefix[0] = os.path.join(cwd, prefix[0])
+    return prefix if os.access(prefix[0], os.X_OK) else DEFAULT_WRAPPER
+
+
 def bd(*, cwd, args):
-    done = subprocess.run(WRAPPER + ["bd", *args], cwd=cwd, capture_output=True, text=True,
+    done = subprocess.run(tenant_wrapper(cwd=cwd) + ["bd", *args], cwd=cwd, capture_output=True, text=True,
                           check=False, timeout=CALL_TIMEOUT_S)
     if done.returncode != 0:
         raise RuntimeError(f"bd {' '.join(args)} in {cwd}: {done.stderr.strip()[:200]}")
@@ -87,7 +148,7 @@ def main():
     as_json = "--json" in args
     every = "--all" in args
     cutoff = (today() - datetime.timedelta(days=days)).isoformat()
-    rows, unread = [], []
+    rows, unread, elsewhere, not_applicable = [], [], [], []
     for tenant in tenants():
         try:
             scan = ["list", "--status", "all", "--limit", "0", "--json"]
@@ -100,16 +161,29 @@ def main():
                     rows.append({"item": item["id"], "due": due, "overdue": due < today().isoformat(),
                                  "escape": head})
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
-            unread.append(f"{tenant}: {error}")
+            remote = READ_ELSEWHERE.get(os.path.basename(tenant))
+            if NO_DATABASE in str(error):
+                not_applicable.append(f"{tenant}: no beads database on this host")
+            elif remote:
+                elsewhere.append(f"{tenant}: read on {remote[0]}, owner {remote[1]}")
+            else:
+                unread.append(f"{tenant}: {error}")
     overdue = [row for row in rows if row["overdue"]]
     if as_json:
-        print(json.dumps({"owed": rows, "unread": unread}))
+        print(json.dumps({"owed": rows, "unread": unread, "elsewhere": elsewhere, "not_applicable": not_applicable}))
     else:
-        print(f"HOST-GUARD BACKFILLS: {len(rows)} owed, {len(overdue)} overdue, {len(unread)} tenant(s) UNREAD")
+        extra = "".join(
+            f", {len(found)} {label}" for found, label in ((elsewhere, "read elsewhere"), (not_applicable, "not applicable")) if found
+        )
+        print(f"HOST-GUARD BACKFILLS: {len(rows)} owed, {len(overdue)} overdue, {len(unread)} tenant(s) UNREAD{extra}")
         for row in rows:
             print(f"  {'OVERDUE' if row['overdue'] else 'owed'} {row['item']} due {row['due']}: {row['escape']}")
         for line in unread:
             print(f"  UNREAD {line}")
+        for line in elsewhere:
+            print(f"  ELSEWHERE {line}")
+        for line in not_applicable:
+            print(f"  N/A {line}")
     return 3 if overdue else 0
 
 
