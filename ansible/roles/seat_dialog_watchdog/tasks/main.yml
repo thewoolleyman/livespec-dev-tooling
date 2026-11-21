@@ -7,6 +7,13 @@
   failed_when: false
   when: not seat_dialog_watchdog_enabled
 
+- name: Assert the watchdog script bytes match the fleet digest pin
+  # copy's own `checksum` is SHA-1, so the sha256 pin is checked here instead.
+  ansible.builtin.assert:
+    that: "lookup('ansible.builtin.file', 'seat-dialog-watchdog') | hash('sha256') == seat_dialog_watchdog_pinned_sha256"
+    fail_msg: the watchdog script no longer matches the digest pinned for the fleet
+  when: seat_dialog_watchdog_enabled
+
 - name: Install the seat dialog watchdog program
   ansible.builtin.copy:
     src: seat-dialog-watchdog
@@ -14,7 +21,6 @@
     owner: root
     group: root
     mode: "0755"
-    checksum: "{{ seat_dialog_watchdog_pinned_sha256 }}"
   when: seat_dialog_watchdog_enabled
   notify: Restart the seat dialog watchdog
 
