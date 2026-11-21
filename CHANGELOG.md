@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.231.1](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.231.0...v1.231.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* the incident-merge chain reader supplies the genesis writer and item status the principal reads (livespec-dev-tooling-nrb3oa) ([f35a8f7](https://github.com/livespec-ai/livespec-dev-tooling/commit/f35a8f734f0115316c1a06125d68ec6d24d27c9b))
+* the incident-merge principal accepts a genesis written by publish-genesis (livespec-dev-tooling-nrb3oa) ([9e8e1b1](https://github.com/livespec-ai/livespec-dev-tooling/commit/9e8e1b162f378b557194ca371be5949a4ece4693))
+
 ## [1.231.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.230.1...v1.231.0) (2026-11-21)
 
 
