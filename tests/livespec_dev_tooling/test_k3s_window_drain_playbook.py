@@ -65,8 +65,17 @@ def _requested(*, action: str, confirm: str, cluster_role: str) -> bool:
         "and k3s_window_confirm | default('') == k3s_window_action | default('') "
         "and cluster_role | default('') == 'server' }}"
     ), expression
-    actions = ["pause-arc", "restore-arc", "cordon", "uncordon", "evacuate", "clear-lost"]
-    listed = "k3s_window_actions: [pause-arc, restore-arc, cordon, uncordon, evacuate, clear-lost]"
+    actions = [
+        "pause-arc",
+        "restore-arc",
+        "cordon",
+        "uncordon",
+        "evacuate",
+        "clear-lost",
+        "delete-factory-pod",
+        "delete-gate-job",
+    ]
+    listed = "k3s_window_actions: [" + ", ".join(actions) + "]"
     assert listed in _text()
     return action in actions and confirm == action and cluster_role == "server"
 
@@ -145,6 +154,8 @@ def test_holding_an_already_held_node_changes_nothing() -> None:
 
 
 _FACTORY_REASON = "a factory namespace pod follows the dispatcher's cancel-and-re-dispatch route"
+_FACTORY_TASK = "Delete one named factory pod whose run is terminal and preserved"
+_JOB_TASK = "Delete one named gate Job whose only pod is stuck on a not-Ready node"
 _POD_TASK = "Evacuate a cordoned node's recreated pods, or clear a lost node's pods"
 
 
@@ -152,7 +163,11 @@ def test_only_the_pod_task_deletes_and_nothing_drains_or_evicts() -> None:
     pod_task = _task(name=_POD_TASK)
     elsewhere = "\n".join(
         line
-        for line in _text().replace(pod_task, "").splitlines()
+        for line in _text()
+        .replace(pod_task, "")
+        .replace(_task(name=_FACTORY_TASK), "")
+        .replace(_task(name=_JOB_TASK), "")
+        .splitlines()
         if not line.lstrip().startswith("#")
     )
     for forbidden in ("kubectl drain", "kubectl delete", "evict", "--force"):
@@ -167,7 +182,7 @@ def test_the_header_states_the_two_deleting_actions_and_no_longer_denies_them() 
     header = _text().split("\n- name: ", 1)[0]
     assert "NOTHING HERE EVICTS, DRAINS OR DELETES A POD" not in header
     assert "FOUR ACTIONS" not in header
-    assert "SIX ACTIONS, ONE CONFIRMATION EACH" in header
+    assert "EIGHT ACTIONS, ONE CONFIRMATION EACH" in header
     for stated in (
         "#   evacuate     — BEFORE a planned power-off",
         "#   clear-lost   — AFTER a node is already gone",
@@ -918,3 +933,264 @@ def test_a_statefulset_pod_must_come_back_under_its_name_on_another_ready_node(
     )
     assert pending.returncode == 1, pending
     assert "monitoring/StatefulSet/store(0/1)" in pending.stderr
+
+
+# ---- the named-object deletes (livespec-dev-tooling-cgb2l2) ----------------
+
+_RUN_ID = "01m7stmtprqeg0eqyac3dggk0d"
+_FACTORY_POD = f"petri-{_RUN_ID}-l0"
+_SHA = "a" * 40
+_TERMINAL = f"failed:{_RUN_ID}"
+_PRESERVE = f"refs/heads/needs-human/dispatch-1@{_SHA}"
+_JOB = "gate-livespec-dev-tooling-2k9ws"
+_MARKED_POD = (
+    f"{_JOB}-x7k2p node-a marked:2026-11-21T01:00:00Z finalizers:batch.kubernetes.io/job-tracking\n"
+)
+
+_DELETE_KUBECTL = r"""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${STAND_IN_DIR}/log"
+case "$1 $2" in
+  'get pod') cat "${STAND_IN_DIR}/pod-node" ;;
+  'get job') test -f "${STAND_IN_DIR}/job-exists" || { echo 'not found' >&2; exit 1; }; echo "job/$5" ;;
+  'get pods') cat "${STAND_IN_DIR}/job-pods" ;;
+  'get node') cat "${STAND_IN_DIR}/ready" ;;
+  'delete pod' | 'delete job') ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+"""
+
+
+def _script(*, name: str) -> str:
+    task = _task(name=name)
+    body = task.split("        cmd: |\n", 1)[1].split("\n      become: true", 1)[0]
+    return textwrap.dedent(body)
+
+
+def _delete_run(
+    *,
+    tmp_path: Path,
+    task: str,
+    object_name: str,
+    terminal: str = _TERMINAL,
+    preserve: str = _PRESERVE,
+    job_pods: str = _MARKED_POD,
+    ready: str = "False",
+    job_exists: bool = True,
+    dry_run: str = "false",
+) -> _Outcome:
+    stand_in = tmp_path / "stand-in"
+    (stand_in / "bin").mkdir(parents=True)
+    kubectl = stand_in / "bin" / "kubectl"
+    _ = kubectl.write_text(_DELETE_KUBECTL, encoding="utf-8")
+    kubectl.chmod(0o755)
+    _ = (stand_in / "log").write_text("", encoding="utf-8")
+    _ = (stand_in / "pod-node").write_text("node-a", encoding="utf-8")
+    _ = (stand_in / "job-pods").write_text(job_pods, encoding="utf-8")
+    _ = (stand_in / "ready").write_text(ready, encoding="utf-8")
+    if job_exists:
+        _ = (stand_in / "job-exists").write_text("", encoding="utf-8")
+    completed = subprocess.run(
+        ["/bin/bash", "-c", _script(name=task)],
+        env={
+            "PATH": f"{stand_in / 'bin'}{os.pathsep}/usr/bin{os.pathsep}/bin",
+            "STAND_IN_DIR": str(stand_in),
+            "K3S_WINDOW_OBJECT": object_name,
+            "K3S_WINDOW_KEPT_NAMESPACES": "factory factory-mi-homelab",
+            "K3S_WINDOW_RUN_TERMINAL_EVIDENCE": terminal,
+            "K3S_WINDOW_PRESERVE_EVIDENCE": preserve,
+            "K3S_WINDOW_DRY_RUN": dry_run,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    return _Outcome(
+        returncode=completed.returncode,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+        log=(stand_in / "log").read_text(encoding="utf-8").splitlines(),
+        pods="",
+    )
+
+
+def _object_confirmed(*, action: str, obj: str, confirm: str) -> bool:
+    match = re.search(
+        r"^    k3s_window_object_confirmed: >-\n(?P<body>(?:      [^\n]*\n)+)",
+        _text(),
+        re.MULTILINE,
+    )
+    assert match
+    assert " ".join(match["body"].split()) == (
+        "{{ k3s_window_action | default('') not in k3s_window_delete_actions "
+        "or (k3s_window_object | default('') | length > 0 "
+        "and k3s_window_object_confirm | default('') == k3s_window_object | default('')) }}"
+    )
+    assert "k3s_window_delete_actions: [delete-factory-pod, delete-gate-job]" in _text()
+    return action not in ("delete-factory-pod", "delete-gate-job") or (
+        len(obj) > 0 and confirm == obj
+    )
+
+
+def test_a_named_delete_needs_the_object_confirmed_and_otherwise_changes_nothing() -> None:
+    for action in ("delete-factory-pod", "delete-gate-job"):
+        assert _object_confirmed(action=action, obj="gates/x", confirm="gates/x")
+        assert not _object_confirmed(action=action, obj="gates/x", confirm="")
+        assert not _object_confirmed(action=action, obj="gates/x", confirm="gates/y")
+        assert not _object_confirmed(action=action, obj="", confirm="")
+    assert _object_confirmed(action="cordon", obj="", confirm="")
+    report = _task(
+        name="Report a named-object delete whose object confirmation is absent or names another object"
+    )
+    assert "not (k3s_window_object_confirmed | bool)" in report
+    assert "Nothing was read and nothing was changed." in " ".join(report.split())
+    for name in (_FACTORY_TASK, _JOB_TASK, "Report what the action did"):
+        assert "        - k3s_window_object_confirmed | bool\n" in _task(name=name), name
+        assert "        - k3s_window_requested | bool\n" in _task(name=name), name
+    for name in (_FACTORY_TASK, _JOB_TASK):
+        assert "{{" not in _script(name=name)
+        assert "check_mode: false" in _task(name=name)
+    header = _text().split("\n- name: ", 1)[0]
+    for stated in (
+        "livespec-dev-tooling-cgb2l2",
+        "k3s_window_object_confirm",
+        "k3s_window_run_terminal_evidence",
+        "k3s_window_preserve_evidence",
+        "delete-factory-pod —",
+        "delete-gate-job —",
+    ):
+        assert stated in header, stated
+
+
+def _refused(*, outcome: _Outcome) -> bool:
+    return (
+        outcome.returncode == 1
+        and "Nothing was changed." in outcome.stderr
+        and outcome.deletes() == []
+    )
+
+
+def test_a_factory_pod_is_deleted_by_name_with_its_evidence_reported(*, tmp_path: Path) -> None:
+    obj = f"factory/{_FACTORY_POD}"
+    outcome = _delete_run(tmp_path=tmp_path, task=_FACTORY_TASK, object_name=obj)
+    assert outcome.returncode == 0, outcome.stderr
+    assert outcome.deletes() == [
+        f"delete pod --namespace factory {_FACTORY_POD} --ignore-not-found "
+        "--wait=false --grace-period=0 --force"
+    ]
+    assert outcome.stdout.startswith(f"deleted {obj} (run {_TERMINAL}; preserved {_PRESERVE}")
+    homelab = f"factory-mi-homelab/{_FACTORY_POD}"
+    other = _delete_run(tmp_path=tmp_path / "h", task=_FACTORY_TASK, object_name=homelab)
+    assert other.returncode == 0 and other.stdout.startswith(f"deleted {homelab} ")
+    none_to_keep = _delete_run(
+        tmp_path=tmp_path / "n",
+        task=_FACTORY_TASK,
+        object_name=obj,
+        preserve="no-committed-work:run died before its first commit",
+    )
+    assert none_to_keep.returncode == 0
+
+
+def test_a_factory_pod_delete_refuses_an_object_that_is_not_one_named_kept_pod(
+    *, tmp_path: Path
+) -> None:
+    refusals = {
+        "wrong-namespace": f"gates/{_FACTORY_POD}",
+        "default-namespace": f"default/{_FACTORY_POD}",
+        "wildcard": "factory/*",
+        "all": "factory/all",
+        "selector": "factory/-l app=x",
+        "unnamed": "factory/",
+        "no-namespace": _FACTORY_POD,
+        "list": f"factory/{_FACTORY_POD},factory/other",
+        "empty": "",
+    }
+    for label, obj in refusals.items():
+        outcome = _delete_run(tmp_path=tmp_path / label, task=_FACTORY_TASK, object_name=obj)
+        assert _refused(outcome=outcome), (label, outcome.stderr)
+        assert outcome.log == [], label
+
+
+def test_a_factory_pod_delete_refuses_without_terminal_and_preserve_evidence(
+    *, tmp_path: Path
+) -> None:
+    obj = f"factory/{_FACTORY_POD}"
+    cases = {
+        "no-terminal": {"terminal": ""},
+        "running": {"terminal": f"running:{_RUN_ID}"},
+        "other-run": {"terminal": "failed:01zzzzzzzzzzzzzzzzzzzzzzzz"},
+        "no-preserve": {"preserve": ""},
+        "short-sha": {"preserve": "refs/heads/needs-human/d@abc123"},
+        "master-ref-free-text": {"preserve": "preserved somewhere"},
+    }
+    for label, extra in cases.items():
+        outcome = _delete_run(
+            tmp_path=tmp_path / label, task=_FACTORY_TASK, object_name=obj, **extra
+        )
+        assert _refused(outcome=outcome), (label, outcome.stderr)
+        assert outcome.log == [], label
+
+
+def test_a_factory_pod_that_cannot_be_read_is_refused_and_check_deletes_nothing(
+    *, tmp_path: Path
+) -> None:
+    obj = f"factory/{_FACTORY_POD}"
+    dry = _delete_run(tmp_path=tmp_path, task=_FACTORY_TASK, object_name=obj, dry_run="true")
+    assert dry.returncode == 0 and dry.deletes() == []
+    assert dry.stdout.startswith(f"would delete {obj} (")
+    script = _script(name=_FACTORY_TASK)
+    assert "the pod could not be read." in script
+
+
+def test_a_stuck_gate_job_is_deleted_by_name(*, tmp_path: Path) -> None:
+    obj = f"gates/{_JOB}"
+    for ready in ("False", "Unknown"):
+        outcome = _delete_run(
+            tmp_path=tmp_path / ready, task=_JOB_TASK, object_name=obj, ready=ready
+        )
+        assert outcome.returncode == 0, outcome.stderr
+        assert outcome.deletes() == [
+            f"delete job --namespace gates {_JOB} --ignore-not-found --wait=false"
+        ]
+        assert outcome.stdout.startswith(f"deleted job {obj} (pod {_JOB}-x7k2p Terminating")
+    dry = _delete_run(tmp_path=tmp_path / "dry", task=_JOB_TASK, object_name=obj, dry_run="true")
+    assert dry.returncode == 0 and dry.deletes() == []
+    assert dry.stdout.startswith(f"would delete job {obj} (")
+
+
+def test_a_gate_job_delete_refuses_an_object_that_is_not_one_named_gates_job(
+    *, tmp_path: Path
+) -> None:
+    for label, obj in {
+        "wrong-namespace": f"factory/{_JOB}",
+        "wildcard": "gates/*",
+        "all": "gates/--all",
+        "unnamed": "gates/",
+        "no-namespace": _JOB,
+        "empty": "",
+    }.items():
+        outcome = _delete_run(tmp_path=tmp_path / label, task=_JOB_TASK, object_name=obj)
+        assert _refused(outcome=outcome), (label, outcome.stderr)
+        assert outcome.log == [], label
+    missing = _delete_run(
+        tmp_path=tmp_path / "missing", task=_JOB_TASK, object_name=f"gates/{_JOB}", job_exists=False
+    )
+    assert _refused(outcome=missing)
+
+
+def test_a_gate_job_whose_pod_is_not_actually_stuck_is_refused(*, tmp_path: Path) -> None:
+    obj = f"gates/{_JOB}"
+    pod = f"{_JOB}-x7k2p"
+    finalizer = "finalizers:batch.kubernetes.io/job-tracking"
+    cases = {
+        "node-ready": {"ready": "True"},
+        "not-terminating": {"job_pods": f"{pod} node-a marked: {finalizer}\n"},
+        "no-finalizer": {"job_pods": f"{pod} node-a marked:2026-11-21T01:00:00Z finalizers:\n"},
+        "unbound": {"job_pods": f"{pod}  marked:2026-11-21T01:00:00Z {finalizer}\n"},
+        "no-pod": {"job_pods": ""},
+        "two-pods": {"job_pods": _MARKED_POD + _MARKED_POD.replace("x7k2p", "y8m3q")},
+    }
+    for label, extra in cases.items():
+        outcome = _delete_run(tmp_path=tmp_path / label, task=_JOB_TASK, object_name=obj, **extra)
+        assert _refused(outcome=outcome), (label, outcome.stderr)

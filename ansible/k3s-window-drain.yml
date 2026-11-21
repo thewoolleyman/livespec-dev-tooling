@@ -17,7 +17,7 @@
 # `fleet_host_guard.py` refuses as hand changes to the fleet. This playbook is
 # that gap closed, in the fenced shape the restart playbooks already use.
 #
-# SIX ACTIONS, ONE CONFIRMATION EACH. `k3s_window_action` selects one:
+# EIGHT ACTIONS, ONE CONFIRMATION EACH. `k3s_window_action` selects one:
 #   pause-arc    — for EVERY AutoscalingRunnerSet, record its spec.maxRunners in
 #                  the annotation `livespec.dev/window-paused-max-runners`, then
 #                  set maxRunners to 0. GitHub queues new jobs instead of failing
@@ -41,6 +41,10 @@
 #                  pods the API still binds to it that are marked for deletion
 #                  or whose owner recreates them, so their owners can replace
 #                  them.
+#   delete-factory-pod — delete ONE NAMED pod of a factory namespace whose petri
+#                  run is terminal and whose work is preserved (see below).
+#   delete-gate-job — delete ONE NAMED gate Job (namespace gates) whose only pod
+#                  is stuck Terminating on a not-Ready node.
 # THE FIRST FOUR EVICT, DRAIN AND DELETE NOTHING, and no action here is a drain.
 # Evicting a busy runner pod kills its CI job, and the ARC runner and workflow
 # pods are unmanaged, so a drain is exactly the disruption a window must avoid.
@@ -166,6 +170,51 @@
 # through `uncordon` here, never by hand (legacy-coordinator-agent ruling,
 # 2026-11-11 ~17:36Z, after the M4 hand cordon of 15:54:43Z under
 # livespec-dev-tooling-ko26ez).
+#
+# THE NAMED-OBJECT DELETES (livespec-dev-tooling-cgb2l2). Two hand
+# `kubectl delete` escapes recorded against `fleet_host_guard.py` get committed
+# actions: `kubectl delete pod -n factory petri-<run>-l0 --force --grace-period=0`
+# (a terminal run's pod that the sandbox reaper keeps on a cordoned NotReady
+# node) and `kubectl delete job -n gates gate-<repo>-<id>` (a gate Job whose
+# only pod the batch.kubernetes.io/job-tracking finalizer holds Terminating on a
+# NotReady node). Both delete exactly ONE object that the operator names; they
+# have no wildcard, no selector and no `--all`.
+#   THE THIRD FENCE: `k3s_window_object` names the object as `<namespace>/<name>`
+#   and `k3s_window_object_confirm` must repeat it exactly (like the node
+#   confirmation, absent or different means nothing is read or changed). The
+#   script refuses a value that is not one namespace and one DNS-1123 name, so
+#   `*`, `all`, a label selector or a list cannot get through.
+#   delete-factory-pod REFUSES a namespace that is not in
+#   `k3s_window_kept_namespaces` (factory, factory-mi-homelab). This play runs on
+#   the cluster's server and cannot read the Fabro server's run state or the
+#   target repository's preserve refs, so the two preconditions arrive as
+#   EXPLICIT EVIDENCE the operator reads first, and the play refuses without
+#   either, changing nothing:
+#     k3s_window_run_terminal_evidence = <succeeded|failed|cancelled>:<run-id>
+#       the run's terminal state read from the petri server; the run id must be
+#       part of the named pod's name, so evidence for another run cannot be used.
+#     k3s_window_preserve_evidence = refs/heads/<ref>@<40-hex sha>
+#       the ref `git ls-remote origin <ref>` returned (resolved by name, never
+#       from FETCH_HEAD), or `no-committed-work:<reason>`.
+#   The pod must exist (a failed read refuses). Its evidence is echoed in the
+#   report. The delete is `--wait=false --grace-period=0 --force`.
+#   delete-gate-job REFUSES a namespace other than `gates`, a Job that does not
+#   exist, a Job with anything but exactly one pod, and a pod that is not BOTH
+#   bound to a node whose Ready condition is False or Unknown AND carries a
+#   deletionTimestamp AND still carries the batch.kubernetes.io/job-tracking
+#   finalizer. A Job whose pod is merely slow or running is left alone.
+#   Under `--check` both read and report `would delete <object>` and delete
+#   nothing. An apply reads:
+#     just ansible-apply ansible/k3s-window-drain.yml
+#       -e k3s_window_action=delete-factory-pod -e k3s_window_confirm=delete-factory-pod
+#       -e k3s_window_object=factory/<pod> -e k3s_window_object_confirm=factory/<pod>
+#       -e k3s_window_run_terminal_evidence=<state>:<run-id>
+#       -e k3s_window_preserve_evidence=<refs/heads/...@sha>
+#     just ansible-apply ansible/k3s-window-drain.yml
+#       -e k3s_window_action=delete-gate-job -e k3s_window_confirm=delete-gate-job
+#       -e k3s_window_object=gates/<job> -e k3s_window_object_confirm=gates/<job>
+#   (each on one line). The specification text follows through a separate
+#   proposed change.
 
 - name: Pause or restore CI runner intake, or hold, lift, evacuate or clear a cluster node
   hosts: ci_pool
@@ -173,10 +222,11 @@
   vars:
     k3s_window_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
     k3s_window_record_annotation: livespec.dev/window-paused-max-runners
-    k3s_window_actions: [pause-arc, restore-arc, cordon, uncordon, evacuate, clear-lost]
+    k3s_window_actions: [pause-arc, restore-arc, cordon, uncordon, evacuate, clear-lost, delete-factory-pod, delete-gate-job]
     k3s_window_node_actions: [cordon, uncordon, evacuate, clear-lost]
     k3s_window_hold_actions: [cordon, uncordon]
     k3s_window_pod_actions: [evacuate, clear-lost]
+    k3s_window_delete_actions: [delete-factory-pod, delete-gate-job]
     k3s_window_node_confirm_actions: [uncordon, evacuate, clear-lost]
     k3s_window_recreating_owner_kinds: [AutoscalingListener, ReplicaSet, StatefulSet]
     k3s_window_kept_namespaces: [factory, factory-mi-homelab]
@@ -190,6 +240,10 @@
       {{ k3s_window_action | default('') not in k3s_window_node_confirm_actions
          or (k3s_window_node | default('') | length > 0
              and k3s_window_node_confirm | default('') == k3s_window_node | default('')) }}
+    k3s_window_object_confirmed: >-
+      {{ k3s_window_action | default('') not in k3s_window_delete_actions
+         or (k3s_window_object | default('') | length > 0
+             and k3s_window_object_confirm | default('') == k3s_window_object | default('')) }}
     k3s_window_node_known: >-
       {{ k3s_window_node | default('') in groups['ci_pool'] }}
     k3s_window_node_registered: >-
@@ -219,6 +273,19 @@
       when:
         - k3s_window_requested | bool
         - not (k3s_window_node_confirmed | bool)
+
+    - name: Report a named-object delete whose object confirmation is absent or names another object
+      ansible.builtin.debug:
+        msg: >-
+          Not acting: `{{ k3s_window_action }}` deletes one named object, so it also
+          needs `k3s_window_object` (`<namespace>/<name>`) and
+          `k3s_window_object_confirm` repeating it exactly (this run carries object
+          `{{ k3s_window_object | default('<unset>') }}`, object confirm
+          `{{ k3s_window_object_confirm | default('<unset>') }}`).
+          Nothing was read and nothing was changed.
+      when:
+        - k3s_window_requested | bool
+        - not (k3s_window_object_confirmed | bool)
 
     - name: Read whether the named node is registered in the cluster
       when:
@@ -649,14 +716,148 @@
       check_mode: false
       changed_when: k3s_window_pods.stdout is search('(?m)^(deleted|cleared) ')
 
+    - name: Delete one named factory pod whose run is terminal and preserved
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_object_confirmed | bool
+        - k3s_window_action == 'delete-factory-pod'
+      ansible.builtin.shell:
+        executable: /bin/bash
+        # NO JINJA IN THIS SCRIPT: every input arrives through `environment`.
+        cmd: |
+          set -euo pipefail
+          object="${K3S_WINDOW_OBJECT}"
+          kept_namespaces="${K3S_WINDOW_KEPT_NAMESPACES}"
+          terminal="${K3S_WINDOW_RUN_TERMINAL_EVIDENCE}"
+          preserve="${K3S_WINDOW_PRESERVE_EVIDENCE}"
+          dry_run="${K3S_WINDOW_DRY_RUN}"
+          refuse() {
+            printf 'refusing delete-factory-pod of %s: %s Nothing was changed.\n' "${object}" "${1}" >&2
+            exit 1
+          }
+          name_re='^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+          namespace="${object%%/*}"
+          name="${object#*/}"
+          [[ "${object}" == */* && "${name}" != */* && "${namespace}" =~ ${name_re} && "${name}" =~ ${name_re} ]] \
+            || refuse 'the object is not exactly one <namespace>/<name>.'
+          case " ${kept_namespaces} " in
+            *" ${namespace} "*) ;;
+            *) refuse "namespace ${namespace} is not a factory namespace (${kept_namespaces})." ;;
+          esac
+          terminal_re='^(succeeded|failed|cancelled):([0-9a-z]{20,})$'
+          [[ "${terminal}" =~ ${terminal_re} ]] \
+            || refuse 'k3s_window_run_terminal_evidence is absent or not <succeeded|failed|cancelled>:<run-id>, so the run is not shown terminal.'
+          run_id="${BASH_REMATCH[2]}"
+          case "${name}" in
+            *"${run_id}"*) ;;
+            *) refuse "the pod name does not contain run id ${run_id}, so the terminal evidence is not about this pod." ;;
+          esac
+          preserve_re='^(refs/heads/[A-Za-z0-9._/-]+@[0-9a-f]{40}|no-committed-work:.+)$'
+          [[ "${preserve}" =~ ${preserve_re} ]] \
+            || refuse 'k3s_window_preserve_evidence is absent or not refs/heads/<ref>@<40-hex sha> or no-committed-work:<reason>, so preserve is not shown.'
+          if ! bound="$(kubectl get pod --namespace "${namespace}" "${name}" --output 'jsonpath={.spec.nodeName}')"; then
+            refuse 'the pod could not be read.'
+          fi
+          detail="run ${terminal}; preserved ${preserve}; node ${bound:-none}"
+          if test "${dry_run}" != 'false'; then
+            printf 'would delete %s (%s)\n' "${object}" "${detail}"
+            exit 0
+          fi
+          kubectl delete pod --namespace "${namespace}" "${name}" \
+            --ignore-not-found --wait=false --grace-period=0 --force </dev/null >/dev/null
+          printf 'deleted %s (%s)\n' "${object}" "${detail}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+        K3S_WINDOW_OBJECT: "{{ k3s_window_object }}"
+        K3S_WINDOW_KEPT_NAMESPACES: "{{ k3s_window_kept_namespaces | join(' ') }}"
+        K3S_WINDOW_RUN_TERMINAL_EVIDENCE: "{{ k3s_window_run_terminal_evidence | default('') }}"
+        K3S_WINDOW_PRESERVE_EVIDENCE: "{{ k3s_window_preserve_evidence | default('') }}"
+        K3S_WINDOW_DRY_RUN: "{{ ansible_check_mode | ternary('true', 'false') }}"
+      register: k3s_window_factory_pod
+      # Run under `--check` too: reads only, the script withholds the delete.
+      check_mode: false
+      changed_when: k3s_window_factory_pod.stdout is search('(?m)^deleted ')
+
+    - name: Delete one named gate Job whose only pod is stuck on a not-Ready node
+      when:
+        - k3s_window_requested | bool
+        - k3s_window_object_confirmed | bool
+        - k3s_window_action == 'delete-gate-job'
+      ansible.builtin.shell:
+        executable: /bin/bash
+        # NO JINJA IN THIS SCRIPT: every input arrives through `environment`.
+        cmd: |
+          set -euo pipefail
+          object="${K3S_WINDOW_OBJECT}"
+          dry_run="${K3S_WINDOW_DRY_RUN}"
+          refuse() {
+            printf 'refusing delete-gate-job of %s: %s Nothing was changed.\n' "${object}" "${1}" >&2
+            exit 1
+          }
+          name_re='^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+          namespace="${object%%/*}"
+          name="${object#*/}"
+          [[ "${object}" == */* && "${name}" != */* && "${namespace}" =~ ${name_re} && "${name}" =~ ${name_re} ]] \
+            || refuse 'the object is not exactly one <namespace>/<name>.'
+          test "${namespace}" = 'gates' || refuse "namespace ${namespace} is not gates."
+          kubectl get job --namespace gates "${name}" --output name >/dev/null \
+            || refuse 'the Job could not be read.'
+          pod_template='{range .items[*]}{.metadata.name}{" "}{.spec.nodeName}'
+          pod_template+='{" marked:"}{.metadata.deletionTimestamp}'
+          pod_template+='{" finalizers:"}{.metadata.finalizers[*]}{"\n"}{end}'
+          if ! pods="$(kubectl get pods --namespace gates \
+            --selector "batch.kubernetes.io/job-name=${name}" --output "jsonpath=${pod_template}")"; then
+            refuse "the Job's pods could not be read."
+          fi
+          pods="$(printf '%s' "${pods}" | grep -v '^$' || true)"
+          test -n "${pods}" || refuse 'the Job has no pod, so nothing is stuck.'
+          test "$(printf '%s\n' "${pods}" | wc -l)" -eq 1 \
+            || refuse 'the Job has more than one pod, so it is not the one-stuck-pod case.'
+          read -r pod node marked finalizers <<< "${pods}"
+          test -n "${node}" && test "${node}" != 'marked:' \
+            || refuse "its pod ${pod} is not bound to a node."
+          test "${marked#marked:}" != '' \
+            || refuse "its pod ${pod} has no deletionTimestamp, so it is not Terminating."
+          case "${finalizers}" in
+            *batch.kubernetes.io/job-tracking*) ;;
+            *) refuse "its pod ${pod} does not carry the batch.kubernetes.io/job-tracking finalizer." ;;
+          esac
+          if ! ready="$(kubectl get node "${node}" \
+            --output 'jsonpath={.status.conditions[?(@.type=="Ready")].status}')"; then
+            refuse "node ${node} could not be read."
+          fi
+          case "${ready}" in
+            False | Unknown) ;;
+            *) refuse "node ${node} Ready condition is '${ready}', not False or Unknown." ;;
+          esac
+          detail="pod ${pod} Terminating on not-Ready node ${node}, held by the job-tracking finalizer"
+          if test "${dry_run}" != 'false'; then
+            printf 'would delete job %s (%s)\n' "${object}" "${detail}"
+            exit 0
+          fi
+          kubectl delete job --namespace gates "${name}" --ignore-not-found --wait=false </dev/null >/dev/null
+          printf 'deleted job %s (%s)\n' "${object}" "${detail}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ k3s_window_admin_kubeconfig }}"
+        K3S_WINDOW_OBJECT: "{{ k3s_window_object }}"
+        K3S_WINDOW_DRY_RUN: "{{ ansible_check_mode | ternary('true', 'false') }}"
+      register: k3s_window_gate_job
+      check_mode: false
+      changed_when: k3s_window_gate_job.stdout is search('(?m)^deleted job ')
+
     - name: Report what the action did
       when:
         - k3s_window_requested | bool
         - k3s_window_node_confirmed | bool
+        - k3s_window_object_confirmed | bool
       ansible.builtin.debug:
         msg: >-
           {{ k3s_window_action }} on the pool:
           {{ (k3s_window_pause.stdout_lines | default([]))
              + (k3s_window_restore.stdout_lines | default([]))
              + (k3s_window_node_change.stdout_lines | default([]))
-             + (k3s_window_pods.stdout_lines | default([])) }}
+             + (k3s_window_pods.stdout_lines | default([]))
+             + (k3s_window_factory_pod.stdout_lines | default([]))
+             + (k3s_window_gate_job.stdout_lines | default([])) }}
