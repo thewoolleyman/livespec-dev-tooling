@@ -99,6 +99,7 @@ source of truth for how the tool is invoked.
 | `k3s-pod-egress-probe.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could measure a pod's path to the incident observer |
 | `runner-scheduler-fail-open-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could hold `ci-runner-scheduler` at zero replicas |
 | `ci-node-unloaded-baseline.yml` | `ci_pool`, and only the k3s SERVER its confirmation names, measuring only the nodes the run names | nothing — no committed artifact could run a pinned benchmark Job on a CI node |
+| `stuck-object-drill.yml` | `ci_pool`, acting once on the SERVER, only for the action its confirmation names; the create actions also only for a NotReady, cordoned node a second confirmation names | nothing — no committed artifact could create a drill pod or Job bound to a dead node (`create-factory-pod`, `create-stuck-gate-job`) or remove one by name (`remove-drill-fixtures`) |
 
 `container-termination-drill.yml` is the ONE sanctioned way to make the cluster
 produce a `CrashLoopBackOff` container and an `OOMKilled` container, the
