@@ -28,7 +28,9 @@ _ESCAPE = (
 _BACKFILL = "HOST-GUARD-BACKFILL: pr=livespec-dev-tooling#1"
 
 
-def _run(*, tmp_path: Path, comments: list[str], today: str) -> subprocess.CompletedProcess[str]:
+def _run(
+    *, tmp_path: Path, comments: list[str], today: str, extra: list[str] | None = None
+) -> subprocess.CompletedProcess[str]:
     tenant = tmp_path / "roots" / "demo"
     (tenant / ".beads").mkdir(parents=True)
     _ = (tenant / ".beads" / "config.yaml").write_text("dolt.prefix: demo\n", encoding="utf-8")
@@ -37,6 +39,7 @@ def _run(*, tmp_path: Path, comments: list[str], today: str) -> subprocess.Compl
     wrapper = tmp_path / "wrapper.sh"
     _ = wrapper.write_text(
         "#!/bin/sh\n"
+        f'echo "$*" >> {tmp_path}/calls.log\n'
         'case "$*" in\n'
         f"  *list*) cat <<'EOF'\n{json.dumps(items)}\nEOF\n;;\n"
         f"  *comments*) cat <<'EOF'\n{json.dumps(rows)}\nEOF\n;;\n"
@@ -51,7 +54,12 @@ def _run(*, tmp_path: Path, comments: list[str], today: str) -> subprocess.Compl
         "HGB_TODAY": today,
     }
     return subprocess.run(
-        [str(_SCRIPT)], env=env, capture_output=True, text=True, check=False, timeout=60
+        [str(_SCRIPT), *(extra or [])],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
     )
 
 
@@ -77,3 +85,15 @@ def test_a_later_backfill_comment_answers_the_escape(tmp_path: Path) -> None:
     )
     assert done.returncode == 0, done.stderr
     assert "0 owed, 0 overdue" in done.stdout
+
+
+def test_default_scan_filters_on_the_label_and_all_does_not(tmp_path: Path) -> None:
+    comments = [_ESCAPE.format(due="2026-11-22")]
+    _ = _run(tmp_path=tmp_path, comments=comments, today="2026-11-21")
+    fast = (tmp_path / "calls.log").read_text(encoding="utf-8")
+    assert "--label host-guard-escape" in fast
+    (tmp_path / "calls.log").unlink()
+    done = _run(tmp_path=tmp_path, comments=comments, today="2026-11-21", extra=["--all"])
+    slow = (tmp_path / "calls.log").read_text(encoding="utf-8")
+    assert "--label" not in slow
+    assert "1 owed, 0 overdue" in done.stdout
