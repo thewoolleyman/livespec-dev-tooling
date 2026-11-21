@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -18,44 +17,13 @@ import yaml
 
 _ROOT = Path(__file__).resolve().parents[3]
 _BUDGET = _ROOT / "ci-runner/k3s/phase2/node-memory-budget.yaml"
-_GATES = _ROOT / "ci-runner/k3s/phase2/kueue/cluster-queue-gates.yaml"
-_REPRO = _ROOT / "ci-runner/k3s/phase2/kueue/cluster-queue-repro-gates.yaml"
 _FACTORY_HOST = _ROOT / "ansible/inventory/host_vars/gmktec-xubuntu.yml"
 _HOST_VARS = _ROOT / "ansible/inventory/host_vars"
-
-
-class MemoryQuantityError(ValueError):
-    """A committed memory quantity did not use a reportable unit."""
 
 
 def _load_yaml(path: Path) -> Any:
     with path.open(encoding="utf-8") as source:
         return yaml.safe_load(source)
-
-
-def _memory_gib(value: str | int | float) -> float:
-    """Convert a committed Kubernetes memory quantity to GiB."""
-    text = str(value)
-    if text.endswith("Gi"):
-        return float(text.removesuffix("Gi"))
-    if text.endswith("Mi"):
-        return float(text.removesuffix("Mi")) / 1024
-    raise MemoryQuantityError(value)
-
-
-def _flavor_memory(paths: Iterable[Path]) -> dict[str, float]:
-    """Read each Kueue ResourceFlavor's committed memory quota."""
-    quotas: dict[str, float] = {}
-    for path in paths:
-        for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
-            if not document or document.get("kind") != "ClusterQueue":
-                continue
-            for group in document["spec"].get("resourceGroups", []):
-                for flavor in group.get("flavors", []):
-                    for resource in flavor.get("resources", []):
-                        if resource["name"] == "memory":
-                            quotas[flavor["name"]] = _memory_gib(resource["nominalQuota"])
-    return quotas
 
 
 def factory_pod_request_gib() -> float:
@@ -77,7 +45,6 @@ def factory_pod_budget(node: str, configured: dict[str, Any]) -> int:
 def report() -> tuple[list[str], list[tuple[str, float]]]:
     """Return report rows and committed over-commit findings."""
     budget = _load_yaml(_BUDGET)["nodes"]
-    flavors = _flavor_memory([_GATES, _REPRO])
     factory_request = factory_pod_request_gib()
     rows = [
         "Memory budget report (REPORT-ONLY; no fleet admission check is armed).",
@@ -86,17 +53,9 @@ def report() -> tuple[list[str], list[tuple[str, float]]]:
     ]
     findings: list[tuple[str, float]] = []
     for node, configured in budget.items():
-        gates = float(
-            configured["gate_memory_gib"]
-            if "gate_memory_gib" in configured
-            else flavors[configured["gate_flavor"]]
-        )
-        repro = float(
-            configured["repro_memory_gib"]
-            if "repro_memory_gib" in configured
-            else flavors[configured["repro_flavor"]]
-        )
-        factory = factory_pod_budget(node, configured) * factory_request
+        gates = float(configured["gate_memory_gib"])
+        repro = float(configured["repro_memory_gib"])
+        factory = round(factory_pod_budget(node, configured) * factory_request, 1)
         system = float(configured["system_memory_gib"])
         allocatable = float(configured["allocatable_memory_gib"])
         total = gates + repro + factory + system
