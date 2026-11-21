@@ -88,6 +88,18 @@ jobs:
     permissions:
       id-token: write
     steps:
+      # NO-OP EXIT (livespec-dev-tooling-afousj). The caller's job-level condition no
+      # longer gates this call, because a skipped call reports a skipped check that
+      # the release-currency grader reads as not green. An empty `aggregate` means
+      # incident-ci produced nothing to publish (an ordinary push or pull request),
+      # so this first step reports that and every later step is guarded on a
+      # non-empty aggregate. The job then concludes success without installing
+      # anything or requesting an identity token.
+      - name: Nothing to publish
+        if: ${{ inputs.aggregate == '' }}
+        shell: bash
+        run: echo "incident-ci-publish - no passed incident aggregate to publish, nothing to do"
+
       # uv is pinned to the version this library's .mise.toml pins, and installed
       # through the mise action the shipped pin-freshness workflow uses. No checkout
       # is needed, because the tool list is given inline. This job holds
@@ -97,6 +109,7 @@ jobs:
       # and no input beyond the inline tool list, and the identity token is
       # requested later, by the released package, never through this action.
       - name: Install the pinned uv via mise
+        if: ${{ inputs.aggregate != '' }}
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c  # v4.3.0
         with:
           mise_toml: |
@@ -109,6 +122,7 @@ jobs:
       # the last line proves the module resolves from that venv.
       - name: Install the released livespec-dev-tooling incident-ci ran
         id: released
+        if: ${{ inputs.aggregate != '' }}
         shell: bash
         env:
           RELEASE: ${{ inputs.release }}
@@ -132,6 +146,7 @@ jobs:
       # script text. The token is requested inside the process and is never
       # printed. `-I` keeps any working-directory package off the import path.
       - name: Publish the passed aggregate to the controller
+        if: ${{ inputs.aggregate != '' }}
         shell: bash
         env:
           RELEASED_PYTHON: ${{ steps.released.outputs.python }}
