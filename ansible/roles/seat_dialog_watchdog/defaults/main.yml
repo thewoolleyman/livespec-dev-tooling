@@ -16,4 +16,4 @@ seat_dialog_watchdog_dwell_seconds: 120
 seat_dialog_watchdog_herdr: "{{ seat_dialog_watchdog_home }}/.local/bin/herdr"
 seat_dialog_watchdog_alarm_file: "{{ seat_dialog_watchdog_home }}/.local/state/seat-dialog-watchdog/alarms.jsonl"
 seat_dialog_watchdog_ledger_cwd: "{{ seat_dialog_watchdog_home }}/workspace/livespec-dev-tooling"
-seat_dialog_watchdog_pinned_sha256: db78f249218489ca0e65ab799bc657a9c4d66d7ed5f76866fce526df5646f250
+seat_dialog_watchdog_pinned_sha256: 4966eb32fd0232bc2fdfdb4716409e5d9dc850315d064c5567b1610cc0e92ae5
