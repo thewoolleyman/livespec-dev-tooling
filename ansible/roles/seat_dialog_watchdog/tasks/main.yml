@@ -7,11 +7,26 @@
   failed_when: false
   when: not seat_dialog_watchdog_enabled
 
-- name: Assert the watchdog script bytes match the fleet digest pin
-  # copy's own `checksum` is SHA-1, so the sha256 pin is checked here instead.
+- name: Measure the digest of the watchdog script this role ships
+  # Read on the CONTROLLER before anything is sent to the host. ansible.builtin.copy can
+  # only verify a SHA-1 checksum in flight, and the fleet pin is SHA-256, so the comparison
+  # happens here (the btop_loop pattern). Passing the sha256 pin to copy's `checksum:` failed
+  # the vps apply on 2026-11-21 while check mode, which skips that comparison, passed.
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/seat-dialog-watchdog"
+    checksum_algorithm: sha256
+  become: false
+  delegate_to: localhost
+  register: seat_dialog_watchdog_source_stat
+  when: seat_dialog_watchdog_enabled
+
+- name: Assert the shipped watchdog script matches the fleet's pinned digest
   ansible.builtin.assert:
-    that: "lookup('ansible.builtin.file', 'seat-dialog-watchdog') | hash('sha256') == seat_dialog_watchdog_pinned_sha256"
-    fail_msg: the watchdog script no longer matches the digest pinned for the fleet
+    that: seat_dialog_watchdog_source_stat.stat.checksum == seat_dialog_watchdog_pinned_sha256
+    fail_msg: >-
+      the watchdog script has diverged from the fleet's pinned digest.
+      want {{ seat_dialog_watchdog_pinned_sha256 }}, got {{ seat_dialog_watchdog_source_stat.stat.checksum }}.
+      Re-record the digest in livespec-dev-tooling and hetzner-xubuntu-info together.
   when: seat_dialog_watchdog_enabled
 
 - name: Install the seat dialog watchdog program
