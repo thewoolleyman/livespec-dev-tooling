@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.232.0](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.231.2...v1.232.0) (2026-11-21)
+
+
+### Features
+
+* **ansible:** committed named-object deletes for a terminal factory pod and a stuck gate Job (livespec-dev-tooling-cgb2l2) ([4a2ef5f](https://github.com/livespec-ai/livespec-dev-tooling/commit/4a2ef5fc12ad59f7b867e9386494011ed83c15c3))
+
 ## [1.231.2](https://github.com/livespec-ai/livespec-dev-tooling/compare/v1.231.1...v1.231.2) (2026-11-21)
 
 
