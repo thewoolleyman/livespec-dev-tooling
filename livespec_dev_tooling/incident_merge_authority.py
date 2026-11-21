@@ -69,8 +69,9 @@ MERGE_REFUSAL_REASONS: frozenset[str] = frozenset(
         "incident-inverse",
     )
 )
-# The incident authority writer's filing action: the only genesis that authorizes.
-GENESIS_WRITER_ACTION = "file-incident"
+# The incident authority writer's genesis action: the only genesis that authorizes.
+# `file-incident` files the item and claim and writes no chain root.
+GENESIS_WRITER_ACTION = "publish-genesis"
 _CLOSED_STATUS = "closed"
 # The orchestrator's phase table (`_incident_phases.py`): the finished phases, the
 # recovery phases whose only merge is the recovery principal's inverse, and the
@@ -161,8 +162,12 @@ def decide(
         refusal = checked.failure()
         return _refuse(reason="no-genesis-record", detail=f"{refusal.code}: {refusal.detail}")
     reading = checked.unwrap()
-    if reading.get("genesis_writer") != GENESIS_WRITER_ACTION:
-        return _refuse(reason="no-genesis-record", detail="genesis not written by file-incident")
+    writer = reading.get("genesis_writer")
+    if writer != GENESIS_WRITER_ACTION:
+        return _refuse(
+            reason="no-genesis-record",
+            detail=f"genesis not written by {GENESIS_WRITER_ACTION} (found {writer!r})",
+        )
     raw = reading.get("attempt")
     if not isinstance(raw, dict):
         return _refuse(reason="attempt-not-pr-bound", detail="chain publishes no current attempt")

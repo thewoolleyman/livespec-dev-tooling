@@ -45,7 +45,7 @@ def _attempt(**overrides: object) -> dict[str, object]:
 
 def _reading(*, attempt: dict[str, object] | None = None, **overrides: object) -> dict[str, object]:
     reading: dict[str, object] = {
-        "genesis_writer": "file-incident",
+        "genesis_writer": "publish-genesis",
         "item_status": "active",
         "is_current": True,
         "attempt": _attempt() if attempt is None else attempt,
@@ -66,7 +66,7 @@ def _decide(*, reply: object, pr_number: int = 55, base: str = _BASE, head: str 
     return verdict, reader
 
 
-def test_a_file_incident_genesis_whose_current_attempt_binds_the_pr_allows_the_merge():
+def test_a_publish_genesis_genesis_whose_current_attempt_binds_the_pr_allows_the_merge():
     verdict, reader = _decide(reply=Success(_reading()))
     facts = [
         verdict == MergeAuthorityVerdict(allowed=True, reason=None, detail="incident-1"),
@@ -106,7 +106,7 @@ def test_the_refusal_reasons_are_the_closed_named_set():
             Failure(AuthorityRefusal(code="incident-authority-timeout", detail="hung")),
             "no-genesis-record",
         ),
-        (Success(_reading(genesis_writer="publish-genesis")), "no-genesis-record"),
+        (Success(_reading(genesis_writer="file-incident")), "no-genesis-record"),
         (
             Success({k: v for k, v in _reading().items() if k != "genesis_writer"}),
             "no-genesis-record",
