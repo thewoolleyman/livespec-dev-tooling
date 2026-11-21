@@ -7,35 +7,37 @@
 # gmktec-xubuntu remains over-committed on its committed seven-pod ceiling; do
 # not lower that ceiling here merely to make this report quiet.
 #
-# Gate and repro allocations are read from the named Kueue ResourceFlavors.
-# Factory pod counts are read from each x86 node's host_vars
+# Gate and repro allocations are the committed allocations this budget gives
+# each node.  They deliberately do not follow the currently armed Kueue
+# flavors: those are existing fleet state, whereas this report is the
+# report-only adoption target.  Factory pod counts are read from each x86 node's host_vars
 # `factory_pod_budget`; the sandbox request is read from the factory provider's
 # committed process_spec.  Thus those committed values are never copied here.
 
 nodes:
   gmktec-xubuntu:
     allocatable_memory_gib: 62.43
+    gate_memory_gib: 12.0
+    repro_memory_gib: 0.0
     system_memory_gib: 1.10
-    gate_flavor: gates-flavor
-    repro_flavor: gates-repro-gmktec-flavor
   poweredge-xubuntu:
     allocatable_memory_gib: 377.0
+    gate_memory_gib: 40.0
+    repro_memory_gib: 8.0
     system_memory_gib: 1.10
-    gate_flavor: gates-poweredge-flavor
-    repro_flavor: gates-repro-poweredge-flavor
   hp-xubuntu:
     allocatable_memory_gib: 27.2
+    gate_memory_gib: 0.0
+    repro_memory_gib: 0.0
     system_memory_gib: 0.60
-    gate_flavor: gates-hp-flavor
-    repro_flavor: gates-repro-hp-flavor
   gamingpc-xubuntu:
     allocatable_memory_gib: 92.38
+    gate_memory_gib: 16.0
+    repro_memory_gib: 0.0
     system_memory_gib: 16.0
-    gate_flavor: gates-gamingpc-flavor
-    repro_flavor: gates-repro-gamingpc-flavor
   macbook-m4-max-homelab-worker:
     allocatable_memory_gib: 64.0
+    gate_memory_gib: 0.0
+    repro_memory_gib: 0.0
     system_memory_gib: 10.0
     factory_pod_budget: 0
-    gate_memory_gib: 0
-    repro_memory_gib: 0
