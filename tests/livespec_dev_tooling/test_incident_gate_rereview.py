@@ -69,15 +69,19 @@ def test_a_deadline_run_works_without_waitid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delattr(isolation.os, "waitid")
-    outcomes = run_targets(
-        runs=[
-            TargetRun(name="quick", argv=("/bin/sh", "-c", "exit 3")),
-            TargetRun(name="slow", argv=("/bin/sh", "-c", "sleep 30")),
-        ],
+    quick_outcomes = run_targets(
+        runs=[TargetRun(name="quick", argv=("/bin/sh", "-c", "exit 3"))],
+        cwd=tmp_path,
+        max_workers=2,
+        deadline_seconds=30.0,
+    )
+    slow_outcomes = run_targets(
+        runs=[TargetRun(name="slow", argv=("/bin/sh", "-c", "sleep 30"))],
         cwd=tmp_path,
         max_workers=2,
         deadline_seconds=1.0,
     )
+    outcomes = quick_outcomes + slow_outcomes
     assert [(o.status, o.returncode) for o in outcomes] == [(COMPLETED, 3), (TIMED_OUT, None)]
 
 
