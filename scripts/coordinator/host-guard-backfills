@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # READ-ONLY report of fleet_host_guard escape-valve uses whose same-day backfill PR is owed.
-# Usage: scripts/coordinator/host-guard-backfills [--days N] [--json]
-#   --days N  only look at labelled items updated in the last N days (default 14)
+# Usage: scripts/coordinator/host-guard-backfills [--days N] [--all] [--json]
+#   --days N  only look at items updated in the last N days (default 14)
+#   --all     SLOW PATH: ignore the label and read the comments of every item updated in the window.
+#             The permanent backstop for a host still on a driver build that does not label the
+#             item (a Mac or gamingpc-xubuntu adopts a new build only at its next session start).
+#             The fast label path is what top5 runs every tick.
 # Exit status: 0 nothing overdue; 3 at least one backfill is overdue.
 # Plan fleet-host-guard-escape-valve (livespec-dev-tooling-twdyzy). An escape is recorded as a
 # ledger comment `HOST-GUARD-ESCAPE: command=... reason=... backfill-due=YYYY-MM-DD` BEFORE the
@@ -81,11 +85,13 @@ def main():
     if "--days" in args:
         days = int(args[args.index("--days") + 1])
     as_json = "--json" in args
+    every = "--all" in args
     cutoff = (today() - datetime.timedelta(days=days)).isoformat()
     rows, unread = [], []
     for tenant in tenants():
         try:
-            items = bd(cwd=tenant, args=["list", "--status", "all", "--label", LABEL, "--limit", "0", "--json"])
+            scan = ["list", "--status", "all", "--limit", "0", "--json"]
+            items = bd(cwd=tenant, args=scan if every else scan[:3] + ["--label", LABEL] + scan[3:])
             for item in items:
                 if str(item.get("updated_at") or "") < cutoff:
                     continue
