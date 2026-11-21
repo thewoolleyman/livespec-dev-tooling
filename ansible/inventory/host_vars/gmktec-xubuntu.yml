@@ -732,14 +732,22 @@ fabro_server_instances:
         # canary's environment-parity read passes.
         # REVERT to v0.8.3: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.3
         # REVERT to v0.8.3: sha256: 008d343f0696a1dbc4ad13d8dc5782be223ce8c37600ec47d24ca8873c752ce5
-        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
-        sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
+        # v0.8.6 ROUTING-B CANARY (2026-11-21, plan gate-job-resources, tracker
+        # bd-ib-oym2gf): v0.8.5 (idle PID 1 ignores TERM/INT; CPU-sized env from the
+        # CPU limit) plus v0.8.6's memory request below the limit (QoS Guaranteed ->
+        # Burstable). Candidate instance ONLY; the fleet instance stays on v0.8.4.
+        # REVERT to v0.8.4: path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.4
+        # REVERT to v0.8.4: sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
+        path: /usr/local/bin/sandbox-driver-kubernetes-v0.8.6
+        sha256: df7cedc29e3e146073831b8e7aaeec9d5117e5fd739cfdd27f37a586eeb1b25f
         inherit_env:
           - HOME
           - PATH
         env:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.fabro-candidate/.local/state/sandbox-driver-kubernetes
           SANDBOX_DRIVER_KUBERNETES_CPU_REQUEST_CORES: "3"
+          # REVERT: drop this line. MiB; the limit stays memory_mb 7629.
+          SANDBOX_DRIVER_KUBERNETES_MEMORY_REQUEST: "4608"
         process_spec:
           # The candidate runs python-agent-v1.207.0, the image the orchestrator's
           # launch build pins (v0.328.0, c1f8445faf3b; digest
@@ -1073,6 +1081,12 @@ sandbox_driver_kubernetes_versioned_releases:
   # REVERT target. Digest verified by download of the release asset.
   - version: v0.8.4
     sha256: 9abd74b6d5099686957763b0a06816b9a80554506d292d32d6c3d211ccb6023c
+  # v0.8.6 (bd-ib-oym2gf): v0.8.4 plus v0.8.5 (idle PID 1 ignores TERM/INT;
+  # CPU-sized env from the CPU limit) plus v0.8.6's memory_request_mb knob. Only
+  # the candidate's `kubernetes` provider pins it (routing B canary); v0.8.4 stays
+  # installed as the REVERT target. Digest verified against the release's .sha256.
+  - version: v0.8.6
+    sha256: df7cedc29e3e146073831b8e7aaeec9d5117e5fd739cfdd27f37a586eeb1b25f
 
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
